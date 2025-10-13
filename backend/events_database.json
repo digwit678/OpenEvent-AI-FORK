@@ -1,0 +1,76 @@
+{
+  "events": [
+    {
+      "event_id": "5c320c22-e207-4d55-a7eb-0d536b31667a",
+      "created_at": "2025-10-10T14:11:54.572977",
+      "event_data": {
+        "Date Email Received": "10.10.2025",
+        "Status": "Lead",
+        "Event Date": "15.10.2025",
+        "Name": "Sarah Thompson",
+        "Email": "client@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "14:00",
+        "End Time": "16:00",
+        "Preferred Room": "Room B",
+        "Number of Participants": "15",
+        "Type of Event": "workshop",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      }
+    },
+    {
+      "event_id": "ebb5cca5-1591-43d7-9f5e-54ddc88836c8",
+      "created_at": "2025-10-10T14:31:16.858125",
+      "event_data": {
+        "Date Email Received": "10.10.2025",
+        "Status": "Lead",
+        "Event Date": "15.03.2025",
+        "Name": "Sarah Thompson",
+        "Email": "sarah.thompson@techcorp.com",
+        "Phone": "042754980",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "14:00",
+        "End Time": "16:00",
+        "Preferred Room": "Room A",
+        "Number of Participants": "15",
+        "Type of Event": "workshop",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "en",
+        "Additional Info": "Not specified"
+      }
+    },
+    {
+      "event_id": "9482af65-d85f-4c43-9a26-8cb3e3ec4ec7",
+      "created_at": "2025-10-10T20:40:37.743399",
+      "event_data": {
+        "Date Email Received": "10.10.2025",
+        "Status": "Lead",
+        "Event Date": "15.03.2025",
+        "Name": "Sarah Thompson",
+        "Email": "sarah.thompson@techcorp.com",
+        "Phone": "042587324",
+        "Company": "TechCorp",
+        "Billing Address": "432 Nick Jones, 12 street Switzerland",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Room B",
+        "Number of Participants": "15",
+        "Type of Event": "workshop",
+        "Catering Preference": "Premium package",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "en",
+        "Additional Info": "Not specified"
+      }
+    }
+  ]
+}
