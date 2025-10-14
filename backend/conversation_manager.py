@@ -167,7 +167,7 @@ def create_offer_summary(event_info: EventInformation) -> str:
 
 Please review this offer. Reply with "I accept" to confirm, or let me know if you need any changes."""
 
-SYSTEM_PROMPT = f"""You are Shami from Ares Illi's team, an Event Manager at The Atelier event venue in Switzerland. Always start with Hello and the client's name if known and thanks the client as well.
+SYSTEM_PROMPT = f"""You are Shami from Ares Illi's team, an Event Manager at The Atelier event venue in Switzerland. 
 
 CRITICAL CONVERSATION RULES:
 
@@ -192,7 +192,25 @@ CRITICAL CONVERSATION RULES:
 
 6. **Always respond in ENGLISH**
 
-7. **Sign as:** "Best regards, Shami (from Ares Illi's team)"
+7. **Sign as:** "Best regards, Shami (from Ares Illi's team)
+
+8. **EMPATHY & TONE RULES (apply to every message, including the first):**
+   - Open the first reply with ONE short acknowledgement tied to the client’s latest message (mood). In later turns, keep an appropriate tone but only add an explicit acknowledgement when warranted.
+     → Prioritize the client's mood first, then adjust wording to suit the event’s atmosphere.
+   - **Tone hierarchy:**  
+       1. Mirror the client’s emotional state (calm, stressed, grieving, excited, etc.)  
+       2. Modulate with the event’s “color”:  
+          • solemn / steady → memorials or remembrance gatherings  
+          • warm / celebratory → weddings, birthdays, success events  
+          • neutral / professional → corporate or logistical requests  
+       3. If moods conflict, lead with the client’s tone, then balance with event appropriateness.
+   - Keep responses **concise and grounded** (≈ 120–180 words unless showing menus).  
+     Avoid melodrama, repeated condolences, or inappropriate/excessive enthusiasm.
+   - **Structure every message:**  
+       1. One-sentence acknowledgement → shows empathy.  
+       2. Clear, factual next steps → advance the booking flow or answer the question.  
+       3. Close politely with “Best regards, Shami (from Ares Illi’s team)”.
+"
 
 AVAILABLE ROOMS:
 {json.dumps(ROOM_INFO, indent=2)}
@@ -306,7 +324,8 @@ def generate_response(conversation_state: ConversationState, user_message: str) 
     )
     
     user_msg_lower = user_message.lower().strip()
-    
+    is_first_msg = (len(conversation_state.conversation_history) == 0)  # ← add this
+
     # Check if user is asking a question (even after all info collected)
     is_question = any(word in user_msg_lower for word in ['?', 'what', 'how', 'why', 'when', 'where', 'can you', 'could you', 'please tell', 'more details', 'explain'])
     
@@ -339,7 +358,7 @@ def generate_response(conversation_state: ConversationState, user_message: str) 
     is_complete = conversation_state.event_info.is_complete()
     
     # If user is asking questions or making requests, ALWAYS respond even if complete
-    if (is_question or is_request) and not is_accepting:
+    if (is_question or is_request) and not is_accepting and not is_first_msg:
         # Handle specific questions
         asking_about_catering = any(word in user_msg_lower for word in 
             ['catering', 'food', 'lunch', 'menu', 'non-veg', 'vegetarian', 'eat', 'drink', 'beverage'])
@@ -356,19 +375,22 @@ def generate_response(conversation_state: ConversationState, user_message: str) 
             conversation_state.conversation_history.append({"role": "user", "content": user_message})
             conversation_state.conversation_history.append({"role": "assistant", "content": offer})
             return offer
-        
+
         elif asking_about_catering:
             catering_response = generate_catering_response(user_msg_lower)
+            catering_response = _ensure_greeting(catering_response)
             conversation_state.conversation_history.append({"role": "user", "content": user_message})
             conversation_state.conversation_history.append({"role": "assistant", "content": catering_response})
             return catering_response
-        
+
+
         elif asking_about_rooms:
             room_response = generate_room_response(user_msg_lower, conversation_state.event_info)
+            room_response = _ensure_greeting(room_response)
             conversation_state.conversation_history.append({"role": "user", "content": user_message})
             conversation_state.conversation_history.append({"role": "assistant", "content": room_response})
             return room_response
-    
+
     # If user is accepting AND all info is complete, mark as ready for buttons
     if is_accepting and is_complete:
         # CRITICAL: Set is_complete to True
@@ -452,34 +474,37 @@ def generate_response(conversation_state: ConversationState, user_message: str) 
     if critical_missing:
         missing_details = f"\n\n⚠️ STILL NEED TO COLLECT:\n" + "\n".join(f"- {item}" for item in critical_missing)
     
-    context = f"""Current event information collected:
-Event Date: {conversation_state.event_info.event_date}
-Name: {conversation_state.event_info.name}
-Email: {conversation_state.event_info.email}
-Phone: {conversation_state.event_info.phone}
-Company: {conversation_state.event_info.company}
-Billing Address: {conversation_state.event_info.billing_address}
-Start Time: {conversation_state.event_info.start_time}
-End Time: {conversation_state.event_info.end_time}
-Preferred Room: {conversation_state.event_info.preferred_room}
-Number of Participants: {conversation_state.event_info.number_of_participants}
-Type of Event: {conversation_state.event_info.type_of_event}
-Catering Preference: {conversation_state.event_info.catering_preference}
-{catering_status}
-{missing_details}
-{room_context}
-{catering_context}
-
-Is information complete? {is_complete}
-
-CRITICAL INSTRUCTIONS:
-- If client asks about catering/rooms, show FULL details from the data provided above
-- If is_complete = False, DO NOT summarize - continue collecting information
-- If catering shows "needs clarification", ask client to choose specific package
-- Be detailed and helpful when showing options
-- Only mention "accept & save booking button" when client explicitly confirms/accepts
-- If all info complete but client hasn't confirmed, ask: "Would you like to proceed with this booking?"
-"""
+    context = f"""
+    Latest client message (mirror its tone before detailing logistics):
+     {user_message.strip()}
+    Current event information collected:
+    Event Date: {conversation_state.event_info.event_date}
+    Name: {conversation_state.event_info.name}
+    Email: {conversation_state.event_info.email}
+    Phone: {conversation_state.event_info.phone}
+    Company: {conversation_state.event_info.company}
+    Billing Address: {conversation_state.event_info.billing_address}
+    Start Time: {conversation_state.event_info.start_time}
+    End Time: {conversation_state.event_info.end_time}
+    Preferred Room: {conversation_state.event_info.preferred_room}
+    Number of Participants: {conversation_state.event_info.number_of_participants}
+    Type of Event: {conversation_state.event_info.type_of_event}
+    Catering Preference: {conversation_state.event_info.catering_preference}
+    {catering_status}
+    {missing_details}
+    {room_context}
+    {catering_context}
+    
+    Is information complete? {is_complete}
+    
+    CRITICAL INSTRUCTIONS:
+    - If client asks about catering/rooms, show FULL details from the data provided above
+    - If is_complete = False, DO NOT summarize - continue collecting information
+    - If catering shows "needs clarification", ask client to choose specific package
+    - Be detailed and helpful when showing options
+    - Only mention "accept & save booking button" when client explicitly confirms/accepts
+    - If all info complete but client hasn't confirmed, ask: "Would you like to proceed with this booking?"
+    """
     
     # Add user message to history
     conversation_state.conversation_history.append({
@@ -492,16 +517,23 @@ CRITICAL INSTRUCTIONS:
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "system", "content": context},
     ] + conversation_state.conversation_history
-    
+    # updated parameters ( tocheck)
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages,
-        temperature=0.75,
-        max_tokens=500
+        temperature=0.45,
+        max_tokens=500,
+        top_p=0.9,
+        frequency_penalty=0.2,
+        presence_penalty=0.1
     )
-    
+
     assistant_message = response.choices[0].message.content
-    
+    # Add a short, contextual first-turn acknowledgement if missing
+
+    # Always ensure an email-style greeting
+    assistant_message = _ensure_greeting(assistant_message)
+
     # Add to history
     conversation_state.conversation_history.append({
         "role": "assistant",
@@ -512,6 +544,13 @@ CRITICAL INSTRUCTIONS:
     # (is_complete flag is only for showing buttons)
     
     return assistant_message
+
+def _ensure_greeting(text: str) -> str:
+    t = text.lstrip()
+    lower = t.lower()
+    if lower.startswith(("dear ", "hello", "hi ", "good morning", "good afternoon", "good evening")):
+        return text  # already has a greeting
+    return f"Hello,\n\n{t}"
 
 
 def generate_catering_response(user_msg_lower: str) -> str:
