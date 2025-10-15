@@ -127,6 +127,7 @@ class ConversationState(BaseModel):
     session_id: str
     event_info: EventInformation
     conversation_history: list[dict]  # [{"role": "user/assistant", "content": "..."}]
+    event_id: Optional[str] = None
     workflow_type: Optional[str] = None  # 'new_event', 'update', 'follow_up', 'other'
     is_complete: bool = False
     created_at: datetime = datetime.now()

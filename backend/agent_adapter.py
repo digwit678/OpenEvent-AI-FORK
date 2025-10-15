@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 class AgentAdapter:
-    """Base adapter defining the agent interface for intent routing and entity extraction."""
+    """Base adapter defining the agent interface for intent routing and relevant information extraction."""
 
     def route_intent(self, msg: Dict[str, Any]) -> Tuple[str, float]:
         """

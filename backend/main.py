@@ -13,6 +13,9 @@ from conversation_manager import (
     active_conversations, extract_information_incremental,
 )
 from pathlib import Path
+from availability_pipeline import run_availability_workflow
+from calendar_adapter import CalendarAdapter
+from client_gui_adapter import ClientGUIAdapter
 from workflow_email import (
     process_msg as wf_process_msg,
     DB_PATH as WF_DB_PATH,
@@ -75,6 +78,129 @@ class ConversationResponse(BaseModel):
 # ENDPOINTS
 
 DATE_PATTERN = re.compile(r"\b\d{2}\.\d{2}\.\d{4}\b")
+CONFIRM_PHRASES = {
+    "yes",
+    "yes.",
+    "yes!",
+    "yes please",
+    "yes please do",
+    "yes it is",
+    "yes that's fine",
+    "yes thats fine",
+    "yes confirm",
+    "yes confirmed",
+    "confirmed",
+    "confirm",
+    "sounds good",
+    "that works",
+    "perfect",
+    "perfect thanks",
+    "okay",
+    "ok",
+    "ok thanks",
+    "great",
+    "great thanks",
+}
+
+
+def _now_iso() -> str:
+    return datetime.utcnow().isoformat() + "Z"
+
+
+def _to_iso_date(date_str: Optional[str]) -> Optional[str]:
+    if not date_str:
+        return None
+    text = str(date_str).strip()
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(text, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
+
+
+def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> None:
+    if not event_id:
+        print("[WF] Skipping room availability trigger - missing event_id.")
+        return
+    try:
+        db = wf_load_db()
+    except Exception as exc:
+        print(f"[WF][ERROR] Failed to load workflow DB: {exc}")
+        return
+    events = db.get("events", [])
+    event_entry = next((evt for evt in events if evt.get("event_id") == event_id), None)
+    if not event_entry:
+        print(f"[WF][WARN] Event {event_id} not found in DB; cannot trigger availability workflow.")
+        return
+
+    event_data = event_entry.setdefault("event_data", {})
+    event_data["Status"] = "Date Confirmed"
+    iso_date = _to_iso_date(chosen_date) or _to_iso_date(event_data.get("Event Date"))
+    if iso_date:
+        event_data["Event Date"] = iso_date
+
+    logs = event_entry.setdefault("logs", [])
+    if iso_date:
+        for log in reversed(logs):
+            if log.get("action") == "room_availability_assessed":
+                details = log.get("details") or {}
+                requested_days = details.get("requested_days") or []
+                first_day = requested_days[0] if requested_days else None
+                if first_day == iso_date:
+                    wf_save_db(db)
+                    print(f"[WF] Availability already assessed for {iso_date}; skipping rerun.")
+                    return
+
+    logs.append(
+        {
+            "ts": _now_iso(),
+            "actor": "Platform",
+            "action": "room_availability_triggered_after_date_confirm",
+            "details": {"event_id": event_id},
+        }
+    )
+
+    wf_save_db(db)
+
+    try:
+        run_availability_workflow(event_id, CalendarAdapter(), ClientGUIAdapter())
+    except Exception as exc:
+        print(f"[WF][ERROR] Availability workflow failed: {exc}")
+
+
+def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: str) -> str:
+    conversation_state.event_info.event_date = chosen_date
+    conversation_state.event_info.status = "Date Confirmed"
+
+    os.environ.setdefault("AGENT_MODE", "stub")
+    synthetic_msg = {
+        "msg_id": str(uuid.uuid4()),
+        "from_name": "Client (GUI)",
+        "from_email": conversation_state.event_info.email,
+        "subject": f"Confirmed event date {chosen_date}",
+        "ts": datetime.utcnow().isoformat() + "Z",
+        "body": f"The client confirms the preferred event date is {chosen_date}.",
+    }
+    wf_res = {}
+    try:
+        wf_res = wf_process_msg(synthetic_msg)
+        print(
+            "[WF] confirm_date action="
+            f"{wf_res.get('action')} event_id={wf_res.get('event_id')} intent={wf_res.get('intent')}"
+        )
+    except Exception as exc:
+        print(f"[WF][ERROR] Failed to persist confirmed date: {exc}")
+
+    event_id = wf_res.get("event_id") or conversation_state.event_id
+    conversation_state.event_id = event_id
+
+    try:
+        _trigger_room_availability(event_id, chosen_date)
+    except Exception as exc:
+        print(f"[WF][ERROR] trigger availability failed: {exc}")
+
+    return "Date confirmed. I'm checking room availability now and will share options in a moment."
 
 @app.post("/api/start-conversation")
 async def start_conversation(request: StartConversationRequest):
@@ -268,6 +394,32 @@ async def send_message(request: SendMessageRequest):
             "pending_actions": {"type": "confirm_date", "date": chosen_date},
         }
 
+    user_message_clean = request.message.strip().lower()
+    stored_date = (conversation_state.event_info.event_date or "").strip()
+    if (
+        stored_date
+        and stored_date not in {"Not specified", "none"}
+        and user_message_clean in CONFIRM_PHRASES
+    ):
+        if not DATE_PATTERN.fullmatch(stored_date):
+            iso_candidate = _to_iso_date(stored_date)
+            if iso_candidate:
+                try:
+                    stored_date = datetime.strptime(iso_candidate, "%Y-%m-%d").strftime("%d.%m.%Y")
+                except ValueError:
+                    pass
+        conversation_state.conversation_history.append({"role": "user", "content": request.message})
+        assistant_reply = _persist_confirmed_date(conversation_state, stored_date)
+        conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+        return {
+            "session_id": request.session_id,
+            "workflow_type": conversation_state.workflow_type,
+            "response": assistant_reply,
+            "is_complete": conversation_state.is_complete,
+            "event_info": conversation_state.event_info.dict(),
+            "pending_actions": None,
+        }
+
     response_text = generate_response(conversation_state, request.message)
 
     print(f"\n=== DEBUG INFO ===")
@@ -355,27 +507,7 @@ async def confirm_date(session_id: str, request: ConfirmDateRequest):
     if not chosen_date or not DATE_PATTERN.fullmatch(chosen_date):
         raise HTTPException(status_code=400, detail="Invalid or missing date. Use DD.MM.YYYY.")
 
-    conversation_state.event_info.event_date = chosen_date
-    conversation_state.conversation_history.append(
-        {"role": "system", "content": f"Client confirmed date {chosen_date} via GUI."}
-    )
-
-    os.environ.setdefault("AGENT_MODE", "stub")
-    synthetic_msg = {
-        "msg_id": str(uuid.uuid4()),
-        "from_name": "Client (GUI)",
-        "from_email": conversation_state.event_info.email,
-        "subject": f"Confirmed event date {chosen_date}",
-        "ts": datetime.utcnow().isoformat() + "Z",
-        "body": f"The client confirms the preferred event date is {chosen_date}.",
-    }
-    try:
-        wf_res = wf_process_msg(synthetic_msg)
-        print(f"[WF] confirm_date action={wf_res.get('action')} event_id={wf_res.get('event_id')}")
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to persist confirmed date: {exc}") from exc
-
-    assistant_reply = f"Date confirmed: {chosen_date}. We'll check rooms next."
+    assistant_reply = _persist_confirmed_date(conversation_state, chosen_date)
     conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
 
     return {
