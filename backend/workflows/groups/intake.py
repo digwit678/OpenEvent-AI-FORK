@@ -146,6 +146,6 @@ def room_status_on_date(db: Dict[str, Any], date_ddmmyyyy: str, room_name: str) 
         status = (data.get("Status") or "").lower()
         if status == "confirmed":
             return "Confirmed"
-        if status == "option":
+        if status in {"option", "lead"}:
             status_found = "Option"
     return status_found or "Available"
