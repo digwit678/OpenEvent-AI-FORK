@@ -5,6 +5,8 @@ import re
 from datetime import datetime, date
 from typing import Any, Dict, List, Optional, Tuple
 
+from vocabulary import IntentLabel
+
 
 class AgentAdapter:
     """Base adapter defining the agent interface for intent routing and relevant information extraction."""
@@ -86,9 +88,9 @@ class StubAgentAdapter(AgentAdapter):
             score += 0.1
         if score >= 2.0:
             conf = min(1.0, 0.4 + 0.15 * score)
-            return "event_request", conf
+            return IntentLabel.EVENT_REQUEST.value, conf
         conf = min(1.0, 0.2 + 0.1 * score)
-        return "other", conf
+        return IntentLabel.NON_EVENT.value, conf
 
     def extract_entities(self, msg: Dict[str, Any]) -> Dict[str, Any]:
         body = msg.get("body") or ""
