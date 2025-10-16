@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from models import EventStatus
 from vocabulary import TaskStatus
 
+__workflow_role__ = "Database"
+
 
 LOCK_TIMEOUT = 5.0
 LOCK_SLEEP = 0.1
@@ -297,3 +299,17 @@ def default_event_record(user_info: Dict[str, Any], msg: Dict[str, Any], receive
         "Language": user_info.get("language") or "Not specified",
         "Additional Info": user_info.get("notes") or "Not specified",
     }
+
+
+def load_rooms(path: Optional[Path] = None) -> List[str]:
+    """[OpenEvent Database] Load room names from the canonical configuration file."""
+
+    rooms_path = path or Path(__file__).resolve().parents[2] / "rooms.json"
+    if not rooms_path.exists():
+        return ["Punkt.Null", "Room A", "Room B", "Room C"]
+    with rooms_path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    rooms = payload.get("rooms") or []
+    return [room.get("name") for room in rooms if room.get("name")]
+
+
