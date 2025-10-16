@@ -9,9 +9,11 @@ import time
 import uuid
 from datetime import datetime, date, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agent_adapter import get_agent_adapter
+from models import EventStatus
+from vocabulary import IntentLabel, TaskStatus, TaskType
 
 
 DB_PATH = Path(__file__).with_name("events_database.json")
@@ -162,7 +164,7 @@ def lock_path_for(path: Path) -> Path:
 
 
 def load_db(path: Path = DB_PATH) -> Dict[str, Any]:
-    """OpenEvent Database (dark-blue): load JSON store ensuring required keys."""
+    """Load the persistent event database while guaranteeing required keys."""
     path = Path(path)
     lock_path = lock_path_for(path)
     if not path.exists():
@@ -180,7 +182,7 @@ def load_db(path: Path = DB_PATH) -> Dict[str, Any]:
 
 
 def save_db(db: Dict[str, Any], path: Path = DB_PATH) -> None:
-    """OpenEvent Database (dark-blue): atomic JSON persistence with ASCII-safe output."""
+    """Persist the event database atomically to avoid partial writes."""
     path = Path(path)
     lock_path = lock_path_for(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -202,21 +204,29 @@ def save_db(db: Dict[str, Any], path: Path = DB_PATH) -> None:
                 os.remove(tmp_path)
 
 
-def classify_intent(subject: str, body: str) -> Tuple[str, float]:
-    """LLM (green): delegate intent classification to the agent adapter"""
+def classify_intent(subject: str, body: str) -> Tuple[IntentLabel, float]:
+    """Delegate intent classification to the agent adapter and normalize output."""
+
     payload = _prepare_agent_payload(subject, body)
     intent, confidence = adapter.route_intent(payload)
-    return intent, float(confidence)
+    return IntentLabel.normalize(intent), float(confidence)
 
 
-def enqueue_task(db: Dict[str, Any], type: str, client_id: str, event_id: Optional[str], payload: Dict[str, Any]) -> str:
-    """OpenEvent Action (light-blue): queue a manual task for human approval."""
+def enqueue_task(
+    db: Dict[str, Any],
+    task_type: TaskType,
+    client_id: str,
+    event_id: Optional[str],
+    payload: Dict[str, Any],
+) -> str:
+    """Queue a human-facing task aligned with the management plan workflow."""
+
     task_id = str(uuid.uuid4())
     task = {
         "task_id": task_id,
         "created_at": datetime.utcnow().isoformat(),
-        "type": type,
-        "status": "pending",
+        "type": task_type.value,
+        "status": TaskStatus.PENDING.value,
         "client_id": client_id,
         "event_id": event_id,
         "payload": payload,
@@ -226,13 +236,21 @@ def enqueue_task(db: Dict[str, Any], type: str, client_id: str, event_id: Option
     return task_id
 
 
-def update_task_status(db: Dict[str, Any], task_id: str, status: str, notes: Optional[str] = None) -> None:
-    """OpenEvent Action (light-blue): update task status after human input."""
-    if status not in {"approved", "rejected", "done"}:
-        raise ValueError(f"Unsupported task status '{status}'")
+def update_task_status(
+    db: Dict[str, Any], task_id: str, status: Union[str, TaskStatus], notes: Optional[str] = None
+) -> None:
+    """Update the lifecycle state of a task after human input."""
+
+    if isinstance(status, TaskStatus):
+        normalized_status = status.value
+    else:
+        try:
+            normalized_status = TaskStatus(status).value
+        except ValueError as exc:
+            raise ValueError(f"Unsupported task status '{status}'") from exc
     for task in db.get("tasks", []):
         if task.get("task_id") == task_id:
-            task["status"] = status
+            task["status"] = normalized_status
             if notes is not None:
                 task["notes"] = notes
             return
@@ -240,8 +258,9 @@ def update_task_status(db: Dict[str, Any], task_id: str, status: str, notes: Opt
 
 
 def list_pending_tasks(db: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """OpenEvent Action (light-blue): list pending tasks awaiting human action."""
-    return [task for task in db.get("tasks", []) if task.get("status") == "pending"]
+    """List tasks awaiting human action."""
+
+    return [task for task in db.get("tasks", []) if task.get("status") == TaskStatus.PENDING.value]
 
 
 def _find_task(db: Dict[str, Any], task_id: str) -> Optional[Dict[str, Any]]:
@@ -252,7 +271,7 @@ def _find_task(db: Dict[str, Any], task_id: str) -> Optional[Dict[str, Any]]:
 
 
 def extract_user_information(txt: str) -> Dict[str, Optional[Any]]:
-    """LLM (green): delegate to adapter for user information extraction"""
+    """Delegate detailed user-information extraction to the agent adapter."""
     subject = (_CURRENT_AGENT_MSG or {}).get("subject")
     payload = _prepare_agent_payload(subject, txt)
     if hasattr(adapter, "extract_user_information"):
@@ -263,7 +282,7 @@ def extract_user_information(txt: str) -> Dict[str, Optional[Any]]:
 
 
 def normalize_room(token: Any) -> Optional[str]:
-    """LLM (green) post-sanitizers: normalize preferred room naming."""
+    """Normalize preferred room naming so it matches our inventory vocabulary."""
     if token is None:
         return None
     cleaned = _clean_text(token) or ""
@@ -287,7 +306,7 @@ def normalize_room(token: Any) -> Optional[str]:
 
 
 def normalize_language(token: Optional[Any]) -> Optional[str]:
-    """LLM (green) post-sanitizers: normalize language codes."""
+    """Normalize language preferences to standardized locale codes."""
     if token is None:
         return None
     cleaned = _clean_text(token, trailing=" .;")
@@ -302,7 +321,7 @@ def normalize_language(token: Optional[Any]) -> Optional[str]:
 
 
 def sanitize_user_info(raw: Dict[str, Any]) -> Dict[str, Optional[Any]]:
-    """LLM (green) post-sanitizers: coerce adapter outputs into workflow schema."""
+    """Coerce adapter outputs into the workflow schema expected by the platform."""
     sanitized: Dict[str, Optional[Any]] = {}
     for key in USER_INFO_KEYS:
         value = raw.get(key) if raw else None
@@ -331,28 +350,23 @@ def sanitize_user_info(raw: Dict[str, Any]) -> Dict[str, Optional[Any]]:
     return sanitized
 
 
-def to_event_data(user_info: Dict[str, Optional[Any]], msg: Dict[str, Any]) -> Dict[str, Any]:
-    """Map user_info → event_data (DB shape).
+def build_event_record(user_info: Dict[str, Optional[Any]], msg: Dict[str, Any]) -> Dict[str, Any]:
+    """Translate extracted user information into the event database schema."""
 
-    EVENT STATUS DEFINITIONS (from management plan)
-    - Lead: Inquiry received, belongs to a client, not yet reserved.
-    - Option: Date provisionally held for this client (temporary reservation, not confirmed).
-    - Confirmed: Client explicitly accepted; booking locked.
-    Lifecycle: Lead → Option → Confirmed
-    """
     received_ts = msg.get("ts")
     received_date = format_ts_to_ddmmyyyy(received_ts)
     event_date = format_iso_date_to_ddmmyyyy(user_info.get("date"))
     name = msg.get("from_name") or "Not specified"
-    """EVENT STATUS DEFINITIONS (from management plan)
-    - Lead: Inquiry received, belongs to a client, not yet reserved.
-    - Option: Date provisionally held for this client (temporary reservation, not confirmed).
-    - Confirmed: Client explicitly accepted; booking locked.
-    Lifecycle: Lead → Option → Confirmed
-    """
-    event_data = {
+
+    participant_count: Optional[str]
+    if user_info.get("participants") is None:
+        participant_count = "Not specified"
+    else:
+        participant_count = str(user_info["participants"])
+
+    event_record = {
         "Date Email Received": received_date,
-        "Status": "Lead",
+        "Status": EventStatus.LEAD.value,
         "Event Date": event_date or "Not specified",
         "Name": name,
         "Email": msg.get("from_email"),
@@ -362,7 +376,7 @@ def to_event_data(user_info: Dict[str, Optional[Any]], msg: Dict[str, Any]) -> D
         "Start Time": user_info.get("start_time") or "Not specified",
         "End Time": user_info.get("end_time") or "Not specified",
         "Preferred Room": user_info.get("room") or "Not specified",
-        "Number of Participants": str(user_info["participants"]) if user_info.get("participants") is not None else "Not specified",
+        "Number of Participants": participant_count,
         "Type of Event": user_info.get("type") or "Not specified",
         "Catering Preference": user_info.get("catering") or "Not specified",
         "Billing Amount": "none",
@@ -370,7 +384,7 @@ def to_event_data(user_info: Dict[str, Optional[Any]], msg: Dict[str, Any]) -> D
         "Language": user_info.get("language") or "Not specified",
         "Additional Info": user_info.get("notes") or "Not specified",
     }
-    return event_data
+    return event_record
 
 
 def format_ts_to_ddmmyyyy(ts_str: Optional[str]) -> str:
@@ -578,7 +592,7 @@ def suggest_dates(
 
 
 def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
-    """Orchestrator up to Create/Update. When a light-blue action is needed, we enqueue a task and return action='*_enqueued' with a task_id and pause for human approval."""
+    """Process an inbound email following the management plan workflow."""
     global _CURRENT_AGENT_MSG
     _CURRENT_AGENT_MSG = {
         "msg_id": msg.get("msg_id"),
@@ -595,24 +609,24 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         _CURRENT_AGENT_MSG = None
     db = load_db(db_path)
     client = upsert_client(db, msg.get("from_email", ""), msg.get("from_name"))
-    append_history(client, msg, intent, conf, user_info)
+    append_history(client, msg, intent.value, conf, user_info)
     client_id = msg.get("from_email", "").lower()
 
-    if intent != "event_request":
+    if intent != IntentLabel.EVENT_REQUEST:
         task_payload = {
             "subject": msg.get("subject"),
             "snippet": (msg.get("body") or "")[:200],
             "ts": msg.get("ts"),
             "reason": "not_event",
         }
-        task_id = enqueue_task(db, "manual_review", client_id, None, task_payload)
+        task_id = enqueue_task(db, TaskType.MANUAL_REVIEW, client_id, None, task_payload)
         save_db(db, db_path)
         context = _context_snapshot(db, client, client_id)
         return {
             "action": "manual_review_enqueued",
             "client_id": client_id,
             "event_id": None,
-            "intent": intent,
+            "intent": intent.value,
             "confidence": round(conf, 3),
             "updated_fields": [],
             "persisted": True,
@@ -635,14 +649,14 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
             "preferred_room": preferred_room,
             "user_info": user_info,
         }
-        task_id = enqueue_task(db, "ask_for_date", client_id, linked_event_id, task_payload)
+        task_id = enqueue_task(db, TaskType.REQUEST_MISSING_EVENT_DATE, client_id, linked_event_id, task_payload)
         save_db(db, db_path)
         context = _context_snapshot(db, client, client_id)
         return {
             "action": "ask_for_date_enqueued",
             "client_id": client_id,
             "event_id": linked_event_id,
-            "intent": intent,
+            "intent": intent.value,
             "confidence": round(conf, 3),
             "updated_fields": [],
             "persisted": True,
@@ -652,7 +666,7 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
             "context": context,
         }
 
-    event_data = to_event_data(user_info, msg)
+    event_data = build_event_record(user_info, msg)
     idx = find_event_idx(db, msg.get("from_email", ""), event_data["Event Date"])
     if idx is None:
         event_id = create_event_entry(db, event_data)
@@ -678,7 +692,7 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         "action": action,
         "client_id": client_id,
         "event_id": event_id,
-        "intent": intent,
+        "intent": intent.value,
         "confidence": round(conf, 3),
         "updated_fields": updated_fields,
         "persisted": True,
@@ -801,21 +815,21 @@ def task_cli_loop(db_path: Path = DB_PATH) -> None:
             notes = notes_input or None
             try:
                 if choice == "2":
-                    if task.get("type") == "ask_for_date":
+                    if task.get("type") == TaskType.REQUEST_MISSING_EVENT_DATE.value:
                         payload = task.get("payload") or {}
                         suggestions = payload.get("suggested_dates") or []
                         print("Suggested dates:", ", ".join(suggestions) if suggestions else "<none>")
                         print("Template: Please let us know which proposed date works best for your team.")
-                    elif task.get("type") == "manual_review":
+                    elif task.get("type") == TaskType.MANUAL_REVIEW.value:
                         payload = task.get("payload") or {}
                         print("Manual review task for subject:", payload.get("subject"))
-                    update_task_status(db, task_id, "approved", notes)
+                    update_task_status(db, task_id, TaskStatus.APPROVED, notes)
                     print("Task approved.")
                 elif choice == "3":
-                    update_task_status(db, task_id, "rejected", notes)
+                    update_task_status(db, task_id, TaskStatus.REJECTED, notes)
                     print("Task rejected.")
                 else:
-                    update_task_status(db, task_id, "done", notes)
+                    update_task_status(db, task_id, TaskStatus.DONE, notes)
                     print("Task marked done.")
                 save_db(db, db_path)
             except ValueError as exc:
