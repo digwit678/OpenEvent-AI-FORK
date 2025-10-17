@@ -245,8 +245,10 @@ def collect_conflicts(
         except (TypeError, ValueError):
             return fallback
 
+    # Respect per-room buffer settings; default to 30 if missing/invalid
     buffer_before = timedelta(minutes=_buffer_minutes(room.get("buffer_before_min"), 30))
     buffer_after = timedelta(minutes=_buffer_minutes(room.get("buffer_after_min"), 30))
+
     start = window.start
     end = window.end
     expanded_start = to_utc(start - buffer_before)
@@ -264,7 +266,9 @@ def collect_conflicts(
         busy_end = to_utc(parse_iso_datetime(slot["end"]))
         if overlaps(expanded_start, expanded_end, busy_start, busy_end):
             conflicts.append({"start": busy_start.isoformat(), "end": busy_end.isoformat()})
+
     return (len(conflicts) > 0, conflicts)
+
 
 
 def near_miss_suggestions(
