@@ -1,18 +1,8 @@
-from __future__ import annotations
+"""Shim module re-exporting GUI adapters from backend.adapters."""
 
-import json
-from typing import Any, Dict
+# DEPRECATED: Legacy wrapper kept for compatibility. Do not add workflow logic here.
+# Intake/Date/Availability live in backend/workflows/groups/* and are orchestrated by workflow_email.py.
 
+from backend.adapters.client_gui_adapter import ClientGUIAdapter
 
-class ClientGUIAdapter:
-    """OpenEvent Action (light-blue): sync availability cards into the client-facing GUI."""
-
-    def upsert_card(
-        self,
-        event_id: str,
-        card_type: str,
-        payload: Dict[str, Any],
-        idempotency_key: str,
-    ) -> None:
-        print(f"[GUI] upsert_card event={event_id} card={card_type} id={idempotency_key}")
-        print(json.dumps(payload, indent=2, ensure_ascii=False))
+__all__ = ["ClientGUIAdapter"]

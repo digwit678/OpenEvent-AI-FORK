@@ -9,8 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from models import EventStatus
-from vocabulary import TaskStatus
+from backend.domain import EventStatus, TaskStatus
 
 __workflow_role__ = "Database"
 
