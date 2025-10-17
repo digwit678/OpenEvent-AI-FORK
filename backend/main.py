@@ -3,13 +3,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uuid
 import json
+import os
+import re
 from datetime import datetime
-from models import EventInformation, ConversationState
-from conversation_manager import (
+from typing import Optional
+from backend.domain import ConversationState, EventInformation
+from backend.conversation_manager import (
     classify_email, generate_response, create_summary,
-    active_conversations
+    active_conversations, extract_information_incremental,
 )
 from pathlib import Path
+from backend.adapters.calendar_adapter import CalendarAdapter
+from backend.adapters.client_gui_adapter import ClientGUIAdapter
+from backend.workflows.groups.room_availability import run_availability_workflow
+from backend.workflow_email import (
+    process_msg as wf_process_msg,
+    DB_PATH as WF_DB_PATH,
+    load_db as wf_load_db,
+    save_db as wf_save_db,
+    list_pending_tasks as wf_list_pending_tasks,
+    update_task_status as wf_update_task_status,
+)
 
 app = FastAPI(title="AI Event Manager")
 
@@ -46,6 +60,14 @@ class SendMessageRequest(BaseModel):
     session_id: str
     message: str
 
+
+class TaskDecisionRequest(BaseModel):
+    notes: Optional[str] = None
+
+
+class ConfirmDateRequest(BaseModel):
+    date: Optional[str] = None
+
 class ConversationResponse(BaseModel):
     session_id: str
     workflow_type: str
@@ -55,12 +77,213 @@ class ConversationResponse(BaseModel):
 
 # ENDPOINTS
 
+DATE_PATTERN = re.compile(r"\b\d{2}\.\d{2}\.\d{4}\b")
+CONFIRM_PHRASES = {
+    "yes",
+    "yes.",
+    "yes!",
+    "yes please",
+    "yes please do",
+    "yes it is",
+    "yes that's fine",
+    "yes thats fine",
+    "yes confirm",
+    "yes confirmed",
+    "confirmed",
+    "confirm",
+    "sounds good",
+    "that works",
+    "perfect",
+    "perfect thanks",
+    "okay",
+    "ok",
+    "ok thanks",
+    "great",
+    "great thanks",
+}
+
+
+def _now_iso() -> str:
+    return datetime.utcnow().isoformat() + "Z"
+
+
+def _to_iso_date(date_str: Optional[str]) -> Optional[str]:
+    if not date_str:
+        return None
+    text = str(date_str).strip()
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(text, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
+
+
+def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> None:
+    if not event_id:
+        print("[WF] Skipping room availability trigger - missing event_id.")
+        return
+    try:
+        db = wf_load_db()
+    except Exception as exc:
+        print(f"[WF][ERROR] Failed to load workflow DB: {exc}")
+        return
+    events = db.get("events", [])
+    event_entry = next((evt for evt in events if evt.get("event_id") == event_id), None)
+    if not event_entry:
+        print(f"[WF][WARN] Event {event_id} not found in DB; cannot trigger availability workflow.")
+        return
+
+    event_data = event_entry.setdefault("event_data", {})
+    event_data["Status"] = "Date Confirmed"
+    iso_date = _to_iso_date(chosen_date) or _to_iso_date(event_data.get("Event Date"))
+    if iso_date:
+        event_data["Event Date"] = iso_date
+
+    logs = event_entry.setdefault("logs", [])
+    if iso_date:
+        for log in reversed(logs):
+            if log.get("action") == "room_availability_assessed":
+                details = log.get("details") or {}
+                requested_days = details.get("requested_days") or []
+                first_day = requested_days[0] if requested_days else None
+                if first_day == iso_date:
+                    wf_save_db(db)
+                    print(f"[WF] Availability already assessed for {iso_date}; skipping rerun.")
+                    return
+
+    logs.append(
+        {
+            "ts": _now_iso(),
+            "actor": "Platform",
+            "action": "room_availability_triggered_after_date_confirm",
+            "details": {"event_id": event_id},
+        }
+    )
+
+    wf_save_db(db)
+
+    try:
+        run_availability_workflow(event_id, CalendarAdapter(), ClientGUIAdapter())
+    except Exception as exc:
+        print(f"[WF][ERROR] Availability workflow failed: {exc}")
+
+
+def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: str) -> str:
+    conversation_state.event_info.event_date = chosen_date
+    conversation_state.event_info.status = "Date Confirmed"
+
+    os.environ.setdefault("AGENT_MODE", "stub")
+    synthetic_msg = {
+        "msg_id": str(uuid.uuid4()),
+        "from_name": "Client (GUI)",
+        "from_email": conversation_state.event_info.email,
+        "subject": f"Confirmed event date {chosen_date}",
+        "ts": datetime.utcnow().isoformat() + "Z",
+        "body": f"The client confirms the preferred event date is {chosen_date}.",
+    }
+    wf_res = {}
+    try:
+        wf_res = wf_process_msg(synthetic_msg)
+        print(
+            "[WF] confirm_date action="
+            f"{wf_res.get('action')} event_id={wf_res.get('event_id')} intent={wf_res.get('intent')}"
+        )
+    except Exception as exc:
+        print(f"[WF][ERROR] Failed to persist confirmed date: {exc}")
+
+    event_id = wf_res.get("event_id") or conversation_state.event_id
+    conversation_state.event_id = event_id
+
+    try:
+        _trigger_room_availability(event_id, chosen_date)
+    except Exception as exc:
+        print(f"[WF][ERROR] trigger availability failed: {exc}")
+
+    return "Date confirmed. I'm checking room availability now and will share options in a moment."
+
 @app.post("/api/start-conversation")
 async def start_conversation(request: StartConversationRequest):
-    """
-    Start a new conversation - classify email and generate first response
-    """
-    
+    """Condition (purple): kick off workflow and branch on manual or ask-for-date pauses before legacy flow."""
+    os.environ.setdefault("AGENT_MODE", "stub")
+    subject_line = (request.email_body.splitlines()[0][:80] if request.email_body else "No subject")
+    msg = {
+        "msg_id": str(uuid.uuid4()),
+        "from_name": "Not specified",
+        "from_email": request.client_email,
+        "subject": subject_line,
+        "ts": datetime.utcnow().isoformat() + "Z",
+        "body": request.email_body or "",
+    }
+    wf_res = None
+    wf_action = None
+    try:
+        wf_res = wf_process_msg(msg)
+        wf_action = wf_res.get("action")
+        print(f"[WF] start action={wf_action} client={request.client_email} event_id={wf_res.get('event_id')} task_id={wf_res.get('task_id')}")
+    except Exception as e:
+        print(f"[WF][ERROR] {e}")
+    if wf_action == "manual_review_enqueued":
+        response_text = (
+            "Thanks for your message. We routed it for manual review and will get back to you shortly."
+        )
+        return {
+            "session_id": None,
+            "workflow_type": "other",
+            "response": response_text,
+            "is_complete": False,
+            "event_info": None,
+        }
+    if wf_action == "ask_for_date_enqueued":
+        session_id = str(uuid.uuid4())
+        event_info = EventInformation(
+            date_email_received=datetime.now().strftime("%d.%m.%Y"),
+            email=request.client_email,
+        )
+        user_info = (wf_res or {}).get("user_info") or {}
+        if user_info.get("phone"):
+            event_info.phone = str(user_info["phone"])
+        if user_info.get("company"):
+            event_info.company = str(user_info["company"])
+        if user_info.get("language"):
+            event_info.language = str(user_info["language"])
+        if user_info.get("participants"):
+            event_info.number_of_participants = str(user_info["participants"])
+        if user_info.get("room"):
+            event_info.preferred_room = str(user_info["room"])
+        if user_info.get("type"):
+            event_info.type_of_event = str(user_info["type"])
+        if user_info.get("catering"):
+            event_info.catering_preference = str(user_info["catering"])
+        if user_info.get("start_time"):
+            event_info.start_time = str(user_info["start_time"])
+        if user_info.get("end_time"):
+            event_info.end_time = str(user_info["end_time"])
+        suggested_dates = (wf_res or {}).get("suggested_dates") or []
+        dates_text = ", ".join(suggested_dates) if suggested_dates else "No specific dates yet."
+        assistant_reply = (
+            f"Hello,\n\nDo you already have a date in mind? Here are a few available dates: {dates_text}"
+        )
+        conversation_state = ConversationState(
+            session_id=session_id,
+            event_info=event_info,
+            conversation_history=[
+                {"role": "user", "content": request.email_body or ""},
+                {"role": "assistant", "content": assistant_reply},
+            ],
+            workflow_type="new_event",
+        )
+        active_conversations[session_id] = conversation_state
+        print(f"[WF] start pause ask_for_date session={session_id} task={wf_res.get('task_id')}")
+        return {
+            "session_id": session_id,
+            "workflow_type": "new_event",
+            "response": assistant_reply,
+            "is_complete": conversation_state.is_complete,
+            "event_info": conversation_state.event_info.model_dump(),
+            "pending_actions": None,
+        }
+
     # Classify the email
     workflow_type = classify_email(request.email_body)
     
@@ -133,33 +356,167 @@ async def start_conversation(request: StartConversationRequest):
 
 @app.post("/api/send-message")
 async def send_message(request: SendMessageRequest):
-    """
-    Continue conversation - send user message and get AI response
-    """
-    
-    # Get conversation state
+    """Condition (purple): continue chat or trigger confirm-date prompt when a valid date appears."""
     if request.session_id not in active_conversations:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    
+
     conversation_state = active_conversations[request.session_id]
-    
-    # Generate response (handles all logic internally)
+
+    previous_date = conversation_state.event_info.event_date
+    try:
+        conversation_state.event_info = extract_information_incremental(
+            request.message,
+            conversation_state.event_info,
+        )
+    except Exception as exc:
+        print(f"[WF][WARN] incremental extraction failed: {exc}")
+
+    current_date = conversation_state.event_info.event_date or ""
+    has_new_date = (
+        current_date
+        and DATE_PATTERN.fullmatch(current_date.strip())
+        and current_date.strip() != (previous_date or "").strip()
+    )
+
+    if has_new_date:
+        chosen_date = current_date.strip()
+        conversation_state.conversation_history.append({"role": "user", "content": request.message})
+        assistant_reply = (
+            f"Thanks - I've noted {chosen_date}. Please confirm this is your preferred date."
+        )
+        conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+        return {
+            "session_id": request.session_id,
+            "workflow_type": conversation_state.workflow_type,
+            "response": assistant_reply,
+            "is_complete": conversation_state.is_complete,
+            "event_info": conversation_state.event_info.dict(),
+            "pending_actions": {"type": "confirm_date", "date": chosen_date},
+        }
+
+    user_message_clean = request.message.strip().lower()
+    stored_date = (conversation_state.event_info.event_date or "").strip()
+    if (
+        stored_date
+        and stored_date not in {"Not specified", "none"}
+        and user_message_clean in CONFIRM_PHRASES
+    ):
+        if not DATE_PATTERN.fullmatch(stored_date):
+            iso_candidate = _to_iso_date(stored_date)
+            if iso_candidate:
+                try:
+                    stored_date = datetime.strptime(iso_candidate, "%Y-%m-%d").strftime("%d.%m.%Y")
+                except ValueError:
+                    pass
+        conversation_state.conversation_history.append({"role": "user", "content": request.message})
+        assistant_reply = _persist_confirmed_date(conversation_state, stored_date)
+        conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+        return {
+            "session_id": request.session_id,
+            "workflow_type": conversation_state.workflow_type,
+            "response": assistant_reply,
+            "is_complete": conversation_state.is_complete,
+            "event_info": conversation_state.event_info.dict(),
+            "pending_actions": None,
+        }
+
     response_text = generate_response(conversation_state, request.message)
-    
-    # DEBUG LOGGING
+
     print(f"\n=== DEBUG INFO ===")
     print(f"User message: {request.message}")
     print(f"Is complete: {conversation_state.is_complete}")
     print(f"Event info complete: {conversation_state.event_info.is_complete()}")
     print(f"==================\n")
-    
-    # Return response
+
     return {
         "session_id": request.session_id,
         "workflow_type": conversation_state.workflow_type,
         "response": response_text,
-        "is_complete": conversation_state.is_complete,  # This MUST be True when client accepts
-        "event_info": conversation_state.event_info.dict()
+        "is_complete": conversation_state.is_complete,
+        "event_info": conversation_state.event_info.dict(),
+        "pending_actions": None,
+    }
+
+
+@app.get("/api/tasks/pending")
+async def get_pending_tasks():
+    """OpenEvent Action (light-blue): expose pending manual tasks for GUI approvals."""
+    try:
+        db = wf_load_db()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to load tasks: {exc}") from exc
+    tasks = wf_list_pending_tasks(db)
+    payload = []
+    for task in tasks:
+        payload_data = task.get("payload") or {}
+        payload.append(
+            {
+                "task_id": task.get("task_id"),
+                "type": task.get("type"),
+                "client_id": task.get("client_id"),
+                "event_id": task.get("event_id"),
+                "created_at": task.get("created_at"),
+                "notes": task.get("notes"),
+                "payload": {
+                    "snippet": payload_data.get("snippet"),
+                    "suggested_dates": payload_data.get("suggested_dates"),
+                },
+            }
+        )
+    return {"tasks": payload}
+
+
+@app.post("/api/tasks/{task_id}/approve")
+async def approve_task(task_id: str, request: TaskDecisionRequest):
+    """OpenEvent Action (light-blue): mark a task as approved from the GUI."""
+    try:
+        db = wf_load_db()
+        wf_update_task_status(db, task_id, "approved", request.notes)
+        wf_save_db(db)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to approve task: {exc}") from exc
+    print(f"[WF] task approved id={task_id}")
+    return {"task_id": task_id, "status": "approved"}
+
+
+@app.post("/api/tasks/{task_id}/reject")
+async def reject_task(task_id: str, request: TaskDecisionRequest):
+    """OpenEvent Action (light-blue): mark a task as rejected from the GUI."""
+    try:
+        db = wf_load_db()
+        wf_update_task_status(db, task_id, "rejected", request.notes)
+        wf_save_db(db)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to reject task: {exc}") from exc
+    print(f"[WF] task rejected id={task_id}")
+    return {"task_id": task_id, "status": "rejected"}
+
+
+@app.post("/api/conversation/{session_id}/confirm-date")
+async def confirm_date(session_id: str, request: ConfirmDateRequest):
+    """Condition (purple): persist the confirmed date and pause before availability checks."""
+    if session_id not in active_conversations:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    conversation_state = active_conversations[session_id]
+    chosen_date = (request.date or conversation_state.event_info.event_date or "").strip()
+    if not chosen_date or not DATE_PATTERN.fullmatch(chosen_date):
+        raise HTTPException(status_code=400, detail="Invalid or missing date. Use DD.MM.YYYY.")
+
+    assistant_reply = _persist_confirmed_date(conversation_state, chosen_date)
+    conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+
+    return {
+        "session_id": session_id,
+        "workflow_type": conversation_state.workflow_type,
+        "response": assistant_reply,
+        "is_complete": conversation_state.is_complete,
+        "event_info": conversation_state.event_info.dict(),
+        "pending_actions": None,
     }
 
 @app.post("/api/accept-booking/{session_id}")
@@ -198,6 +555,12 @@ async def accept_booking(session_id: str):
         "total_events": len(database["events"]),
         "event_info": conversation_state.event_info.to_dict()
     }
+
+
+@app.get("/api/workflow/health")
+async def workflow_health():
+    """Minimal health check for workflow integration."""
+    return {"db_path": str(WF_DB_PATH), "ok": True}
 
 @app.post("/api/reject-booking/{session_id}")
 async def reject_booking(session_id: str):

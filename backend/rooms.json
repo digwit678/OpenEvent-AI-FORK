@@ -1,0 +1,46 @@
+{
+  "rooms": [
+    {
+      "name": "Room A",
+      "capacity_min": 10,
+      "capacity_max": 20,
+      "features": [
+        "Natural daylight",
+        "Whiteboard",
+        "Flip chart"
+      ],
+      "calendar_id": "atelier-room-a",
+      "buffer_before_min": 30,
+      "buffer_after_min": 30,
+      "max_parallel_events": 1
+    },
+    {
+      "name": "Room B",
+      "capacity_min": 15,
+      "capacity_max": 30,
+      "features": [
+        "Floor-to-ceiling windows",
+        "Multiple whiteboards",
+        "Video conferencing"
+      ],
+      "calendar_id": "atelier-room-b",
+      "buffer_before_min": 30,
+      "buffer_after_min": 30,
+      "max_parallel_events": 1
+    },
+    {
+      "name": "Room C",
+      "capacity_min": 25,
+      "capacity_max": 50,
+      "features": [
+        "Spacious open floor plan",
+        "Breakout area",
+        "Premium sound system"
+      ],
+      "calendar_id": "atelier-room-c",
+      "buffer_before_min": 45,
+      "buffer_after_min": 45,
+      "max_parallel_events": 1
+    }
+  ]
+}
