@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 from vocabulary import IntentLabel
 
-from workflows.common.timeutils import parse_ddmmyyyy
+from backend.workflows.common.timeutils import parse_ddmmyyyy
 
 
 def is_event_request(intent: IntentLabel) -> bool:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Tuple
 
-from workflows.llm.adapter import (
+from backend.workflows.llm.adapter import (
     classify_intent as _classify_intent,
     extract_user_information as _extract_user_information,
     sanitize_user_info as _sanitize_user_info,

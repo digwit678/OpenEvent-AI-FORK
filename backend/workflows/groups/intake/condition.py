@@ -4,9 +4,9 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List
 
-from workflows.conditions.checks import has_event_date as _has_event_date
-from workflows.conditions.checks import is_event_request as _is_event_request
-from workflows.groups.room_availability.condition import (
+from backend.workflows.conditions.checks import has_event_date as _has_event_date
+from backend.workflows.conditions.checks import is_event_request as _is_event_request
+from backend.workflows.groups.room_availability.condition import (
     room_status_on_date as _room_status_on_date,
 )
 

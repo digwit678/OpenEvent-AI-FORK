@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 from vocabulary import TaskType
 
-from workflows.io.tasks import enqueue_task as _enqueue_task
+from backend.workflows.io.tasks import enqueue_task as _enqueue_task
 
 __workflow_role__ = "Action"
 
