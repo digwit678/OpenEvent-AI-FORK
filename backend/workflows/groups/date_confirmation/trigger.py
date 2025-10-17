@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from workflows.common.timeutils import format_ts_to_ddmmyyyy
 from workflows.common.types import GroupResult, WorkflowState
-from workflows.conditions.checks import is_valid_ddmmyyyy
 from workflows.io.database import (
     create_event_entry,
     default_event_record,
@@ -11,6 +10,11 @@ from workflows.io.database import (
     tag_message,
     update_event_entry,
 )
+
+from .condition import is_valid_ddmmyyyy
+from .llm import compose_date_confirmation_reply
+
+__workflow_role__ = "Trigger"
 
 
 def process(state: WorkflowState) -> GroupResult:
@@ -71,17 +75,3 @@ def process(state: WorkflowState) -> GroupResult:
         "event_action": event_action,
     }
     return GroupResult(action="date_confirmed", payload=payload)
-
-
-def compose_date_confirmation_reply(event_date: str, preferred_room: str | None) -> str:
-    """[LLM] Draft a short acknowledgement for the confirmed date."""
-
-    if preferred_room and preferred_room != "Not specified":
-        return (
-            f"Thank you for confirming {event_date}. "
-            f"We have noted {preferred_room} and will share availability updates shortly."
-        )
-    return (
-        f"Thank you for confirming {event_date}. "
-        "We will check room availability and follow up with the options."
-    )
