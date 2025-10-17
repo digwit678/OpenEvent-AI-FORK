@@ -7,16 +7,16 @@ import os
 import re
 from datetime import datetime
 from typing import Optional
-from models import EventInformation, ConversationState
-from conversation_manager import (
+from backend.domain import ConversationState, EventInformation
+from backend.conversation_manager import (
     classify_email, generate_response, create_summary,
     active_conversations, extract_information_incremental,
 )
 from pathlib import Path
-from availability_pipeline import run_availability_workflow
-from calendar_adapter import CalendarAdapter
-from client_gui_adapter import ClientGUIAdapter
-from workflow_email import (
+from backend.adapters.calendar_adapter import CalendarAdapter
+from backend.adapters.client_gui_adapter import ClientGUIAdapter
+from backend.workflows.groups.room_availability import run_availability_workflow
+from backend.workflow_email import (
     process_msg as wf_process_msg,
     DB_PATH as WF_DB_PATH,
     load_db as wf_load_db,

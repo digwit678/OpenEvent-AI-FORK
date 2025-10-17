@@ -5,11 +5,11 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
-from agent_adapter import get_agent_adapter
-from vocabulary import TaskStatus
+from backend.adapters.agent_adapter import get_agent_adapter
+from backend.domain import TaskStatus
 
 from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.groups import date_confirmation, intake, room_availability
+from backend.workflows.groups import intake, date_confirmation, room_availability
 from backend.workflows.io import database as db_io
 from backend.workflows.io import tasks as task_io
 from backend.workflows.llm import adapter as llm_adapter
@@ -84,13 +84,13 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     if group_b.halt and group_b.action != "date_confirmed":
         return group_b.merged()
 
-    group_c = room_availability.process(state)
+    group_c = room_availability.process_phase1(state)
     group_c.payload["date_confirmation"] = group_b.merged()
     _persist_if_needed(state, path, lock_path)
     return group_c.merged()
 
 
-def run_samples() -> None:
+def run_samples() -> list[Any]:
     """[Trigger] Execute a deterministic sample flow for manual testing."""
 
     os.environ["AGENT_MODE"] = "stub"
@@ -135,20 +135,6 @@ def run_samples() -> None:
             "msg_id": "sample-3",
             "from_name": "Sarah Thompson",
             "from_email": "sarah.thompson@techcorp.com",
-            "subject": "Update Request: March 15 2025 details",
-            "ts": "2025-10-15T09:15:00Z",
-            "body": (
-                "Hi,\n"
-                "Regarding our event on Mar 15 2025, we now expect ~20 ppl.\n"
-                "Please move us to Room B and arrange catering: Premium package.\n"
-                "Schedule from 14:00 to 16:30.\n"
-                "Thank you!\n"
-            ),
-        },
-        {
-            "msg_id": "sample-4",
-            "from_name": "Sarah Thompson",
-            "from_email": "sarah.thompson@techcorp.com",
             "subject": "Parking question",
             "ts": "2025-10-16T08:05:00Z",
             "body": (
@@ -160,15 +146,15 @@ def run_samples() -> None:
         },
     ]
 
-    # Ensure acceptance order: 1) no date -> ask_for_date, 2) date -> room_avail,
-    # 3) non-event -> manual_review, 4) leftover update.
-    samples[2], samples[3] = samples[3], samples[2]
+    outputs: list[Any] = []
     for msg in samples:
         res = process_msg(msg)
         print(res)
+        outputs.append(res)
 
     if sys.stdin.isatty():
         task_cli_loop()
+    return outputs
 
 
 def task_cli_loop(db_path: Path = DB_PATH) -> None:
