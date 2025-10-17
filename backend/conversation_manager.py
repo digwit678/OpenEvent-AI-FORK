@@ -1,3 +1,8 @@
+"""Legacy conversation helpers for the deprecated UI flow."""
+
+# DEPRECATED: Legacy wrapper kept for compatibility. Do not add workflow logic here.
+# Intake/Date/Availability live in backend/workflows/groups/* and are orchestrated by workflow_email.py.
+
 import json
 import os
 from datetime import datetime
@@ -7,7 +12,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from models import EventInformation, ConversationState
+from backend.domain import ConversationState, EventInformation
 
 load_dotenv()
 
