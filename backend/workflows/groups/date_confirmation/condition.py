@@ -6,7 +6,5 @@ from workflows.conditions.checks import is_valid_ddmmyyyy as _is_valid_ddmmyyyy
 
 __workflow_role__ = "Condition"
 
-
 is_valid_ddmmyyyy = _is_valid_ddmmyyyy
 is_valid_ddmmyyyy.__doc__ = """[Condition] Validate that a string follows the DD.MM.YYYY format."""
-
