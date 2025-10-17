@@ -54,3 +54,4 @@ def suggest_dates(
 
 
 room_status_on_date = _room_status_on_date
+room_status_on_date.__doc__ = """[Condition] Check existing events on a given date for the same room."""
