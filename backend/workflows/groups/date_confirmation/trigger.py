@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from workflows.common.timeutils import format_ts_to_ddmmyyyy
 from workflows.common.types import GroupResult, WorkflowState
-from workflows.conditions.checks import is_valid_ddmmyyyy
 from workflows.io.database import (
     create_event_entry,
     default_event_record,
@@ -12,6 +11,7 @@ from workflows.io.database import (
     update_event_entry,
 )
 
+from .condition import is_valid_ddmmyyyy
 from .llm import compose_date_confirmation_reply
 
 __workflow_role__ = "Trigger"
