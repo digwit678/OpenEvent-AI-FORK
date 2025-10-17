@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Tuple
 
-from agent_adapter import get_agent_adapter
-from vocabulary import IntentLabel
+from backend.adapters.agent_adapter import get_agent_adapter
+from backend.domain import IntentLabel
 
 from backend.workflows.common.room_rules import (
     USER_INFO_KEYS,

@@ -1,12 +1,26 @@
 from __future__ import annotations
 
+from __future__ import annotations
+
 from typing import Any, Dict, Optional
 
-from vocabulary import TaskType
-
+from backend.domain import TaskStatus, TaskType
 from backend.workflows.io.tasks import enqueue_task as _enqueue_task
+from backend.workflows.io.tasks import update_task_status as _update_task_status
 
 __workflow_role__ = "Action"
+
+
+def enqueue_task(
+    db: Dict[str, Any],
+    task_type: TaskType,
+    client_id: str,
+    linked_event_id: Optional[str],
+    payload: Dict[str, Any],
+) -> str:
+    """[OpenEvent Action] Generic helper to queue workflow tasks."""
+
+    return _enqueue_task(db, task_type, client_id, linked_event_id, payload)
 
 
 def enqueue_manual_review_task(
@@ -35,3 +49,11 @@ def enqueue_missing_event_date_task(
         linked_event_id,
         payload,
     )
+
+
+def update_task_status(
+    db: Dict[str, Any], task_id: str, status: str | TaskStatus, notes: Optional[str] = None
+) -> None:
+    """[OpenEvent Action] Update workflow tasks with human decisions."""
+
+    _update_task_status(db, task_id, status, notes)
