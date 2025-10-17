@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from workflows.common.types import GroupResult, WorkflowState
-from workflows.io.database import (
+from backend.workflows.common.types import GroupResult, WorkflowState
+from backend.workflows.io.database import (
     append_history,
     context_snapshot,
     last_event_for_email,

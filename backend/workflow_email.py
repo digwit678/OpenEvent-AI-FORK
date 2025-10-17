@@ -8,11 +8,11 @@ from typing import Any, Dict
 from agent_adapter import get_agent_adapter
 from vocabulary import TaskStatus
 
-from workflows.common.types import IncomingMessage, WorkflowState
-from workflows.groups import date_confirmation, intake, room_availability
-from workflows.io import database as db_io
-from workflows.io import tasks as task_io
-from workflows.llm import adapter as llm_adapter
+from backend.workflows.common.types import IncomingMessage, WorkflowState
+from backend.workflows.groups import date_confirmation, intake, room_availability
+from backend.workflows.io import database as db_io
+from backend.workflows.io import tasks as task_io
+from backend.workflows.llm import adapter as llm_adapter
 
 
 DB_PATH = Path(__file__).with_name("events_database.json")

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from workflows.common.types import GroupResult, WorkflowState
-from workflows.io.database import load_rooms
+from backend.workflows.common.types import GroupResult, WorkflowState
+from backend.workflows.io.database import load_rooms
 
 from .condition import room_status_on_date
 from .llm import summarize_room_statuses

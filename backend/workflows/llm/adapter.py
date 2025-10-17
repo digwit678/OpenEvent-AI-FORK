@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Tuple
 from agent_adapter import get_agent_adapter
 from vocabulary import IntentLabel
 
-from workflows.common.room_rules import (
+from backend.workflows.common.room_rules import (
     USER_INFO_KEYS,
     clean_text,
     normalize_language,
@@ -13,7 +13,7 @@ from workflows.common.room_rules import (
     normalize_room,
     sanitize_participants,
 )
-from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 
 adapter = get_agent_adapter()
 

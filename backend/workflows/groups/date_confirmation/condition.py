@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from workflows.conditions.checks import is_valid_ddmmyyyy as _is_valid_ddmmyyyy
+from backend.workflows.conditions.checks import is_valid_ddmmyyyy as _is_valid_ddmmyyyy
 
 __workflow_role__ = "Condition"
 
