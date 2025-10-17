@@ -1,3 +1,4 @@
+# backend/workflows/groups/intake/condition.py
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
@@ -5,6 +6,9 @@ from typing import Any, Dict, List
 
 from workflows.conditions.checks import has_event_date as _has_event_date
 from workflows.conditions.checks import is_event_request as _is_event_request
+from workflows.groups.room_availability.condition import (
+    room_status_on_date as _room_status_on_date,
+)
 
 __workflow_role__ = "Condition"
 
@@ -15,10 +19,8 @@ def is_event_request(intent: Any) -> bool:
     return _is_event_request(intent)
 
 
-def has_event_date(user_info: Dict[str, Any]) -> bool:
-    """[Condition] Detect if user-provided information includes a valid event date."""
-
-    return _has_event_date(user_info)
+has_event_date = _has_event_date
+has_event_date.__doc__ = """[Condition] Detect if user-provided information includes a valid event date."""
 
 
 def suggest_dates(
@@ -52,23 +54,5 @@ def suggest_dates(
     return suggestions
 
 
-def room_status_on_date(db: Dict[str, Any], date_ddmmyyyy: str, room_name: str) -> str:
-    """[Condition] Check existing events on a given date for the same room."""
-
-    if not room_name or room_name == "Not specified":
-        return "Available"
-    room_lc = room_name.lower()
-    status_found = None
-    for event in db.get("events", []):
-        data = event.get("event_data", {})
-        if data.get("Event Date") != date_ddmmyyyy:
-            continue
-        stored_room = data.get("Preferred Room")
-        if not stored_room or stored_room.lower() != room_lc:
-            continue
-        status = (data.get("Status") or "").lower()
-        if status == "confirmed":
-            return "Confirmed"
-        if status in {"option", "lead"}:
-            status_found = "Option"
-    return status_found or "Available"
+room_status_on_date = _room_status_on_date
+room_status_on_date.__doc__ = """[Condition] Check existing events on a given date for the same room."""
