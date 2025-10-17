@@ -160,6 +160,9 @@ def run_samples() -> None:
         },
     ]
 
+    # Ensure acceptance order: 1) no date -> ask_for_date, 2) date -> room_avail,
+    # 3) non-event -> manual_review, 4) leftover update.
+    samples[2], samples[3] = samples[3], samples[2]
     for msg in samples:
         res = process_msg(msg)
         print(res)
