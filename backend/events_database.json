@@ -1,76 +1,165 @@
 {
   "events": [
     {
-      "event_id": "5c320c22-e207-4d55-a7eb-0d536b31667a",
-      "created_at": "2025-10-10T14:11:54.572977",
+      "event_id": "5e2fddc9-9096-4035-8767-e46ef577819c",
+      "created_at": "2025-10-16T16:22:30.375489",
       "event_data": {
-        "Date Email Received": "10.10.2025",
-        "Status": "Lead",
-        "Event Date": "15.10.2025",
-        "Name": "Sarah Thompson",
-        "Email": "client@example.com",
-        "Phone": "Not specified",
-        "Company": "Not specified",
-        "Billing Address": "Not specified",
-        "Start Time": "14:00",
-        "End Time": "16:00",
-        "Preferred Room": "Room B",
-        "Number of Participants": "15",
-        "Type of Event": "workshop",
-        "Catering Preference": "Not specified",
-        "Billing Amount": "none",
-        "Deposit": "none",
-        "Language": "Not specified",
-        "Additional Info": "Not specified"
-      }
-    },
-    {
-      "event_id": "ebb5cca5-1591-43d7-9f5e-54ddc88836c8",
-      "created_at": "2025-10-10T14:31:16.858125",
-      "event_data": {
-        "Date Email Received": "10.10.2025",
+        "Date Email Received": "14.10.2025",
         "Status": "Lead",
         "Event Date": "15.03.2025",
         "Name": "Sarah Thompson",
         "Email": "sarah.thompson@techcorp.com",
-        "Phone": "042754980",
-        "Company": "Not specified",
+        "Phone": "Not specified",
+        "Company": "TechCorp",
         "Billing Address": "Not specified",
         "Start Time": "14:00",
         "End Time": "16:00",
         "Preferred Room": "Room A",
         "Number of Participants": "15",
         "Type of Event": "workshop",
-        "Catering Preference": "Not specified",
+        "Catering Preference": "Standard Buffet",
         "Billing Amount": "none",
         "Deposit": "none",
         "Language": "en",
         "Additional Info": "Not specified"
-      }
+      },
+      "msgs": [
+        "sample-2"
+      ]
+    }
+  ],
+  "clients": {
+    "sarah.thompson@techcorp.com": {
+      "profile": {
+        "name": "Sarah Thompson",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "sample-1",
+          "ts": "2025-10-13T09:00:00Z",
+          "subject": "Event inquiry for our workshop",
+          "body_preview": "Hello,\nWe would like to reserve Room A for approx 15 ppl next month for a workshop.\nCould you share available dates? Language: en.\nPhone: 042754980\nThanks,\nSara",
+          "intent": "event_request",
+          "confidence": 0.925,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 15,
+            "room": "Room A",
+            "type": "workshop",
+            "catering": null,
+            "phone": "042754980",
+            "company": null,
+            "language": "en",
+            "notes": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "sample-2",
+          "ts": "2025-10-14T10:31:00Z",
+          "subject": "Event Request: 15.03.2025 Room A",
+          "body_preview": "Hello,\nWe confirm the workshop should be on 15.03.2025 in Room A.\nWe expect 15 participants and would like catering preference: Standard Buffet.\nStart at 14:00 ",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2025-03-15",
+            "start_time": "14:00",
+            "end_time": "16:00",
+            "city": null,
+            "participants": 15,
+            "room": "Room A",
+            "type": "workshop",
+            "catering": "Standard Buffet",
+            "phone": null,
+            "company": "TechCorp",
+            "language": "en",
+            "notes": null,
+            "event_date": "15.03.2025"
+          }
+        },
+        {
+          "msg_id": "sample-3",
+          "ts": "2025-10-16T08:05:00Z",
+          "subject": "Parking question",
+          "body_preview": "Hello,\nIs there parking available nearby? Just checking for next week.\nThanks,\nSarah\n",
+          "intent": "other",
+          "confidence": 0.2,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "event_date": null
+          }
+        }
+      ],
+      "event_ids": [
+        "5e2fddc9-9096-4035-8767-e46ef577819c"
+      ]
+    }
+  },
+  "tasks": [
+    {
+      "task_id": "addf6b36-c39d-47c7-bfad-8c069fee9388",
+      "created_at": "2025-10-16T16:22:30.370985",
+      "type": "ask_for_date",
+      "status": "pending",
+      "client_id": "sarah.thompson@techcorp.com",
+      "event_id": null,
+      "payload": {
+        "suggested_dates": [
+          "16.10.2025",
+          "17.10.2025",
+          "18.10.2025",
+          "19.10.2025",
+          "20.10.2025"
+        ],
+        "preferred_room": "Room A",
+        "user_info": {
+          "date": null,
+          "start_time": null,
+          "end_time": null,
+          "city": null,
+          "participants": 15,
+          "room": "Room A",
+          "type": "workshop",
+          "catering": null,
+          "phone": "042754980",
+          "company": null,
+          "language": "en",
+          "notes": null,
+          "event_date": null
+        }
+      },
+      "notes": ""
     },
     {
-      "event_id": "9482af65-d85f-4c43-9a26-8cb3e3ec4ec7",
-      "created_at": "2025-10-10T20:40:37.743399",
-      "event_data": {
-        "Date Email Received": "10.10.2025",
-        "Status": "Lead",
-        "Event Date": "15.03.2025",
-        "Name": "Sarah Thompson",
-        "Email": "sarah.thompson@techcorp.com",
-        "Phone": "042587324",
-        "Company": "TechCorp",
-        "Billing Address": "432 Nick Jones, 12 street Switzerland",
-        "Start Time": "Not specified",
-        "End Time": "Not specified",
-        "Preferred Room": "Room B",
-        "Number of Participants": "15",
-        "Type of Event": "workshop",
-        "Catering Preference": "Premium package",
-        "Billing Amount": "none",
-        "Deposit": "none",
-        "Language": "en",
-        "Additional Info": "Not specified"
-      }
+      "task_id": "7463f197-fd6a-4185-b09d-1fac2dc6f7a9",
+      "created_at": "2025-10-16T16:22:30.376219",
+      "type": "manual_review",
+      "status": "pending",
+      "client_id": "sarah.thompson@techcorp.com",
+      "event_id": "5e2fddc9-9096-4035-8767-e46ef577819c",
+      "payload": {
+        "subject": "Parking question",
+        "snippet": "Hello,\nIs there parking available nearby? Just checking for next week.\nThanks,\nSarah\n",
+        "ts": "2025-10-16T08:05:00Z",
+        "reason": "not_event"
+      },
+      "notes": ""
     }
   ]
 }

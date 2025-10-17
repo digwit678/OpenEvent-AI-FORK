@@ -1,22 +1,43 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Send, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import axios from 'axios';
 
 const API_BASE = 'http://localhost:8000/api';
 
+interface MessageMeta {
+  confirmDate?: string;
+}
+
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  meta?: MessageMeta;
 }
 
 interface EventInfo {
   [key: string]: string;
 }
 
+interface PendingTaskPayload {
+  snippet?: string | null;
+  suggested_dates?: string[] | null;
+}
+
+interface PendingTask {
+  task_id: string;
+  type: string;
+  client_id?: string | null;
+  event_id?: string | null;
+  created_at?: string | null;
+  notes?: string | null;
+  payload?: PendingTaskPayload | null;
+}
+
 export default function EmailThreadUI() {
+  const isMountedRef = useRef(true);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -24,9 +45,42 @@ export default function EmailThreadUI() {
   const [isComplete, setIsComplete] = useState(false);
   const [eventInfo, setEventInfo] = useState<EventInfo | null>(null);
   const [workflowType, setWorkflowType] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<PendingTask[]>([]);
+  const [taskActionId, setTaskActionId] = useState<string | null>(null);
   
   // Initial state - waiting for first email
   const [hasStarted, setHasStarted] = useState(false);
+
+  const refreshTasks = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API_BASE}/tasks/pending`);
+      if (!isMountedRef.current) {
+        return;
+      }
+      if (Array.isArray(data.tasks)) {
+        setTasks(data.tasks);
+      } else {
+        setTasks([]);
+      }
+    } catch (error) {
+      if (isMountedRef.current) {
+        console.error('Error fetching tasks:', error);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    refreshTasks().catch(() => undefined);
+    const interval = setInterval(() => {
+      refreshTasks().catch(() => undefined);
+    }, 5000);
+
+    return () => {
+      isMountedRef.current = false;
+      clearInterval(interval);
+    };
+  }, [refreshTasks]);
 
   const startConversation = async () => {
     if (!inputText.trim()) return;
@@ -46,14 +100,23 @@ export default function EmailThreadUI() {
         client_email: extractEmail(inputText) // ✅ Extract from text
       });
       
-      const { session_id, workflow_type, response: aiResponse, is_complete, event_info } = response.data;
+      const { session_id, workflow_type, response: aiResponse, is_complete, event_info, pending_actions } = response.data;
+
+      const userMessage: Message = { role: 'user', content: inputText, timestamp: new Date() };
+      let assistantMeta: MessageMeta | undefined;
+      if (pending_actions?.type === 'confirm_date' && typeof pending_actions.date === 'string') {
+        assistantMeta = { confirmDate: pending_actions.date };
+      }
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: aiResponse,
+        timestamp: new Date(),
+        meta: assistantMeta,
+      };
       
       // If not a new event, show message and stop
       if (!session_id) {
-        setMessages([
-          { role: 'user', content: inputText, timestamp: new Date() },
-          { role: 'assistant', content: aiResponse, timestamp: new Date() }
-        ]);
+        setMessages([userMessage, assistantMessage]);
         setInputText('');
         setIsLoading(false);
         return;
@@ -63,14 +126,12 @@ export default function EmailThreadUI() {
       setWorkflowType(workflow_type);
       setHasStarted(true);
       
-      setMessages([
-        { role: 'user', content: inputText, timestamp: new Date() },
-        { role: 'assistant', content: aiResponse, timestamp: new Date() }
-      ]);
+      setMessages([userMessage, assistantMessage]);
       
       setIsComplete(is_complete);
       setEventInfo(event_info);
       setInputText('');
+      refreshTasks();
       
     } catch (error) {
       console.error('Error starting conversation:', error);
@@ -101,13 +162,18 @@ export default function EmailThreadUI() {
         message: currentInput
       });
       
-      const { response: aiResponse, is_complete, event_info } = response.data;
+      const { response: aiResponse, is_complete, event_info, pending_actions } = response.data;
       
       // Add AI response
+      let assistantMeta: MessageMeta | undefined;
+      if (pending_actions?.type === 'confirm_date' && typeof pending_actions.date === 'string') {
+        assistantMeta = { confirmDate: pending_actions.date };
+      }
       const aiMessage: Message = {
         role: 'assistant',
         content: aiResponse,
-        timestamp: new Date()
+        timestamp: new Date(),
+        meta: assistantMeta
       };
       setMessages(prev => [...prev, aiMessage]);
       
@@ -123,6 +189,93 @@ export default function EmailThreadUI() {
     }
     
     setIsLoading(false);
+  };
+
+  const handleTaskAction = async (task: PendingTask, decision: 'approve' | 'reject') => {
+    if (!task.task_id) return;
+    setTaskActionId(task.task_id);
+    try {
+      await axios.post(`${API_BASE}/tasks/${task.task_id}/${decision}`, {});
+      const assistantContent =
+        decision === 'approve'
+          ? "I've proposed these dates to the client. Please pick one."
+          : "I won't send the date suggestion yet.";
+      if (sessionId) {
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: assistantContent,
+            timestamp: new Date(),
+          },
+        ]);
+      }
+      await refreshTasks();
+    } catch (error) {
+      console.error(`Error updating task (${decision}):`, error);
+      alert('Error updating task. Please try again.');
+    } finally {
+      setTaskActionId(null);
+    }
+  };
+
+  const handleConfirmDate = async (date: string, messageIndex: number) => {
+    if (!sessionId || !date) return;
+    setIsLoading(true);
+    try {
+      const response = await axios.post(`${API_BASE}/conversation/${sessionId}/confirm-date`, {
+        date,
+      });
+      const { response: aiResponse, is_complete, event_info, pending_actions } = response.data;
+      let assistantMeta: MessageMeta | undefined;
+      if (pending_actions?.type === 'confirm_date' && typeof pending_actions.date === 'string') {
+        assistantMeta = { confirmDate: pending_actions.date };
+      }
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: aiResponse,
+        timestamp: new Date(),
+        meta: assistantMeta,
+      };
+      setMessages(prev => {
+        const updated = prev.map((msg, idx) => {
+          if (idx !== messageIndex) return msg;
+          if (!msg.meta?.confirmDate) return msg;
+          const nextMeta = { ...msg.meta };
+          delete nextMeta.confirmDate;
+          return {
+            ...msg,
+            meta: Object.keys(nextMeta).length ? nextMeta : undefined,
+          };
+        });
+        return [...updated, assistantMessage];
+      });
+      setIsComplete(is_complete);
+      setEventInfo(event_info);
+    } catch (error) {
+      console.error('Error confirming date:', error);
+      alert('Error confirming date. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleChangeDate = (messageIndex: number) => {
+    setMessages(prev => {
+      const updated = prev.map((msg, idx) => {
+        if (idx !== messageIndex) return msg;
+        if (!msg.meta?.confirmDate) return msg;
+        return { ...msg, meta: undefined };
+      });
+      return [
+        ...updated,
+        {
+          role: 'assistant',
+          content: 'No problem - please share another date that works for you.',
+          timestamp: new Date(),
+        },
+      ];
+    });
   };
 
   const acceptBooking = async () => {
@@ -230,6 +383,24 @@ export default function EmailThreadUI() {
                     <div className="whitespace-pre-wrap text-sm leading-relaxed">
                       {msg.content}
                     </div>
+                    {msg.role === 'assistant' && msg.meta?.confirmDate && (
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => handleConfirmDate(msg.meta?.confirmDate ?? '', idx)}
+                          disabled={isLoading || !sessionId}
+                          className="px-3 py-1 text-xs font-semibold rounded bg-green-600 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
+                        >
+                          Confirm date
+                        </button>
+                        <button
+                          onClick={() => handleChangeDate(idx)}
+                          disabled={isLoading}
+                          className="px-3 py-1 text-xs font-semibold rounded border border-gray-400 text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed"
+                        >
+                          Change date
+                        </button>
+                      </div>
+                    )}
                     <div className={`text-xs mt-2 ${
                       msg.role === 'user' ? 'text-blue-100' : 'text-gray-500'
                     }`}>
@@ -373,8 +544,62 @@ export default function EmailThreadUI() {
         </div>
         
         {/* Show what buttons condition evaluates to */}
-        <div className="mt-2 p-2 bg-white rounded">
+      <div className="mt-2 p-2 bg-white rounded">
           <strong>Should show buttons?</strong> {isComplete ? '✅ YES' : '❌ NO'}
+        </div>
+      </div>
+      <div className="max-w-4xl mx-auto mt-2">
+        <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+          <h3 className="font-bold text-base mb-2">📝 Tasks</h3>
+          {tasks.length === 0 ? (
+            <p className="text-xs text-gray-500">No pending tasks.</p>
+          ) : (
+            <div className="space-y-2">
+              {tasks.map((task) => {
+                const suggestedDates = Array.isArray(task.payload?.suggested_dates)
+                  ? task.payload!.suggested_dates!.filter((date): date is string => Boolean(date))
+                  : [];
+                return (
+                  <div key={task.task_id} className="p-3 bg-gray-50 border border-gray-200 rounded-md">
+                    <div className="text-sm font-semibold text-gray-800">
+                      {task.type}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Client: {task.client_id || 'unknown'} | Created: {task.created_at ? new Date(task.created_at).toLocaleString() : 'n/a'}
+                    </div>
+                    {suggestedDates.length > 0 && (
+                      <div className="text-xs text-gray-700 mt-2">
+                        Suggested dates: {suggestedDates.join(', ')}
+                      </div>
+                    )}
+                    {task.payload?.snippet && (
+                      <div className="text-xs text-gray-600 mt-1 italic">
+                        &quot;{task.payload.snippet}&quot;
+                      </div>
+                    )}
+                    {task.type === 'ask_for_date' && (
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => handleTaskAction(task, 'approve')}
+                          disabled={taskActionId === task.task_id}
+                          className="px-3 py-1 text-xs font-semibold rounded bg-green-600 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
+                        >
+                          {taskActionId === task.task_id ? 'Saving...' : 'Approve'}
+                        </button>
+                        <button
+                          onClick={() => handleTaskAction(task, 'reject')}
+                          disabled={taskActionId === task.task_id}
+                          className="px-3 py-1 text-xs font-semibold rounded border border-gray-400 text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed"
+                        >
+                          {taskActionId === task.task_id ? 'Saving...' : 'Reject'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
