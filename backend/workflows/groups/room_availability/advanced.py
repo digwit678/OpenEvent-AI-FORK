@@ -239,8 +239,16 @@ def collect_conflicts(
 ) -> Tuple[bool, List[Dict[str, str]]]:
     """[Condition] Gather busy intervals overlapping the requested window."""
 
-    buffer_before = timedelta(minutes=30)
-    buffer_after = timedelta(minutes=30)
+    def _buffer_minutes(value: Any, fallback: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return fallback
+
+    # Respect per-room buffer settings; default to 30 if missing/invalid
+    buffer_before = timedelta(minutes=_buffer_minutes(room.get("buffer_before_min"), 30))
+    buffer_after = timedelta(minutes=_buffer_minutes(room.get("buffer_after_min"), 30))
+
     start = window.start
     end = window.end
     expanded_start = to_utc(start - buffer_before)
@@ -257,13 +265,10 @@ def collect_conflicts(
         busy_start = to_utc(parse_iso_datetime(slot["start"]))
         busy_end = to_utc(parse_iso_datetime(slot["end"]))
         if overlaps(expanded_start, expanded_end, busy_start, busy_end):
-            conflicts.append(
-                {
-                    "start": parse_iso_datetime(slot["start"]).isoformat(),
-                    "end": parse_iso_datetime(slot["end"]).isoformat(),
-                }
-            )
+            conflicts.append({"start": busy_start.isoformat(), "end": busy_end.isoformat()})
+
     return (len(conflicts) > 0, conflicts)
+
 
 
 def near_miss_suggestions(
