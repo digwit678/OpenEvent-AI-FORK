@@ -17,7 +17,7 @@ active_conversations: dict[str, ConversationState] = {}
 def load_room_info():
     """Load room information from JSON file"""
     try:
-        with open('../backend/room_info.json', 'r', encoding='utf-8') as f:
+        with open('../room_info.json', 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
         return {"rooms": []}
@@ -25,7 +25,7 @@ def load_room_info():
 def load_catering_menu():
     """Load catering menu from JSON file"""
     try:
-        with open('../backend/catering_menu.json', 'r', encoding='utf-8') as f:
+        with open('../catering_menu.json', 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
         return {"catering_packages": [], "beverages": {}}
