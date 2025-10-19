@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from backend.DEPRECATED.vocabulary import IntentLabel
+from backend.domain.vocabulary import IntentLabel
 
 from backend.workflows.common.timeutils import parse_ddmmyyyy
 
