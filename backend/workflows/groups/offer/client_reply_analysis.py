@@ -34,6 +34,8 @@ _VISIT_KEYWORDS: Tuple[str, ...] = (
     "visit",
     "tour",
     "viewing",
+    "view the",
+    "view ",
     "come by",
     "stop by",
     "walk through",
@@ -99,6 +101,7 @@ class AnalyzeClientReply(LLMNode):
         mentions_deposit, wants_to_pay_now = self._detect_deposit_intent(lowered)
         reserve_dates = self._extract_reserve_dates(message_text)
         visit_datetimes = self._extract_visit_datetimes(message_text)
+        time_snippets = self._extract_times(message_text)
 
         response_type, match_note = self._determine_response_type(lowered, reserve_dates, visit_datetimes)
         confidence = self._estimate_confidence(response_type, match_note, bool(message_text.strip()))
@@ -106,8 +109,14 @@ class AnalyzeClientReply(LLMNode):
         change_patch = {}
         if response_type == "change_request":
             change_patch = self._build_change_patch(message_text)
+        proposed_visits: List[str] = []
+        if response_type == "site_visit":
+            proposed_visits = list(visit_datetimes)
+            if not proposed_visits and time_snippets:
+                proposed_visits = time_snippets[:5]
+
         extracted_fields: Dict[str, Any] = {
-            "proposed_visit_datetimes": visit_datetimes if response_type == "site_visit" else [],
+            "proposed_visit_datetimes": proposed_visits,
             "mentions_deposit": mentions_deposit,
             "wants_to_pay_deposit_now": wants_to_pay_now,
             "requested_reserve_dates": reserve_dates if response_type == "reserve_date" else [],

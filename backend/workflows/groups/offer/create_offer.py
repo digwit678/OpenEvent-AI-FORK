@@ -29,7 +29,6 @@ class CreateProfessionalOffer(OpenEventAction):
             "deposit_percent": deposit_percent,
         }
 
-        # Pass-through of key inputs for downstream steps.
         response["user_info_final"] = payload.get("user_info_final", {})
         response["selected_room"] = payload.get("selected_room", {})
         response["pricing_inputs"] = payload.get("pricing_inputs", {})
