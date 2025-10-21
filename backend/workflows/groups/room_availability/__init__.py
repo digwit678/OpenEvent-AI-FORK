@@ -1,9 +1,9 @@
 """Public API for the room availability workflow group."""
 
-from .trigger import evaluate_room_statuses, process as process_phase1
-from .condition import room_status_on_date
-from .llm import summarize_room_statuses
-from .advanced import (
+from .trigger.process import evaluate_room_statuses, process as process_phase1
+from .condition.decide import room_status_on_date
+from .llm.analysis import summarize_room_statuses
+from .db_pers.advanced import (
     RequestedWindow,
     append_log,
     build_candidate_rooms,

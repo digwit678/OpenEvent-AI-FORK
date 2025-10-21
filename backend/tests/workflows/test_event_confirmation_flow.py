@@ -28,14 +28,14 @@ def _record(step: str) -> None:
 USE_REAL_IMPL = True
 
 try:
-    from backend.workflows.groups.offer.create_offer import CreateProfessionalOffer
-    from backend.workflows.groups.offer.send_offer_llm import (
+    from backend.workflows.groups.offer.hil.create_offer import CreateProfessionalOffer
+    from backend.workflows.groups.offer.llm.send_offer_llm import (
         ChatFollowUp,
         ComposeOffer,
         EmailOffer,
     )
-    from backend.workflows.groups.offer.client_reply_analysis import AnalyzeClientReply
-    from backend.workflows.groups.event_confirmation.update_database import UpdateEventStatus
+    from backend.workflows.groups.offer.llm.client_reply_analysis import AnalyzeClientReply
+    from backend.workflows.groups.event_confirmation.db_pers.update_event_status import UpdateEventStatus
 except Exception:
     USE_REAL_IMPL = False
 
