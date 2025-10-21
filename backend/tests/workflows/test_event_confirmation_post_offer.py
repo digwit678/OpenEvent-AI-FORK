@@ -9,7 +9,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from backend.workflows.groups.event_confirmation.client_reply_analysis import AnalyzeClientReply
+from backend.workflows.groups.offer.client_reply_analysis import AnalyzeClientReply
 from backend.workflows.groups.event_confirmation.condition import route_by_response_type
 from backend.workflows.io.database import get_default_db
 

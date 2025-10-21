@@ -28,13 +28,13 @@ def _record(step: str) -> None:
 USE_REAL_IMPL = True
 
 try:
-    from backend.workflows.groups.event_confirmation.create_offer import CreateProfessionalOffer
-    from backend.workflows.groups.event_confirmation.send_offer_llm import (
+    from backend.workflows.groups.offer.create_offer import CreateProfessionalOffer
+    from backend.workflows.groups.offer.send_offer_llm import (
         ChatFollowUp,
         ComposeOffer,
         EmailOffer,
     )
-    from backend.workflows.groups.event_confirmation.client_reply_analysis import AnalyzeClientReply
+    from backend.workflows.groups.offer.client_reply_analysis import AnalyzeClientReply
     from backend.workflows.groups.event_confirmation.update_database import UpdateEventStatus
 except Exception:
     USE_REAL_IMPL = False
@@ -196,6 +196,40 @@ def _run_node(
     return result
 
 
+_RESPONSE_TO_INTENT = {
+    "confirm_booking": "accept",
+    "reserve_date": "reserve_only",
+    "site_visit": "request_viewing",
+    "change_request": "negotiate",
+    "general_question": "questions",
+    "not_interested": "questions",
+}
+
+
+def _run_analysis(recorder: TraceRecorder, payload: Dict[str, Any]) -> Dict[str, Any]:
+    raw = _run_node(recorder, "ANALYZE", AnalyzeClientReply, payload)
+    if "post_offer_classification" not in raw:
+        return raw
+
+    classification = raw["post_offer_classification"]
+    extracted = classification.get("extracted_fields", {})
+    intent = _RESPONSE_TO_INTENT[classification.get("response_type")]
+    proposed = extracted.get("proposed_visit_datetimes") or []
+    requested_patch = extracted.get("change_request_patch") or {}
+    additional = requested_patch.get("additional_change_notes")
+    requested_changes: Dict[str, Any] = {}
+    if additional:
+        requested_changes = {"note": additional}
+
+    return {
+        "intent": intent,
+        "deposit_acknowledged": bool(extracted.get("wants_to_pay_deposit_now")),
+        "proposed_times": proposed,
+        "requested_changes": requested_changes,
+        "raw_classification": classification,
+    }
+
+
 def test_strict_ordering_gates() -> None:
     recorder = TraceRecorder()
     ui_rules = {"visit_allowed": True, "deposit_percent": 20, "working_hours": {"start": "09:00", "end": "18:00"}}
@@ -236,7 +270,7 @@ def test_strict_ordering_gates() -> None:
         "visit_allowed": approval["visit_allowed"],
         "deposit_percent": approval["deposit_percent"],
     }
-    analysis = _run_node(recorder, "ANALYZE", AnalyzeClientReply, analysis_payload)
+    analysis = _run_analysis(recorder, analysis_payload)
 
     db_payload = {
         "event_id": base["event_id"],
@@ -319,10 +353,8 @@ def test_accept_no_deposit_confirms_immediately() -> None:
             "offer_ready_to_generate": approval["offer_ready_to_generate"],
         },
     )
-    analysis = _run_node(
+    analysis = _run_analysis(
         recorder,
-        "ANALYZE",
-        AnalyzeClientReply,
         {
             "event_id": base["event_id"],
             "offer_id": offer_data["offer_id"],
@@ -366,10 +398,8 @@ def test_accept_deposit_required_not_acknowledged_stays_option() -> None:
             "offer_ready_to_generate": approval["offer_ready_to_generate"],
         },
     )
-    analysis = _run_node(
+    analysis = _run_analysis(
         recorder,
-        "ANALYZE",
-        AnalyzeClientReply,
         {
             "event_id": base["event_id"],
             "offer_id": offer_data["offer_id"],
@@ -413,10 +443,8 @@ def test_accept_deposit_acknowledged_still_not_confirmed_until_paid() -> None:
             "offer_ready_to_generate": approval["offer_ready_to_generate"],
         },
     )
-    analysis = _run_node(
+    analysis = _run_analysis(
         recorder,
-        "ANALYZE",
-        AnalyzeClientReply,
         {
             "event_id": base["event_id"],
             "offer_id": offer_data["offer_id"],
@@ -460,10 +488,8 @@ def test_accept_deposit_paid_confirms() -> None:
             "offer_ready_to_generate": approval["offer_ready_to_generate"],
         },
     )
-    analysis = _run_node(
+    analysis = _run_analysis(
         recorder,
-        "ANALYZE",
-        AnalyzeClientReply,
         {
             "event_id": base["event_id"],
             "offer_id": offer_data["offer_id"],
@@ -508,10 +534,8 @@ def test_reserve_only_sets_option() -> None:
             "offer_ready_to_generate": approval["offer_ready_to_generate"],
         },
     )
-    analysis = _run_node(
+    analysis = _run_analysis(
         recorder,
-        "ANALYZE",
-        AnalyzeClientReply,
         {
             "event_id": base["event_id"],
             "offer_id": offer_data["offer_id"],
@@ -554,10 +578,8 @@ def test_request_viewing_allowed_collects_times() -> None:
             "offer_ready_to_generate": approval["offer_ready_to_generate"],
         },
     )
-    analysis = _run_node(
+    analysis = _run_analysis(
         recorder,
-        "ANALYZE",
-        AnalyzeClientReply,
         {
             "event_id": base["event_id"],
             "offer_id": offer_data["offer_id"],
@@ -613,10 +635,8 @@ def test_request_viewing_not_allowed_blocks() -> None:
             "offer_ready_to_generate": approval["offer_ready_to_generate"],
         },
     )
-    analysis = _run_node(
+    analysis = _run_analysis(
         recorder,
-        "ANALYZE",
-        AnalyzeClientReply,
         {
             "event_id": base["event_id"],
             "offer_id": offer_data["offer_id"],
@@ -658,10 +678,8 @@ def test_negotiate_routes_to_manager_clarification() -> None:
             "offer_ready_to_generate": approval["offer_ready_to_generate"],
         },
     )
-    analysis = _run_node(
+    analysis = _run_analysis(
         recorder,
-        "ANALYZE",
-        AnalyzeClientReply,
         {
             "event_id": base["event_id"],
             "offer_id": offer_data["offer_id"],
@@ -726,10 +744,8 @@ if __name__ == "__main__":
             "deposit_percent": approval["deposit_percent"],
         },
     )
-    analysis = _run_node(
+    analysis = _run_analysis(
         tracer,
-        "ANALYZE",
-        AnalyzeClientReply,
         {
             "event_id": base_payload["event_id"],
             "offer_id": offer_data["offer_id"],
