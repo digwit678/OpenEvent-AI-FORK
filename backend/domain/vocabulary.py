@@ -28,6 +28,7 @@ class TaskType(str, Enum):
 
     MANUAL_REVIEW = "manual_review"
     REQUEST_MISSING_EVENT_DATE = "ask_for_date"
+    ROUTE_POST_OFFER = "route_post_offer"
 
 
 class TaskStatus(str, Enum):
