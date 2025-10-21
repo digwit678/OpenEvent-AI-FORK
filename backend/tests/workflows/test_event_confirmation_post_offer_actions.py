@@ -11,14 +11,14 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from backend.domain import EventStatus, TaskStatus, TaskType  # noqa: E402
-from backend.workflows.groups.event_confirmation.action import (  # noqa: E402
+from backend.workflows.groups.event_confirmation.db_pers.post_offer import (  # noqa: E402
     HandlePostOfferRoute,
     HandleSiteVisitRoute,
     attach_post_offer_classification,
     enqueue_post_offer_routing_task,
     enqueue_site_visit_followup,
 )
-from backend.workflows.groups.offer.client_reply_analysis import AnalyzeClientReply  # noqa: E402
+from backend.workflows.groups.offer.llm.client_reply_analysis import AnalyzeClientReply  # noqa: E402
 from backend.workflows.io.database import get_default_db  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
