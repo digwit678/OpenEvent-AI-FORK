@@ -274,6 +274,53 @@ def test_s7_reserve_deposit(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any
     assert event["event_data"]["Status"] == EventStatus.CONFIRMED.value
 
 
+def test_s7_uses_latest_billing_address(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]) -> None:
+    db_path = tmp_path / "s7-profile.json"
+    mapping = _stub_agent
+
+    _bootstrap_to_offer(db_path, mapping)
+
+    initial = _run(
+        db_path,
+        mapping,
+        "addr-initial",
+        "Here are our billing details for the booking.",
+        info={"billing_address": "lalastreet 9, 6727 Wil", "event_date": "10.07.2025"},
+    )
+    assert initial["action"] == "negotiation_clarification"
+    event_after_initial = _event(db_path)
+    assert event_after_initial["event_data"]["Billing Address"].startswith("lalastreet 9")
+
+    correction = _run(
+        db_path,
+        mapping,
+        "addr-update",
+        "Please update the billing address on our booking.",
+        info={"billing_address": "lalastreet 10, 6727 Wil", "event_date": "10.07.2025"},
+    )
+    assert correction["action"] == "negotiation_clarification"
+    event_after_correction = _event(db_path)
+    assert event_after_correction["event_data"]["Billing Address"].startswith("lalastreet 10")
+
+    accept = _run(
+        db_path,
+        mapping,
+        "addr-accept",
+        "We accept the updated offer.",
+    )
+
+    final = _hil_confirm(db_path, mapping)
+
+    event = _event(db_path)
+    assert event["event_data"]["Billing Address"].startswith("lalastreet 10")
+    assert any(
+        entry.get("reason") == "info_update" and "Billing Address" in entry.get("fields", [])
+        for entry in event.get("audit", [])
+    )
+
+
+
+
 def test_s7_site_visit(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]) -> None:
     db_path = tmp_path / "s7-visit.json"
     mapping = _stub_agent

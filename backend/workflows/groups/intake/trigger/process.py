@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from backend.workflows.common.requirements import build_requirements, requirements_hash
+from backend.workflows.common.requirements import build_requirements, merge_client_profile, requirements_hash
 from backend.workflows.common.timeutils import format_ts_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import (
@@ -92,6 +92,8 @@ def process(state: WorkflowState) -> GroupResult:
         return GroupResult(action="manual_review_enqueued", payload=payload, halt=True)
 
     event_entry = _ensure_event_record(state, message_payload, user_info)
+    if merge_client_profile(event_entry, user_info):
+        state.extras["persist"] = True
     state.event_entry = event_entry
     state.event_id = event_entry["event_id"]
     state.current_step = event_entry.get("current_step")

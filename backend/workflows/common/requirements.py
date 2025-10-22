@@ -4,6 +4,8 @@ import json
 import hashlib
 from typing import Any, Dict
 
+from backend.workflows.io.database import append_audit_entry
+
 
 REQUIREMENT_KEYS = [
     "number_of_participants",
@@ -48,3 +50,65 @@ def requirements_hash(requirements: Dict[str, Any]) -> str:
     """[Condition] Hash requirements using canonical order."""
 
     return stable_hash({key: requirements.get(key) for key in REQUIREMENT_KEYS})
+
+
+def merge_client_profile(event_entry: Dict[str, Any], incoming: Dict[str, Any]) -> bool:
+    """
+    Merge non-structural client profile fields into event_data.
+
+    Returns True when any field changes so callers can persist the event entry.
+    """
+
+    if not event_entry or not incoming:
+        return False
+
+    normalised_incoming: Dict[str, Any] = {}
+    for key, value in incoming.items():
+        if value is None:
+            continue
+        key_str = str(key).strip().lower()
+        if not key_str:
+            continue
+        normalised_incoming[key_str] = value
+
+    if not normalised_incoming:
+        return False
+
+    profile_keys = {
+        "Name": ["name"],
+        "Email": ["email"],
+        "Phone": ["phone", "telephone"],
+        "Company": ["company"],
+        "Billing Address": ["billing_address", "billing address", "address"],
+        "Language": ["language", "lang"],
+    }
+
+    event_data = event_entry.setdefault("event_data", {})
+    changed_fields: list[str] = []
+
+    for canonical, aliases in profile_keys.items():
+        search_keys = [canonical] + aliases
+        found = None
+        for alias in search_keys:
+            alias_key = str(alias).strip().lower()
+            if not alias_key:
+                continue
+            if alias_key in normalised_incoming:
+                candidate = normalised_incoming[alias_key]
+                if candidate not in ("", None):
+                    found = candidate
+                    break
+        if found is not None and event_data.get(canonical) != found:
+            event_data[canonical] = found
+            changed_fields.append(canonical)
+
+    if not changed_fields:
+        return False
+
+    current_step = event_entry.get("current_step")
+    if not isinstance(current_step, int):
+        current_step = 0
+    append_audit_entry(event_entry, current_step, current_step, "info_update")
+    if event_entry.get("audit"):
+        event_entry["audit"][-1]["fields"] = changed_fields
+    return True

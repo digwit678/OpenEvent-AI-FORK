@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.domain import EventStatus
+from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 
@@ -33,6 +34,9 @@ def process(state: WorkflowState) -> GroupResult:
             "context": state.context_snapshot,
         }
         return GroupResult(action="confirmation_missing_event", payload=payload, halt=True)
+
+    if merge_client_profile(event_entry, state.user_info or {}):
+        state.extras["persist"] = True
 
     state.current_step = 7
     conf_state = event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})

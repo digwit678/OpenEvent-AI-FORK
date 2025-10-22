@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from backend.domain import TaskType
+from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.workflows.io.tasks import enqueue_task
@@ -37,6 +38,9 @@ def process(state: WorkflowState) -> GroupResult:
     negotiation_state = event_entry.setdefault(
         "negotiation_state", {"counter_count": 0, "manual_review_task_id": None}
     )
+
+    if merge_client_profile(event_entry, state.user_info or {}):
+        state.extras["persist"] = True
 
     message_text = (state.message.body or "").strip()
     classification = _classify_message(message_text)

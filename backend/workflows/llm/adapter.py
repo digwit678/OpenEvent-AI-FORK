@@ -60,9 +60,11 @@ def sanitize_user_info(raw: Dict[str, Any]) -> Dict[str, Optional[Any]]:
             sanitized[key] = normalize_room(value)
         elif key == "phone":
             sanitized[key] = normalize_phone(value)
-        elif key in {"catering", "company", "notes"}:
+        elif key in {"catering", "company", "notes", "billing_address"}:
             sanitized[key] = clean_text(value, trailing=" .;")
         elif key == "type":
+            sanitized[key] = clean_text(value)
+        elif key in {"name", "email"}:
             sanitized[key] = clean_text(value)
         elif key == "city":
             city_text = clean_text(value)
