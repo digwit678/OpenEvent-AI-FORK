@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
+from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 
@@ -29,6 +30,9 @@ def process(state: WorkflowState) -> GroupResult:
 
     previous_step = event_entry.get("current_step") or 3
     state.current_step = 4
+
+    if merge_client_profile(event_entry, state.user_info or {}):
+        state.extras["persist"] = True
 
     _ensure_products_container(event_entry)
     _apply_product_operations(event_entry, state.user_info)
