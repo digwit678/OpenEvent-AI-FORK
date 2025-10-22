@@ -33,6 +33,10 @@ USER_INFO_KEYS = [
     "company",
     "language",
     "notes",
+    "hil_approve_step",
+    "hil_decision",
+    "products_add",
+    "products_remove",
 ]
 
 

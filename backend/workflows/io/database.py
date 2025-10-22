@@ -299,6 +299,22 @@ def ensure_event_defaults(event: Dict[str, Any]) -> None:
     event.setdefault("room_eval_hash", None)
     event.setdefault("offer_id", None)
     event.setdefault("audit", [])
+    event.setdefault("offers", [])
+    event.setdefault("current_offer_id", None)
+    event.setdefault("offer_sequence", 0)
+    event.setdefault("products", [])
+    event.setdefault("negotiation_state", {"counter_count": 0, "manual_review_task_id": None})
+    event.setdefault("transition_ready", False)
+    event.setdefault("calendar_blocks", [])
+    event.setdefault(
+        "deposit_state",
+        {"required": False, "percent": 0, "status": "not_required", "due_amount": 0.0},
+    )
+    event.setdefault(
+        "site_visit_state",
+        {"status": "idle", "proposed_slots": [], "scheduled_slot": None},
+    )
+    event.setdefault("confirmation_state", {"last_response_type": None})
 
 
 def append_audit_entry(
