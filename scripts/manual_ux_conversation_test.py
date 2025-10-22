@@ -29,6 +29,7 @@ def main() -> None:
         return mapping.get(payload.get("msg_id"), {})
 
     def fake_route(payload: Dict[str, Any]) -> Any:
+        # Prefer deterministic intent overrides for this scripted run.
         msg_id = payload.get("msg_id")
         if msg_id in intent_overrides:
             return intent_overrides[msg_id], 0.99
@@ -87,6 +88,7 @@ def main() -> None:
         else:
             llm_adapter.adapter.extract_entities = original_extract  # type: ignore[assignment]
         if DB_PATH.exists():
+            # Clean up the temporary DB so subsequent runs start fresh.
             DB_PATH.unlink()
 
 
@@ -115,6 +117,7 @@ def _script(mapping: Dict[str, Dict[str, Any]], intent_overrides: Dict[str, str]
         }
     )
     intent_overrides["TURN0"] = "other"
+    intent_overrides.update({f"TURN{i}": "event_request" for i in range(1, 13)})
     return [
         {"msg_id": "TURN0", "body": "Is anyone there?"},
         {"msg_id": "TURN1", "body": "Hello, we're planning an offsite for 22 people. Any dates in June?"},

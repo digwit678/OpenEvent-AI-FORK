@@ -4,3 +4,9 @@
 .DS_Store
 .tmp*
 tmp*.json
+manual_ux_conversation.json
+artifacts/*.json
+
+# manual UX artifacts
+manual_ux_conversation.json
+artifacts/*.json
