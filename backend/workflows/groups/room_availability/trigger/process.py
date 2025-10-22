@@ -32,6 +32,12 @@ def process(state: WorkflowState) -> GroupResult:
         return GroupResult(action="room_eval_missing_event", payload=payload, halt=True)
 
     state.current_step = 3
+
+    hil_step = state.user_info.get("hil_approve_step")
+    if hil_step == 3:
+        decision = state.user_info.get("hil_decision") or "approve"
+        return _apply_hil_decision(state, event_entry, decision)
+
     chosen_date = event_entry.get("chosen_date")
     if not chosen_date:
         return _detour_to_date(state, event_entry)
@@ -79,23 +85,22 @@ def process(state: WorkflowState) -> GroupResult:
     }
     state.add_draft_message(draft_message)
 
-    locked_room_update = selected_room if outcome in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION} else None
-    caller = event_entry.get("caller_step")
-    next_step = caller if caller else 3
+    event_entry["room_pending_decision"] = {
+        "selected_room": selected_room,
+        "selected_status": outcome,
+        "requirements_hash": current_req_hash,
+        "summary": summary,
+    }
+
     update_event_metadata(
         event_entry,
-        locked_room_id=locked_room_update,
-        room_eval_hash=current_req_hash,
         thread_state="Awaiting Client Response",
-        caller_step=None,
-        current_step=next_step,
+        current_step=3,
     )
-    if caller and caller != 3:
-        append_audit_entry(event_entry, 3, caller, "room_eval_completed")
 
     state.set_thread_state("Awaiting Client Response")
-    state.caller_step = None
-    state.current_step = next_step
+    state.caller_step = event_entry.get("caller_step")
+    state.current_step = 3
     state.extras["persist"] = True
 
     payload = {
@@ -217,6 +222,78 @@ def _select_room(preferred_room: Optional[str], status_map: Dict[str, str]) -> T
             return room, status
 
     return None, None
+
+
+def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decision: str) -> GroupResult:
+    """Handle HIL approval or rejection for the latest room evaluation."""
+
+    pending = event_entry.get("room_pending_decision")
+    if not pending:
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "reason": "no_pending_room_decision",
+            "context": state.context_snapshot,
+        }
+        return GroupResult(action="room_hil_missing", payload=payload, halt=True)
+
+    if decision != "approve":
+        # Reset pending decision and keep awaiting further actions.
+        event_entry.pop("room_pending_decision", None)
+        draft = {
+            "body": "Approval rejected — please provide updated guidance on the room.",
+            "step": 3,
+            "topic": "room_hil_reject",
+            "requires_approval": True,
+        }
+        state.add_draft_message(draft)
+        update_event_metadata(event_entry, current_step=3, thread_state="Awaiting Client Response")
+        state.set_thread_state("Awaiting Client Response")
+        state.extras["persist"] = True
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "draft_messages": state.draft_messages,
+            "thread_state": state.thread_state,
+            "context": state.context_snapshot,
+            "persisted": True,
+        }
+        return GroupResult(action="room_hil_rejected", payload=payload, halt=True)
+
+    selected_room = pending.get("selected_room")
+    requirements_hash = event_entry.get("requirements_hash") or pending.get("requirements_hash")
+
+    update_event_metadata(
+        event_entry,
+        locked_room_id=selected_room,
+        room_eval_hash=requirements_hash,
+        current_step=4,
+        thread_state="In Progress",
+    )
+    append_audit_entry(event_entry, 3, 4, "room_hil_approved")
+    event_entry.pop("room_pending_decision", None)
+
+    state.current_step = 4
+    state.caller_step = None
+    state.set_thread_state("In Progress")
+    state.extras["persist"] = True
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "selected_room": selected_room,
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+    }
+    return GroupResult(action="room_hil_approved", payload=payload, halt=False)
 
 
 def _compose_outcome_message(

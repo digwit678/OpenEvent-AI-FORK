@@ -1,3 +1,6 @@
 .envbackend/.env
 .env
 *.env
+.DS_Store
+.tmp*
+tmp*.json

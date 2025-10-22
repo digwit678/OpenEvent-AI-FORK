@@ -11,6 +11,10 @@ from backend.domain import TaskStatus
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 from backend.workflows.common.types import GroupResult
 from backend.workflows.groups import intake, date_confirmation, room_availability
+from backend.workflows.groups.offer.trigger import process as process_offer
+from backend.workflows.groups.negotiation_close import process as process_negotiation
+from backend.workflows.groups.transition_checkpoint import process as process_transition
+from backend.workflows.groups.event_confirmation.trigger import process as process_confirmation
 from backend.workflows.io import database as db_io
 from backend.workflows.io import tasks as task_io
 from backend.workflows.llm import adapter as llm_adapter
@@ -93,6 +97,30 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
             continue
         if step == 3:
             last_result = room_availability.process(state)
+            _persist_if_needed(state, path, lock_path)
+            if last_result.halt:
+                return _finalize_output(last_result, state)
+            continue
+        if step == 4:
+            last_result = process_offer(state)
+            _persist_if_needed(state, path, lock_path)
+            if last_result.halt:
+                return _finalize_output(last_result, state)
+            continue
+        if step == 5:
+            last_result = process_negotiation(state)
+            _persist_if_needed(state, path, lock_path)
+            if last_result.halt:
+                return _finalize_output(last_result, state)
+            continue
+        if step == 6:
+            last_result = process_transition(state)
+            _persist_if_needed(state, path, lock_path)
+            if last_result.halt:
+                return _finalize_output(last_result, state)
+            continue
+        if step == 7:
+            last_result = process_confirmation(state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
                 return _finalize_output(last_result, state)
