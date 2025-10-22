@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from backend.domain import IntentLabel
 
@@ -61,11 +61,40 @@ class WorkflowState:
     updated_fields: list[str] = field(default_factory=list)
     context_snapshot: Dict[str, Any] = field(default_factory=dict)
     extras: Dict[str, Any] = field(default_factory=dict)
+    current_step: Optional[int] = None
+    caller_step: Optional[int] = None
+    thread_state: Optional[str] = None
+    draft_messages: List[Dict[str, Any]] = field(default_factory=list)
+    audit_log: List[Dict[str, Any]] = field(default_factory=list)
 
     def record_context(self, context: Dict[str, Any]) -> None:
         """[OpenEvent Database] Store the latest context snapshot for the workflow."""
 
         self.context_snapshot = context
+
+    def add_draft_message(self, message: Dict[str, Any]) -> None:
+        """[HIL] Register a draft message awaiting approval before sending."""
+
+        message.setdefault("requires_approval", True)
+        message.setdefault("created_at_step", self.current_step)
+        self.draft_messages.append(message)
+
+    def set_thread_state(self, value: str) -> None:
+        """[OpenEvent Database] Track whether the thread awaits a client reply."""
+
+        self.thread_state = value
+
+    def add_audit_entry(self, from_step: int, to_step: int, reason: str, actor: str = "system") -> None:
+        """[OpenEvent Database] Buffer audit entries for persistence."""
+
+        self.audit_log.append(
+            {
+                "from_step": from_step,
+                "to_step": to_step,
+                "reason": reason,
+                "actor": actor,
+            }
+        )
 
 
 @dataclass

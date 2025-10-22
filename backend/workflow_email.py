@@ -9,6 +9,7 @@ from backend.adapters.agent_adapter import get_agent_adapter
 from backend.domain import TaskStatus
 
 from backend.workflows.common.types import IncomingMessage, WorkflowState
+from backend.workflows.common.types import GroupResult
 from backend.workflows.groups import intake, date_confirmation, room_availability
 from backend.workflows.io import database as db_io
 from backend.workflows.io import tasks as task_io
@@ -74,20 +75,31 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     message = IncomingMessage.from_dict(msg)
     state = WorkflowState(message=message, db_path=path, db=db)
 
-    group_a = intake.process(state)
+    last_result = intake.process(state)
     _persist_if_needed(state, path, lock_path)
-    if group_a.halt:
-        return group_a.merged()
+    if last_result.halt:
+        return _finalize_output(last_result, state)
 
-    group_b = date_confirmation.process(state)
-    _persist_if_needed(state, path, lock_path)
-    if group_b.halt and group_b.action != "date_confirmed":
-        return group_b.merged()
+    for _ in range(6):
+        event_entry = state.event_entry
+        if not event_entry:
+            break
+        step = event_entry.get("current_step")
+        if step == 2:
+            last_result = date_confirmation.process(state)
+            _persist_if_needed(state, path, lock_path)
+            if last_result.halt:
+                return _finalize_output(last_result, state)
+            continue
+        if step == 3:
+            last_result = room_availability.process(state)
+            _persist_if_needed(state, path, lock_path)
+            if last_result.halt:
+                return _finalize_output(last_result, state)
+            continue
+        break
 
-    group_c = room_availability.process_phase1(state)
-    group_c.payload["date_confirmation"] = group_b.merged()
-    _persist_if_needed(state, path, lock_path)
-    return group_c.merged()
+    return _finalize_output(last_result, state)
 
 
 def run_samples() -> list[Any]:
@@ -192,3 +204,22 @@ def task_cli_loop(db_path: Path = DB_PATH) -> None:
             return
         else:
             print("Invalid choice.")
+
+
+def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any]:
+    """[Trigger] Normalise final payload with workflow metadata."""
+
+    payload = result.merged()
+    event_entry = state.event_entry
+    if event_entry:
+        payload.setdefault("event_id", event_entry.get("event_id"))
+        payload["current_step"] = event_entry.get("current_step")
+        payload["caller_step"] = event_entry.get("caller_step")
+        payload["thread_state"] = event_entry.get("thread_state")
+    elif state.thread_state:
+        payload["thread_state"] = state.thread_state
+    if state.draft_messages:
+        payload["draft_messages"] = state.draft_messages
+    else:
+        payload.setdefault("draft_messages", [])
+    return payload

@@ -96,6 +96,9 @@ def load_db(path: Path, lock_path: Optional[Path] = None) -> Dict[str, Any]:
         db["clients"] = {}
     if "tasks" not in db or not isinstance(db["tasks"], list):
         db["tasks"] = []
+    events = db.get("events", [])
+    for event in events:
+        ensure_event_defaults(event)
     return db
 
 
@@ -214,6 +217,15 @@ def find_event_idx(db: Dict[str, Any], client_email: str, event_date_ddmmyyyy: s
     return candidates[0][0]
 
 
+def find_event_idx_by_id(db: Dict[str, Any], event_id: str) -> Optional[int]:
+    """[OpenEvent Database] Locate an event entry by its identifier."""
+
+    for idx, event in enumerate(db.get("events", [])):
+        if event.get("event_id") == event_id:
+            return idx
+    return None
+
+
 def create_event_entry(db: Dict[str, Any], event_data: Dict[str, Any]) -> str:
     """[OpenEvent Database] Insert a new event entry and return its identifier."""
 
@@ -221,6 +233,18 @@ def create_event_entry(db: Dict[str, Any], event_data: Dict[str, Any]) -> str:
     entry = {
         "event_id": event_id,
         "created_at": datetime.utcnow().isoformat(),
+        "status": EventStatus.LEAD.value,
+        "current_step": 1,
+        "caller_step": None,
+        "thread_state": "In Progress",
+        "chosen_date": None,
+        "date_confirmed": False,
+        "locked_room_id": None,
+        "requirements": {},
+        "requirements_hash": None,
+        "room_eval_hash": None,
+        "offer_id": None,
+        "audit": [],
         "event_data": event_data,
         "msgs": [],
     }
@@ -258,6 +282,53 @@ def update_event_entry(db: Dict[str, Any], idx: int, new_data: Dict[str, Any]) -
             event_data[key] = value
             updated.append(key)
     return updated
+
+
+def ensure_event_defaults(event: Dict[str, Any]) -> None:
+    """[OpenEvent Database] Backfill workflow fields on legacy event records."""
+
+    event.setdefault("status", EventStatus.LEAD.value)
+    event.setdefault("current_step", 1)
+    event.setdefault("caller_step", None)
+    event.setdefault("thread_state", "In Progress")
+    event.setdefault("chosen_date", None)
+    event.setdefault("date_confirmed", False)
+    event.setdefault("locked_room_id", None)
+    event.setdefault("requirements", {})
+    event.setdefault("requirements_hash", None)
+    event.setdefault("room_eval_hash", None)
+    event.setdefault("offer_id", None)
+    event.setdefault("audit", [])
+
+
+def append_audit_entry(
+    event: Dict[str, Any],
+    from_step: int,
+    to_step: int,
+    reason: str,
+    actor: str = "system",
+) -> None:
+    """[OpenEvent Database] Append an audit log entry for workflow transitions."""
+
+    ensure_event_defaults(event)
+    audit = event.setdefault("audit", [])
+    audit.append(
+        {
+            "ts": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+            "actor": actor,
+            "from_step": from_step,
+            "to_step": to_step,
+            "reason": reason,
+        }
+    )
+
+
+def update_event_metadata(event: Dict[str, Any], **fields: Any) -> None:
+    """[OpenEvent Database] Apply metadata updates on workflow-specific fields."""
+
+    ensure_event_defaults(event)
+    for key, value in fields.items():
+        event[key] = value
 
 
 def tag_message(event_entry: Dict[str, Any], msg_id: Optional[str]) -> None:
@@ -310,5 +381,3 @@ def load_rooms(path: Optional[Path] = None) -> List[str]:
         payload = json.load(handle)
     rooms = payload.get("rooms") or []
     return [room.get("name") for room in rooms if room.get("name")]
-
-
