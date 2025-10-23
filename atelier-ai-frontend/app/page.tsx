@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Send, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 
-const API_BASE = 'http://localhost:8000/api';
+const BACKEND_BASE =
+  (process.env.NEXT_PUBLIC_BACKEND_BASE || 'http://localhost:8000').replace(/\/$/, '');
+const API_BASE = `${BACKEND_BASE}/api`;
 
 interface MessageMeta {
   confirmDate?: string;
@@ -165,18 +167,14 @@ export default function EmailThreadUI() {
 
   const appendMessage = useCallback((message: Omit<Message, 'id'>) => {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    let index = -1;
-    setMessages((prev) => {
-      const next = [...prev, { ...message, id }];
-      index = next.length - 1;
-      return next;
-    });
-    return index;
+    setMessages((prev) => [...prev, { ...message, id }]);
+    return id;
   }, []);
 
-  const updateMessageAt = useCallback((index: number, updater: (msg: Message) => Message) => {
+  const updateMessageAt = useCallback((messageId: string, updater: (msg: Message) => Message) => {
     setMessages((prev) => {
-      if (!prev[index]) {
+      const index = prev.findIndex((msg) => msg.id === messageId);
+      if (index === -1) {
         return prev;
       }
       const updated = updater(prev[index]);
@@ -197,11 +195,11 @@ export default function EmailThreadUI() {
   }, []);
 
   const streamMessageContent = useCallback(
-    (index: number, fullText: string) =>
+    (messageId: string, fullText: string) =>
       new Promise<void>((resolve) => {
         stopStreaming();
         if (!fullText) {
-          updateMessageAt(index, (msg) => ({ ...msg, content: '', streaming: false }));
+          updateMessageAt(messageId, (msg) => ({ ...msg, content: '', streaming: false }));
           resolve();
           return;
         }
@@ -210,7 +208,7 @@ export default function EmailThreadUI() {
         const step = () => {
           cursor = Math.min(fullText.length, cursor + chunkSize);
           const nextSlice = fullText.slice(0, cursor);
-          updateMessageAt(index, (msg) => ({ ...msg, content: nextSlice, streaming: cursor < fullText.length }));
+          updateMessageAt(messageId, (msg) => ({ ...msg, content: nextSlice, streaming: cursor < fullText.length }));
           if (cursor < fullText.length) {
             rafRef.current = requestAnimationFrame(step);
           } else {
@@ -224,9 +222,9 @@ export default function EmailThreadUI() {
   );
 
   const handleAssistantReply = useCallback(
-    async (index: number, reply: WorkflowReply) => {
-      await streamMessageContent(index, reply.response || '');
-      updateMessageAt(index, (msg) => ({
+    async (messageId: string, reply: WorkflowReply) => {
+      await streamMessageContent(messageId, reply.response || '');
+      updateMessageAt(messageId, (msg) => ({
         ...msg,
         streaming: false,
         timestamp: new Date(),
@@ -319,7 +317,7 @@ export default function EmailThreadUI() {
     setIsComplete(false);
     setEventInfo(null);
 
-    const assistantIndex = appendMessage({
+    const assistantId = appendMessage({
       role: 'assistant',
       content: '',
       timestamp: new Date(),
@@ -331,14 +329,14 @@ export default function EmailThreadUI() {
         email_body: trimmed,
         client_email: email,
       });
-      await handleAssistantReply(assistantIndex, reply);
+      await handleAssistantReply(assistantId, reply);
       if (reply.session_id) {
         setSessionId(reply.session_id);
       }
       refreshTasks().catch(() => undefined);
     } catch (error) {
       console.error('Error starting conversation:', error);
-      updateMessageAt(assistantIndex, (msg) => ({
+      updateMessageAt(assistantId, (msg) => ({
         ...msg,
         streaming: false,
         content: 'Error connecting to server. Make sure backend is running on port 8000.',
@@ -363,7 +361,7 @@ export default function EmailThreadUI() {
     };
     appendMessage(userMessage);
 
-    const assistantIndex = appendMessage({
+    const assistantId = appendMessage({
       role: 'assistant',
       content: '',
       timestamp: new Date(),
@@ -378,11 +376,11 @@ export default function EmailThreadUI() {
         session_id: sessionId,
         message: trimmed,
       });
-      await handleAssistantReply(assistantIndex, reply);
+      await handleAssistantReply(assistantId, reply);
       refreshTasks().catch(() => undefined);
     } catch (error) {
       console.error('Error sending message:', error);
-      updateMessageAt(assistantIndex, (msg) => ({
+      updateMessageAt(assistantId, (msg) => ({
         ...msg,
         streaming: false,
         content: 'Error sending message. Please try again.',
@@ -425,7 +423,7 @@ export default function EmailThreadUI() {
   );
 
   const handleConfirmDate = useCallback(
-    async (date: string, messageIndex: number) => {
+    async (date: string, messageId: string) => {
       if (!sessionId || !date) {
         return;
       }
@@ -434,7 +432,7 @@ export default function EmailThreadUI() {
         const reply = await fetchWorkflowReply(`${API_BASE}/conversation/${sessionId}/confirm-date`, {
           date,
         });
-        updateMessageAt(messageIndex, (msg) => {
+        updateMessageAt(messageId, (msg) => {
           if (!msg.meta?.confirmDate) {
             return msg;
           }
@@ -442,13 +440,13 @@ export default function EmailThreadUI() {
           delete nextMeta.confirmDate;
           return { ...msg, meta: Object.keys(nextMeta).length ? nextMeta : undefined };
         });
-        const assistantIndex = appendMessage({
+        const assistantId = appendMessage({
           role: 'assistant',
           content: '',
           timestamp: new Date(),
           streaming: true,
         });
-        await handleAssistantReply(assistantIndex, reply);
+        await handleAssistantReply(assistantId, reply);
       } catch (error) {
         console.error('Error confirming date:', error);
         alert('Error confirming date. Please try again.');
@@ -460,13 +458,13 @@ export default function EmailThreadUI() {
   );
 
   const handleChangeDate = useCallback(
-    (messageIndex: number) => {
+    (messageId: string) => {
       appendMessage({
         role: 'assistant',
         content: 'No problem - please share another date that works for you.',
         timestamp: new Date(),
       });
-      updateMessageAt(messageIndex, (msg) => {
+      updateMessageAt(messageId, (msg) => {
         if (!msg.meta?.confirmDate) {
           return msg;
         }
@@ -608,14 +606,14 @@ export default function EmailThreadUI() {
                       {msg.role === 'assistant' && msg.meta?.confirmDate && (
                         <div className="flex gap-2 mt-3">
                           <button
-                            onClick={() => handleConfirmDate(msg.meta?.confirmDate ?? '', absoluteIndex)}
+                            onClick={() => handleConfirmDate(msg.meta?.confirmDate ?? '', msg.id)}
                             disabled={isLoading || !sessionId}
                             className="px-3 py-1 text-xs font-semibold rounded bg-green-600 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
                           >
                             Confirm date
                           </button>
                           <button
-                            onClick={() => handleChangeDate(absoluteIndex)}
+                            onClick={() => handleChangeDate(msg.id)}
                             disabled={isLoading}
                             className="px-3 py-1 text-xs font-semibold rounded border border-gray-400 text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed"
                           >
