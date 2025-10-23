@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from backend.workflows.common.room_rules import find_better_room_dates
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata
+from backend.utils.profiler import profile_step
 
 from ..condition.decide import room_status_on_date
 from ..llm.analysis import summarize_room_statuses
@@ -24,6 +25,7 @@ ROOM_SIZE_ORDER = {
 }
 
 
+@profile_step("workflow.step3.room_availability")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Execute Group C — room availability assessment with entry guards and caching."""
 

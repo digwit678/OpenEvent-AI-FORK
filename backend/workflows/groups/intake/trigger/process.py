@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Dict
 
 from backend.workflows.common.requirements import build_requirements, merge_client_profile, requirements_hash
@@ -77,6 +78,13 @@ def process(state: WorkflowState) -> GroupResult:
             }
         )
         state.set_thread_state("In Progress")
+        if os.getenv("OE_DEBUG") == "1":
+            print(
+                "[DEBUG] manual_review_enqueued:",
+                f"conf={confidence:.2f}",
+                f"parsed_date={user_info.get('date')}",
+                f"intent={intent.value}",
+            )
         payload = {
             "client_id": state.client_id,
             "event_id": linked_event_id,

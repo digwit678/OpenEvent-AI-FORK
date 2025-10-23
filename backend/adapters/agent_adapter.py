@@ -1,4 +1,7 @@
-"""Adapters that expose agent capabilities for the workflow."""
+"""Adapters that expose agent capabilities for the workflow.
+
+Tests can call `reset_agent_adapter()` to clear the shared singleton between runs.
+"""
 
 from __future__ import annotations
 
@@ -187,10 +190,25 @@ class StubAgentAdapter(AgentAdapter):
         return None
 
 
+_AGENT_SINGLETON: Optional[AgentAdapter] = None
+
+
 def get_agent_adapter() -> AgentAdapter:
     """Factory selecting the adapter implementation based on AGENT_MODE."""
 
+    global _AGENT_SINGLETON
+    if _AGENT_SINGLETON is not None:
+        return _AGENT_SINGLETON
+
     mode = os.environ.get("AGENT_MODE", "stub").lower()
     if mode == "stub":
-        return StubAgentAdapter()
+        _AGENT_SINGLETON = StubAgentAdapter()
+        return _AGENT_SINGLETON
     raise RuntimeError(f"Unsupported AGENT_MODE: {mode}")
+
+
+def reset_agent_adapter() -> None:
+    """Reset the cached adapter instance (used by tests)."""
+
+    global _AGENT_SINGLETON
+    _AGENT_SINGLETON = None

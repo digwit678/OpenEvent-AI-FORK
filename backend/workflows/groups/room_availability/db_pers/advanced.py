@@ -8,6 +8,8 @@ from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from backend.utils.async_tools import run_io_tasks
+
 __workflow_role__ = "db_pers"
 
 from zoneinfo import ZoneInfo
@@ -375,11 +377,20 @@ def evaluate_candidate_rooms(
 ) -> List[Dict[str, Any]]:
     """[Condition] Evaluate all candidate rooms for the requested dates."""
 
+    if not candidates:
+        return []
+
+    def _task(room: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        evaluation = evaluate_room(room, windows, calendar_adapter)
+        return room, evaluation
+
+    tasks = [lambda room=room: _task(room) for room in candidates]
+    evaluations = run_io_tasks(tasks)
+
     results: List[Dict[str, Any]] = []
-    for room in candidates:
-        result = evaluate_room(room, windows, calendar_adapter)
-        result["capacity_ok"] = room_capacity_ok(room, participants)
-        results.append(result)
+    for room, evaluation in evaluations:
+        evaluation["capacity_ok"] = room_capacity_ok(room, participants)
+        results.append(evaluation)
     return results
 
 

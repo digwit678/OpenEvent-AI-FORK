@@ -1,10 +1,19 @@
+"""Requirement helpers with small caches for deterministic hashing.
+
+Tests can call `clear_hash_caches()` to reset the in-memory caches between
+scenarios.
+"""
+
 from __future__ import annotations
 
-import json
 import hashlib
 from typing import Any, Dict
 
 from backend.workflows.io.database import append_audit_entry
+from backend.utils import json_io
+
+_STABLE_HASH_CACHE: Dict[str, str] = {}
+_CACHE_LIMIT = 256
 
 
 REQUIREMENT_KEYS = [
@@ -42,14 +51,22 @@ def build_requirements(user_info: Dict[str, Any]) -> Dict[str, Any]:
 def stable_hash(payload: Any) -> str:
     """[Condition] Produce a stable SHA256 hash for arbitrary JSON-serialisable data."""
 
-    normalized = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    normalized = json_io.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    cached = _STABLE_HASH_CACHE.get(normalized)
+    if cached is not None:
+        return cached
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    if len(_STABLE_HASH_CACHE) >= _CACHE_LIMIT:
+        _STABLE_HASH_CACHE.clear()
+    _STABLE_HASH_CACHE[normalized] = digest
+    return digest
 
 
 def requirements_hash(requirements: Dict[str, Any]) -> str:
     """[Condition] Hash requirements using canonical order."""
 
-    return stable_hash({key: requirements.get(key) for key in REQUIREMENT_KEYS})
+    subset = {key: requirements.get(key) for key in REQUIREMENT_KEYS}
+    return stable_hash(subset)
 
 
 def merge_client_profile(event_entry: Dict[str, Any], incoming: Dict[str, Any]) -> bool:
@@ -112,3 +129,9 @@ def merge_client_profile(event_entry: Dict[str, Any], incoming: Dict[str, Any]) 
     if event_entry.get("audit"):
         event_entry["audit"][-1]["fields"] = changed_fields
     return True
+
+
+def clear_hash_caches() -> None:
+    """Reset stable hash caches (used by tests)."""
+
+    _STABLE_HASH_CACHE.clear()

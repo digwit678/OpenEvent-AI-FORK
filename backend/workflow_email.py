@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
-from backend.adapters.agent_adapter import get_agent_adapter
 from backend.domain import TaskStatus
 
 from backend.workflows.common.types import IncomingMessage, WorkflowState
@@ -18,6 +17,7 @@ from backend.workflows.groups.event_confirmation.trigger import process as proce
 from backend.workflows.io import database as db_io
 from backend.workflows.io import tasks as task_io
 from backend.workflows.llm import adapter as llm_adapter
+from backend.utils.profiler import profile_step
 
 
 DB_PATH = Path(__file__).with_name("events_database.json")
@@ -63,12 +63,27 @@ def save_db(db: Dict[str, Any], path: Path = DB_PATH) -> None:
 
 
 def _persist_if_needed(state: WorkflowState, path: Path, lock_path: Path) -> None:
-    """[OpenEvent Database] Write stateful changes to disk when groups request it."""
+    """[OpenEvent Database] Flag persistence requests so we can coalesce writes."""
 
     if state.extras.pop("persist", False):
+        state.extras["_pending_save"] = True
+
+
+def _flush_pending_save(state: WorkflowState, path: Path, lock_path: Path) -> None:
+    """[OpenEvent Database] Flush debounced writes at the end of the turn."""
+
+    if state.extras.pop("_pending_save", False):
         db_io.save_db(state.db, path, lock_path=lock_path)
 
 
+def _flush_and_finalize(result: GroupResult, state: WorkflowState, path: Path, lock_path: Path) -> Dict[str, Any]:
+    """Persist pending state and normalise the outgoing payload."""
+
+    _flush_pending_save(state, path, lock_path)
+    return _finalize_output(result, state)
+
+
+@profile_step("workflow.router.process_msg")
 def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     """[Trigger] Process an inbound message through workflow groups A–C."""
 
@@ -82,7 +97,7 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     last_result = intake.process(state)
     _persist_if_needed(state, path, lock_path)
     if last_result.halt:
-        return _finalize_output(last_result, state)
+        return _flush_and_finalize(last_result, state, path, lock_path)
 
     for _ in range(6):
         event_entry = state.event_entry
@@ -93,48 +108,48 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
             last_result = date_confirmation.process(state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
-                return _finalize_output(last_result, state)
+                return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 3:
             last_result = room_availability.process(state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
-                return _finalize_output(last_result, state)
+                return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 4:
             last_result = process_offer(state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
-                return _finalize_output(last_result, state)
+                return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 5:
             last_result = process_negotiation(state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
-                return _finalize_output(last_result, state)
+                return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 6:
             last_result = process_transition(state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
-                return _finalize_output(last_result, state)
+                return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 7:
             last_result = process_confirmation(state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
-                return _finalize_output(last_result, state)
+                return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         break
 
-    return _finalize_output(last_result, state)
+    return _flush_and_finalize(last_result, state, path, lock_path)
 
 
 def run_samples() -> list[Any]:
     """[Trigger] Execute a deterministic sample flow for manual testing."""
 
     os.environ["AGENT_MODE"] = "stub"
-    llm_adapter.adapter = get_agent_adapter()
+    llm_adapter.reset_llm_adapter()
     if DB_PATH.exists():
         DB_PATH.unlink()
 

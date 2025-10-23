@@ -6,8 +6,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from backend.domain import EventStatus
 from backend.workflows.common.requirements import merge_client_profile
+from backend.workflows.common.room_rules import site_visit_allowed
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
+from backend.utils.profiler import profile_step
 
 __workflow_role__ = "trigger"
 
@@ -20,6 +22,7 @@ CHANGE_KEYWORDS = ("change", "adjust", "different", "increase", "decrease", "mov
 QUESTION_KEYWORDS = ("could", "would", "do you", "can you")
 
 
+@profile_step("workflow.step7.confirmation")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Step 7 — final confirmation handling with deposit/site-visit flows."""
 
@@ -204,6 +207,11 @@ def _handle_reserve(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
 
 
 def _handle_site_visit(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:
+    if not site_visit_allowed(event_entry):
+        conf_state = event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})
+        conf_state["pending"] = None
+        return _site_visit_unavailable_response(state, event_entry)
+
     slots = _generate_visit_slots(event_entry)
     visit_state = event_entry.setdefault(
         "site_visit_state", {"status": "idle", "proposed_slots": [], "scheduled_slot": None}
@@ -228,6 +236,24 @@ def _handle_site_visit(state: WorkflowState, event_entry: Dict[str, Any]) -> Gro
     state.extras["persist"] = True
     payload = _base_payload(state, event_entry)
     return GroupResult(action="confirmation_site_visit", payload=payload, halt=True)
+
+
+def _site_visit_unavailable_response(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:
+    draft = {
+        "body": (
+            "Thanks for checking — for this room we aren't able to offer on-site visits before confirmation, "
+            "but I'm happy to share additional details or photos."
+        ),
+        "step": 7,
+        "topic": "confirmation_question",
+        "requires_approval": True,
+    }
+    state.add_draft_message(draft)
+    update_event_metadata(event_entry, thread_state="Awaiting Client Response")
+    state.set_thread_state("Awaiting Client Response")
+    state.extras["persist"] = True
+    payload = _base_payload(state, event_entry)
+    return GroupResult(action="confirmation_question", payload=payload, halt=True)
 
 
 def _handle_decline(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:
@@ -301,6 +327,10 @@ def _process_hil_confirmation(state: WorkflowState, event_entry: Dict[str, Any])
         return GroupResult(action="confirmation_decline_sent", payload=payload, halt=True)
 
     if kind == "site_visit":
+        if not site_visit_allowed(event_entry):
+            conf_state["pending"] = None
+            return _site_visit_unavailable_response(state, event_entry)
+
         conf_state["pending"] = None
         append_audit_entry(event_entry, 7, 7, "site_visit_proposed")
         update_event_metadata(event_entry, thread_state="Awaiting Client Response")
