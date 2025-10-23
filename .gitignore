@@ -10,3 +10,9 @@ artifacts/*.json
 # manual UX artifacts
 manual_ux_conversation.json
 artifacts/*.json
+
+# local dev env & logs
+atelier-ai-frontend/.env.local
+atelier-ai-frontend/.next-dev.log
+atelier-ai-frontend/.ui-url
+backend-uvicorn.log
