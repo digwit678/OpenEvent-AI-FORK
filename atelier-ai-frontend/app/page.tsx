@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { Send, CheckCircle, XCircle, Loader2 } from 'lucide-react';
-import axios from 'axios';
 
 const API_BASE = 'http://localhost:8000/api';
 
@@ -11,10 +11,12 @@ interface MessageMeta {
 }
 
 interface Message {
+  id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
   meta?: MessageMeta;
+  streaming?: boolean;
 }
 
 interface EventInfo {
@@ -36,32 +38,222 @@ interface PendingTask {
   payload?: PendingTaskPayload | null;
 }
 
+interface PendingActions {
+  type?: string;
+  date?: string;
+}
+
+interface WorkflowReply {
+  session_id?: string | null;
+  workflow_type?: string | null;
+  response: string;
+  is_complete: boolean;
+  event_info?: EventInfo | null;
+  pending_actions?: PendingActions | null;
+}
+
+function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return (...args: Parameters<T>) => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+    timer = setTimeout(() => fn(...args), delay);
+  };
+}
+
+async function requestJSON<T>(url: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers || {});
+  headers.set('Accept', 'application/json');
+  if (init.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  const response = await fetch(url, { ...init, headers });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed with status ${response.status}`);
+  }
+  if (response.status === 204) {
+    return {} as T;
+  }
+  return (await response.json()) as T;
+}
+
+async function fetchWorkflowReply(url: string, payload: unknown): Promise<WorkflowReply> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  if (response.body) {
+    const reader = response.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+    }
+    buffer += decoder.decode();
+  } else {
+    buffer = await response.text();
+  }
+
+  if (!response.ok) {
+    throw new Error(buffer || `Request failed with status ${response.status}`);
+  }
+  if (!buffer.trim()) {
+    return { response: '', is_complete: false };
+  }
+  try {
+    return JSON.parse(buffer) as WorkflowReply;
+  } catch (err) {
+    console.error('Unable to parse workflow reply', err);
+    throw err;
+  }
+}
+
+function extractEmail(text: string): string {
+  const emailRegex = /[\w.-]+@[\w.-]+\.[A-Za-z]{2,}/;
+  const match = text.match(emailRegex);
+  return match ? match[0] : 'unknown@example.com';
+}
+
+function buildMeta(pending: PendingActions | null | undefined): MessageMeta | undefined {
+  if (pending?.type === 'confirm_date' && typeof pending.date === 'string') {
+    return { confirmDate: pending.date };
+  }
+  return undefined;
+}
+
+function shouldDisplayEventField(key: string, value: string): boolean {
+  if (value === 'Not specified' || value === 'none') {
+    return false;
+  }
+  const lowerKey = key.toLowerCase();
+  if (lowerKey.includes('room_') && lowerKey.endsWith('_status')) {
+    return false;
+  }
+  return true;
+}
+
 export default function EmailThreadUI() {
   const isMountedRef = useRef(true);
+  const threadRef = useRef<HTMLDivElement | null>(null);
+  const rafRef = useRef<number | null>(null);
+
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [workflowType, setWorkflowType] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [draftInput, setDraftInput] = useState('');
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [eventInfo, setEventInfo] = useState<EventInfo | null>(null);
-  const [workflowType, setWorkflowType] = useState<string | null>(null);
   const [tasks, setTasks] = useState<PendingTask[]>([]);
   const [taskActionId, setTaskActionId] = useState<string | null>(null);
-  
-  // Initial state - waiting for first email
   const [hasStarted, setHasStarted] = useState(false);
+  const [isUserNearBottom, setIsUserNearBottom] = useState(true);
+
+  const inputDebounce = useMemo(() => debounce((value: string) => setInputText(value), 80), []);
+
+  const appendMessage = useCallback((message: Omit<Message, 'id'>) => {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    let index = -1;
+    setMessages((prev) => {
+      const next = [...prev, { ...message, id }];
+      index = next.length - 1;
+      return next;
+    });
+    return index;
+  }, []);
+
+  const updateMessageAt = useCallback((index: number, updater: (msg: Message) => Message) => {
+    setMessages((prev) => {
+      if (!prev[index]) {
+        return prev;
+      }
+      const updated = updater(prev[index]);
+      if (updated === prev[index]) {
+        return prev;
+      }
+      const next = [...prev];
+      next[index] = updated;
+      return next;
+    });
+  }, []);
+
+  const stopStreaming = useCallback(() => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  }, []);
+
+  const streamMessageContent = useCallback(
+    (index: number, fullText: string) =>
+      new Promise<void>((resolve) => {
+        stopStreaming();
+        if (!fullText) {
+          updateMessageAt(index, (msg) => ({ ...msg, content: '', streaming: false }));
+          resolve();
+          return;
+        }
+        const chunkSize = Math.max(2, Math.ceil(fullText.length / 40));
+        let cursor = 0;
+        const step = () => {
+          cursor = Math.min(fullText.length, cursor + chunkSize);
+          const nextSlice = fullText.slice(0, cursor);
+          updateMessageAt(index, (msg) => ({ ...msg, content: nextSlice, streaming: cursor < fullText.length }));
+          if (cursor < fullText.length) {
+            rafRef.current = requestAnimationFrame(step);
+          } else {
+            rafRef.current = null;
+            resolve();
+          }
+        };
+        rafRef.current = requestAnimationFrame(step);
+      }),
+    [stopStreaming, updateMessageAt]
+  );
+
+  const handleAssistantReply = useCallback(
+    async (index: number, reply: WorkflowReply) => {
+      await streamMessageContent(index, reply.response || '');
+      updateMessageAt(index, (msg) => ({
+        ...msg,
+        streaming: false,
+        timestamp: new Date(),
+        meta: buildMeta(reply.pending_actions) ?? msg.meta,
+      }));
+
+      if (reply.workflow_type) {
+        setWorkflowType(reply.workflow_type);
+      }
+      if (reply.session_id !== undefined) {
+        setSessionId(reply.session_id ?? null);
+      }
+      if (reply.event_info !== undefined) {
+        setEventInfo(reply.event_info ?? null);
+      }
+      setIsComplete(reply.is_complete);
+    },
+    [streamMessageContent, updateMessageAt]
+  );
 
   const refreshTasks = useCallback(async () => {
     try {
-      const { data } = await axios.get(`${API_BASE}/tasks/pending`);
+      const data = await requestJSON<{ tasks: PendingTask[] }>(`${API_BASE}/tasks/pending`);
       if (!isMountedRef.current) {
         return;
       }
-      if (Array.isArray(data.tasks)) {
-        setTasks(data.tasks);
-      } else {
-        setTasks([]);
-      }
+      setTasks(Array.isArray(data.tasks) ? data.tasks : []);
     } catch (error) {
       if (isMountedRef.current) {
         console.error('Error fetching tasks:', error);
@@ -72,275 +264,302 @@ export default function EmailThreadUI() {
   useEffect(() => {
     isMountedRef.current = true;
     refreshTasks().catch(() => undefined);
-    const interval = setInterval(() => {
+    const interval = window.setInterval(() => {
       refreshTasks().catch(() => undefined);
     }, 5000);
-
     return () => {
       isMountedRef.current = false;
-      clearInterval(interval);
+      stopStreaming();
+      window.clearInterval(interval);
     };
-  }, [refreshTasks]);
+  }, [refreshTasks, stopStreaming]);
 
-  const startConversation = async () => {
-    if (!inputText.trim()) return;
-    
+  useEffect(() => {
+    if (!isUserNearBottom) {
+      return;
+    }
+    const container = threadRef.current;
+    if (container) {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    }
+  }, [messages, isUserNearBottom]);
+
+  const handleInputChange = useCallback(
+    (value: string) => {
+      setDraftInput(value);
+      inputDebounce(value);
+    },
+    [inputDebounce]
+  );
+
+  const handleThreadScroll = useMemo(
+    () =>
+      debounce((element: HTMLDivElement) => {
+        const { scrollTop, scrollHeight, clientHeight } = element;
+        const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
+        setIsUserNearBottom(distanceFromBottom < 32);
+      }, 120),
+    []
+  );
+
+  const startConversation = useCallback(async () => {
+    const trimmed = draftInput.trim();
+    if (!trimmed) {
+      return;
+    }
     setIsLoading(true);
-    
-    // Extract email from input text
-    const extractEmail = (text: string): string => {
-      const emailRegex = /[\w.-]+@[\w.-]+\.\w+/;
-      const match = text.match(emailRegex);
-      return match ? match[0] : 'unknown@example.com';
-    };
-    
-    try {
-      const response = await axios.post(`${API_BASE}/start-conversation`, {
-        email_body: inputText,
-        client_email: extractEmail(inputText) // ✅ Extract from text
-      });
-      
-      const { session_id, workflow_type, response: aiResponse, is_complete, event_info, pending_actions } = response.data;
+    const email = extractEmail(trimmed);
+    setMessages(() => []);
+    appendMessage({
+      role: 'user',
+      content: trimmed,
+      timestamp: new Date(),
+    });
+    setHasStarted(true);
+    setIsComplete(false);
+    setEventInfo(null);
 
-      const userMessage: Message = { role: 'user', content: inputText, timestamp: new Date() };
-      let assistantMeta: MessageMeta | undefined;
-      if (pending_actions?.type === 'confirm_date' && typeof pending_actions.date === 'string') {
-        assistantMeta = { confirmDate: pending_actions.date };
+    const assistantIndex = appendMessage({
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      streaming: true,
+    });
+
+    try {
+      const reply = await fetchWorkflowReply(`${API_BASE}/start-conversation`, {
+        email_body: trimmed,
+        client_email: email,
+      });
+      await handleAssistantReply(assistantIndex, reply);
+      if (reply.session_id) {
+        setSessionId(reply.session_id);
       }
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: aiResponse,
-        timestamp: new Date(),
-        meta: assistantMeta,
-      };
-      
-      // If not a new event, show message and stop
-      if (!session_id) {
-        setMessages([userMessage, assistantMessage]);
-        setInputText('');
-        setIsLoading(false);
-        return;
-      }
-      
-      setSessionId(session_id);
-      setWorkflowType(workflow_type);
-      setHasStarted(true);
-      
-      setMessages([userMessage, assistantMessage]);
-      
-      setIsComplete(is_complete);
-      setEventInfo(event_info);
-      setInputText('');
-      refreshTasks();
-      
+      refreshTasks().catch(() => undefined);
     } catch (error) {
       console.error('Error starting conversation:', error);
-      alert('Error connecting to server. Make sure backend is running on port 8000.');
+      updateMessageAt(assistantIndex, (msg) => ({
+        ...msg,
+        streaming: false,
+        content: 'Error connecting to server. Make sure backend is running on port 8000.',
+      }));
+    } finally {
+      setDraftInput('');
+      setInputText('');
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
-  };
+  }, [appendMessage, draftInput, handleAssistantReply, refreshTasks, updateMessageAt]);
 
-  const sendMessage = async () => {
-    if (!inputText.trim() || !sessionId) return;
-    
+  const sendMessage = useCallback(async () => {
+    const trimmed = draftInput.trim();
+    if (!trimmed || !sessionId) {
+      return;
+    }
     setIsLoading(true);
-    
-    // Add user message immediately
-    const userMessage: Message = {
+    const userMessage: Omit<Message, 'id'> = {
       role: 'user',
-      content: inputText,
-      timestamp: new Date()
+      content: trimmed,
+      timestamp: new Date(),
     };
-    setMessages(prev => [...prev, userMessage]);
-    const currentInput = inputText;
+    appendMessage(userMessage);
+
+    const assistantIndex = appendMessage({
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      streaming: true,
+    });
+
+    setDraftInput('');
     setInputText('');
-    
+
     try {
-      const response = await axios.post(`${API_BASE}/send-message`, {
+      const reply = await fetchWorkflowReply(`${API_BASE}/send-message`, {
         session_id: sessionId,
-        message: currentInput
+        message: trimmed,
       });
-      
-      const { response: aiResponse, is_complete, event_info, pending_actions } = response.data;
-      
-      // Add AI response
-      let assistantMeta: MessageMeta | undefined;
-      if (pending_actions?.type === 'confirm_date' && typeof pending_actions.date === 'string') {
-        assistantMeta = { confirmDate: pending_actions.date };
-      }
-      const aiMessage: Message = {
-        role: 'assistant',
-        content: aiResponse,
-        timestamp: new Date(),
-        meta: assistantMeta
-      };
-      setMessages(prev => [...prev, aiMessage]);
-      
-      // Update state
-      setIsComplete(is_complete);
-      setEventInfo(event_info);
-      
-      console.log('Is Complete:', is_complete); // Debug log
-      
+      await handleAssistantReply(assistantIndex, reply);
+      refreshTasks().catch(() => undefined);
     } catch (error) {
       console.error('Error sending message:', error);
-      alert('Error sending message');
-    }
-    
-    setIsLoading(false);
-  };
-
-  const handleTaskAction = async (task: PendingTask, decision: 'approve' | 'reject') => {
-    if (!task.task_id) return;
-    setTaskActionId(task.task_id);
-    try {
-      await axios.post(`${API_BASE}/tasks/${task.task_id}/${decision}`, {});
-      const assistantContent =
-        decision === 'approve'
-          ? "I've proposed these dates to the client. Please pick one."
-          : "I won't send the date suggestion yet.";
-      if (sessionId) {
-        setMessages(prev => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: assistantContent,
-            timestamp: new Date(),
-          },
-        ]);
-      }
-      await refreshTasks();
-    } catch (error) {
-      console.error(`Error updating task (${decision}):`, error);
-      alert('Error updating task. Please try again.');
-    } finally {
-      setTaskActionId(null);
-    }
-  };
-
-  const handleConfirmDate = async (date: string, messageIndex: number) => {
-    if (!sessionId || !date) return;
-    setIsLoading(true);
-    try {
-      const response = await axios.post(`${API_BASE}/conversation/${sessionId}/confirm-date`, {
-        date,
-      });
-      const { response: aiResponse, is_complete, event_info, pending_actions } = response.data;
-      let assistantMeta: MessageMeta | undefined;
-      if (pending_actions?.type === 'confirm_date' && typeof pending_actions.date === 'string') {
-        assistantMeta = { confirmDate: pending_actions.date };
-      }
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: aiResponse,
-        timestamp: new Date(),
-        meta: assistantMeta,
-      };
-      setMessages(prev => {
-        const updated = prev.map((msg, idx) => {
-          if (idx !== messageIndex) return msg;
-          if (!msg.meta?.confirmDate) return msg;
-          const nextMeta = { ...msg.meta };
-          delete nextMeta.confirmDate;
-          return {
-            ...msg,
-            meta: Object.keys(nextMeta).length ? nextMeta : undefined,
-          };
-        });
-        return [...updated, assistantMessage];
-      });
-      setIsComplete(is_complete);
-      setEventInfo(event_info);
-    } catch (error) {
-      console.error('Error confirming date:', error);
-      alert('Error confirming date. Please try again.');
+      updateMessageAt(assistantIndex, (msg) => ({
+        ...msg,
+        streaming: false,
+        content: 'Error sending message. Please try again.',
+      }));
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [appendMessage, draftInput, handleAssistantReply, refreshTasks, sessionId, updateMessageAt]);
 
-  const handleChangeDate = (messageIndex: number) => {
-    setMessages(prev => {
-      const updated = prev.map((msg, idx) => {
-        if (idx !== messageIndex) return msg;
-        if (!msg.meta?.confirmDate) return msg;
-        return { ...msg, meta: undefined };
-      });
-      return [
-        ...updated,
-        {
+  const handleTaskAction = useCallback(
+    async (task: PendingTask, decision: 'approve' | 'reject') => {
+      if (!task.task_id) {
+        return;
+      }
+      setTaskActionId(task.task_id);
+      try {
+        await requestJSON(`${API_BASE}/tasks/${task.task_id}/${decision}`, {
+          method: 'POST',
+          body: JSON.stringify({}),
+        });
+        if (sessionId) {
+          appendMessage({
+            role: 'assistant',
+            content:
+              decision === 'approve'
+                ? "I've proposed these dates to the client. Please pick one."
+                : "I won't send the date suggestion yet.",
+            timestamp: new Date(),
+          });
+        }
+        refreshTasks().catch(() => undefined);
+      } catch (error) {
+        console.error(`Error updating task (${decision}):`, error);
+        alert('Error updating task. Please try again.');
+      } finally {
+        setTaskActionId(null);
+      }
+    },
+    [appendMessage, refreshTasks, sessionId]
+  );
+
+  const handleConfirmDate = useCallback(
+    async (date: string, messageIndex: number) => {
+      if (!sessionId || !date) {
+        return;
+      }
+      setIsLoading(true);
+      try {
+        const reply = await fetchWorkflowReply(`${API_BASE}/conversation/${sessionId}/confirm-date`, {
+          date,
+        });
+        updateMessageAt(messageIndex, (msg) => {
+          if (!msg.meta?.confirmDate) {
+            return msg;
+          }
+          const nextMeta = { ...msg.meta };
+          delete nextMeta.confirmDate;
+          return { ...msg, meta: Object.keys(nextMeta).length ? nextMeta : undefined };
+        });
+        const assistantIndex = appendMessage({
           role: 'assistant',
-          content: 'No problem - please share another date that works for you.',
+          content: '',
           timestamp: new Date(),
-        },
-      ];
-    });
-  };
+          streaming: true,
+        });
+        await handleAssistantReply(assistantIndex, reply);
+      } catch (error) {
+        console.error('Error confirming date:', error);
+        alert('Error confirming date. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [appendMessage, handleAssistantReply, sessionId, updateMessageAt]
+  );
 
-  const acceptBooking = async () => {
-    if (!sessionId) return;
-    
+  const handleChangeDate = useCallback(
+    (messageIndex: number) => {
+      appendMessage({
+        role: 'assistant',
+        content: 'No problem - please share another date that works for you.',
+        timestamp: new Date(),
+      });
+      updateMessageAt(messageIndex, (msg) => {
+        if (!msg.meta?.confirmDate) {
+          return msg;
+        }
+        const nextMeta = { ...msg.meta };
+        delete nextMeta.confirmDate;
+        return { ...msg, meta: Object.keys(nextMeta).length ? nextMeta : undefined };
+      });
+    },
+    [appendMessage, updateMessageAt]
+  );
+
+  const acceptBooking = useCallback(async () => {
+    if (!sessionId) {
+      return;
+    }
     try {
-      const response = await axios.post(`${API_BASE}/accept-booking/${sessionId}`);
-      alert(`✅ Booking accepted! Saved to: ${response.data.filename}`);
-      
-      // Reset
+      const response = await requestJSON<{ filename: string }>(`${API_BASE}/accept-booking/${sessionId}`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      alert(`✅ Booking accepted! Saved to: ${response.filename}`);
       setSessionId(null);
       setMessages([]);
       setIsComplete(false);
       setEventInfo(null);
       setHasStarted(false);
-      
     } catch (error) {
       console.error('Error accepting booking:', error);
       alert('Error accepting booking');
     }
-  };
+  }, [sessionId]);
 
-  const rejectBooking = async () => {
-    if (!sessionId) return;
-    
+  const rejectBooking = useCallback(async () => {
+    if (!sessionId) {
+      return;
+    }
     try {
-      await axios.post(`${API_BASE}/reject-booking/${sessionId}`);
+      await requestJSON(`${API_BASE}/reject-booking/${sessionId}`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
       alert('❌ Booking rejected');
-      
-      // Reset
       setSessionId(null);
       setMessages([]);
       setIsComplete(false);
       setEventInfo(null);
       setHasStarted(false);
-      
     } catch (error) {
       console.error('Error rejecting booking:', error);
       alert('Error rejecting booking');
     }
-  };
+  }, [sessionId]);
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (!hasStarted) {
-        startConversation();
-      } else {
-        sendMessage();
+  const handleKeyPress = useCallback(
+    (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (!hasStarted) {
+          startConversation().catch(() => undefined);
+        } else {
+          sendMessage().catch(() => undefined);
+        }
       }
+    },
+    [hasStarted, sendMessage, startConversation]
+  );
+
+  const visibleMessages = useMemo(() => {
+    const sliceStart = Math.max(0, messages.length - 60);
+    return messages.slice(sliceStart);
+  }, [messages]);
+
+  const messageOffset = messages.length - visibleMessages.length;
+
+  const assistantTyping = useMemo(() => isLoading || messages.some((msg) => msg.streaming), [isLoading, messages]);
+
+  const filteredEventInfo = useMemo(() => {
+    if (!eventInfo || !isComplete) {
+      return [] as Array<[string, string]>;
     }
-  };
+    return Object.entries(eventInfo).filter(([key, value]) => shouldDisplayEventField(key, value));
+  }, [eventInfo, isComplete]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <div className="max-w-4xl mx-auto">
-        
-        {/* Header */}
         <div className="bg-white rounded-t-2xl shadow-lg p-6 border-b">
           <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
             🎭 OpenEvent - AI Event Manager
           </h1>
           <p className="text-gray-600 mt-2">
-            {!hasStarted 
-              ? 'Paste a client email below to start the conversation' 
+            {!hasStarted
+              ? 'Paste a client email below to start the conversation'
               : 'Conversation in progress with Shami, Event Manager'}
           </p>
           {workflowType && (
@@ -352,66 +571,68 @@ export default function EmailThreadUI() {
           )}
         </div>
 
-        {/* Email Thread / Chat Area */}
-        <div className="bg-white shadow-lg" style={{ minHeight: '500px', maxHeight: '600px', overflowY: 'auto' }}>
+        <div
+          ref={threadRef}
+          className="bg-white shadow-lg"
+          style={{ minHeight: '500px', maxHeight: '600px', overflowY: 'auto' }}
+          onScroll={(event) => handleThreadScroll(event.currentTarget)}
+        >
           <div className="p-6 space-y-6">
-            
-            {messages.length === 0 && (
+            {visibleMessages.length === 0 && (
               <div className="text-center py-12 text-gray-400">
                 <p className="text-lg">No messages yet...</p>
                 <p className="text-sm mt-2">Start by pasting a client inquiry email below</p>
               </div>
             )}
 
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[75%] ${msg.role === 'user' ? 'order-2' : 'order-1'}`}>
-                  
-                  {/* Sender Label */}
-                  <div className={`text-xs font-semibold mb-1 ${
-                    msg.role === 'user' ? 'text-right text-blue-600' : 'text-left text-gray-600'
-                  }`}>
-                    {msg.role === 'user' ? '👤 Client' : '🎭 Shami (Event Manager)'}
-                  </div>
-                  
-                  {/* Message Bubble */}
-                  <div className={`rounded-2xl px-4 py-3 shadow-sm ${
-                    msg.role === 'user' 
-                      ? 'bg-blue-500 text-white' 
-                      : 'bg-gray-100 text-gray-800 border border-gray-200'
-                  }`}>
-                    <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {msg.content}
+            {visibleMessages.map((msg, idx) => {
+              const absoluteIndex = messageOffset + idx;
+              return (
+                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[75%] ${msg.role === 'user' ? 'order-2' : 'order-1'}`}>
+                    <div
+                      className={`text-xs font-semibold mb-1 ${
+                        msg.role === 'user' ? 'text-right text-blue-600' : 'text-left text-gray-600'
+                      }`}
+                    >
+                      {msg.role === 'user' ? '👤 Client' : '🎭 Shami (Event Manager)'}
                     </div>
-                    {msg.role === 'assistant' && msg.meta?.confirmDate && (
-                      <div className="flex gap-2 mt-3">
-                        <button
-                          onClick={() => handleConfirmDate(msg.meta?.confirmDate ?? '', idx)}
-                          disabled={isLoading || !sessionId}
-                          className="px-3 py-1 text-xs font-semibold rounded bg-green-600 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
-                        >
-                          Confirm date
-                        </button>
-                        <button
-                          onClick={() => handleChangeDate(idx)}
-                          disabled={isLoading}
-                          className="px-3 py-1 text-xs font-semibold rounded border border-gray-400 text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed"
-                        >
-                          Change date
-                        </button>
+                    <div
+                      className={`rounded-2xl px-4 py-3 shadow-sm ${
+                        msg.role === 'user'
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-gray-100 text-gray-800 border border-gray-200'
+                      } ${msg.streaming ? 'animate-pulse' : ''}`}
+                    >
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</div>
+                      {msg.role === 'assistant' && msg.meta?.confirmDate && (
+                        <div className="flex gap-2 mt-3">
+                          <button
+                            onClick={() => handleConfirmDate(msg.meta?.confirmDate ?? '', absoluteIndex)}
+                            disabled={isLoading || !sessionId}
+                            className="px-3 py-1 text-xs font-semibold rounded bg-green-600 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
+                          >
+                            Confirm date
+                          </button>
+                          <button
+                            onClick={() => handleChangeDate(absoluteIndex)}
+                            disabled={isLoading}
+                            className="px-3 py-1 text-xs font-semibold rounded border border-gray-400 text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed"
+                          >
+                            Change date
+                          </button>
+                        </div>
+                      )}
+                      <div className={`${msg.role === 'user' ? 'text-blue-100' : 'text-gray-500'} text-xs mt-2`}>
+                        {msg.timestamp.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })}
                       </div>
-                    )}
-                    <div className={`text-xs mt-2 ${
-                      msg.role === 'user' ? 'text-blue-100' : 'text-gray-500'
-                    }`}>
-                      {msg.timestamp.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' })}
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
-            {isLoading && (
+            {assistantTyping && (
               <div className="flex justify-start">
                 <div className="bg-gray-100 rounded-2xl px-4 py-3 border border-gray-200">
                   <div className="flex items-center gap-2 text-gray-600">
@@ -424,18 +645,14 @@ export default function EmailThreadUI() {
           </div>
         </div>
 
-        {/* Accept/Reject Buttons - Show when complete */}
         {isComplete && (
           <div className="bg-gradient-to-r from-green-50 to-blue-50 p-6 border-t border-gray-200">
             <div className="text-center mb-4">
-              <p className="text-lg font-semibold text-gray-800">
-                ✅ Ready to finalize your booking!
-              </p>
+              <p className="text-lg font-semibold text-gray-800">✅ Ready to finalize your booking!</p>
               <p className="text-sm text-gray-600 mt-1">
                 Click Accept to save this booking to our system, or Reject to discard.
               </p>
             </div>
-            
             <div className="flex gap-4 justify-center">
               <button
                 onClick={acceptBooking}
@@ -445,7 +662,6 @@ export default function EmailThreadUI() {
                 <CheckCircle className="w-6 h-6" />
                 Accept & Save Booking
               </button>
-              
               <button
                 onClick={rejectBooking}
                 disabled={isLoading}
@@ -458,24 +674,20 @@ export default function EmailThreadUI() {
           </div>
         )}
 
-        {/* Input Area */}
         <div className="bg-white rounded-b-2xl shadow-lg p-4 border-t">
           <div className="flex gap-3">
             <textarea
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              value={draftInput}
+              onChange={(e) => handleInputChange(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder={!hasStarted 
-                ? "Paste the client's email here to start..." 
-                : "Type your response as the client..."}
+              placeholder={!hasStarted ? "Paste the client's email here to start..." : 'Type your response as the client...'}
               className="flex-1 resize-none border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               rows={3}
               disabled={isLoading || isComplete}
             />
-            
             <button
-              onClick={!hasStarted ? startConversation : sendMessage}
-              disabled={isLoading || isComplete || !inputText.trim()}
+              onClick={!hasStarted ? () => startConversation().catch(() => undefined) : () => sendMessage().catch(() => undefined)}
+              disabled={isLoading || isComplete || !draftInput.trim()}
               className="px-6 py-3 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded-xl font-semibold shadow-md transition-all flex items-center gap-2 disabled:cursor-not-allowed"
             >
               {isLoading ? (
@@ -491,63 +703,54 @@ export default function EmailThreadUI() {
               )}
             </button>
           </div>
-          
-          <div className="text-xs text-gray-500 mt-2">
-            Press Enter to send • Shift+Enter for new line
-          </div>
+          <div className="text-xs text-gray-500 mt-2">Press Enter to send • Shift+Enter for new line</div>
         </div>
 
-        {/* Event Info Panel - ONLY show when complete */}
-        {eventInfo && isComplete && (
+        {filteredEventInfo.length > 0 && (
           <div className="mt-4 bg-white rounded-2xl shadow-lg p-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-              📋 Information Collected So Far
-            </h3>
-            
+            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">📋 Information Collected So Far</h3>
             <div className="grid grid-cols-2 gap-3 text-sm">
-              {Object.entries(eventInfo).map(([key, value]) => {
-                // Skip "Not specified", "none", and room status fields
-                if (value === 'Not specified' || 
-                    value === 'none' || 
-                    key === 'room_a_status' || 
-                    key === 'room_b_status' || 
-                    key === 'room_c_status') {
-                  return null;
-                }
-                
-                return (
-                  <div key={key} className="flex flex-col">
-                    <span className="text-gray-600 text-xs uppercase tracking-wide">
-                      {key.replace(/_/g, ' ')}
-                    </span>
-                    <span className="font-semibold text-gray-800 mt-1">
-                      {value}
-                    </span>
-                  </div>
-                );
-              })}
+              {filteredEventInfo.map(([key, value]) => (
+                <div key={key} className="flex flex-col">
+                  <span className="text-gray-600 text-xs uppercase tracking-wide">{key.replace(/_/g, ' ')}</span>
+                  <span className="font-semibold text-gray-800 mt-1">{value}</span>
+                </div>
+              ))}
             </div>
           </div>
         )}
-
       </div>
-      {/* DEBUG PANEL - Add this right after the main container */}
+
       <div className="max-w-4xl mx-auto mt-4 p-4 bg-yellow-50 border-2 border-yellow-400 rounded-lg">
         <h3 className="font-bold text-lg mb-2">🐛 DEBUG INFO</h3>
         <div className="grid grid-cols-2 gap-2 text-sm font-mono">
-          <div>sessionId: <span className="font-bold">{sessionId || 'null'}</span></div>
-          <div>isComplete: <span className="font-bold text-red-600">{isComplete ? 'TRUE' : 'FALSE'}</span></div>
-          <div>isLoading: <span className="font-bold">{isLoading ? 'TRUE' : 'FALSE'}</span></div>
-          <div>hasStarted: <span className="font-bold">{hasStarted ? 'TRUE' : 'FALSE'}</span></div>
-          <div>workflowType: <span className="font-bold">{workflowType || 'null'}</span></div>
-          <div>messages: <span className="font-bold">{messages.length}</span></div>
+          <div>
+            sessionId: <span className="font-bold">{sessionId || 'null'}</span>
+          </div>
+          <div>
+            isComplete: <span className="font-bold text-red-600">{isComplete ? 'TRUE' : 'FALSE'}</span>
+          </div>
+          <div>
+            isLoading: <span className="font-bold">{isLoading ? 'TRUE' : 'FALSE'}</span>
+          </div>
+          <div>
+            hasStarted: <span className="font-bold">{hasStarted ? 'TRUE' : 'FALSE'}</span>
+          </div>
+          <div>
+            workflowType: <span className="font-bold">{workflowType || 'null'}</span>
+          </div>
+          <div>
+            messages: <span className="font-bold">{messages.length}</span>
+          </div>
+          <div>
+            debouncedInputLength: <span className="font-bold">{inputText.trim().length}</span>
+          </div>
         </div>
-        
-        {/* Show what buttons condition evaluates to */}
-      <div className="mt-2 p-2 bg-white rounded">
+        <div className="mt-2 p-2 bg-white rounded">
           <strong>Should show buttons?</strong> {isComplete ? '✅ YES' : '❌ NO'}
         </div>
       </div>
+
       <div className="max-w-4xl mx-auto mt-2">
         <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
           <h3 className="font-bold text-base mb-2">📝 Tasks</h3>
@@ -561,21 +764,16 @@ export default function EmailThreadUI() {
                   : [];
                 return (
                   <div key={task.task_id} className="p-3 bg-gray-50 border border-gray-200 rounded-md">
-                    <div className="text-sm font-semibold text-gray-800">
-                      {task.type}
-                    </div>
+                    <div className="text-sm font-semibold text-gray-800">{task.type}</div>
                     <div className="text-xs text-gray-500 mt-1">
-                      Client: {task.client_id || 'unknown'} | Created: {task.created_at ? new Date(task.created_at).toLocaleString() : 'n/a'}
+                      Client: {task.client_id || 'unknown'} | Created:{' '}
+                      {task.created_at ? new Date(task.created_at).toLocaleString() : 'n/a'}
                     </div>
                     {suggestedDates.length > 0 && (
-                      <div className="text-xs text-gray-700 mt-2">
-                        Suggested dates: {suggestedDates.join(', ')}
-                      </div>
+                      <div className="text-xs text-gray-700 mt-2">Suggested dates: {suggestedDates.join(', ')}</div>
                     )}
                     {task.payload?.snippet && (
-                      <div className="text-xs text-gray-600 mt-1 italic">
-                        &quot;{task.payload.snippet}&quot;
-                      </div>
+                      <div className="text-xs text-gray-600 mt-1 italic">"{task.payload.snippet}"</div>
                     )}
                     {task.type === 'ask_for_date' && (
                       <div className="flex gap-2 mt-3">
