@@ -7,12 +7,14 @@ from typing import Any, Dict, List, Tuple
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
+from backend.utils.profiler import profile_step
 
 from ..llm.send_offer_llm import ComposeOffer
 
 __workflow_role__ = "trigger"
 
 
+@profile_step("workflow.step4.offer")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Run Step 4 — offer preparation and transmission."""
 

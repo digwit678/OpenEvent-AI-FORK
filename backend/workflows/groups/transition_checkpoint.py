@@ -4,10 +4,12 @@ from typing import Any, Dict, List
 
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
+from backend.utils.profiler import profile_step
 
 __all__ = ["process"]
 
 
+@profile_step("workflow.step6.transition")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Step 6 — transition checkpoint to validate consistency before confirmation."""
 

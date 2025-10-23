@@ -6,6 +6,7 @@ from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.groups.intake.condition.checks import suggest_dates
 from backend.workflows.io.database import append_audit_entry, link_event_to_client, tag_message, update_event_metadata
+from backend.utils.profiler import profile_step
 
 from ..condition.decide import is_valid_ddmmyyyy
 from ..llm.analysis import compose_date_confirmation_reply
@@ -13,6 +14,7 @@ from ..llm.analysis import compose_date_confirmation_reply
 __workflow_role__ = "trigger"
 
 
+@profile_step("workflow.step2.date_confirmation")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Run Group B — date negotiation and confirmation."""
 

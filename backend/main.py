@@ -2,7 +2,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uuid
-import json
 import os
 import re
 from datetime import datetime
@@ -13,9 +12,10 @@ from backend.conversation_manager import (
     active_conversations, extract_information_incremental,
 )
 from pathlib import Path
-from backend.adapters.calendar_adapter import CalendarAdapter
+from backend.adapters.calendar_adapter import get_calendar_adapter
 from backend.adapters.client_gui_adapter import ClientGUIAdapter
 from backend.workflows.groups.room_availability import run_availability_workflow
+from backend.utils import json_io
 from backend.workflow_email import (
     process_msg as wf_process_msg,
     DB_PATH as WF_DB_PATH,
@@ -26,6 +26,8 @@ from backend.workflow_email import (
 )
 
 app = FastAPI(title="AI Event Manager")
+
+GUI_ADAPTER = ClientGUIAdapter()
 
 # CORS for frontend
 app.add_middleware(
@@ -43,13 +45,13 @@ def load_events_database():
     """Load all events from the database file"""
     if Path(EVENTS_FILE).exists():
         with open(EVENTS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            return json_io.load(f)
     return {"events": []}
 
 def save_events_database(database):
     """Save all events to the database file"""
     with open(EVENTS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(database, f, indent=2, ensure_ascii=False)
+        json_io.dump(database, f, indent=2, ensure_ascii=False)
 
 # REQUEST/RESPONSE MODELS
 class StartConversationRequest(BaseModel):
@@ -164,7 +166,7 @@ def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> Non
     wf_save_db(db)
 
     try:
-        run_availability_workflow(event_id, CalendarAdapter(), ClientGUIAdapter())
+        run_availability_workflow(event_id, get_calendar_adapter(), GUI_ADAPTER)
     except Exception as exc:
         print(f"[WF][ERROR] Availability workflow failed: {exc}")
 

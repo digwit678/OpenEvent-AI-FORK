@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 import time
@@ -8,8 +7,10 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from functools import lru_cache
 
 from backend.domain import EventStatus, TaskStatus
+from backend.utils import json_io
 
 __workflow_role__ = "Database"
 
@@ -89,7 +90,7 @@ def load_db(path: Path, lock_path: Optional[Path] = None) -> Dict[str, Any]:
     lock_candidate = lock_path_for(path, lock_path)
     with FileLock(lock_candidate):
         with path.open("r", encoding="utf-8") as fh:
-            db = json.load(fh)
+            db = json_io.load(fh)
     if "events" not in db or not isinstance(db["events"], list):
         db["events"] = []
     if "clients" not in db or not isinstance(db["clients"], dict):
@@ -117,7 +118,7 @@ def save_db(db: Dict[str, Any], path: Path, lock_path: Optional[Path] = None) ->
         tmp_fd, tmp_path = tempfile.mkstemp(prefix=path.name, suffix=".tmp", dir=path.parent)
         try:
             with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
-                json.dump(out_db, fh, indent=2, ensure_ascii=False)
+                json_io.dump(out_db, fh, indent=2, ensure_ascii=False)
                 fh.flush()
                 os.fsync(fh.fileno())
             os.replace(tmp_path, path)
@@ -387,13 +388,26 @@ def default_event_record(user_info: Dict[str, Any], msg: Dict[str, Any], receive
     }
 
 
+@lru_cache(maxsize=4)
+def _load_rooms_cached(resolved_path: str) -> List[str]:
+    rooms_path = Path(resolved_path)
+    if not rooms_path.exists():
+        return ["Punkt.Null", "Room A", "Room B", "Room C"]
+    with rooms_path.open("r", encoding="utf-8") as handle:
+        payload = json_io.load(handle)
+    rooms = payload.get("rooms") or []
+    return [room.get("name") for room in rooms if room.get("name")]
+
+
 def load_rooms(path: Optional[Path] = None) -> List[str]:
     """[OpenEvent Database] Load room names from the canonical configuration file."""
 
     rooms_path = path or Path(__file__).resolve().parents[2] / "rooms.json"
-    if not rooms_path.exists():
-        return ["Punkt.Null", "Room A", "Room B", "Room C"]
-    with rooms_path.open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
-    rooms = payload.get("rooms") or []
-    return [room.get("name") for room in rooms if room.get("name")]
+    resolved = str(rooms_path.resolve())
+    return list(_load_rooms_cached(resolved))
+
+
+def clear_cached_rooms() -> None:
+    """Clear the memoized room list (used by tests to reset state)."""
+
+    _load_rooms_cached.cache_clear()

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 import re
-from typing import Any, Optional
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional, Tuple
+
+_ALT_DATE_CACHE: Dict[Tuple[Any, ...], list[str]] = {}
+_ALT_DATE_LIMIT = 128
 
 
 ROOM_ALIASES = {
@@ -150,6 +153,16 @@ def find_better_room_dates(event_entry: dict) -> list[str]:
     Return up to 3 ISO dates within the next ~60 days where a larger/better room is available.
     """
 
+    cache_key = (
+        event_entry.get("event_id"),
+        event_entry.get("chosen_date"),
+        event_entry.get("locked_room_id"),
+        event_entry.get("requirements_hash"),
+    )
+    cached = _ALT_DATE_CACHE.get(cache_key)
+    if cached is not None:
+        return list(cached)
+
     chosen_date = event_entry.get("chosen_date")
     if not chosen_date:
         return []
@@ -188,4 +201,13 @@ def find_better_room_dates(event_entry: dict) -> list[str]:
         alt_dates.append(candidate.isoformat())
         if len(alt_dates) == 3:
             break
+    if len(_ALT_DATE_CACHE) >= _ALT_DATE_LIMIT:
+        _ALT_DATE_CACHE.clear()
+    _ALT_DATE_CACHE[cache_key] = list(alt_dates)
     return alt_dates
+
+
+def clear_room_rule_cache() -> None:
+    """Clear cached alternative date computations (used by tests)."""
+
+    _ALT_DATE_CACHE.clear()

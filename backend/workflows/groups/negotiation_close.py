@@ -9,6 +9,7 @@ from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.workflows.io.tasks import enqueue_task
+from backend.utils.profiler import profile_step
 
 __all__ = ["process"]
 
@@ -19,6 +20,7 @@ DECLINE_KEYWORDS = ("decline", "reject", "cancel", "not move forward", "no longe
 COUNTER_KEYWORDS = ("discount", "lower", "reduce", "better price", "could you do", "counter", "budget")
 
 
+@profile_step("workflow.step5.negotiation")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Step 5 — negotiation handling and close preparation."""
 
