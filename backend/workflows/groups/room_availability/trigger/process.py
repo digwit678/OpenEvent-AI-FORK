@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.workflows.common.room_rules import find_better_room_dates
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata
 
@@ -14,6 +15,13 @@ __workflow_role__ = "trigger"
 ROOM_OUTCOME_UNAVAILABLE = "Unavailable"
 ROOM_OUTCOME_AVAILABLE = "Available"
 ROOM_OUTCOME_OPTION = "Option"
+
+ROOM_SIZE_ORDER = {
+    "Room A": 1,
+    "Room B": 2,
+    "Room C": 3,
+    "Punkt.Null": 4,
+}
 
 
 def process(state: WorkflowState) -> GroupResult:
@@ -70,6 +78,12 @@ def process(state: WorkflowState) -> GroupResult:
         requirements,
     )
 
+    alt_dates: List[str] = []
+    if _needs_better_room_alternatives(state.user_info, status_map, event_entry):
+        alt_dates = find_better_room_dates(event_entry)
+        if alt_dates:
+            draft_text = _append_alt_dates(draft_text, alt_dates)
+
     outcome_topic = {
         ROOM_OUTCOME_AVAILABLE: "room_available",
         ROOM_OUTCOME_OPTION: "room_option",
@@ -83,6 +97,8 @@ def process(state: WorkflowState) -> GroupResult:
         "room": selected_room,
         "status": outcome,
     }
+    if alt_dates:
+        draft_message["alt_dates_for_better_room"] = alt_dates
     state.add_draft_message(draft_message)
 
     event_entry["room_pending_decision"] = {
@@ -117,6 +133,8 @@ def process(state: WorkflowState) -> GroupResult:
         "context": state.context_snapshot,
         "persisted": True,
     }
+    if alt_dates:
+        payload["alt_dates_for_better_room"] = alt_dates
     return GroupResult(action="room_avail_result", payload=payload, halt=True)
 
 
@@ -294,6 +312,58 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
         "persisted": True,
     }
     return GroupResult(action="room_hil_approved", payload=payload, halt=False)
+
+
+def _needs_better_room_alternatives(
+    user_info: Dict[str, Any],
+    status_map: Dict[str, str],
+    event_entry: Dict[str, Any],
+) -> bool:
+    if (user_info or {}).get("room_feedback") != "not_good_enough":
+        return False
+
+    requirements = event_entry.get("requirements") or {}
+    baseline_room = event_entry.get("locked_room_id") or requirements.get("preferred_room")
+    baseline_rank = ROOM_SIZE_ORDER.get(str(baseline_room), 0)
+    if baseline_rank == 0:
+        return True
+
+    larger_available = False
+    for room_name, status in status_map.items():
+        if ROOM_SIZE_ORDER.get(room_name, 0) > baseline_rank and status == ROOM_OUTCOME_AVAILABLE:
+            larger_available = True
+            break
+
+    if not larger_available:
+        return True
+
+    participants = (requirements.get("number_of_participants") or 0)
+    participants_val: Optional[int]
+    try:
+        participants_val = int(participants)
+    except (TypeError, ValueError):
+        participants_val = None
+
+    capacity_map = {
+        1: 36,
+        2: 54,
+        3: 96,
+        4: 140,
+    }
+    if participants_val is not None:
+        baseline_capacity = capacity_map.get(baseline_rank)
+        if baseline_capacity and participants_val > baseline_capacity:
+            return True
+
+    return False
+
+
+def _append_alt_dates(message: str, alt_dates: List[str]) -> str:
+    if not alt_dates:
+        return message
+    lines = [message.rstrip(), "", "Here are a few alternative dates with larger rooms available:"]
+    lines.extend(f"- {date}" for date in alt_dates)
+    return "\n".join(lines)
 
 
 def _compose_outcome_message(

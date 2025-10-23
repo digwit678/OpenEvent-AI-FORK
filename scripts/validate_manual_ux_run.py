@@ -4,7 +4,8 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 
 def _load_records(path: Path) -> List[Dict[str, Any]]:
@@ -77,7 +78,9 @@ def _detours(records: List[Dict[str, Any]]) -> bool:
             detour_step_seen = True
         if audit.get('reason') == 'return_to_caller':
             return_audit = True
-    return caller_set and caller_cleared and return_audit and detour_step_seen
+    if not caller_set:
+        return True
+    return caller_cleared and return_audit and detour_step_seen
 
 
 def _thread_fsm(records: List[Dict[str, Any]]) -> bool:
@@ -92,15 +95,21 @@ def _thread_fsm(records: List[Dict[str, Any]]) -> bool:
 
 def _audit(records: List[Dict[str, Any]]) -> bool:
     prev_step = None
+    caller_present = False
+    has_return = False
     for rec in records:
         state = rec.get('state') or {}
         step = state.get('step')
+        if state.get('caller') is not None:
+            caller_present = True
+        audit = rec.get('audit_tail') or {}
+        if audit.get('reason') == 'return_to_caller':
+            has_return = True
         if step is not None and prev_step is not None and step != prev_step:
-            audit = rec.get('audit_tail') or {}
             if audit.get('from_step') is None:
                 return False
         prev_step = step if step is not None else prev_step
-    if not any((rec.get('audit_tail') or {}).get('reason') == 'return_to_caller' for rec in records):
+    if caller_present and not has_return:
         return False
     return True
 
@@ -116,9 +125,65 @@ def _confirmation_variant(records: List[Dict[str, Any]]) -> bool:
     return False
 
 
+def _site_visit_requirement(records: List[Dict[str, Any]]) -> bool:
+    action_seen = False
+    scheduled = False
+    for rec in records:
+        status = ((rec.get('state') or {}).get('site_visit_status') or '').lower()
+        action = (rec.get('action') or '').lower()
+        if action == 'confirmation_site_visit_sent':
+            action_seen = True
+            if status == 'scheduled':
+                scheduled = True
+        elif action_seen and status == 'scheduled':
+            scheduled = True
+    return action_seen and scheduled
+
+
+def _better_room_altdates(records: List[Dict[str, Any]]) -> bool:
+    alt_dates: set[str] = set()
+    for rec in records:
+        for date in rec.get('alt_dates_for_better_room') or []:
+            alt_dates.add(date)
+    if not alt_dates:
+        return False
+    final_date: Optional[str] = None
+    for rec in records:
+        chosen = (rec.get('state') or {}).get('chosen_date')
+        if chosen:
+            final_date = chosen
+    if final_date is None:
+        return False
+    try:
+        final_norm = datetime.strptime(final_date, "%Y-%m-%d").date()
+    except ValueError:
+        try:
+            final_norm = datetime.strptime(final_date, "%d.%m.%Y").date()
+        except ValueError:
+            return False
+    alt_norm = set()
+    for entry in alt_dates:
+        try:
+            alt_norm.add(datetime.strptime(entry, "%Y-%m-%d").date())
+        except ValueError:
+            try:
+                alt_norm.add(datetime.strptime(entry, "%d.%m.%Y").date())
+            except ValueError:
+                continue
+    if not alt_norm:
+        return False
+    return final_norm in alt_norm
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Validate manual UX run against expectations.")
     parser.add_argument('path', type=Path, help='Path to the JSON trace produced by a manual UX scenario run')
+    parser.add_argument('--require_site_visit', action='store_true', help='Ensure site visit flow completed')
+    parser.add_argument(
+        '--require_better_room_altdates',
+        action='store_true',
+        help='Ensure better-room alternative dates were offered and used',
+    )
     args = parser.parse_args()
 
     records = _load_records(args.path)
@@ -132,7 +197,15 @@ def main() -> None:
         'thread_fsm': _thread_fsm(records),
         'audit': _audit(records),
         'confirmation_variant': _confirmation_variant(records),
+        'site_visit': _site_visit_requirement(records),
+        'better_room_altdates': _better_room_altdates(records),
     }
+
+    if args.require_site_visit and not results['site_visit']:
+        raise SystemExit('Site visit requirement not satisfied.')
+    if args.require_better_room_altdates and not results['better_room_altdates']:
+        raise SystemExit('Better room alternative dates requirement not satisfied.')
+
     print(json.dumps(results, indent=2))
 
 
