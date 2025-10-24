@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 import time
@@ -186,15 +187,23 @@ def _last_event_for_email(db: Dict[str, Any], email_lc: str) -> Optional[Dict[st
     return candidates[0][2]
 
 
+def _snapshot_hash(payload: Dict[str, Any]) -> str:
+    normalized = json_io.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def context_snapshot(db: Dict[str, Any], client: Dict[str, Any], email_lc: str) -> Dict[str, Any]:
     """[OpenEvent Database] Assemble a short context payload for downstream steps."""
 
     history_tail = client.get("history", [])[-5:]
-    return {
+    snapshot = {
         "profile": dict(client.get("profile", {})),
         "history_tail": history_tail,
         "last_event": _last_event_for_email(db, email_lc),
     }
+    snapshot_hash = _snapshot_hash(snapshot)
+    snapshot["context_hash"] = snapshot_hash
+    return snapshot
 
 
 def last_event_for_email(db: Dict[str, Any], email_lc: str) -> Optional[Dict[str, Any]]:
