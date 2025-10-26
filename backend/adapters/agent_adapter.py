@@ -5,12 +5,18 @@ Tests can call `reset_agent_adapter()` to clear the shared singleton between run
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.domain import IntentLabel
+
+try:  # pragma: no cover - optional dependency resolved at runtime
+    from openai import OpenAI  # type: ignore
+except Exception:  # pragma: no cover - library may be unavailable in tests
+    OpenAI = None  # type: ignore
 
 
 class AgentAdapter:
@@ -190,6 +196,110 @@ class StubAgentAdapter(AgentAdapter):
         return None
 
 
+class OpenAIAgentAdapter(AgentAdapter):
+    """Adapter backed by OpenAI chat completions for intent/entity tasks."""
+
+    _INTENT_PROMPT = (
+        "Classify the email below. Respond with JSON object {\"intent\": <event_request|other>, "
+        "\"confidence\": <0-1 float>}."
+    )
+    _ENTITY_PROMPT = (
+        "Extract booking details from the email. Return JSON with keys: date (YYYY-MM-DD or null), "
+        "start_time, end_time, city, participants, room, name, email, type, catering, phone, company, "
+        "language, notes, billing_address. Use null when unknown."
+    )
+
+    _ENTITY_KEYS = [
+        "date",
+        "start_time",
+        "end_time",
+        "city",
+        "participants",
+        "room",
+        "name",
+        "email",
+        "type",
+        "catering",
+        "phone",
+        "company",
+        "language",
+        "notes",
+        "billing_address",
+    ]
+
+    def __init__(self) -> None:
+        if OpenAI is None:
+            raise RuntimeError("openai package is required when AGENT_MODE=openai")
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY must be set when AGENT_MODE=openai")
+        self._client = OpenAI(api_key=api_key)
+        model = os.getenv("OPENAI_AGENT_MODEL", "o3-mini")
+        self._intent_model = os.getenv("OPENAI_INTENT_MODEL", model)
+        self._entity_model = os.getenv("OPENAI_ENTITY_MODEL", model)
+        self._fallback = StubAgentAdapter()
+
+    def _run_completion(self, *, prompt: str, body: str, subject: str, model: str) -> Dict[str, Any]:
+        message = f"Subject: {subject}\n\nBody:\n{body}"
+        response = self._client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": message},
+            ],
+            temperature=0,
+            response_format={"type": "json_object"},
+        )
+        content = response.choices[0].message.content if response.choices else "{}"
+        try:
+            return json.loads(content or "{}")
+        except json.JSONDecodeError:
+            return {}
+
+    def route_intent(self, msg: Dict[str, Any]) -> Tuple[str, float]:
+        subject = msg.get("subject") or ""
+        body = msg.get("body") or ""
+        try:
+            payload = self._run_completion(
+                prompt=self._INTENT_PROMPT,
+                body=body,
+                subject=subject,
+                model=self._intent_model,
+            )
+            intent = str(payload.get("intent") or "").strip().lower()
+            if intent not in {IntentLabel.EVENT_REQUEST.value, IntentLabel.NON_EVENT.value}:
+                intent = IntentLabel.NON_EVENT.value
+            confidence_raw = payload.get("confidence")
+            try:
+                confidence = float(confidence_raw)
+            except (TypeError, ValueError):
+                confidence = 0.5
+            confidence = max(0.0, min(1.0, confidence))
+            return intent or IntentLabel.NON_EVENT.value, confidence
+        except Exception:
+            return self._fallback.route_intent(msg)
+
+    def extract_entities(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+        subject = msg.get("subject") or ""
+        body = msg.get("body") or ""
+        try:
+            payload = self._run_completion(
+                prompt=self._ENTITY_PROMPT,
+                body=body,
+                subject=subject,
+                model=self._entity_model,
+            )
+            entities: Dict[str, Any] = {}
+            for key in self._ENTITY_KEYS:
+                entities[key] = payload.get(key)
+            return entities
+        except Exception:
+            return self._fallback.extract_entities(msg)
+
+    def extract_user_information(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+        return self.extract_entities(msg)
+
+
 _AGENT_SINGLETON: Optional[AgentAdapter] = None
 
 
@@ -203,6 +313,9 @@ def get_agent_adapter() -> AgentAdapter:
     mode = os.environ.get("AGENT_MODE", "stub").lower()
     if mode == "stub":
         _AGENT_SINGLETON = StubAgentAdapter()
+        return _AGENT_SINGLETON
+    if mode == "openai":
+        _AGENT_SINGLETON = OpenAIAgentAdapter()
         return _AGENT_SINGLETON
     raise RuntimeError(f"Unsupported AGENT_MODE: {mode}")
 
