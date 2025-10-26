@@ -28,8 +28,9 @@ def process(state: WorkflowState) -> GroupResult:
     state.current_step = 6
     blockers = _collect_blockers(event_entry)
     if blockers:
+        blocker_text = "; ".join(blockers)
         draft = {
-            "body": "I need a quick clarification before we confirm: " + "; ".join(blockers) + ".",
+            "body": f"Transition halted: {blocker_text}. Please resolve before continuing.",
             "step": 6,
             "topic": "transition_clarification",
             "requires_approval": True,
