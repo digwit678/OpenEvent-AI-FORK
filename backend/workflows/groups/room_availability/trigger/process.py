@@ -378,28 +378,31 @@ def _compose_outcome_message(
 
     participants = requirements.get("number_of_participants")
     layout = requirements.get("seating_layout")
-    requirements_short = []
-    if participants:
-        requirements_short.append(f"{participants} guests")
-    if layout:
-        requirements_short.append(layout)
-    requirement_text = ", ".join(requirements_short) if requirements_short else "your requirements"
+
+    if participants and layout:
+        capacity_text = f"{participants} guests in {layout}"
+    elif participants:
+        capacity_text = f"{participants} guests"
+    elif layout:
+        capacity_text = f"a {layout} layout"
+    else:
+        capacity_text = "your requirements"
 
     if status == ROOM_OUTCOME_AVAILABLE and room_name:
         return (
-            f"Great news — {room_name} is available on {chosen_date}. "
-            f"It comfortably fits {requirement_text}. "
+            f"Good news — {room_name} is available on {chosen_date}. "
+            f"It comfortably fits {capacity_text}. "
             "Shall we proceed with this room and date?"
         )
 
     if status == ROOM_OUTCOME_OPTION and room_name:
         return (
             f"{room_name} is currently on option for {chosen_date}. "
-            f"It matches {requirement_text}. "
-            "Would you like to confirm under this option, look at other dates, or consider a different room?"
+            "Capacity and layout fit your needs. "
+            "We can proceed under this option or consider other dates/rooms — what would you prefer?"
         )
 
     return (
-        f"Thank you. On {chosen_date}, we do not have a room that meets {requirement_text}. "
-        "Would you like to consider alternative dates, adjust the guest count/layout, or explore other rooms?"
+        f"Thanks for your request. Unfortunately, no suitable room is available on {chosen_date} for {capacity_text}. "
+        "Would one of these alternative dates work, or would you like to adjust the attendee count or layout?"
     )

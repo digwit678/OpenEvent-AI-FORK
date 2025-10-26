@@ -56,12 +56,14 @@ def _present_candidate_dates(state: WorkflowState, event_entry: dict) -> GroupRe
     if not candidate_dates:
         candidate_dates = []
 
-    options_text = "\n".join(f"- {value}" for value in candidate_dates) or "• No suitable slots in the next 45 days."
-    prompt = (
-        "Here are the next available dates at The Atelier:\n"
-        f"{options_text}\n"
-        "Please pick one that works for you, or share another date and I'll check it immediately."
-    )
+    options_lines = ["Here are our next available dates:"]
+    if candidate_dates:
+        options_lines.extend(f"- {value}" for value in candidate_dates)
+    else:
+        options_lines.append("• No suitable slots in the next 45 days.")
+    options_lines.append("Would one of these work, or do you prefer a different date?")
+    options_lines.append("If you have alternatives, please share them and I’ll check feasibility.")
+    prompt = "\n".join(options_lines)
 
     draft_message = {
         "body": prompt,
