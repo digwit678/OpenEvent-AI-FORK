@@ -17,6 +17,7 @@ from backend.workflows.common.room_rules import (
     sanitize_participants,
 )
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from backend.workflows.common.datetime_parse import parse_first_date, parse_time_range
 
 adapter: AgentAdapter = get_agent_adapter()
 
@@ -72,7 +73,12 @@ def classify_intent(message: Dict[str, Optional[str]]) -> Tuple[IntentLabel, flo
         print("[DEV] intent override -> event_request")
         return IntentLabel.EVENT_REQUEST, 0.99
     intent, confidence = _agent().route_intent(payload)
-    return IntentLabel.normalize(intent), float(confidence)
+    normalized = IntentLabel.normalize(intent)
+    override = _heuristic_intent_override(payload, normalized)
+    if override is not None:
+        normalized = override
+        confidence = max(confidence, 0.93)
+    return normalized, float(confidence)
 
 
 def extract_user_information(message: Dict[str, Optional[str]]) -> Dict[str, Optional[Any]]:
@@ -136,3 +142,77 @@ def reset_llm_adapter() -> None:
     global adapter
     reset_agent_adapter()
     adapter = get_agent_adapter()
+
+
+_CONFIRM_TOKENS = (
+    "confirm",
+    "confirmed",
+    "please confirm",
+    "we'll take",
+    "we will take",
+    "take that date",
+    "lock it in",
+    "proceed",
+    "go ahead",
+    "works for us",
+    "that date works",
+    "book it",
+)
+_AFFIRMATIVE_PREFIXES = ("yes", "yep", "ja", "oui", "si", "sounds good", "let's do")
+_EDIT_TOKENS = ("change", "update", "adjust", "move", "shift", "switch", "different", "another", "reschedule")
+_ROOM_TOKENS = ("room", "space", "hall")
+_REQUIREMENT_TOKENS = (
+    "people",
+    "guests",
+    "attendees",
+    "participants",
+    "headcount",
+    "projector",
+    "screen",
+    "catering",
+    "requirements",
+    "layout",
+    "package",
+    "menu",
+    "equipment",
+)
+
+
+def _heuristic_intent_override(
+    payload: Dict[str, str],
+    base_intent: IntentLabel,
+) -> Optional[IntentLabel]:
+    raw_subject = (payload.get("subject") or "")
+    raw_body = (payload.get("body") or "")
+    subject = raw_subject.strip()
+    body = raw_body.strip()
+    body_lower = body.lower()
+    subject_lower = subject.lower()
+    text = f"{subject_lower}\n{body_lower}"
+
+    detected_date = parse_first_date(body) or parse_first_date(subject)
+    start_time, end_time, _ = parse_time_range(body)
+    has_time_range = bool(start_time and end_time)
+
+    if detected_date:
+        if any(token in text for token in _CONFIRM_TOKENS) or body_lower.startswith(_AFFIRMATIVE_PREFIXES):
+            return IntentLabel.CONFIRM_DATE if has_time_range else IntentLabel.CONFIRM_DATE_PARTIAL
+
+        if any(token in text for token in _EDIT_TOKENS):
+            # "move to 17.04" → edit date
+            if any(keyword in text for keyword in ("date", "day", "daytime", "calendar")) or not any(
+                room_token in text for room_token in _ROOM_TOKENS
+            ):
+                return IntentLabel.EDIT_DATE
+
+    if any(room_token in text for room_token in _ROOM_TOKENS) and any(token in text for token in _EDIT_TOKENS):
+        return IntentLabel.EDIT_ROOM
+
+    if any(req_token in text for req_token in _REQUIREMENT_TOKENS) and any(token in text for token in _EDIT_TOKENS):
+        return IntentLabel.EDIT_REQUIREMENTS
+
+    # Escalate direct affirmative + date replies even without keywords.
+    if detected_date and body_lower.startswith(_AFFIRMATIVE_PREFIXES):
+        return IntentLabel.CONFIRM_DATE if has_time_range else IntentLabel.CONFIRM_DATE_PARTIAL
+
+    return None

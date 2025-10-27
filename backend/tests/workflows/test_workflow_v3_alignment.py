@@ -108,10 +108,68 @@ def test_step2_five_date_loop_and_confirmation(tmp_path: Path, _stub_agent: Dict
         "Let's confirm 15.03.2025 for the workshop.",
         info={"date": "2025-03-15"},
     )
-    assert result2["action"] == "room_avail_result"
+    assert result2["action"] == "date_time_clarification"
     event = _event(db_path)
-    assert event["date_confirmed"] is True
     assert event["chosen_date"] == "15.03.2025"
+    assert event.get("pending_time_request")
+
+
+def test_step2_confirm_parses_time_range_dash(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]) -> None:
+    db_path = tmp_path / "step2-time.json"
+    mapping = _stub_agent
+
+    _run(
+        db_path,
+        mapping,
+        "m1",
+        "We'd like to see some dates for April 2026.",
+    )
+
+    result = _run(
+        db_path,
+        mapping,
+        "m2",
+        "Confirm 09.04.2026, 18-22.",
+        info={"date": "2026-04-09"},
+    )
+    assert result["action"] == "room_avail_result"
+
+    event = _event(db_path)
+    assert event["event_data"]["Start Time"] == "18:00"
+    assert event["event_data"]["End Time"] == "22:00"
+    requested = event.get("requested_window") or {}
+    assert requested.get("start_time") == "18:00"
+    assert requested.get("end_time") == "22:00"
+    assert requested.get("times_inherited") is False
+
+
+def test_step2_confirm_without_time_requests_clarification(
+    tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]
+) -> None:
+    db_path = tmp_path / "step2-missing-time.json"
+    mapping = _stub_agent
+
+    _run(
+        db_path,
+        mapping,
+        "m1",
+        "Looking at possible dates in April.",
+    )
+
+    result = _run(
+        db_path,
+        mapping,
+        "m2",
+        "Confirm 09.04.2026.",
+        info={"date": "2026-04-09"},
+    )
+    assert result["action"] == "date_time_clarification"
+
+    event = _event(db_path)
+    pending = event.get("pending_time_request") or {}
+    assert pending.get("iso_date") == "2026-04-09"
+    assert event["date_confirmed"] is False
+    assert event["thread_state"] == "Awaiting Client Response"
 
 
 def test_happy_path_step3_to_4_hil_gate(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]) -> None:

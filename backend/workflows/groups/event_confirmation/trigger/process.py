@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.domain import EventStatus
+from backend.domain import EventStatus, IntentLabel
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.room_rules import site_visit_allowed
 from backend.workflows.common.types import GroupResult, WorkflowState
@@ -47,26 +47,10 @@ def process(state: WorkflowState) -> GroupResult:
     if state.user_info.get("hil_approve_step") == 7:
         return _process_hil_confirmation(state, event_entry)
 
-    structural = _detect_structural_change(state.user_info, event_entry)
+    structural = _detect_structural_change(state.user_info, event_entry, state.intent)
     if structural:
-        target_step, reason = structural
-        update_event_metadata(event_entry, caller_step=7, current_step=target_step)
-        append_audit_entry(event_entry, 7, target_step, reason)
-        state.caller_step = 7
-        state.current_step = target_step
-        state.set_thread_state("In Progress" if target_step == 4 else "Awaiting Client Response")
-        state.extras["persist"] = True
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "reason": reason,
-            "target_step": target_step,
-            "context": state.context_snapshot,
-            "persisted": True,
-        }
-        return GroupResult(action="confirmation_detour", payload=payload, halt=False)
+        target_step, reason, details = structural
+        return _launch_edit_detour(state, event_entry, target_step, reason, details)
 
     message_text = (state.message.body or "").strip()
     classification = _classify_message(message_text, event_entry)
@@ -113,29 +97,139 @@ def _classify_message(message_text: str, event_entry: Dict[str, Any]) -> str:
     return "question"
 
 
-def _detect_structural_change(user_info: Dict[str, Any], event_entry: Dict[str, Any]) -> Optional[Tuple[int, str]]:
+def _detect_structural_change(
+    user_info: Dict[str, Any],
+    event_entry: Dict[str, Any],
+    intent: Optional[IntentLabel],
+) -> Optional[Tuple[int, str, Dict[str, Any]]]:
     new_iso_date = user_info.get("date")
     new_ddmmyyyy = user_info.get("event_date")
     if new_iso_date or new_ddmmyyyy:
         candidate = new_ddmmyyyy or _iso_to_ddmmyyyy(new_iso_date)
         if candidate and candidate != event_entry.get("chosen_date"):
-            return 2, "confirmation_changed_date"
+            details = {
+                "type": IntentLabel.EDIT_DATE.value,
+                "previous": event_entry.get("chosen_date"),
+                "new": candidate,
+            }
+            return 2, "confirmation_changed_date", details
 
     new_room = user_info.get("room")
     if new_room and new_room != event_entry.get("locked_room_id"):
-        return 3, "confirmation_changed_room"
+        details = {
+            "type": IntentLabel.EDIT_ROOM.value,
+            "previous": event_entry.get("locked_room_id"),
+            "new": new_room,
+        }
+        return 3, "confirmation_changed_room", details
 
     participants = user_info.get("participants")
     req = event_entry.get("requirements") or {}
     if participants and participants != req.get("number_of_participants"):
-        return 3, "confirmation_changed_participants"
+        details = {
+            "type": IntentLabel.EDIT_REQUIREMENTS.value,
+            "field": "number_of_participants",
+            "previous": req.get("number_of_participants"),
+            "new": participants,
+        }
+        return 3, "confirmation_changed_participants", details
 
     products_add = user_info.get("products_add")
     products_remove = user_info.get("products_remove")
     if products_add or products_remove:
-        return 4, "confirmation_changed_products"
+        details = {
+            "type": IntentLabel.EDIT_REQUIREMENTS.value,
+            "field": "products",
+            "add": products_add,
+            "remove": products_remove,
+        }
+        return 4, "confirmation_changed_products", details
+
+    if intent in {IntentLabel.EDIT_DATE, IntentLabel.EDIT_ROOM, IntentLabel.EDIT_REQUIREMENTS}:
+        mapping = {
+            IntentLabel.EDIT_DATE: (2, "confirmation_edit_date"),
+            IntentLabel.EDIT_ROOM: (3, "confirmation_edit_room"),
+            IntentLabel.EDIT_REQUIREMENTS: (3, "confirmation_edit_requirements"),
+        }
+        target_step, reason = mapping[intent]
+        details = {"type": intent.value, "previous": None, "new": None}
+        return target_step, reason, details
 
     return None
+
+
+def _launch_edit_detour(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    target_step: int,
+    reason: str,
+    details: Dict[str, Any],
+) -> GroupResult:
+    acknowledgement = (
+        "Got it - let's adjust that. I'll check availability again and refresh your offer, "
+        "then bring you back here to confirm."
+    )
+    state.add_draft_message(
+        {"body": acknowledgement, "step": 7, "topic": "confirmation_edit_ack", "requires_approval": True}
+    )
+
+    trace_size = _append_edit_trace(event_entry, details)
+    thread_state = "In Progress" if target_step == 4 else "Awaiting Client Response"
+    update_event_metadata(event_entry, caller_step=7, current_step=target_step, thread_state=thread_state)
+    append_audit_entry(event_entry, 7, target_step, reason)
+    state.caller_step = 7
+    state.current_step = target_step
+    state.set_thread_state(thread_state)
+    state.extras["persist"] = True
+    _record_detour_log(event_entry, reason, details, trace_size)
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "reason": reason,
+        "target_step": target_step,
+        "context": state.context_snapshot,
+        "persisted": True,
+        "edit_details": details,
+        "edit_trace_size": trace_size,
+    }
+    return GroupResult(action="confirmation_detour", payload=payload, halt=False)
+
+
+def _append_edit_trace(event_entry: Dict[str, Any], details: Dict[str, Any]) -> int:
+    trace = event_entry.setdefault("edit_trace", [])
+    entry: Dict[str, Any] = {
+        "ts": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "type": details.get("type"),
+    }
+    for key in ("previous", "new", "field", "add", "remove"):
+        if details.get(key) is not None:
+            entry[key] = details.get(key)
+    trace.append(entry)
+    return len(trace)
+
+
+def _record_detour_log(
+    event_entry: Dict[str, Any],
+    reason: str,
+    details: Dict[str, Any],
+    trace_size: int,
+) -> None:
+    logs = event_entry.setdefault("logs", [])
+    logs.append(
+        {
+            "ts": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+            "actor": "workflow",
+            "action": "detour_started",
+            "details": {
+                "reason": reason,
+                "edit": details,
+                "edit_trace_size": trace_size,
+            },
+        }
+    )
 
 
 def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:

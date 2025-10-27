@@ -25,7 +25,318 @@
       },
       "msgs": [
         "sample-2"
+      ],
+      "status": "Lead",
+      "current_step": 1,
+      "caller_step": null,
+      "thread_state": "In Progress",
+      "chosen_date": null,
+      "date_confirmed": false,
+      "locked_room_id": null,
+      "requirements": {},
+      "requirements_hash": null,
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [],
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      }
+    },
+    {
+      "event_id": "76059788-dbae-4533-a4dd-3c3dd1857d41",
+      "created_at": "2025-10-23T01:31:38.455183",
+      "status": "Lead",
+      "current_step": 3,
+      "caller_step": null,
+      "thread_state": "Awaiting Client Response",
+      "chosen_date": "09.04.2026",
+      "date_confirmed": true,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": null,
+        "seating_layout": null,
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": null
+      },
+      "requirements_hash": "f7a9acafde4167480c885e89b816fbcf57924d7fad42d61dc2be9fd643135ae7",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2025-10-23T01:31:38Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 3,
+          "reason": "date_updated_initial"
+        },
+        {
+          "ts": "2025-10-27T11:12:22Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 2,
+          "reason": "date_updated"
+        },
+        {
+          "ts": "2025-10-27T11:12:22Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 3,
+          "reason": "date_confirmed"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "27.10.2025",
+        "Status": "Date Confirmed",
+        "Event Date": "2026-04-09",
+        "Name": "Client (GUI)",
+        "Email": "unknown@example.com",
+        "Phone": "+41795552211",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "04:25",
+        "End Time": "Not specified",
+        "Preferred Room": "Room B",
+        "Number of Participants": "18",
+        "Type of Event": "workshop",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "9b6fcccd-0f6d-42e6-9386-b4847c8ee5d0",
+        "fd741876-7bb0-4602-a1d1-9860b6a12c0b",
+        "1ffef4a1-2876-4a91-84a2-50e43b711cd8",
+        "b32f1962-26f8-4bb8-9b87-76bdf869bc9b",
+        "7f4827a8-4263-4293-97df-8d6623b23be7",
+        "2a549b6d-c3b1-442f-be72-ac868e6bfa70",
+        "10ced221-05b4-42aa-8911-aeacd4a63230",
+        "5ea8a36f-081b-465c-920b-e53d2a2e4330",
+        "351136e8-3e81-4f66-8941-469eeb3a19a8"
+      ],
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "room_pending_decision": {
+        "selected_room": "Room A",
+        "selected_status": "Available",
+        "requirements_hash": "f7a9acafde4167480c885e89b816fbcf57924d7fad42d61dc2be9fd643135ae7",
+        "summary": "Room availability summary — Room A: Available; Room B: Option; Room C: Available."
+      },
+      "logs": [
+        {
+          "ts": "2025-10-27T11:12:22.139988Z",
+          "actor": "Platform",
+          "action": "room_availability_triggered_after_date_confirm",
+          "details": {
+            "event_id": "76059788-dbae-4533-a4dd-3c3dd1857d41"
+          }
+        }
       ]
+    },
+    {
+      "event_id": "9b1a04a2-9acc-4962-8b89-500dd76828bb",
+      "created_at": "2025-10-23T02:19:07.708654",
+      "status": "Lead",
+      "current_step": 3,
+      "caller_step": null,
+      "thread_state": "Awaiting Client Response",
+      "chosen_date": "15.06.2026",
+      "date_confirmed": true,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 35,
+        "seating_layout": "conference",
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": "Room B"
+      },
+      "requirements_hash": "f6438369323dc8c8afd06aa4f827f3dc97212b8cf104fed70e64dc311aaece87",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2025-10-23T02:19:07Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 3,
+          "reason": "date_updated_initial"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "01.05.2025",
+        "Status": "Lead",
+        "Event Date": "15.06.2026",
+        "Name": "Client",
+        "Email": "client@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Room B",
+        "Number of Participants": "35",
+        "Type of Event": "conference",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "cli"
+      ],
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "room_pending_decision": {
+        "selected_room": "Room B",
+        "selected_status": "Option",
+        "requirements_hash": "f6438369323dc8c8afd06aa4f827f3dc97212b8cf104fed70e64dc311aaece87",
+        "summary": "Room availability summary — Room A: Available; Room B: Option; Room C: Available."
+      }
+    },
+    {
+      "event_id": "cf48c329-d6a9-4c35-9102-14cec1c80694",
+      "created_at": "2025-10-23T02:21:08.311240",
+      "status": "Lead",
+      "current_step": 2,
+      "caller_step": null,
+      "thread_state": "Awaiting Client Response",
+      "chosen_date": null,
+      "date_confirmed": false,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 35,
+        "seating_layout": "conference",
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": "Room B"
+      },
+      "requirements_hash": "f6438369323dc8c8afd06aa4f827f3dc97212b8cf104fed70e64dc311aaece87",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2025-10-23T02:21:08Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 2,
+          "reason": "date_missing"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "23.10.2025",
+        "Status": "Lead",
+        "Event Date": "Not specified",
+        "Name": "Not specified",
+        "Email": "probe@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Room B",
+        "Number of Participants": "35",
+        "Type of Event": "conference",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "94772c3e-2570-48cf-8ab0-382e42d2e74d"
+      ],
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      }
     }
   ],
   "clients": {
@@ -109,6 +420,379 @@
       "event_ids": [
         "5e2fddc9-9096-4035-8767-e46ef577819c"
       ]
+    },
+    "unknown@example.com": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "9b6fcccd-0f6d-42e6-9386-b4847c8ee5d0",
+          "ts": "2025-10-23T01:31:38.449192Z",
+          "subject": "Body:",
+          "body_preview": "Body:\nHi there,\nwe’d like to host a one-day conference for 35 people next month, preferably around the 15th of June, using Room B if it’s free.\nPlease let me kn",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2026-06-15",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 35,
+            "room": "Room B",
+            "name": null,
+            "email": null,
+            "type": "conference",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "15.06.2026"
+          }
+        },
+        {
+          "msg_id": "fd741876-7bb0-4602-a1d1-9860b6a12c0b",
+          "ts": "2025-10-23T01:56:18.209907Z",
+          "subject": "Body:",
+          "body_preview": "Body:\nHi there,\nwe’d like to host a one-day conference for 35 people next month, preferably around the 15th of June, using Room B if it’s free.\nPlease let me kn",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2026-06-15",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 35,
+            "room": "Room B",
+            "name": null,
+            "email": null,
+            "type": "conference",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "15.06.2026"
+          }
+        },
+        {
+          "msg_id": "1ffef4a1-2876-4a91-84a2-50e43b711cd8",
+          "ts": "2025-10-23T01:56:58.621552Z",
+          "subject": "Body:",
+          "body_preview": "Body:\nHi there,\nwe’d like to host a one-day conference for 35 people next month, preferably around the 15th of June, using Room B if it’s free.\nPlease let me kn",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2026-06-15",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 35,
+            "room": "Room B",
+            "name": null,
+            "email": null,
+            "type": "conference",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "15.06.2026"
+          }
+        },
+        {
+          "msg_id": "b32f1962-26f8-4bb8-9b87-76bdf869bc9b",
+          "ts": "2025-10-23T02:12:12.182020Z",
+          "subject": "👤 Client",
+          "body_preview": "👤 Client\nBody:\nHi there,\nwe’d like to host a one-day conference for 35 people next month, preferably around the 15th of June, using Room B if it’s free.\nPlease ",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2026-06-15",
+            "start_time": "04:04",
+            "end_time": null,
+            "city": null,
+            "participants": 35,
+            "room": "Room B",
+            "name": null,
+            "email": null,
+            "type": "conference",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "15.06.2026"
+          }
+        },
+        {
+          "msg_id": "7f4827a8-4263-4293-97df-8d6623b23be7",
+          "ts": "2025-10-23T02:18:05.895206Z",
+          "subject": "Body: Hi there, we’d like to host a one-day conference for 35 people next month,",
+          "body_preview": "Body: Hi there, we’d like to host a one-day conference for 35 people next month, preferably around the 15th of June, using Room B if it’s free. Please let me kn",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2026-06-15",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 35,
+            "room": "Room B",
+            "name": null,
+            "email": null,
+            "type": "conference",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "15.06.2026"
+          }
+        },
+        {
+          "msg_id": "2a549b6d-c3b1-442f-be72-ac868e6bfa70",
+          "ts": "2025-10-23T02:25:38.487685Z",
+          "subject": "Body: Hi there, we’d like to host a one-day conference for 35 people next month,",
+          "body_preview": "Body: Hi there, we’d like to host a one-day conference for 35 people next month, preferably around the 15th of June, using Room B if it’s free. Please let me kn",
+          "intent": "event_request",
+          "confidence": 0.99,
+          "user_info": {
+            "date": "2026-06-15",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 35,
+            "room": "Room B",
+            "name": null,
+            "email": null,
+            "type": "conference",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "15.06.2026"
+          }
+        },
+        {
+          "msg_id": "10ced221-05b4-42aa-8911-aeacd4a63230",
+          "ts": "2025-10-23T02:31:35.351687Z",
+          "subject": "👤 Client",
+          "body_preview": "👤 Client\nBody: Hi there, we’d like to host a one-day conference for 35 people next month, preferably around the 15th of June, using Room B if it’s free. Please ",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2026-06-15",
+            "start_time": "04:25",
+            "end_time": null,
+            "city": null,
+            "participants": 35,
+            "room": "Room B",
+            "name": null,
+            "email": null,
+            "type": "conference",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "15.06.2026"
+          }
+        },
+        {
+          "msg_id": "5ea8a36f-081b-465c-920b-e53d2a2e4330",
+          "ts": "2025-10-27T11:09:31.045662Z",
+          "subject": "1) Intake (no exact date → Step 2)",
+          "body_preview": "1) Intake (no exact date → Step 2)\n\nSubject: Atelier booking – Team Workshop\nBody:\nHi there,\nwe’d like to run a half-day team workshop for ~18 people at your At",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "April",
+            "participants": 18,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": "workshop",
+            "catering": null,
+            "phone": "+41795552211",
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "351136e8-3e81-4f66-8941-469eeb3a19a8",
+          "ts": "2025-10-27T11:12:20.377485Z",
+          "subject": "Confirmed event date 09.04.2026",
+          "body_preview": "The client confirms the preferred event date is 09.04.2026.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2026-04-09",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "09.04.2026"
+          }
+        }
+      ],
+      "event_ids": [
+        "76059788-dbae-4533-a4dd-3c3dd1857d41"
+      ]
+    },
+    "client@example.com": {
+      "profile": {
+        "name": "Client",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "cli",
+          "ts": "2025-05-01T00:00:00Z",
+          "subject": "Hi",
+          "body_preview": "Hi there, we’d like to host a one-day conference for 35 people next month, preferably around the 15th of June, using Room B if it’s free. Please let me know ava",
+          "intent": "event_request",
+          "confidence": 0.99,
+          "user_info": {
+            "date": "2026-06-15",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 35,
+            "room": "Room B",
+            "name": null,
+            "email": null,
+            "type": "conference",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "15.06.2026"
+          }
+        }
+      ],
+      "event_ids": []
+    },
+    "probe@example.com": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "94772c3e-2570-48cf-8ab0-382e42d2e74d",
+          "ts": "2025-10-23T02:21:08.310253Z",
+          "subject": "We’d like a one-day conference for 35 people on 15 June in Room B.",
+          "body_preview": "We’d like a one-day conference for 35 people on 15 June in Room B.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 35,
+            "room": "Room B",
+            "name": null,
+            "email": null,
+            "type": "conference",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        }
+      ],
+      "event_ids": []
     }
   },
   "tasks": [
