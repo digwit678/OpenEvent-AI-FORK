@@ -398,7 +398,7 @@ def _compose_outcome_message(
     if status == ROOM_OUTCOME_OPTION and room_name:
         return (
             f"{room_name} is currently on option for {chosen_date}. "
-            "Capacity and layout fit your needs. "
+            f"It comfortably fits {capacity_text}. "
             "We can proceed under this option or consider other dates/rooms — what would you prefer?"
         )
 
