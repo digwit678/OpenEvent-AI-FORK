@@ -143,11 +143,24 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
         "deposit_state", {"required": False, "percent": 0, "status": "not_required", "due_amount": 0.0}
     )
     conf_state = event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})
+    room_name = event_entry.get("locked_room_id") or event_entry.get("room_pending_decision", {}).get("selected_room")
+    event_date = event_entry.get("chosen_date") or event_entry.get("event_data", {}).get("Event Date")
 
     if deposit_state.get("required") and deposit_state.get("status") != "paid":
         deposit_state["status"] = "requested"
+        amount = deposit_state.get("due_amount")
+        if amount:
+            amount_text = f"CHF {amount:,.2f}".rstrip("0").rstrip(".")
+        elif deposit_state.get("percent"):
+            amount_text = f"a {deposit_state['percent']}% deposit"
+        else:
+            amount_text = "the agreed deposit"
+        message = (
+            f"To finalise your booking, please proceed with the deposit of {amount_text}. "
+            "I’ll send payment details now. Once received, I’ll confirm your event officially."
+        )
         draft = {
-            "body": "To secure the booking, please settle the deposit at your earliest convenience.",
+            "body": message,
             "step": 7,
             "topic": "confirmation_deposit_pending",
             "requires_approval": True,
@@ -160,8 +173,13 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
         payload = _base_payload(state, event_entry)
         return GroupResult(action="confirmation_deposit_requested", payload=payload, halt=True)
 
+    room_fragment = f" for {room_name}" if room_name else ""
+    date_fragment = f" on {event_date}" if event_date else ""
     draft = {
-        "body": "Fantastic! I’ll send the final confirmation now.",
+        "body": (
+            f"Wonderful — we’re ready to proceed with your booking{room_fragment}{date_fragment}. "
+            "I’ll place the booking and send a confirmation message shortly."
+        ),
         "step": 7,
         "topic": "confirmation_final",
         "requires_approval": True,
@@ -189,8 +207,38 @@ def _handle_reserve(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
     )
     deposit_state["required"] = True
     deposit_state["status"] = "requested"
+    room_name = event_entry.get("locked_room_id") or event_entry.get("room_pending_decision", {}).get("selected_room")
+    event_date = event_entry.get("chosen_date") or event_entry.get("event_data", {}).get("Event Date")
+    option_deadline = (
+        event_entry.get("reservation_expires_at")
+        or event_entry.get("option_valid_until")
+        or event_entry.get("reservation_valid_until")
+    )
+    amount = deposit_state.get("due_amount")
+    if amount:
+        amount_text = f"CHF {amount:,.2f}".rstrip("0").rstrip(".")
+    elif deposit_state.get("percent"):
+        amount_text = f"a {deposit_state['percent']}% deposit"
+    else:
+        amount_text = "the deposit"
+    validity_sentence = (
+        f"The option is valid until {option_deadline}."
+        if option_deadline
+        else "The option is valid while we hold the date."
+    )
+    reservation_text_parts = [
+        "We’ve reserved",
+        room_name or "the room",
+        "on",
+        event_date or "the requested date",
+        "for you.",
+        validity_sentence,
+        f"To confirm the booking, please proceed with the deposit of {amount_text}.",
+        "I’ll send payment details now.",
+    ]
+    body = " ".join(part for part in reservation_text_parts if part)
     draft = {
-        "body": "I’ve placed a provisional hold. Please confirm or settle the deposit to secure the date.",
+        "body": body,
         "step": 7,
         "topic": "confirmation_reserve",
         "requires_approval": True,
@@ -218,9 +266,9 @@ def _handle_site_visit(state: WorkflowState, event_entry: Dict[str, Any]) -> Gro
     )
     visit_state["status"] = "proposed"
     visit_state["proposed_slots"] = slots
-    draft_lines = ["Happy to arrange a visit — here are some available slots:"]
+    draft_lines = ["We’d be happy to arrange a site visit. Here are some possible times:"]
     draft_lines.extend(f"- {slot}" for slot in slots)
-    draft_lines.append("Let me know which time suits you best!")
+    draft_lines.append("Which would suit you? If you have other preferences, let me know and I’ll try to accommodate.")
     draft = {
         "body": "\n".join(draft_lines),
         "step": 7,
@@ -259,7 +307,7 @@ def _site_visit_unavailable_response(state: WorkflowState, event_entry: Dict[str
 def _handle_decline(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:
     event_entry.setdefault("event_data", {})["Status"] = EventStatus.CANCELLED.value
     draft = {
-        "body": "Thank you for letting us know — we’ve closed the request and hope to work with you another time.",
+        "body": "Thank you for letting us know. We’ve released the date, and we’d be happy to assist with any future events.",
         "step": 7,
         "topic": "confirmation_decline",
         "requires_approval": True,

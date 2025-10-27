@@ -16,6 +16,9 @@ from backend.adapters.calendar_adapter import get_calendar_adapter
 from backend.adapters.client_gui_adapter import ClientGUIAdapter
 from backend.workflows.groups.room_availability import run_availability_workflow
 from backend.utils import json_io
+
+os.environ.setdefault("AGENT_MODE", os.environ.get("AGENT_MODE_DEFAULT", "openai"))
+
 from backend.workflow_email import (
     process_msg as wf_process_msg,
     DB_PATH as WF_DB_PATH,
@@ -175,7 +178,7 @@ def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: 
     conversation_state.event_info.event_date = chosen_date
     conversation_state.event_info.status = "Date Confirmed"
 
-    os.environ.setdefault("AGENT_MODE", "stub")
+    os.environ.setdefault("AGENT_MODE", "openai")
     synthetic_msg = {
         "msg_id": str(uuid.uuid4()),
         "from_name": "Client (GUI)",
@@ -207,7 +210,7 @@ def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: 
 @app.post("/api/start-conversation")
 async def start_conversation(request: StartConversationRequest):
     """Condition (purple): kick off workflow and branch on manual or ask-for-date pauses before legacy flow."""
-    os.environ.setdefault("AGENT_MODE", "stub")
+    os.environ.setdefault("AGENT_MODE", "openai")
     subject_line = (request.email_body.splitlines()[0][:80] if request.email_body else "No subject")
     msg = {
         "msg_id": str(uuid.uuid4()),
