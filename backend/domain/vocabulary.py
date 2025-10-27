@@ -9,6 +9,11 @@ class IntentLabel(str, Enum):
     """Normalized email intents emitted by the classification pipeline."""
 
     EVENT_REQUEST = "event_request"
+    CONFIRM_DATE = "confirm_date"
+    CONFIRM_DATE_PARTIAL = "confirm_date_partial"
+    EDIT_DATE = "edit_date"
+    EDIT_ROOM = "edit_room"
+    EDIT_REQUIREMENTS = "edit_requirements"
     NON_EVENT = "other"
 
     @classmethod

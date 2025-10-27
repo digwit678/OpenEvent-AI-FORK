@@ -11,7 +11,14 @@ from backend.workflows.common.timeutils import parse_ddmmyyyy
 def is_event_request(intent: IntentLabel) -> bool:
     """[Condition] Check if the classified intent maps to an event request."""
 
-    return intent == IntentLabel.EVENT_REQUEST
+    return intent in {
+        IntentLabel.EVENT_REQUEST,
+        IntentLabel.CONFIRM_DATE,
+        IntentLabel.CONFIRM_DATE_PARTIAL,
+        IntentLabel.EDIT_DATE,
+        IntentLabel.EDIT_ROOM,
+        IntentLabel.EDIT_REQUIREMENTS,
+    }
 
 
 def has_event_date(user_info: Dict[str, Any]) -> bool:

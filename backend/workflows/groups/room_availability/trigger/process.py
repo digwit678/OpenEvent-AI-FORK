@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.workflows.common.room_rules import find_better_room_dates
@@ -23,6 +25,8 @@ ROOM_SIZE_ORDER = {
     "Room C": 3,
     "Punkt.Null": 4,
 }
+
+ROOM_CACHE_TTL_MINUTES = 10
 
 
 @profile_step("workflow.step3.room_availability")
@@ -52,6 +56,9 @@ def process(state: WorkflowState) -> GroupResult:
     if not chosen_date:
         return _detour_to_date(state, event_entry)
 
+    requested_window = event_entry.get("requested_window") or {}
+    window_hash = requested_window.get("hash")
+
     user_requested_room = state.user_info.get("room")
     locked_room_id = event_entry.get("locked_room_id")
     current_req_hash = event_entry.get("requirements_hash")
@@ -60,6 +67,19 @@ def process(state: WorkflowState) -> GroupResult:
     requirements_changed = bool(current_req_hash and current_req_hash != room_eval_hash)
     explicit_room_change = bool(user_requested_room and user_requested_room != locked_room_id)
     missing_lock = locked_room_id is None
+    cache_payload = event_entry.get("room_eval_cache") or {}
+
+    cached_result = _maybe_use_cached_eval(
+        state,
+        event_entry,
+        cache_payload,
+        window_hash,
+        current_req_hash,
+        requirements_changed,
+        explicit_room_change,
+    )
+    if cached_result is not None:
+        return cached_result
 
     if not (missing_lock or explicit_room_change or requirements_changed):
         return _skip_room_evaluation(state, event_entry)
@@ -109,6 +129,12 @@ def process(state: WorkflowState) -> GroupResult:
         "requirements_hash": current_req_hash,
         "summary": summary,
     }
+    event_entry["room_eval_cache"] = _build_cache_payload(
+        draft_message,
+        event_entry["room_pending_decision"],
+        window_hash,
+        current_req_hash,
+    )
 
     update_event_metadata(
         event_entry,
@@ -138,6 +164,106 @@ def process(state: WorkflowState) -> GroupResult:
     if alt_dates:
         payload["alt_dates_for_better_room"] = alt_dates
     return GroupResult(action="room_avail_result", payload=payload, halt=True)
+
+
+def _maybe_use_cached_eval(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    cache_payload: Dict[str, Any],
+    window_hash: Optional[str],
+    current_req_hash: Optional[str],
+    requirements_changed: bool,
+    explicit_room_change: bool,
+) -> Optional[GroupResult]:
+    if not cache_payload or not window_hash or not current_req_hash:
+        return None
+    if requirements_changed or explicit_room_change:
+        return None
+    if cache_payload.get("window_hash") != window_hash:
+        return None
+    if cache_payload.get("requirements_hash") != current_req_hash:
+        return None
+    if not _cache_valid(cache_payload.get("expires_at")):
+        return None
+    return _reuse_cached_room_eval(state, event_entry, cache_payload)
+
+
+def _reuse_cached_room_eval(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    cache_payload: Dict[str, Any],
+) -> Optional[GroupResult]:
+    draft = cache_payload.get("draft_message")
+    if not draft:
+        return None
+    state.add_draft_message(copy.deepcopy(draft))
+
+    pending = cache_payload.get("pending_decision")
+    if pending:
+        event_entry["room_pending_decision"] = copy.deepcopy(pending)
+
+    update_event_metadata(
+        event_entry,
+        thread_state="Awaiting Client Response",
+        current_step=3,
+    )
+
+    state.set_thread_state("Awaiting Client Response")
+    state.caller_step = event_entry.get("caller_step")
+    state.current_step = 3
+    state.extras["persist"] = True
+
+    payload: Dict[str, Any] = {
+        "client_id": state.client_id,
+        "event_id": state.event_id,
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "cached": True,
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+    }
+    if pending:
+        payload["selected_room"] = pending.get("selected_room")
+        payload["selected_status"] = pending.get("selected_status")
+        if pending.get("summary"):
+            payload["summary"] = pending.get("summary")
+    return GroupResult(action="room_eval_cached", payload=payload, halt=True)
+
+
+def _build_cache_payload(
+    draft_message: Dict[str, Any],
+    pending_decision: Optional[Dict[str, Any]],
+    window_hash: Optional[str],
+    requirements_hash: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    if not draft_message or not window_hash or not requirements_hash:
+        return None
+    payload: Dict[str, Any] = {
+        "window_hash": window_hash,
+        "requirements_hash": requirements_hash,
+        "expires_at": _cache_expiry_iso(),
+        "draft_message": copy.deepcopy(draft_message),
+    }
+    if pending_decision:
+        payload["pending_decision"] = copy.deepcopy(pending_decision)
+    return payload
+
+
+def _cache_valid(expires_at: Optional[str]) -> bool:
+    if not expires_at:
+        return False
+    try:
+        expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return datetime.utcnow() < expiry.replace(tzinfo=None)
+
+
+def _cache_expiry_iso(minutes: int = ROOM_CACHE_TTL_MINUTES) -> str:
+    expiry = datetime.utcnow() + timedelta(minutes=minutes)
+    return expiry.replace(microsecond=0).isoformat() + "Z"
 
 
 def evaluate_room_statuses(db: Dict[str, Any], target_date: str | None) -> List[Dict[str, str]]:
