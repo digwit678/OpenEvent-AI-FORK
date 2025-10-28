@@ -8,6 +8,7 @@ from backend.workflows.common.datetime_parse import to_iso_date
 from backend.workflows.common.requirements import build_requirements, merge_client_profile, requirements_hash
 from backend.workflows.common.timeutils import format_ts_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
+from backend.workflows.common.capture import capture_user_fields
 from backend.workflows.io.database import (
     append_history,
     append_audit_entry,
@@ -21,6 +22,7 @@ from backend.workflows.io.database import (
     update_event_metadata,
     upsert_client,
 )
+from backend.workflows.llm import adapter as llm_adapter
 
 from ..db_pers.tasks import enqueue_manual_review_task
 from ..condition.checks import is_event_request
@@ -39,6 +41,24 @@ def process(state: WorkflowState) -> GroupResult:
 
     user_info = extract_user_information(message_payload)
     state.user_info = user_info
+    metadata = llm_adapter.last_call_metadata()
+    if metadata:
+        llm_meta = state.telemetry.setdefault("llm", {})
+        adapter_label = metadata.get("adapter")
+        if adapter_label:
+            llm_meta["adapter"] = adapter_label
+        model_name = metadata.get("model")
+        if model_name:
+            llm_meta["model"] = model_name
+        intent_model = metadata.get("intent_model")
+        if intent_model and "intent_model" not in llm_meta:
+            llm_meta["intent_model"] = intent_model
+        entity_model = metadata.get("entity_model")
+        if entity_model and "entity_model" not in llm_meta:
+            llm_meta["entity_model"] = entity_model
+        phase = metadata.get("phase")
+        if phase:
+            llm_meta["phase"] = phase
 
     client = upsert_client(
         state.db,
@@ -108,13 +128,20 @@ def process(state: WorkflowState) -> GroupResult:
         state.confidence = confidence
 
     event_entry = _ensure_event_record(state, message_payload, user_info)
-    if merge_client_profile(event_entry, user_info):
-        state.extras["persist"] = True
     state.event_entry = event_entry
     state.event_id = event_entry["event_id"]
     state.current_step = event_entry.get("current_step")
     state.caller_step = event_entry.get("caller_step")
     state.thread_state = event_entry.get("thread_state")
+
+    capture_user_fields(
+        state,
+        current_step=event_entry.get("current_step") or 1,
+        source=state.message.msg_id,
+    )
+
+    if merge_client_profile(event_entry, user_info):
+        state.extras["persist"] = True
 
     requirements = build_requirements(user_info)
     new_req_hash = requirements_hash(requirements)

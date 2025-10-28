@@ -257,6 +257,10 @@ def create_event_entry(db: Dict[str, Any], event_data: Dict[str, Any]) -> str:
         "audit": [],
         "event_data": event_data,
         "msgs": [],
+        "captured": {},
+        "verified": {},
+        "captured_sources": [],
+        "deferred_intents": [],
     }
     db.setdefault("events", []).append(entry)
     return event_id
@@ -318,6 +322,18 @@ def ensure_event_defaults(event: Dict[str, Any]) -> None:
     event.setdefault("selected_products", [])
     event.setdefault("negotiation_state", {"counter_count": 0, "manual_review_task_id": None})
     event.setdefault("transition_ready", False)
+    event.setdefault("captured", {})
+    event.setdefault("verified", {})
+    event.setdefault("captured_sources", [])
+    event.setdefault("deferred_intents", [])
+    if not isinstance(event["captured"], dict):
+        event["captured"] = {}
+    if not isinstance(event["verified"], dict):
+        event["verified"] = {}
+    if not isinstance(event["captured_sources"], list):
+        event["captured_sources"] = []
+    if not isinstance(event["deferred_intents"], list):
+        event["deferred_intents"] = []
     event.setdefault("calendar_blocks", [])
     event.setdefault(
         "deposit_state",

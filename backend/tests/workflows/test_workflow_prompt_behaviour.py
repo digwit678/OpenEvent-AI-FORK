@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import sys
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -14,8 +15,10 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from backend.workflow_email import load_db, process_msg, save_db
+from backend.workflows.common.gatekeeper import explain_step7_gate
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.types import IncomingMessage, WorkflowState
+from backend.workflows.groups.event_confirmation.trigger.process import _base_payload
 from backend.workflows.planner import maybe_run_smart_shortcuts
 
 
@@ -169,6 +172,25 @@ def _prepare_event_with_manager_items(
     event["locked_room_id"] = "Room B"
     save_db(db, db_path)
     return event["event_id"]
+
+
+def _ready_confirmation_event() -> Dict[str, Any]:
+    return {
+        "event_id": "evt-123",
+        "current_step": 7,
+        "date_confirmed": True,
+        "locked_room_id": "Room A",
+        "offer_status": "Accepted",
+        "event_data": {
+            "Company": "Acme GmbH",
+            "Billing Address": "Acme GmbH\nSamplestrasse 1\n8000 Zürich\nSwitzerland",
+        },
+        "requested_window": {
+            "start": "18:00",
+            "end": "22:00",
+            "tz": "Europe/Zurich",
+        },
+    }
 
 
 def test_regex_date_integration_and_prompt_copy(tmp_path: Path, _frozen_today: None) -> None:
@@ -660,3 +682,42 @@ def test_choice_selection_ambiguous_prompts_one_clarification(
     db = load_db(db_path)
     persisted_context = next(evt for evt in db["events"] if evt.get("event_id") == event_id).get("choice_context")
     assert persisted_context is not None
+
+
+def test_step7_gate_ready_enables_buttons(tmp_path: Path) -> None:
+    event_entry = _ready_confirmation_event()
+    state = WorkflowState(
+        message=IncomingMessage.from_dict(_message("Step7 ready check", msg_id="gate-ready")),
+        db_path=tmp_path / "gate.json",
+        db={"events": []},
+    )
+    state.client_id = "taylor@example.com"
+    payload = _base_payload(state, event_entry)
+    gate = payload["gate_explain"]
+
+    assert gate["ready"] is True
+    assert gate["missing_now"] == []
+    assert gate["reason"] == "ready"
+    assert payload["buttons_rendered"] is True
+    assert payload["buttons_enabled"] is True
+    assert getattr(state.telemetry, "gate_explain") == gate
+
+
+@pytest.mark.parametrize(
+    ("mutator", "expected_missing"),
+    [
+        (lambda evt: evt.__setitem__("date_confirmed", False), "date_confirmed"),
+        (lambda evt: evt.pop("locked_room_id", None), "locked_room_id"),
+        (lambda evt: evt.__setitem__("offer_status", "Draft"), "offer_status"),
+        (lambda evt: evt["event_data"].__setitem__("Company", ""), "billing.company"),
+        (lambda evt: evt["event_data"].__setitem__("Billing Address", ""), "billing.address"),
+    ],
+)
+def test_step7_gate_reports_missing_fields(mutator, expected_missing: str) -> None:
+    event_entry = deepcopy(_ready_confirmation_event())
+    mutator(event_entry)
+    gate = explain_step7_gate(event_entry)
+
+    assert gate["ready"] is False
+    assert expected_missing in gate["missing_now"]
+    assert gate["reason"] == expected_missing

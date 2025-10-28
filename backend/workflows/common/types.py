@@ -72,6 +72,11 @@ class TurnTelemetry:
     choice_context_active: bool = False
     selection_method: str = "none"
     re_prompt_reason: str = "none"
+    llm: Dict[str, Any] = field(default_factory=dict)
+    captured_fields: List[str] = field(default_factory=list)
+    promoted_fields: List[str] = field(default_factory=list)
+    deferred_intents: List[str] = field(default_factory=list)
+    dag_blocked: str = "none"
 
     def to_payload(self) -> Dict[str, Any]:
         """Serialise telemetry into a JSON-friendly payload."""
@@ -99,7 +104,47 @@ class TurnTelemetry:
             "choice_context_active": self.choice_context_active,
             "selection_method": self.selection_method,
             "re_prompt_reason": self.re_prompt_reason,
+            "llm": dict(self.llm),
+            "captured_fields": list(self.captured_fields),
+            "promoted_fields": list(self.promoted_fields),
+            "deferred_intents": list(self.deferred_intents),
+            "dag_blocked": self.dag_blocked,
         }
+
+    # ------------------------------------------------------------------ #
+    # Mapping helpers for dynamic telemetry fields
+    # ------------------------------------------------------------------ #
+
+    def setdefault(self, key: str, default: Any) -> Any:
+        """Mimic dict.setdefault for known telemetry attributes."""
+
+        if hasattr(self, key):
+            value = getattr(self, key)
+            if key == "llm" and not value:
+                assigned = dict(default) if isinstance(default, dict) else default
+                setattr(self, key, assigned)
+                return getattr(self, key)
+            if isinstance(value, list) and not value:
+                assigned_list = list(default) if isinstance(default, list) else default
+                setattr(self, key, assigned_list)
+                return getattr(self, key)
+            if value is None:
+                setattr(self, key, default)
+                return getattr(self, key)
+            return value
+        setattr(self, key, default)
+        return getattr(self, key)
+
+    def __getitem__(self, key: str) -> Any:
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(key)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        if hasattr(self, key):
+            setattr(self, key, value)
+            return
+        raise KeyError(key)
 
 
 @dataclass

@@ -12,6 +12,7 @@ from backend.workflows.common.datetime_parse import (
     to_ddmmyyyy,
     to_iso_date,
 )
+from backend.workflows.common.capture import capture_user_fields, promote_fields
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.gatekeeper import refresh_gatekeeper
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
@@ -62,6 +63,7 @@ def process(state: WorkflowState) -> GroupResult:
         return GroupResult(action="date_invalid", payload=payload, halt=True)
 
     state.current_step = 2
+    capture_user_fields(state, current_step=2, source=state.message.msg_id)
     window = _resolve_confirmation_window(state, event_entry)
     if window is None:
         return _present_candidate_dates(state, event_entry)
@@ -441,6 +443,18 @@ def _finalize_confirmation(
     state.telemetry.answered_question_first = True
     state.telemetry.gatekeeper_passed = dict(gatekeeper)
     payload["gatekeeper_passed"] = dict(gatekeeper)
+
+    promote_fields(
+        state,
+        event_entry,
+        {
+            ("date",): window.iso_date,
+            ("event_date",): window.display_date,
+            ("start_time",): window.start_time,
+            ("end_time",): window.end_time,
+        },
+        remove_deferred=["date_confirmation"],
+    )
     return GroupResult(action="date_confirmed", payload=payload)
 
 

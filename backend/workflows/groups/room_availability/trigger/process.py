@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from backend.workflows.common.datetime_parse import to_iso_date
 from backend.workflows.common.room_rules import find_better_room_dates
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from backend.workflows.common.capture import capture_user_fields
 from backend.workflows.common.gatekeeper import refresh_gatekeeper
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata
@@ -76,6 +77,7 @@ def process(state: WorkflowState) -> GroupResult:
         return _reuse_locked_room(state, event_entry)
 
     state.current_step = 3
+    capture_user_fields(state, current_step=3, source=state.message.msg_id)
 
     hil_step = state.user_info.get("hil_approve_step")
     if hil_step == 3:
