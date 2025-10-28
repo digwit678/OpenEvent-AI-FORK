@@ -248,6 +248,10 @@ class OpenAIAgentAdapter(AgentAdapter):
                 {"role": "user", "content": message},
             ],
             temperature=0,
+            top_p=0,
+            presence_penalty=0,
+            frequency_penalty=0,
+            seed=42,
             response_format={"type": "json_object"},
         )
         content = response.choices[0].message.content if response.choices else "{}"

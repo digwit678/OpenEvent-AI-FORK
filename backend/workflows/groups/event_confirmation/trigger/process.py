@@ -5,11 +5,17 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.domain import EventStatus, IntentLabel
+from backend.workflows.common.billing import (
+    billing_prompt_for_missing_fields,
+    missing_billing_fields,
+    update_billing_details,
+)
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.room_rules import site_visit_allowed
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.utils.profiler import profile_step
+from backend.workflows.common.gatekeeper import refresh_gatekeeper
 
 __workflow_role__ = "trigger"
 
@@ -42,10 +48,13 @@ def process(state: WorkflowState) -> GroupResult:
         state.extras["persist"] = True
 
     state.current_step = 7
+    state.telemetry.final_action = "none"
     conf_state = event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})
 
     if state.user_info.get("hil_approve_step") == 7:
         return _process_hil_confirmation(state, event_entry)
+
+    _buttons_context(state, event_entry)
 
     structural = _detect_structural_change(state.user_info, event_entry, state.intent)
     if structural:
@@ -182,6 +191,13 @@ def _launch_edit_detour(
     state.set_thread_state(thread_state)
     state.extras["persist"] = True
     _record_detour_log(event_entry, reason, details, trace_size)
+    edit_type = details.get("type")
+    if details.get("field") == "products":
+        edit_type = "edit_products"
+    state.telemetry.detour_started = True
+    state.telemetry.detour_completed = False
+    state.telemetry.no_op_detour = details.get("previous") == details.get("new")
+    state.telemetry.final_action = edit_type or "none"
 
     payload = {
         "client_id": state.client_id,
@@ -240,6 +256,25 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
     room_name = event_entry.get("locked_room_id") or event_entry.get("room_pending_decision", {}).get("selected_room")
     event_date = event_entry.get("chosen_date") or event_entry.get("event_data", {}).get("Event Date")
 
+    update_billing_details(event_entry)
+    missing_fields = missing_billing_fields(event_entry)
+    if missing_fields:
+        prompt = billing_prompt_for_missing_fields(missing_fields)
+        draft = {
+            "body": prompt,
+            "step": 7,
+            "topic": "confirmation_billing_missing",
+            "requires_approval": True,
+        }
+        state.add_draft_message(draft)
+        update_event_metadata(event_entry, thread_state="Awaiting Client Response")
+        state.set_thread_state("Awaiting Client Response")
+        state.extras["persist"] = True
+        payload = _base_payload(state, event_entry)
+        payload["missing_billing_fields"] = missing_fields
+        state.telemetry.final_action = "confirm"
+        return GroupResult(action="confirmation_billing_missing", payload=payload, halt=True)
+
     if deposit_state.get("required") and deposit_state.get("status") != "paid":
         deposit_state["status"] = "requested"
         amount = deposit_state.get("due_amount")
@@ -265,6 +300,7 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
         state.set_thread_state("Awaiting Client Response")
         state.extras["persist"] = True
         payload = _base_payload(state, event_entry)
+        state.telemetry.final_action = "confirm"
         return GroupResult(action="confirmation_deposit_requested", payload=payload, halt=True)
 
     room_fragment = f" for {room_name}" if room_name else ""
@@ -280,10 +316,11 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
     }
     state.add_draft_message(draft)
     conf_state["pending"] = {"kind": "final_confirmation"}
-    update_event_metadata(event_entry, thread_state="In Progress")
-    state.set_thread_state("In Progress")
+    update_event_metadata(event_entry, thread_state="Awaiting Client Response")
+    state.set_thread_state("Awaiting Client Response")
     state.extras["persist"] = True
     payload = _base_payload(state, event_entry)
+    state.telemetry.final_action = "confirm"
     return GroupResult(action="confirmation_draft", payload=payload, halt=True)
 
 
@@ -413,6 +450,8 @@ def _handle_decline(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
     update_event_metadata(event_entry, thread_state="In Progress")
     state.set_thread_state("In Progress")
     state.extras["persist"] = True
+    state.telemetry.final_action = "discard"
+    event_entry["decision"] = "discarded"
     payload = _base_payload(state, event_entry)
     return GroupResult(action="confirmation_decline", payload=payload, halt=True)
 
@@ -451,6 +490,7 @@ def _process_hil_confirmation(state: WorkflowState, event_entry: Dict[str, Any])
     if kind == "final_confirmation":
         _ensure_calendar_block(event_entry)
         event_entry.setdefault("event_data", {})["Status"] = EventStatus.CONFIRMED.value
+        event_entry["decision"] = "accepted"
         conf_state["pending"] = None
         update_event_metadata(event_entry, transition_ready=True, thread_state="In Progress")
         append_audit_entry(event_entry, 7, 7, "confirmation_sent")
@@ -461,6 +501,7 @@ def _process_hil_confirmation(state: WorkflowState, event_entry: Dict[str, Any])
 
     if kind == "decline":
         conf_state["pending"] = None
+        event_entry["decision"] = "discarded"
         update_event_metadata(event_entry, thread_state="In Progress")
         append_audit_entry(event_entry, 7, 7, "confirmation_declined")
         state.set_thread_state("In Progress")
@@ -536,6 +577,8 @@ def _iso_to_ddmmyyyy(raw: Optional[str]) -> Optional[str]:
 
 
 def _base_payload(state: WorkflowState, event_entry: Dict[str, Any]) -> Dict[str, Any]:
+    buttons_enabled, missing_fields, gatekeeper = _buttons_context(state, event_entry)
+    gate_explain = event_entry.get("gatekeeper_explain")
     payload = {
         "client_id": state.client_id,
         "event_id": event_entry.get("event_id"),
@@ -545,8 +588,39 @@ def _base_payload(state: WorkflowState, event_entry: Dict[str, Any]) -> Dict[str
         "thread_state": state.thread_state,
         "context": state.context_snapshot,
         "persisted": True,
+        "buttons_rendered": True,
+        "buttons_enabled": buttons_enabled,
+        "missing_fields": missing_fields,
+        "gatekeeper_passed": dict(gatekeeper),
     }
+    if gate_explain is not None:
+        payload["gatekeeper_explain"] = gate_explain
     return payload
+
+
+def _buttons_context(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+) -> Tuple[bool, List[str], Dict[str, bool]]:
+    update_billing_details(event_entry)
+    gatekeeper = refresh_gatekeeper(event_entry)
+    explain = event_entry.get("gatekeeper_explain") or {}
+    missing = explain.get("missing") or []
+    deduped = []
+    seen: set[str] = set()
+    for entry in missing:
+        if entry not in seen:
+            seen.add(entry)
+            deduped.append(entry)
+    buttons_enabled = bool(explain.get("ready"))
+    state.telemetry.buttons_rendered = True
+    state.telemetry.buttons_enabled = buttons_enabled
+    state.telemetry.missing_fields = deduped
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
+    state.telemetry.caller_step = state.caller_step or event_entry.get("caller_step")
+    state.telemetry.detour_completed = event_entry.get("caller_step") is None
+    setattr(state.telemetry, "gatekeeper_explain", explain)
+    return buttons_enabled, deduped, gatekeeper
 
 
 def _any_keyword_match(lowered: str, keywords: Tuple[str, ...]) -> bool:

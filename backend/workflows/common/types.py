@@ -45,6 +45,64 @@ class IncomingMessage:
 
 
 @dataclass
+class TurnTelemetry:
+    """[Telemetry] Per-turn instrumentation payload for downstream logging."""
+
+    buttons_rendered: bool = False
+    buttons_enabled: bool = False
+    missing_fields: List[str] = field(default_factory=list)
+    clicked_button: str = "none"
+    final_action: str = "none"
+    detour_started: bool = False
+    detour_completed: bool = False
+    no_op_detour: bool = False
+    caller_step: Optional[int] = None
+    gatekeeper_passed: Dict[str, bool] = field(
+        default_factory=lambda: {"step2": False, "step3": False, "step4": False, "step7": False}
+    )
+    gatekeeper_explain: Dict[str, Any] = field(default_factory=dict)
+    answered_question_first: bool = False
+    delta_availability_used: bool = False
+    menus_included: str = "false"
+    preask_candidates: List[str] = field(default_factory=list)
+    preask_shown: List[str] = field(default_factory=list)
+    preask_response: Dict[str, str] = field(default_factory=dict)
+    preview_class_shown: str = "none"
+    preview_items_count: int = 0
+    choice_context_active: bool = False
+    selection_method: str = "none"
+    re_prompt_reason: str = "none"
+
+    def to_payload(self) -> Dict[str, Any]:
+        """Serialise telemetry into a JSON-friendly payload."""
+
+        return {
+            "buttons_rendered": self.buttons_rendered,
+            "buttons_enabled": self.buttons_enabled,
+            "missing_fields": list(self.missing_fields),
+            "clicked_button": self.clicked_button,
+            "final_action": self.final_action,
+            "detour_started": self.detour_started,
+            "detour_completed": self.detour_completed,
+            "no_op_detour": self.no_op_detour,
+            "caller_step": self.caller_step,
+            "gatekeeper_passed": dict(self.gatekeeper_passed),
+            "gatekeeper_explain": dict(self.gatekeeper_explain),
+            "answered_question_first": self.answered_question_first,
+            "delta_availability_used": self.delta_availability_used,
+            "menus_included": self.menus_included,
+            "preask_candidates": list(self.preask_candidates),
+            "preask_shown": list(self.preask_shown),
+            "preask_response": dict(self.preask_response),
+            "preview_class_shown": self.preview_class_shown,
+            "preview_items_count": self.preview_items_count,
+            "choice_context_active": self.choice_context_active,
+            "selection_method": self.selection_method,
+            "re_prompt_reason": self.re_prompt_reason,
+        }
+
+
+@dataclass
 class WorkflowState:
     """[OpenEvent Database] Mutable state shared between workflow groups."""
 
@@ -66,6 +124,7 @@ class WorkflowState:
     thread_state: Optional[str] = None
     draft_messages: List[Dict[str, Any]] = field(default_factory=list)
     audit_log: List[Dict[str, Any]] = field(default_factory=list)
+    telemetry: TurnTelemetry = field(default_factory=TurnTelemetry)
 
     def record_context(self, context: Dict[str, Any]) -> None:
         """[OpenEvent Database] Store the latest context snapshot for the workflow."""

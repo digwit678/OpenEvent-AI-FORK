@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import copy
+import os
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.workflows.common.datetime_parse import to_iso_date
 from backend.workflows.common.room_rules import find_better_room_dates
+from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from backend.workflows.common.gatekeeper import refresh_gatekeeper
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata
 from backend.utils.profiler import profile_step
@@ -29,6 +33,29 @@ ROOM_SIZE_ORDER = {
 ROOM_CACHE_TTL_MINUTES = 10
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _allow_auto_room_lock() -> bool:
+    return _env_bool("ALLOW_AUTO_ROOM_LOCK", True)
+
+
+def _auto_lock_min_confidence() -> float:
+    raw = os.getenv("AUTO_LOCK_MIN_CONFIDENCE", "0.85")
+    try:
+        return max(0.0, min(1.0, float(raw)))
+    except (TypeError, ValueError):
+        return 0.85
+
+
+def _utc_now() -> str:
+    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+
 @profile_step("workflow.step3.room_availability")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Execute Group C — room availability assessment with entry guards and caching."""
@@ -44,6 +71,9 @@ def process(state: WorkflowState) -> GroupResult:
             "context": state.context_snapshot,
         }
         return GroupResult(action="room_eval_missing_event", payload=payload, halt=True)
+
+    if not state.user_info.get("hil_approve_step") and _locked_room_still_valid(event_entry):
+        return _reuse_locked_room(state, event_entry)
 
     state.current_step = 3
 
@@ -63,6 +93,20 @@ def process(state: WorkflowState) -> GroupResult:
     locked_room_id = event_entry.get("locked_room_id")
     current_req_hash = event_entry.get("requirements_hash")
     room_eval_hash = event_entry.get("room_eval_hash")
+
+    delta_query_iso = state.extras.pop("delta_date_query", None)
+    if delta_query_iso:
+        baseline_display = requested_window.get("display_date") or event_entry.get("chosen_date")
+        baseline_iso = requested_window.get("date_iso") or (to_iso_date(baseline_display) if baseline_display else None)
+        if baseline_iso and delta_query_iso != baseline_iso:
+            return _handle_delta_availability(
+                state,
+                event_entry,
+                delta_query_iso,
+                requested_window,
+                baseline_iso,
+                baseline_display,
+            )
 
     requirements_changed = bool(current_req_hash and current_req_hash != room_eval_hash)
     explicit_room_change = bool(user_requested_room and user_requested_room != locked_room_id)
@@ -93,6 +137,24 @@ def process(state: WorkflowState) -> GroupResult:
     requirements = event_entry.get("requirements") or {}
 
     outcome = selected_status or ROOM_OUTCOME_UNAVAILABLE
+    auto_lock_score = _auto_lock_confidence(status_map, selected_room, outcome)
+    if (
+        _allow_auto_room_lock()
+        and auto_lock_score >= _auto_lock_min_confidence()
+        and outcome == ROOM_OUTCOME_AVAILABLE
+        and selected_room
+    ):
+        return _auto_lock_room(
+            state,
+            event_entry,
+            selected_room,
+            chosen_date,
+            requirements,
+            room_statuses,
+            summary,
+            current_req_hash,
+        )
+
     draft_text = _compose_outcome_message(
         outcome,
         selected_room,
@@ -129,6 +191,11 @@ def process(state: WorkflowState) -> GroupResult:
         "requirements_hash": current_req_hash,
         "summary": summary,
     }
+    event_entry["room_decision"] = {
+        "status": outcome.lower(),
+        "reason": "awaiting_confirmation",
+        "evaluated_at": _utc_now(),
+    }
     event_entry["room_eval_cache"] = _build_cache_payload(
         draft_message,
         event_entry["room_pending_decision"],
@@ -163,6 +230,13 @@ def process(state: WorkflowState) -> GroupResult:
     }
     if alt_dates:
         payload["alt_dates_for_better_room"] = alt_dates
+    gatekeeper = refresh_gatekeeper(event_entry)
+    payload["answered_question_first"] = True
+    payload["delta_availability_used"] = False
+    payload["gatekeeper_passed"] = dict(gatekeeper)
+    state.telemetry.answered_question_first = True
+    state.telemetry.delta_availability_used = False
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
     return GroupResult(action="room_avail_result", payload=payload, halt=True)
 
 
@@ -229,6 +303,11 @@ def _reuse_cached_room_eval(
         payload["selected_status"] = pending.get("selected_status")
         if pending.get("summary"):
             payload["summary"] = pending.get("summary")
+    gatekeeper = refresh_gatekeeper(event_entry)
+    payload["gatekeeper_passed"] = dict(gatekeeper)
+    state.telemetry.answered_question_first = True
+    state.telemetry.delta_availability_used = False
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
     return GroupResult(action="room_eval_cached", payload=payload, halt=True)
 
 
@@ -264,6 +343,112 @@ def _cache_valid(expires_at: Optional[str]) -> bool:
 def _cache_expiry_iso(minutes: int = ROOM_CACHE_TTL_MINUTES) -> str:
     expiry = datetime.utcnow() + timedelta(minutes=minutes)
     return expiry.replace(microsecond=0).isoformat() + "Z"
+
+
+def _handle_delta_availability(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    new_date_iso: str,
+    requested_window: Dict[str, Any],
+    baseline_iso: str,
+    baseline_display: Optional[str],
+) -> GroupResult:
+    baseline_display = (
+        baseline_display
+        or requested_window.get("display_date")
+        or event_entry.get("chosen_date")
+        or format_iso_date_to_ddmmyyyy(baseline_iso)
+    )
+    baseline_start = _normalize_time_label(requested_window.get("start_time"))
+    baseline_end = _normalize_time_label(requested_window.get("end_time"))
+    if not baseline_start or not baseline_end:
+        event_data = event_entry.get("event_data") or {}
+        baseline_start = baseline_start or _normalize_time_label(event_data.get("Start Time"))
+        baseline_end = baseline_end or _normalize_time_label(event_data.get("End Time"))
+
+    new_display = format_iso_date_to_ddmmyyyy(new_date_iso)
+    query_start = _normalize_time_label(state.user_info.get("start_time")) or baseline_start
+    query_end = _normalize_time_label(state.user_info.get("end_time")) or baseline_end
+
+    rooms = load_rooms()
+    baseline_map = {room: room_status_on_date(state.db, baseline_display, room) for room in rooms}
+    new_map = {room: room_status_on_date(state.db, new_display, room) for room in rooms}
+
+    diff_lines: List[str] = []
+    all_rooms = sorted(set(baseline_map.keys()) | set(new_map.keys()), key=_room_rank)
+    for room in all_rooms:
+        prev_status = baseline_map.get(room, ROOM_OUTCOME_UNAVAILABLE)
+        new_status = new_map.get(room, ROOM_OUTCOME_UNAVAILABLE)
+        if new_status != prev_status:
+            diff_lines.append(
+                f"- {room}: now {new_status.lower()} (was {prev_status.lower()})"
+            )
+    if not diff_lines:
+        diff_lines.append("No availability changes compared to the confirmed date.")
+
+    price_line = "Price delta: none (rates unchanged)."
+    baseline_room = event_entry.get("locked_room_id") or (event_entry.get("room_pending_decision") or {}).get("selected_room")
+    if baseline_room:
+        question_line = (
+            f"Would you like to keep {baseline_display} in {baseline_room}, "
+            f"switch to {new_display}, or explore another date?"
+        )
+    else:
+        question_line = f"Should I keep {baseline_display} or switch to {new_display}? Happy to check another date as well."
+
+    window_label = _format_time_range(query_start, query_end, baseline_start, baseline_end)
+    if window_label:
+        header = f"For {new_display} ({window_label}) vs {baseline_display}, here's what changed:"
+    else:
+        header = f"For {new_display} vs {baseline_display}, here's what changed:"
+
+    lines = [header]
+    lines.extend(diff_lines)
+    lines.append(price_line)
+    lines.append(question_line)
+    message = "\n".join(lines)
+
+    draft_message = {
+        "body": message,
+        "step": 3,
+        "topic": "room_delta_summary",
+        "requires_approval": True,
+    }
+    state.add_draft_message(draft_message)
+
+    update_event_metadata(
+        event_entry,
+        current_step=3,
+        thread_state="Awaiting Client Response",
+    )
+    state.set_thread_state("Awaiting Client Response")
+    state.extras["persist"] = True
+
+    gatekeeper = refresh_gatekeeper(event_entry)
+    payload = {
+        "client_id": state.client_id,
+        "event_id": state.event_id,
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+        "delta_availability_used": True,
+        "answered_question_first": True,
+        "gatekeeper_passed": dict(gatekeeper),
+        "reference_date": baseline_display,
+        "query_date": new_display,
+        "comparison": {
+            "reference_status": baseline_map,
+            "query_status": new_map,
+        },
+        "rooms_evaluated": rooms,
+    }
+    state.telemetry.answered_question_first = True
+    state.telemetry.delta_availability_used = True
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
+    return GroupResult(action="room_delta_summary", payload=payload, halt=True)
 
 
 def evaluate_room_statuses(db: Dict[str, Any], target_date: str | None) -> List[Dict[str, str]]:
@@ -302,7 +487,54 @@ def _detour_to_date(state: WorkflowState, event_entry: dict) -> GroupResult:
         "context": state.context_snapshot,
         "persisted": True,
     }
+    gatekeeper = refresh_gatekeeper(event_entry)
+    payload["gatekeeper_passed"] = dict(gatekeeper)
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
     return GroupResult(action="room_detour_date", payload=payload, halt=False)
+
+
+def _normalize_time_label(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    text = text.replace(".", ":")
+    if ":" not in text:
+        if text.isdigit():
+            text = f"{int(text) % 24:02d}:00"
+        else:
+            return None
+    try:
+        hour, minute = text.split(":", 1)
+        hour_i = int(hour)
+        minute_i = int(minute)
+        if not (0 <= hour_i <= 23 and 0 <= minute_i <= 59):
+            return None
+        return f"{hour_i:02d}:{minute_i:02d}"
+    except (ValueError, TypeError):
+        return None
+
+
+def _format_time_range(
+    query_start: Optional[str],
+    query_end: Optional[str],
+    baseline_start: Optional[str],
+    baseline_end: Optional[str],
+) -> Optional[str]:
+    start = query_start or baseline_start
+    end = query_end or baseline_end
+    if start and end:
+        return f"{start}–{end}"
+    if start:
+        return f"{start} start"
+    if end:
+        return f"until {end}"
+    return None
+
+
+def _room_rank(room: str) -> Tuple[int, str]:
+    return ROOM_SIZE_ORDER.get(room, 999), room
 
 
 def _skip_room_evaluation(state: WorkflowState, event_entry: dict) -> GroupResult:
@@ -327,6 +559,9 @@ def _skip_room_evaluation(state: WorkflowState, event_entry: dict) -> GroupResul
         "context": state.context_snapshot,
         "persisted": True,
     }
+    gatekeeper = refresh_gatekeeper(event_entry)
+    payload["gatekeeper_passed"] = dict(gatekeeper)
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
     return GroupResult(action="room_eval_skipped", payload=payload, halt=False)
 
 
@@ -388,6 +623,11 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
     if decision != "approve":
         # Reset pending decision and keep awaiting further actions.
         event_entry.pop("room_pending_decision", None)
+        event_entry["room_decision"] = {
+            "status": "rejected",
+            "reason": "hil_rejected",
+            "evaluated_at": _utc_now(),
+        }
         draft = {
             "body": "Approval rejected — please provide updated guidance on the room.",
             "step": 3,
@@ -408,11 +648,19 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
             "context": state.context_snapshot,
             "persisted": True,
         }
+        gatekeeper = refresh_gatekeeper(event_entry)
+        payload["gatekeeper_passed"] = dict(gatekeeper)
+        state.telemetry.gatekeeper_passed = dict(gatekeeper)
         return GroupResult(action="room_hil_rejected", payload=payload, halt=True)
 
     selected_room = pending.get("selected_room")
     requirements_hash = event_entry.get("requirements_hash") or pending.get("requirements_hash")
 
+    event_entry["room_decision"] = {
+        "status": "locked",
+        "reason": "hil_approved",
+        "evaluated_at": _utc_now(),
+    }
     update_event_metadata(
         event_entry,
         locked_room_id=selected_room,
@@ -428,6 +676,8 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
     state.set_thread_state("In Progress")
     state.extras["persist"] = True
 
+    gatekeeper = refresh_gatekeeper(event_entry)
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
     payload = {
         "client_id": state.client_id,
         "event_id": event_entry.get("event_id"),
@@ -438,6 +688,7 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
         "thread_state": state.thread_state,
         "context": state.context_snapshot,
         "persisted": True,
+        "gatekeeper_passed": dict(gatekeeper),
     }
     return GroupResult(action="room_hil_approved", payload=payload, halt=False)
 
@@ -489,9 +740,16 @@ def _needs_better_room_alternatives(
 def _append_alt_dates(message: str, alt_dates: List[str]) -> str:
     if not alt_dates:
         return message
-    lines = [message.rstrip(), "", "Here are a few alternative dates with larger rooms available:"]
-    lines.extend(f"- {date}" for date in alt_dates)
-    return "\n".join(lines)
+    lines = message.splitlines()
+    try:
+        next_step_idx = lines.index("NEXT STEP:")
+    except ValueError:
+        next_step_idx = len(lines)
+    insert_block: List[str] = ["", "ALTERNATE DATES:"]
+    insert_block.extend(f"- {date}" for date in alt_dates)
+    insert_block.append("")
+    updated = lines[:next_step_idx] + insert_block + lines[next_step_idx:]
+    return "\n".join(updated)
 
 
 def _compose_outcome_message(
@@ -514,21 +772,170 @@ def _compose_outcome_message(
     else:
         capacity_text = "your requirements"
 
+    lines: List[str] = ["ROOM OPTIONS:"]
+
     if status == ROOM_OUTCOME_AVAILABLE and room_name:
-        return (
-            f"Good news — {room_name} is available on {chosen_date}. "
-            f"It comfortably fits {capacity_text}. "
-            "Shall we proceed with this room and date?"
+        lines.append(f"- {room_name} — Available on {chosen_date}; fits {capacity_text}.")
+        guidance = "Confirm if you'd like me to lock this room or check another option."
+    elif status == ROOM_OUTCOME_OPTION and room_name:
+        lines.append(
+            f"- {room_name} — On option for {chosen_date}; fits {capacity_text}. "
+            "We can proceed under the option or look at alternatives."
         )
+        guidance = "Let me know if we should keep this option or explore a different date/room."
+    else:
+        lines.append(f"- No rooms currently open on {chosen_date} for {capacity_text}.")
+        guidance = "Share alternative dates or adjustments and I'll re-check availability."
 
-    if status == ROOM_OUTCOME_OPTION and room_name:
-        return (
-            f"{room_name} is currently on option for {chosen_date}. "
-            f"It comfortably fits {capacity_text}. "
-            "We can proceed under this option or consider other dates/rooms — what would you prefer?"
-        )
+    lines.extend(["", "NEXT STEP:", guidance])
+    return "\n".join(lines)
 
+
+def _compose_locked_message(
+    room_name: str,
+    chosen_date: str,
+    requirements: Dict[str, Any],
+) -> str:
+    participants = requirements.get("number_of_participants")
+    layout = requirements.get("seating_layout")
+    if participants and layout:
+        capacity_text = f"{participants} guests in {layout}"
+    elif participants:
+        capacity_text = f"{participants} guests"
+    elif layout:
+        capacity_text = f"a {layout} layout"
+    else:
+        capacity_text = "your requirements"
     return (
-        f"Thanks for your request. Unfortunately, no suitable room is available on {chosen_date} for {capacity_text}. "
-        "Would one of these alternative dates work, or would you like to adjust the attendee count or layout?"
+        "ROOM OPTIONS:\n"
+        f"- {room_name} — Locked for {chosen_date}; fits {capacity_text}.\n\n"
+        "NEXT STEP:\nI'll prepare the offer with this configuration. Let me know if you need any adjustments."
     )
+
+
+def _auto_lock_confidence(status_map: Dict[str, str], selected_room: Optional[str], outcome: str) -> float:
+    if outcome != ROOM_OUTCOME_AVAILABLE or not selected_room:
+        return 0.0
+    return 1.0 if status_map.get(selected_room) == ROOM_OUTCOME_AVAILABLE else 0.0
+
+
+def _locked_room_still_valid(event_entry: Dict[str, Any]) -> bool:
+    locked = event_entry.get("locked_room_id")
+    if not locked:
+        return False
+    req_hash = event_entry.get("requirements_hash")
+    eval_hash = event_entry.get("room_eval_hash")
+    if req_hash and eval_hash and req_hash != eval_hash:
+        return False
+    requested_window = event_entry.get("requested_window") or {}
+    if not requested_window.get("date_iso"):
+        return False
+    chosen_display = event_entry.get("chosen_date")
+    if chosen_display and not _dates_align(chosen_display, requested_window.get("date_iso")):
+        return False
+    decision = (event_entry.get("room_decision") or {}).get("status")
+    if decision and decision.lower() in {"locked", "held"}:
+        return True
+    return bool(locked and not req_hash and not eval_hash)
+
+
+def _dates_align(display_ddmmyyyy: Optional[str], iso_value: Optional[str]) -> bool:
+    if not iso_value:
+        return False
+    if not display_ddmmyyyy:
+        return True
+    converted = to_iso_date(display_ddmmyyyy)
+    if converted:
+        return converted == iso_value
+    return True
+
+
+def _reuse_locked_room(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:
+    update_event_metadata(event_entry, current_step=4, thread_state="In Progress")
+    state.current_step = 4
+    state.caller_step = None
+    state.set_thread_state("In Progress")
+    state.extras["persist"] = True
+    gatekeeper = refresh_gatekeeper(event_entry)
+    payload = {
+        "client_id": state.client_id,
+        "event_id": state.event_id,
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+        "gatekeeper_passed": dict(gatekeeper),
+        "room_status": (event_entry.get("room_decision") or {}).get("status", "locked"),
+    }
+    state.telemetry.room_checked = True
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
+    state.telemetry.detour_completed = True
+    return GroupResult(action="room_lock_retained", payload=payload, halt=False)
+
+
+def _auto_lock_room(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    room_name: str,
+    chosen_date: str,
+    requirements: Dict[str, Any],
+    room_statuses: List[Dict[str, str]],
+    summary: str,
+    requirements_hash: Optional[str],
+) -> GroupResult:
+    message = _compose_locked_message(room_name, chosen_date, requirements)
+    draft_message = {
+        "body": message,
+        "step": 3,
+        "topic": "room_locked_auto",
+        "room": room_name,
+        "status": "Locked",
+        "requires_approval": True,
+    }
+    state.add_draft_message(draft_message)
+
+    event_entry.pop("room_pending_decision", None)
+    event_entry["room_decision"] = {
+        "status": "locked",
+        "reason": "auto_lock",
+        "evaluated_at": _utc_now(),
+    }
+    event_entry["room_eval_cache"] = None
+    if requirements_hash:
+        event_entry["room_eval_hash"] = requirements_hash
+    update_event_metadata(
+        event_entry,
+        locked_room_id=room_name,
+        current_step=4,
+        thread_state="In Progress",
+    )
+    append_audit_entry(event_entry, 3, 4, "room_auto_locked")
+
+    state.current_step = 4
+    state.caller_step = None
+    state.set_thread_state("In Progress")
+    state.extras["persist"] = True
+
+    gatekeeper = refresh_gatekeeper(event_entry)
+    payload = {
+        "client_id": state.client_id,
+        "event_id": state.event_id,
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "rooms": room_statuses,
+        "summary": summary,
+        "selected_room": room_name,
+        "selected_status": "Locked",
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+        "auto_locked": True,
+        "gatekeeper_passed": dict(gatekeeper),
+    }
+    state.telemetry.room_checked = True
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
+    state.telemetry.final_action = "room_auto_locked"
+    state.telemetry.detour_completed = True
+    return GroupResult(action="room_auto_locked", payload=payload, halt=False)

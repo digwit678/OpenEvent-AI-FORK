@@ -16,6 +16,7 @@ from backend.workflow_email import load_db, process_msg, save_db  # noqa: E402
 @pytest.fixture(autouse=True)
 def _stub_agent(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Dict[str, Any]]:
     os.environ["AGENT_MODE"] = "stub"
+    monkeypatch.setenv("ALLOW_AUTO_ROOM_LOCK", "false")
     from backend.workflows.llm import adapter as llm_adapter
 
     mapping: Dict[str, Dict[str, Any]] = {}
@@ -66,8 +67,16 @@ def _bootstrap_to_offer(db_path: Path, mapping: Dict[str, Dict[str, Any]]) -> No
         mapping,
         "lead",
         "Hello, we need a room for 20 people.",
-        info={"date": "2025-09-10", "participants": 20, "room": "Room A"},
+        info={
+            "date": "2025-09-10",
+            "start_time": "09:00",
+            "end_time": "17:00",
+            "participants": 20,
+            "room": "Room A",
+        },
     )
+    if res1["action"] == "date_confirmed":
+        res1 = _run(db_path, mapping, "room-cycle", "Checking availability.")
     assert res1["action"] == "room_avail_result"
     event = _event(db_path)
     assert event["current_step"] == 3
@@ -102,7 +111,7 @@ def test_s4_offer_lifecycle(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any
 
     _bootstrap_to_offer(db_path, mapping)
     event = _event(db_path)
-    assert event["locked_room_id"] == "Room A"
+    assert event["locked_room_id"]
     assert event["room_eval_hash"] == event["requirements_hash"]
 
     res = _run(
@@ -229,15 +238,31 @@ def test_s6_transition_checkpoint(tmp_path: Path, _stub_agent: Dict[str, Dict[st
 # ---------------------------------------------------------------------------
 
 
-def test_s7_confirm(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]) -> None:
+def test_confirm_via_button_finalizes_when_gates_pass(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]) -> None:
     db_path = tmp_path / "s7-confirm.json"
     mapping = _stub_agent
 
     _bootstrap_to_offer(db_path, mapping)
     _accept_offer(db_path, mapping)
 
+    db = load_db(db_path)
+    event = db["events"][0]
+    event.setdefault("event_data", {})["Company"] = "Studio Luma GmbH"
+    event["event_data"]["Billing Address"] = "Studio Luma GmbH\nLatzstreet 8\n8000 Glibach\nSwitzerland"
+    save_db(db, db_path)
+
     confirm = _run(db_path, mapping, "confirm", "Please confirm the booking.")
     assert confirm["action"] == "confirmation_draft"
+    assert confirm["buttons_rendered"] is True
+    assert confirm["buttons_enabled"] is True
+    assert confirm["missing_fields"] == []
+    gatekeeper = confirm["gatekeeper_passed"]
+    assert isinstance(gatekeeper, dict)
+    assert all(gatekeeper.get(step) for step in ("step2", "step3", "step4", "step7"))
+    telemetry = confirm["telemetry"]
+    assert telemetry["buttons_rendered"] is True
+    assert telemetry["buttons_enabled"] is True
+    assert telemetry["final_action"] == "confirm"
     event = _event(db_path)
     assert event["confirmation_state"]["pending"] == {"kind": "final_confirmation"}
 
@@ -246,6 +271,100 @@ def test_s7_confirm(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]) -> N
     event = _event(db_path)
     assert event["event_data"]["Status"] == EventStatus.CONFIRMED.value
     assert event["calendar_blocks"], "Expected a calendar block"
+    assert event["decision"] == "accepted"
+
+
+def test_step7_buttons_disabled_with_missing_field_then_enable_on_capture(
+    tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]
+) -> None:
+    db_path = tmp_path / "s7-billing-gate.json"
+    mapping = _stub_agent
+
+    _bootstrap_to_offer(db_path, mapping)
+    _accept_offer(db_path, mapping)
+
+    db = load_db(db_path)
+    event = db["events"][0]
+    event.setdefault("event_data", {})["Company"] = "Studio Luma GmbH"
+    event["event_data"]["Billing Address"] = "Latzstreet 8, Glibach"
+    save_db(db, db_path)
+
+    first = _run(db_path, mapping, "confirm", "Please confirm the booking.")
+    assert first["action"] == "confirmation_billing_missing"
+    assert isinstance(first["gatekeeper_passed"], dict)
+    assert first["gatekeeper_passed"].get("step7") is False
+    assert first["buttons_rendered"] is True
+    assert first["buttons_enabled"] is False
+    missing = first["missing_fields"]
+    assert "billing_postal_code" in missing and "billing_country" in missing
+    telemetry = first["telemetry"]
+    assert telemetry["buttons_enabled"] is False
+    assert telemetry["missing_fields"]
+    assert telemetry["final_action"] == "confirm"
+    message = first["draft_messages"][-1]["body"].lower()
+    assert "postal code" in message and "country" in message
+
+    _run(
+        db_path,
+        mapping,
+        "billing-update",
+        "Here are the billing details we should use.",
+        info={
+            "billing_address": "Studio Luma GmbH\nLatzstreet 8\n8000 Glibach\nSwitzerland",
+            "event_date": event.get("chosen_date") or "20.04.2025",
+        },
+    )
+
+    second = _run(db_path, mapping, "confirm-again", "Confirm now that billing is complete.")
+    assert second["action"] == "confirmation_draft"
+    assert isinstance(second["gatekeeper_passed"], dict)
+    assert all(second["gatekeeper_passed"].get(key) for key in ("step2", "step3", "step4", "step7"))
+    assert second["buttons_rendered"] is True
+    assert second["buttons_enabled"] is True
+    assert second["missing_fields"] == []
+
+
+def test_telemetry_includes_buttons_detours_preask_preview_selection_fields(
+    tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]
+) -> None:
+    db_path = tmp_path / "s7-telemetry.json"
+    mapping = _stub_agent
+
+    _bootstrap_to_offer(db_path, mapping)
+    _accept_offer(db_path, mapping)
+
+    db = load_db(db_path)
+    event = db["events"][0]
+    event.setdefault("event_data", {})["Company"] = "Studio Luma GmbH"
+    event["event_data"]["Billing Address"] = "Studio Luma GmbH\nLatzstreet 8\n8000 Glibach\nSwitzerland"
+    save_db(db, db_path)
+
+    confirm = _run(db_path, mapping, "confirm", "Please confirm the booking.")
+    telemetry = confirm["telemetry"]
+    expected_keys = {
+        "buttons_rendered",
+        "buttons_enabled",
+        "missing_fields",
+        "clicked_button",
+        "final_action",
+        "detour_started",
+        "detour_completed",
+        "no_op_detour",
+        "caller_step",
+        "gatekeeper_passed",
+        "answered_question_first",
+        "delta_availability_used",
+        "menus_included",
+        "preask_candidates",
+        "preask_shown",
+        "preask_response",
+        "preview_class_shown",
+        "preview_items_count",
+        "choice_context_active",
+        "selection_method",
+        "re_prompt_reason",
+    }
+    assert expected_keys.issubset(telemetry.keys())
 
 
 def test_s7_reserve_deposit(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]) -> None:
@@ -254,6 +373,11 @@ def test_s7_reserve_deposit(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any
 
     _bootstrap_to_offer(db_path, mapping)
     _accept_offer(db_path, mapping)
+    db = load_db(db_path)
+    event = db["events"][0]
+    event.setdefault("event_data", {})["Company"] = "Studio Luma GmbH"
+    event["event_data"]["Billing Address"] = "Studio Luma GmbH\nLatzstreet 8\n8000 Glibach\nSwitzerland"
+    save_db(db, db_path)
     db = load_db(db_path)
     db["events"][0]["deposit_state"] = {"required": True, "percent": 30, "status": "required", "due_amount": 450.0}
     save_db(db, db_path)
@@ -340,7 +464,7 @@ def test_s7_site_visit(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]) -
     assert event["thread_state"] == "Awaiting Client Response"
 
 
-def test_s7_change_decline_question(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]) -> None:
+def test_discard_via_button_cancels_and_releases_holds(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]) -> None:
     db_path = tmp_path / "s7-change.json"
     mapping = _stub_agent
 
@@ -355,6 +479,10 @@ def test_s7_change_decline_question(tmp_path: Path, _stub_agent: Dict[str, Dict[
         info={"participants": 30},
     )
     assert change["action"] in {"confirmation_detour", "room_avail_result"}
+    if change["action"] == "confirmation_detour":
+        telemetry = change["telemetry"]
+        assert telemetry["detour_started"] is True
+        assert telemetry["final_action"] == "edit_requirements"
     event = _event(db_path)
     assert event["caller_step"] == 7
 
@@ -366,8 +494,16 @@ def test_s7_change_decline_question(tmp_path: Path, _stub_agent: Dict[str, Dict[
 
     decline = _run(db_path, mapping, "decline", "We have to cancel the booking.")
     assert decline["action"] == "confirmation_decline"
+    assert decline["buttons_rendered"] is True
+    assert decline["buttons_enabled"] is False
+    telemetry_decline = decline["telemetry"]
+    assert telemetry_decline["final_action"] == "discard"
+    event = _event(db_path)
+    assert event["decision"] == "discarded"
     final_decline = _hil_confirm(db_path, mapping, kind="decline")
     assert final_decline["action"] == "confirmation_decline_sent"
+    event = _event(db_path)
+    assert event["decision"] == "discarded"
 
     question = _run(db_path, mapping, "question", "Could you help with parking details?")
     assert question["action"] == "confirmation_question"

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
+from backend.workflows.common.gatekeeper import refresh_gatekeeper
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
@@ -41,6 +44,18 @@ def process(state: WorkflowState) -> GroupResult:
     pricing_inputs = _rebuild_pricing_inputs(event_entry, state.user_info)
 
     offer_id, offer_version, total_amount = _record_offer(event_entry, pricing_inputs, state.user_info)
+    event_entry["selected_products"] = [dict(item) for item in event_entry.get("products", [])]
+    offer_snapshot = {
+        "offer_id": offer_id,
+        "version": offer_version,
+        "total_amount": total_amount,
+        "products": event_entry["selected_products"],
+        "pricing_inputs": pricing_inputs,
+    }
+    offer_hash = hashlib.sha256(
+        json.dumps(offer_snapshot, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    event_entry["offer_hash"] = offer_hash
     summary_lines = _compose_offer_summary(event_entry, total_amount)
 
     draft_message = {
@@ -76,6 +91,8 @@ def process(state: WorkflowState) -> GroupResult:
     state.set_thread_state("Awaiting Client Response")
     state.extras["persist"] = True
 
+    gatekeeper = refresh_gatekeeper(event_entry)
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
     payload = {
         "client_id": state.client_id,
         "event_id": event_entry.get("event_id"),
@@ -85,10 +102,13 @@ def process(state: WorkflowState) -> GroupResult:
         "offer_version": offer_version,
         "total_amount": total_amount,
         "products": list(event_entry.get("products") or []),
+        "selected_products": list(event_entry.get("selected_products") or []),
+        "offer_hash": offer_hash,
         "draft_messages": state.draft_messages,
         "thread_state": state.thread_state,
         "context": state.context_snapshot,
         "persisted": True,
+        "gatekeeper_passed": dict(gatekeeper),
     }
     return GroupResult(action="offer_draft_prepared", payload=payload, halt=True)
 

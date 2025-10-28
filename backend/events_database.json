@@ -61,7 +61,29 @@
       },
       "confirmation_state": {
         "last_response_type": null
-      }
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "requested_window": {},
+      "offer_hash": null,
+      "selected_products": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending"
     },
     {
       "event_id": "76059788-dbae-4533-a4dd-3c3dd1857d41",
@@ -74,13 +96,13 @@
       "date_confirmed": true,
       "locked_room_id": null,
       "requirements": {
-        "number_of_participants": null,
-        "seating_layout": null,
+        "number_of_participants": 15,
+        "seating_layout": "workshop",
         "event_duration": {},
         "special_requirements": null,
         "preferred_room": null
       },
-      "requirements_hash": "f7a9acafde4167480c885e89b816fbcf57924d7fad42d61dc2be9fd643135ae7",
+      "requirements_hash": "6a0737fc4d4b64b307fd1a24304830e381b7ff3d84e4d0287048777f9094c757",
       "room_eval_hash": null,
       "offer_id": null,
       "audit": [
@@ -107,18 +129,18 @@
         }
       ],
       "event_data": {
-        "Date Email Received": "27.10.2025",
-        "Status": "Date Confirmed",
+        "Date Email Received": "28.10.2025",
+        "Status": "Lead",
         "Event Date": "2026-04-09",
         "Name": "Client (GUI)",
         "Email": "unknown@example.com",
         "Phone": "+41795552211",
         "Company": "Not specified",
         "Billing Address": "Not specified",
-        "Start Time": "04:25",
-        "End Time": "Not specified",
+        "Start Time": "18:00",
+        "End Time": "22:00",
         "Preferred Room": "Room B",
-        "Number of Participants": "18",
+        "Number of Participants": "15",
         "Type of Event": "workshop",
         "Catering Preference": "Not specified",
         "Billing Amount": "none",
@@ -135,7 +157,10 @@
         "2a549b6d-c3b1-442f-be72-ac868e6bfa70",
         "10ced221-05b4-42aa-8911-aeacd4a63230",
         "5ea8a36f-081b-465c-920b-e53d2a2e4330",
-        "351136e8-3e81-4f66-8941-469eeb3a19a8"
+        "351136e8-3e81-4f66-8941-469eeb3a19a8",
+        "a5db81f9-dcc7-4b24-a2da-cef4da1aa0bb",
+        "4eb9eecc-2885-4062-83b5-8fbfcac8b699",
+        "c411f45a-78d0-4727-915c-ad8b13eb263f"
       ],
       "offers": [],
       "current_offer_id": null,
@@ -164,8 +189,8 @@
       "room_pending_decision": {
         "selected_room": "Room A",
         "selected_status": "Available",
-        "requirements_hash": "f7a9acafde4167480c885e89b816fbcf57924d7fad42d61dc2be9fd643135ae7",
-        "summary": "Room availability summary — Room A: Available; Room B: Option; Room C: Available."
+        "requirements_hash": "6a0737fc4d4b64b307fd1a24304830e381b7ff3d84e4d0287048777f9094c757",
+        "summary": "Room availability summary — Room A: Available; Room B: Available; Room C: Available."
       },
       "logs": [
         {
@@ -176,7 +201,30 @@
             "event_id": "76059788-dbae-4533-a4dd-3c3dd1857d41"
           }
         }
-      ]
+      ],
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "room_eval_cache": null,
+      "requested_window": {},
+      "offer_hash": null,
+      "selected_products": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending"
     },
     {
       "event_id": "9b1a04a2-9acc-4962-8b89-500dd76828bb",
@@ -259,7 +307,29 @@
         "selected_status": "Option",
         "requirements_hash": "f6438369323dc8c8afd06aa4f827f3dc97212b8cf104fed70e64dc311aaece87",
         "summary": "Room availability summary — Room A: Available; Room B: Option; Room C: Available."
-      }
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "requested_window": {},
+      "offer_hash": null,
+      "selected_products": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending"
     },
     {
       "event_id": "cf48c329-d6a9-4c35-9102-14cec1c80694",
@@ -336,7 +406,221 @@
       },
       "confirmation_state": {
         "last_response_type": null
-      }
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "requested_window": {},
+      "offer_hash": null,
+      "selected_products": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending"
+    },
+    {
+      "event_id": "20af7ef8-b40c-436a-b9de-5d16a7f246cb",
+      "created_at": "2025-10-27T17:11:11.055362",
+      "status": "Lead",
+      "current_step": 3,
+      "caller_step": null,
+      "thread_state": "Awaiting Client Response",
+      "chosen_date": "20.04.2025",
+      "date_confirmed": true,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 18,
+        "seating_layout": "workshop",
+        "event_duration": {
+          "start": "18:00",
+          "end": "22:00"
+        },
+        "special_requirements": null,
+        "preferred_room": null
+      },
+      "requirements_hash": "837be2eb777594ec353a6718dedee4be940f72318e9fd35627c59a2ccc2ee0a7",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2025-10-27T17:11:11Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-10-27T17:48:45Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-10-27T17:49:38Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_updated"
+        },
+        {
+          "ts": "2025-10-27T17:49:38Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 3,
+          "reason": "date_confirmed"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "27.10.2025",
+        "Status": "Lead",
+        "Event Date": "2025-04-20",
+        "Name": "Client (GUI)",
+        "Email": "alex@studioluma.ch",
+        "Phone": "+41795552211",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "18:00",
+        "End Time": "22:00",
+        "Preferred Room": "Not specified",
+        "Number of Participants": "18",
+        "Type of Event": "workshop",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "036f6137-cdba-48f4-9cd3-09ddf45b3d50",
+        "df56cb01-1535-4a0a-9056-379be3c183f1",
+        "85c39359-9f97-4c0d-876f-71e32e220a67",
+        "ba9dd356-fa93-40ed-8feb-6c29f75502b7"
+      ],
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "requested_window": {
+        "display_date": "20.04.2025",
+        "date_iso": "2025-04-20",
+        "start_time": "18:00",
+        "end_time": "22:00",
+        "start": "2025-04-20T18:00:00+02:00",
+        "end": "2025-04-20T22:00:00+02:00",
+        "tz": "Europe/Zurich",
+        "hash": "3442a7f605694ea96380c4b2dcc0545903f1cbc4d1484b09bdef5be04081beb3",
+        "times_inherited": true,
+        "source_message_id": "85c39359-9f97-4c0d-876f-71e32e220a67",
+        "updated_at": "2025-10-27T17:49:38Z",
+        "cached": false
+      },
+      "logs": [
+        {
+          "ts": "2025-10-27T17:49:38Z",
+          "actor": "workflow",
+          "action": "date_confirmed",
+          "details": {
+            "intent": "confirm_date_partial",
+            "requested_window": {
+              "date": "2025-04-20",
+              "start": "2025-04-20T18:00:00+02:00",
+              "end": "2025-04-20T22:00:00+02:00",
+              "tz": "Europe/Zurich"
+            },
+            "times_inherited": true,
+            "source_message_id": "85c39359-9f97-4c0d-876f-71e32e220a67",
+            "reused": false
+          }
+        },
+        {
+          "ts": "2025-10-27T17:49:38.389518Z",
+          "actor": "Platform",
+          "action": "room_availability_triggered_after_date_confirm",
+          "details": {
+            "event_id": "20af7ef8-b40c-436a-b9de-5d16a7f246cb"
+          }
+        }
+      ],
+      "room_pending_decision": {
+        "selected_room": "Room A",
+        "selected_status": "Available",
+        "requirements_hash": "837be2eb777594ec353a6718dedee4be940f72318e9fd35627c59a2ccc2ee0a7",
+        "summary": "Room availability summary — Room A: Available; Room B: Available; Room C: Available."
+      },
+      "room_eval_cache": {
+        "window_hash": "3442a7f605694ea96380c4b2dcc0545903f1cbc4d1484b09bdef5be04081beb3",
+        "requirements_hash": "837be2eb777594ec353a6718dedee4be940f72318e9fd35627c59a2ccc2ee0a7",
+        "expires_at": "2025-10-27T18:43:57Z",
+        "draft_message": {
+          "body": "Good news — Room A is available on 20.04.2025. It comfortably fits 18 guests in workshop. Shall we proceed with this room and date?",
+          "step": 3,
+          "topic": "room_available",
+          "room": "Room A",
+          "status": "Available",
+          "requires_approval": true,
+          "created_at_step": 3
+        },
+        "pending_decision": {
+          "selected_room": "Room A",
+          "selected_status": "Available",
+          "requirements_hash": "837be2eb777594ec353a6718dedee4be940f72318e9fd35627c59a2ccc2ee0a7",
+          "summary": "Room availability summary — Room A: Available; Room B: Available; Room C: Available."
+        }
+      },
+      "offer_hash": null,
+      "selected_products": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending"
     }
   ],
   "clients": {
@@ -706,6 +990,130 @@
             "room_feedback": null,
             "event_date": "09.04.2026"
           }
+        },
+        {
+          "msg_id": "a5db81f9-dcc7-4b24-a2da-cef4da1aa0bb",
+          "ts": "2025-10-27T15:43:28.043797Z",
+          "subject": "Subject: Re: Atelier booking – Strategy Offsite (April)",
+          "body_preview": "Subject: Re: Atelier booking – Strategy Offsite (April)\nBody:\nHi Shami,\nthanks! Could you please share 3–5 available dates in April for 18:00–22:00?\nFor now, le",
+          "intent": "event_request",
+          "confidence": 0.925,
+          "user_info": {
+            "date": null,
+            "start_time": "18:00",
+            "end_time": "22:00",
+            "city": "April",
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "4eb9eecc-2885-4062-83b5-8fbfcac8b699",
+          "ts": "2025-10-27T15:44:03.118772Z",
+          "subject": "Subject: Atelier booking – Strategy Offsite (April)",
+          "body_preview": "Subject: Atelier booking – Strategy Offsite (April)\nBody:\nHi there,\nwe’d like to host a half-day strategy offsite for 18 people in April, preferably 18:00–22:00",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": "18:00",
+            "end_time": "22:00",
+            "city": "April",
+            "participants": 18,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41795552211",
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "c411f45a-78d0-4727-915c-ad8b13eb263f",
+          "ts": "2025-10-28T11:49:20.633822Z",
+          "subject": "Subject: Workshop at Atelier in November",
+          "body_preview": "Subject: Workshop at Atelier in November\nBody:\nHi! We’re planning a design workshop for ~15 people sometime in November at your Atelier. Could you share availab",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "November\nBody",
+            "participants": 15,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": "workshop",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "fc999d8b-ecfc-468b-b459-7344ad0b2083",
+          "ts": "2025-10-28T11:49:35.490947Z",
+          "subject": "Subject: Workshop at Atelier in November",
+          "body_preview": "Subject: Workshop at Atelier in November\nBody:\nHi! We’re planning a design workshop for ~15 people sometime in November at your Atelier. Could you share availab",
+          "intent": "event_request",
+          "confidence": 0.7,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "November\nBody",
+            "participants": 15,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": "workshop",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
         }
       ],
       "event_ids": [
@@ -793,6 +1201,142 @@
         }
       ],
       "event_ids": []
+    },
+    "alex@studioluma.ch": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "036f6137-cdba-48f4-9cd3-09ddf45b3d50",
+          "ts": "2025-10-27T17:11:08.941682Z",
+          "subject": "Subject: Atelier booking – Strategy Offsite (April, 18:00–22:00)",
+          "body_preview": "Subject: Atelier booking – Strategy Offsite (April, 18:00–22:00)\nBody:\nHi there,\nwe’d like to host a half-day strategy offsite for 18 people in April. Could you",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": "18:00",
+            "end_time": "22:00",
+            "city": "April",
+            "participants": 18,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41795552211",
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "df56cb01-1535-4a0a-9056-379be3c183f1",
+          "ts": "2025-10-27T17:48:39.940817Z",
+          "subject": "Subject: Atelier booking — Strategy Offsite (April, 18:00–22:00)",
+          "body_preview": "Subject: Atelier booking — Strategy Offsite (April, 18:00–22:00)\nBody:\nHi there,\nwe’re planning a half-day strategy offsite for 18 people in April. Could you sh",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": "18:00",
+            "end_time": "22:00",
+            "city": "April",
+            "participants": 18,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41795552211",
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "85c39359-9f97-4c0d-876f-71e32e220a67",
+          "ts": "2025-10-27T17:49:37.159329Z",
+          "subject": "Confirmed event date 20.04.2025",
+          "body_preview": "The client confirms the preferred event date is 20.04.2025.",
+          "intent": "confirm_date_partial",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2025-04-20",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "20.04.2025"
+          }
+        },
+        {
+          "msg_id": "ba9dd356-fa93-40ed-8feb-6c29f75502b7",
+          "ts": "2025-10-27T18:33:54.685916Z",
+          "subject": "Subject: Atelier booking — Team Workshop (April, 18:00–22:00)",
+          "body_preview": "Subject: Atelier booking — Team Workshop (April, 18:00–22:00)\n\nBody:\nHi there,\nwe’d like to host a half-day team workshop for 18 people in April. Could you shar",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": "18:00",
+            "end_time": "22:00",
+            "city": "April",
+            "participants": 18,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": "workshop",
+            "catering": null,
+            "phone": "+41795552211",
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        }
+      ],
+      "event_ids": [
+        "20af7ef8-b40c-436a-b9de-5d16a7f246cb"
+      ]
     }
   },
   "tasks": [
@@ -842,6 +1386,21 @@
         "snippet": "Hello,\nIs there parking available nearby? Just checking for next week.\nThanks,\nSarah\n",
         "ts": "2025-10-16T08:05:00Z",
         "reason": "not_event"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "9543ff9f-d862-469d-a26c-665a2f1421e0",
+      "created_at": "2025-10-28T11:49:37.716970",
+      "type": "manual_review",
+      "status": "pending",
+      "client_id": "unknown@example.com",
+      "event_id": "76059788-dbae-4533-a4dd-3c3dd1857d41",
+      "payload": {
+        "subject": "Subject: Workshop at Atelier in November",
+        "snippet": "Subject: Workshop at Atelier in November\nBody:\nHi! We’re planning a design workshop for ~15 people sometime in November at your Atelier. Could you share available dates? English is fine.",
+        "ts": "2025-10-28T11:49:35.490947Z",
+        "reason": "manual_review_required"
       },
       "notes": ""
     }
