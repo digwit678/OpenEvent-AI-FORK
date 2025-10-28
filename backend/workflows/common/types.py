@@ -64,6 +64,7 @@ class TurnTelemetry:
     answered_question_first: bool = False
     delta_availability_used: bool = False
     menus_included: str = "false"
+    menus_phase: str = "none"
     preask_candidates: List[str] = field(default_factory=list)
     preask_shown: List[str] = field(default_factory=list)
     preask_response: Dict[str, str] = field(default_factory=dict)
@@ -97,6 +98,7 @@ class TurnTelemetry:
             "answered_question_first": self.answered_question_first,
             "delta_availability_used": self.delta_availability_used,
             "menus_included": self.menus_included,
+            "menus_phase": self.menus_phase,
             "preask_candidates": list(self.preask_candidates),
             "preask_shown": list(self.preask_shown),
             "preask_response": dict(self.preask_response),

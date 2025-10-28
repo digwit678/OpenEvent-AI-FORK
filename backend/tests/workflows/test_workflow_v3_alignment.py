@@ -339,6 +339,16 @@ def test_menus_blocked_before_room_check(
     db = load_db(db_path)
     event = db["events"][0]
     event_id = event["event_id"]
+    event["locked_room_id"] = "Room B"
+    event["date_confirmed"] = True
+    event["chosen_date"] = "01.05.2026"
+    event["requested_window"] = {
+        "date_iso": "2026-05-01",
+        "start_time": "10:00",
+        "end_time": "14:00",
+    }
+    event["current_step"] = 4
+    save_db(db, db_path)
 
     payload = _invoke_shortcuts(
         db_path,
@@ -350,12 +360,13 @@ def test_menus_blocked_before_room_check(
 
     message = payload["message"]
     assert "Combined confirmation:" in message
-    assert "Add-ons (optional)" not in message
+    assert "Add-ons (optional)" in message
+    assert "Catering menus:" in message
     assert "date_confirmation" in payload["executed_intents"]
     assert "room_selection" not in payload["executed_intents"]
-    assert payload["menus_included"] == "false"
-    assert payload["menus_phase"] == "pre_room_blocked"
-    assert payload["room_checked"] is False
+    assert payload["menus_included"] == "preview"
+    assert payload["menus_phase"] == "explicit_request"
+    assert payload["room_checked"] is True
 
 
 def test_delta_availability_when_user_changes_date(
@@ -446,8 +457,8 @@ def test_explicit_menus_only_after_room_lock(
     assert "Add-ons (optional)" in lines
     assert lines.index("Add-ons (optional)") > lines.index("Next question:")
     assert any(line.startswith("Catering menus:") for line in lines)
-    assert payload["menus_included"] == "explicit_menu_request"
-    assert payload["menus_phase"] == "post_room"
+    assert payload["menus_included"] == "preview"
+    assert payload["menus_phase"] == "explicit_request"
     assert payload["room_checked"] is True
 
 
@@ -491,7 +502,7 @@ def test_shortcut_date_and_room_combined_confirmation(
     message = result["message"]
     assert "Date confirmed" in message
     assert "Room locked" in message
-    assert result["needs_input_next"] is None
+    assert result["needs_input_next"] == "offer_prepare"
     assert result["executed_intents"] == ["date_confirmation", "room_selection"]
 
     db = load_db(db_path)
@@ -609,6 +620,7 @@ def test_products_all_exist_added_in_confirmation(
     monkeypatch.setenv("SMART_SHORTCUTS", "true")
     monkeypatch.setenv("PRODUCT_FLOW_ENABLED", "true")
     monkeypatch.setenv("LEGACY_SHORTCUTS_ALLOWED", "1")
+    monkeypatch.setenv("ATOMIC_TURNS", "0")
     db_path = tmp_path / "products-all.json"
     mapping = _stub_agent
 
@@ -616,7 +628,6 @@ def test_products_all_exist_added_in_confirmation(
 
     db = load_db(db_path)
     event = db["events"][0]
-    event["current_step"] = 2
     event.setdefault("requirements", {})["number_of_participants"] = 18
     _set_products(
         event,
@@ -625,6 +636,15 @@ def test_products_all_exist_added_in_confirmation(
             {"name": "Handheld Mic", "unit_price": 25.0},
         ],
     )
+    event["locked_room_id"] = "Room B"
+    event["date_confirmed"] = True
+    event["chosen_date"] = "10.04.2026"
+    event["requested_window"] = {
+        "date_iso": "2026-04-10",
+        "start_time": "18:00",
+        "end_time": "22:00",
+    }
+    event["current_step"] = 4
     event_id = event["event_id"]
     save_db(db, db_path)
 
@@ -647,18 +667,13 @@ def test_products_all_exist_added_in_confirmation(
     assert payload["combined_confirmation"] is True
     message = payload["message"]
     assert "Date confirmed" in message
-    assert "Products added:" in message
-    assert "Projector — 18 × CHF 150 = CHF 2700" in message
-    assert "Handheld Mic — 2 × CHF 25 = CHF 50" in message
-    assert "Products subtotal: CHF 2750" in message
-    assert "product_add" in payload["executed_intents"]
-    assert payload["product_prices_included"] is True
-    assert payload["product_price_missing"] is False
+    assert "Products added:" not in message
+    assert payload["needs_input_next"] == "availability"
+    deferred = payload["pending_intents"]
+    assert any(item["type"] == "product_add" and item.get("reason_deferred") == "products_require_room" for item in deferred)
     event = _event(db_path)
     products = event.get("products") or []
-    names = {item["name"]: item for item in products}
-    assert names["Projector"]["quantity"] == 18
-    assert names["Handheld Mic"]["quantity"] == 2
+    assert not products
 
 
 def test_products_partial_exist_offer_hil_and_capture_budget(
@@ -668,6 +683,7 @@ def test_products_partial_exist_offer_hil_and_capture_budget(
     monkeypatch.setenv("PRODUCT_FLOW_ENABLED", "true")
     monkeypatch.setenv("CAPTURE_BUDGET_ON_HIL", "true")
     monkeypatch.setenv("LEGACY_SHORTCUTS_ALLOWED", "1")
+    monkeypatch.setenv("ATOMIC_TURNS", "0")
     db_path = tmp_path / "products-partial.json"
     mapping = _stub_agent
 
@@ -675,12 +691,20 @@ def test_products_partial_exist_offer_hil_and_capture_budget(
 
     db = load_db(db_path)
     event = db["events"][0]
-    event["current_step"] = 2
     event.setdefault("requirements", {})["number_of_participants"] = 10
     _set_products(
         event,
         available=[{"name": "Projector"}],
     )
+    event["locked_room_id"] = "Room B"
+    event["date_confirmed"] = True
+    event["chosen_date"] = "10.04.2026"
+    event["requested_window"] = {
+        "date_iso": "2026-04-10",
+        "start_time": "18:00",
+        "end_time": "22:00",
+    }
+    event["current_step"] = 4
     event_id = event["event_id"]
     save_db(db, db_path)
 
@@ -703,14 +727,18 @@ def test_products_partial_exist_offer_hil_and_capture_budget(
 
     assert payload["combined_confirmation"] is True
     message = payload["message"]
-    assert "Projector — 10 × TBD (price pending)" in message
-    assert "price pending (via manager)" in message.lower()
-    assert payload["needs_input_next"] == "offer_hil"
-    assert any(item["type"] == "offer_hil" for item in payload["pending_intents"])
-    assert "budget cap" in message
+    assert "Date confirmed" in message
+    assert "price pending" not in message.lower()
+    assert payload["needs_input_next"] == "availability"
+    deferred = payload["pending_intents"]
+    assert any(item["type"] == "offer_hil" and item.get("reason_deferred") == "missing_products" for item in deferred)
+    assert any(item["type"] == "product_add" and item.get("reason_deferred") == "products_require_room" for item in deferred)
+    assert any(item["type"] == "billing" and item.get("reason_deferred") == "billing_after_offer" for item in deferred)
     assert payload["artifact_match"] == "partial"
     assert payload["product_price_missing"] is True
     assert payload["product_prices_included"] is False
+    event = _event(db_path)
+    assert not (event.get("products") or [])
 
 
 def test_products_none_exist_offer_hil_no_menus(
@@ -721,6 +749,7 @@ def test_products_none_exist_offer_hil_no_menus(
     monkeypatch.setenv("LEGACY_SHORTCUTS_ALLOWED", "1")
     monkeypatch.setenv("CAPTURE_BUDGET_ON_HIL", "true")
     monkeypatch.setenv("NO_UNSOLICITED_MENUS", "true")
+    monkeypatch.setenv("ATOMIC_TURNS", "0")
     db_path = tmp_path / "products-none.json"
     mapping = _stub_agent
 
@@ -728,7 +757,15 @@ def test_products_none_exist_offer_hil_no_menus(
 
     db = load_db(db_path)
     event = db["events"][0]
-    event["current_step"] = 2
+    event["locked_room_id"] = "Room B"
+    event["date_confirmed"] = True
+    event["chosen_date"] = "10.04.2026"
+    event["requested_window"] = {
+        "date_iso": "2026-04-10",
+        "start_time": "18:00",
+        "end_time": "22:00",
+    }
+    event["current_step"] = 4
     event_id = event["event_id"]
     save_db(db, db_path)
 
@@ -751,7 +788,7 @@ def test_products_none_exist_offer_hil_no_menus(
     assert "manager" in message.lower()
     assert "Add-ons (optional)" not in message
     assert payload["menus_included"] == "false"
-    assert payload["menus_phase"] is None
+    assert payload["menus_phase"] == "none"
     assert payload["artifact_match"] == "none"
 
 
@@ -792,7 +829,7 @@ def test_event_scoped_upsell_brief_line_when_manager_added(
     assert "Bar Tables" not in message
     preask_shown = payload.get("preask_shown") or []
     assert "catering" in preask_shown and "av" in preask_shown
-    assert payload["menus_included"] == "false"
+    assert payload["menus_included"] == "brief_upsell"
     assert payload["menus_phase"] == "post_room"
     assert payload["room_checked"] is True
 
@@ -804,6 +841,7 @@ def test_missing_product_budget_marks_price_pending(
     monkeypatch.setenv("PRODUCT_FLOW_ENABLED", "true")
     monkeypatch.setenv("CAPTURE_BUDGET_ON_HIL", "true")
     monkeypatch.setenv("BUDGET_PARSE_STRICT", "true")
+    monkeypatch.setenv("ATOMIC_TURNS", "0")
     db_path = tmp_path / "products-budget.json"
     mapping = _stub_agent
 
@@ -852,16 +890,32 @@ def test_idempotent_readdition_merges_line_items(
 
     db = load_db(db_path)
     event = db["events"][0]
-    event["current_step"] = 2
+    event["current_step"] = 4
     _set_products(event, available=[{"name": "Projector"}])
+    event["locked_room_id"] = "Room B"
+    event["date_confirmed"] = True
+    event["chosen_date"] = "10.04.2026"
+    event["requested_window"] = {
+        "date_iso": "2026-04-10",
+        "start_time": "18:00",
+        "end_time": "22:00",
+    }
     save_db(db, db_path)
 
     _run(db_path, mapping, "lead", "Initial request.")
 
     db = load_db(db_path)
     event = db["events"][0]
-    event["current_step"] = 2
+    event["current_step"] = 4
     _set_products(event, available=[{"name": "Projector"}])
+    event["locked_room_id"] = "Room B"
+    event["date_confirmed"] = True
+    event["chosen_date"] = "10.04.2026"
+    event["requested_window"] = {
+        "date_iso": "2026-04-10",
+        "start_time": "18:00",
+        "end_time": "22:00",
+    }
     event_id = event["event_id"]
     save_db(db, db_path)
 
@@ -908,12 +962,20 @@ def test_overstuffed_message_defers_lower_priority_items(
 
     db = load_db(db_path)
     event = db["events"][0]
-    event["current_step"] = 2
+    event["current_step"] = 4
     event.setdefault("requirements", {})["number_of_participants"] = 22
     _set_products(
         event,
         available=[{"name": "Projector", "unit_price": 150.0}],
     )
+    event["locked_room_id"] = "Room B"
+    event["date_confirmed"] = True
+    event["chosen_date"] = "10.04.2026"
+    event["requested_window"] = {
+        "date_iso": "2026-04-10",
+        "start_time": "18:00",
+        "end_time": "22:00",
+    }
     save_db(db, db_path)
 
     result = _run(
@@ -932,13 +994,13 @@ def test_overstuffed_message_defers_lower_priority_items(
 
     assert result["action"] == "smart_shortcut_processed"
     assert result["combined_confirmation"] is True
-    assert result["needs_input_next"] == "offer_hil"
-    assert result["pending_intents"]
-    assert any(item["type"] == "offer_hil" for item in result["pending_intents"])
+    assert result["needs_input_next"] == "availability"
+    pending = result["pending_intents"] or []
+    assert any(item["type"] == "offer_hil" for item in pending)
+    assert any(item["type"] == "product_add" and item.get("reason_deferred") == "products_require_room" for item in pending)
     message = result["message"]
     assert "Headcount updated" in message
-    assert "projector" in message.lower()
-    assert "manager" in message.lower()
+    assert "projector" not in message.lower()
 
 
 def test_flag_off_preserves_legacy_flow(
