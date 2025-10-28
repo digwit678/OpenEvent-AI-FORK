@@ -20,6 +20,7 @@ from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.workflows.common.datetime_parse import parse_first_date, parse_time_range
 
 adapter: AgentAdapter = get_agent_adapter()
+_LAST_CALL_METADATA: Dict[str, Any] = {}
 
 _MONTHS = {name.lower(): idx for idx, name in enumerate(
     ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
@@ -55,6 +56,37 @@ def _agent() -> AgentAdapter:
     adapter = get_agent_adapter()
     return adapter
 
+def _record_last_call(agent: AgentAdapter, phase: str) -> None:
+    """Store metadata about the most recent adapter invocation for telemetry."""
+
+    global _LAST_CALL_METADATA
+    info: Dict[str, Any] = {}
+    if hasattr(agent, "last_call_info"):
+        try:
+            raw = agent.last_call_info()  # type: ignore[attr-defined]
+            if isinstance(raw, dict):
+                info = dict(raw)
+        except Exception:
+            info = {}
+    if not info and hasattr(agent, "describe"):
+        try:
+            raw_desc = agent.describe()
+            if isinstance(raw_desc, dict):
+                info = dict(raw_desc)
+        except Exception:
+            info = {}
+    info.setdefault("phase", phase)
+    if "model" not in info:
+        phase_key = "intent_model" if phase == "intent" else "entity_model"
+        if phase_key in info and info[phase_key]:
+            info["model"] = info[phase_key]
+    _LAST_CALL_METADATA = info
+
+def last_call_metadata() -> Dict[str, Any]:
+    """Expose metadata for the most recent adapter call."""
+
+    return dict(_LAST_CALL_METADATA)
+
 
 def _prepare_payload(message: Dict[str, Optional[str]]) -> Dict[str, str]:
     """[LLM] Ensure the adapter payload always provides subject/body strings."""
@@ -72,7 +104,9 @@ def classify_intent(message: Dict[str, Optional[str]]) -> Tuple[IntentLabel, flo
     if os.getenv("INTENT_FORCE_EVENT_REQUEST") == "1":
         print("[DEV] intent override -> event_request")
         return IntentLabel.EVENT_REQUEST, 0.99
-    intent, confidence = _agent().route_intent(payload)
+    agent = _agent()
+    intent, confidence = agent.route_intent(payload)
+    _record_last_call(agent, phase="intent")
     normalized = IntentLabel.normalize(intent)
     override = _heuristic_intent_override(payload, normalized)
     if override is not None:
@@ -90,6 +124,7 @@ def extract_user_information(message: Dict[str, Optional[str]]) -> Dict[str, Opt
         raw = agent.extract_user_information(payload) or {}
     else:
         raw = agent.extract_entities(payload) or {}
+    _record_last_call(agent, phase="entities")
     sanitized = sanitize_user_info(raw)
     if not sanitized.get("date") and (
         os.getenv("AGENT_MODE", "").lower() == "stub" or os.getenv("INTENT_FORCE_EVENT_REQUEST") == "1"
@@ -140,8 +175,10 @@ def reset_llm_adapter() -> None:
     """Reset the cached agent adapter (intended for tests)."""
 
     global adapter
+    global _LAST_CALL_METADATA
     reset_agent_adapter()
     adapter = get_agent_adapter()
+    _LAST_CALL_METADATA = {}
 
 
 _CONFIRM_TOKENS = (

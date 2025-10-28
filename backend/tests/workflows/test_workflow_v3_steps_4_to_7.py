@@ -286,7 +286,7 @@ def test_step7_buttons_disabled_with_missing_field_then_enable_on_capture(
     db = load_db(db_path)
     event = db["events"][0]
     event.setdefault("event_data", {})["Company"] = "Studio Luma GmbH"
-    event["event_data"]["Billing Address"] = "Latzstreet 8, Glibach"
+    event["event_data"]["Billing Address"] = ""
     save_db(db, db_path)
 
     first = _run(db_path, mapping, "confirm", "Please confirm the booking.")
@@ -296,10 +296,10 @@ def test_step7_buttons_disabled_with_missing_field_then_enable_on_capture(
     assert first["buttons_rendered"] is True
     assert first["buttons_enabled"] is False
     missing = first["missing_fields"]
-    assert "billing_postal_code" in missing and "billing_country" in missing
+    assert "billing.address" in missing
     telemetry = first["telemetry"]
     assert telemetry["buttons_enabled"] is False
-    assert telemetry["missing_fields"]
+    assert "billing.address" in telemetry["missing_fields"]
     assert telemetry["final_action"] == "confirm"
     message = first["draft_messages"][-1]["body"].lower()
     assert "postal code" in message and "country" in message
@@ -322,6 +322,72 @@ def test_step7_buttons_disabled_with_missing_field_then_enable_on_capture(
     assert second["buttons_rendered"] is True
     assert second["buttons_enabled"] is True
     assert second["missing_fields"] == []
+
+
+def test_billing_captured_then_promoted_at_confirmation(
+    tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]
+) -> None:
+    db_path = tmp_path / "s7-captured-billing.json"
+    mapping = _stub_agent
+
+    billing_value = "Studio Luma GmbH\\nLatzstreet 8\\n8000 Glibach\\nSwitzerland"
+
+    _run(
+        db_path,
+        mapping,
+        "prefill",
+        "Here are our details, please keep them on file.",
+        info={"billing_address": billing_value},
+    )
+
+    event = _event(db_path)
+    assert event.get("captured", {}).get("billing", {}).get("address") == billing_value
+    assert event.get("event_data", {}).get("Billing Address") in {None, "Not specified"}
+    assert "billing_update" in event.get("deferred_intents", [])
+
+    _bootstrap_to_offer(db_path, mapping)
+    _accept_offer(db_path, mapping)
+
+    event = _event(db_path)
+    assert event.get("event_data", {}).get("Billing Address") == billing_value
+    assert "billing_update" not in event.get("deferred_intents", [])
+
+    confirm = _run(db_path, mapping, "confirm-captured", "Please confirm the booking.")
+    assert confirm["action"] in {
+        "confirmation_draft",
+        "confirmation_deposit_requested",
+        "confirmation_finalized",
+        "confirmation_deposit_pending",
+        "confirmation_billing_missing",
+    }
+
+    event = _event(db_path)
+    assert event.get("event_data", {}).get("Billing Address") == billing_value
+    verified_billing = event.get("verified", {}).get("billing", {})
+    assert verified_billing.get("address") == billing_value
+    assert "billing_update" not in event.get("deferred_intents", [])
+    assert event.get("captured", {}).get("billing", {}).get("address") is None
+
+    telemetry = confirm.get("telemetry") or {}
+    assert "billing.address" not in (confirm.get("missing_fields") or [])
+
+
+def test_room_preference_captured_before_date(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]) -> None:
+    db_path = tmp_path / "room-capture.json"
+    mapping = _stub_agent
+
+    _run(
+        db_path,
+        mapping,
+        "intro",
+        "We'd love Room B if possible.",
+        info={"room": "Room B"},
+    )
+
+    event = _event(db_path)
+    captured_room = event.get("captured", {}).get("preferred_room")
+    assert captured_room == "Room B"
+    assert "room_selection" in event.get("deferred_intents", [])
 
 
 def test_telemetry_includes_buttons_detours_preask_preview_selection_fields(

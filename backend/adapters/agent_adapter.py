@@ -32,6 +32,16 @@ class AgentAdapter:
 
         raise NotImplementedError("extract_entities must be implemented by subclasses.")
 
+    def describe(self) -> Dict[str, Any]:
+        """Metadata describing the underlying adapter implementation."""
+
+        return {"adapter": "stub", "model": "stub"}
+
+    def last_call_info(self) -> Dict[str, Any]:
+        """Expose telemetry for the most recent adapter invocation."""
+
+        return {"adapter": "stub", "model": "stub", "phase": "none"}
+
 
 class StubAgentAdapter(AgentAdapter):
     """Deterministic heuristic stub replicating the pre-agent workflow behaviour."""
@@ -234,26 +244,34 @@ class OpenAIAgentAdapter(AgentAdapter):
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY must be set when AGENT_MODE=openai")
         self._client = OpenAI(api_key=api_key)
-        model = os.getenv("OPENAI_AGENT_MODEL", "o3-mini")
+        model = os.getenv("OPENAI_AGENT_MODEL", "gpt-4o-mini")
         self._intent_model = os.getenv("OPENAI_INTENT_MODEL", model)
         self._entity_model = os.getenv("OPENAI_ENTITY_MODEL", model)
         self._fallback = StubAgentAdapter()
+        self._last_call_info: Dict[str, Any] = {
+            "adapter": "openai",
+            "model": self._intent_model,
+            "phase": "init",
+            "intent_model": self._intent_model,
+            "entity_model": self._entity_model,
+        }
 
     def _run_completion(self, *, prompt: str, body: str, subject: str, model: str) -> Dict[str, Any]:
         message = f"Subject: {subject}\n\nBody:\n{body}"
-        response = self._client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": message},
-            ],
-            temperature=0,
-            top_p=0,
-            presence_penalty=0,
-            frequency_penalty=0,
-            seed=42,
-            response_format={"type": "json_object"},
-        )
+        deterministic = os.getenv("OPENAI_TEST_MODE") == "1"
+        system_preface = os.getenv("OPENAI_TEST_SYSTEM_PREFACE")
+        system_prompt = f"{system_preface}\n\n{prompt}" if system_preface else prompt
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": message},
+        ]
+        completion_kwargs: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+        }
+        completion_kwargs.update(self._sampling_parameters(deterministic))
+        response = self._client.chat.completions.create(**completion_kwargs)
         content = response.choices[0].message.content if response.choices else "{}"
         try:
             return json.loads(content or "{}")
@@ -270,6 +288,7 @@ class OpenAIAgentAdapter(AgentAdapter):
                 subject=subject,
                 model=self._intent_model,
             )
+            self._set_last_call_info(adapter_label="openai", model=self._intent_model, phase="intent")
             intent = str(payload.get("intent") or "").strip().lower()
             if intent not in {IntentLabel.EVENT_REQUEST.value, IntentLabel.NON_EVENT.value}:
                 intent = IntentLabel.NON_EVENT.value
@@ -281,6 +300,7 @@ class OpenAIAgentAdapter(AgentAdapter):
             confidence = max(0.0, min(1.0, confidence))
             return intent or IntentLabel.NON_EVENT.value, confidence
         except Exception:
+            self._set_last_call_info(adapter_label="stub", model="stub", phase="intent")
             return self._fallback.route_intent(msg)
 
     def extract_entities(self, msg: Dict[str, Any]) -> Dict[str, Any]:
@@ -293,15 +313,70 @@ class OpenAIAgentAdapter(AgentAdapter):
                 subject=subject,
                 model=self._entity_model,
             )
+            self._set_last_call_info(adapter_label="openai", model=self._entity_model, phase="entities")
             entities: Dict[str, Any] = {}
             for key in self._ENTITY_KEYS:
                 entities[key] = payload.get(key)
             return entities
         except Exception:
+            self._set_last_call_info(adapter_label="stub", model="stub", phase="entities")
             return self._fallback.extract_entities(msg)
 
     def extract_user_information(self, msg: Dict[str, Any]) -> Dict[str, Any]:
         return self.extract_entities(msg)
+
+    def describe(self) -> Dict[str, Any]:
+        return {
+            "adapter": "openai",
+            "intent_model": self._intent_model,
+            "entity_model": self._entity_model,
+        }
+
+    def last_call_info(self) -> Dict[str, Any]:
+        info = dict(self._last_call_info)
+        info.setdefault("intent_model", self._intent_model)
+        info.setdefault("entity_model", self._entity_model)
+        return info
+
+    # ------------------------------------------------------------------ #
+    # Internal helpers
+    # ------------------------------------------------------------------ #
+
+    def _sampling_parameters(self, deterministic: bool) -> Dict[str, Any]:
+        if deterministic:
+            params: Dict[str, Any] = {
+                "temperature": 0.0,
+                "top_p": 0.0,
+                "presence_penalty": 0.0,
+                "frequency_penalty": 0.0,
+            }
+            params["seed"] = 42
+            return params
+
+        return {
+            "temperature": self._float_env("OPENAI_AGENT_TEMPERATURE", 0.0),
+            "top_p": self._float_env("OPENAI_AGENT_TOP_P", 1.0),
+            "presence_penalty": self._float_env("OPENAI_AGENT_PRESENCE_PENALTY", 0.0),
+            "frequency_penalty": self._float_env("OPENAI_AGENT_FREQUENCY_PENALTY", 0.0),
+        }
+
+    def _float_env(self, name: str, default: float) -> float:
+        raw = os.getenv(name)
+        if raw is None:
+            return default
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return default
+
+    def _set_last_call_info(self, *, adapter_label: str, model: str, phase: str) -> None:
+        self._last_call_info = {
+            "adapter": adapter_label,
+            "model": model,
+            "phase": phase,
+            "intent_model": self._intent_model,
+            "entity_model": self._entity_model,
+        }
 
 
 _AGENT_SINGLETON: Optional[AgentAdapter] = None

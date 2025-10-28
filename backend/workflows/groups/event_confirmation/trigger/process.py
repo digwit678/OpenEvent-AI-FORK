@@ -10,12 +10,13 @@ from backend.workflows.common.billing import (
     missing_billing_fields,
     update_billing_details,
 )
+from backend.workflows.common.capture import capture_user_fields, promote_billing_from_captured
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.room_rules import site_visit_allowed
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.utils.profiler import profile_step
-from backend.workflows.common.gatekeeper import refresh_gatekeeper
+from backend.workflows.common.gatekeeper import explain_step7_gate, refresh_gatekeeper
 
 __workflow_role__ = "trigger"
 
@@ -54,7 +55,10 @@ def process(state: WorkflowState) -> GroupResult:
     if state.user_info.get("hil_approve_step") == 7:
         return _process_hil_confirmation(state, event_entry)
 
-    _buttons_context(state, event_entry)
+    capture_user_fields(state, current_step=7, source=state.message.msg_id)
+    promote_billing_from_captured(state, event_entry)
+
+    _sync_gate_context(state, event_entry)
 
     structural = _detect_structural_change(state.user_info, event_entry, state.intent)
     if structural:
@@ -496,6 +500,7 @@ def _process_hil_confirmation(state: WorkflowState, event_entry: Dict[str, Any])
         append_audit_entry(event_entry, 7, 7, "confirmation_sent")
         state.set_thread_state("In Progress")
         state.extras["persist"] = True
+        state.telemetry.final_action = "accepted"
         payload = _base_payload(state, event_entry)
         return GroupResult(action="confirmation_finalized", payload=payload, halt=True)
 
@@ -577,8 +582,8 @@ def _iso_to_ddmmyyyy(raw: Optional[str]) -> Optional[str]:
 
 
 def _base_payload(state: WorkflowState, event_entry: Dict[str, Any]) -> Dict[str, Any]:
-    buttons_enabled, missing_fields, gatekeeper = _buttons_context(state, event_entry)
-    gate_explain = event_entry.get("gatekeeper_explain")
+    buttons_enabled, missing_fields, gatekeeper, gate_explain = _sync_gate_context(state, event_entry)
+
     payload = {
         "client_id": state.client_id,
         "event_id": event_entry.get("event_id"),
@@ -592,35 +597,38 @@ def _base_payload(state: WorkflowState, event_entry: Dict[str, Any]) -> Dict[str
         "buttons_enabled": buttons_enabled,
         "missing_fields": missing_fields,
         "gatekeeper_passed": dict(gatekeeper),
+        "gate_explain": gate_explain,
+        "gatekeeper_explain": gate_explain,
     }
-    if gate_explain is not None:
-        payload["gatekeeper_explain"] = gate_explain
     return payload
 
 
-def _buttons_context(
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-) -> Tuple[bool, List[str], Dict[str, bool]]:
+def _sync_gate_context(
+    state: WorkflowState, event_entry: Dict[str, Any]
+) -> Tuple[bool, List[str], Dict[str, bool], Dict[str, Any]]:
     update_billing_details(event_entry)
     gatekeeper = refresh_gatekeeper(event_entry)
-    explain = event_entry.get("gatekeeper_explain") or {}
-    missing = explain.get("missing") or []
-    deduped = []
+    gate_explain = event_entry.get("gatekeeper_explain") or explain_step7_gate(event_entry)
+    missing_now = gate_explain.get("missing_now") or []
+    deduped_missing: List[str] = []
     seen: set[str] = set()
-    for entry in missing:
+    for entry in missing_now:
         if entry not in seen:
             seen.add(entry)
-            deduped.append(entry)
-    buttons_enabled = bool(explain.get("ready"))
+            deduped_missing.append(entry)
+
+    buttons_enabled = bool(gate_explain.get("ready"))
+
     state.telemetry.buttons_rendered = True
     state.telemetry.buttons_enabled = buttons_enabled
-    state.telemetry.missing_fields = deduped
+    state.telemetry.missing_fields = deduped_missing
     state.telemetry.gatekeeper_passed = dict(gatekeeper)
     state.telemetry.caller_step = state.caller_step or event_entry.get("caller_step")
     state.telemetry.detour_completed = event_entry.get("caller_step") is None
-    setattr(state.telemetry, "gatekeeper_explain", explain)
-    return buttons_enabled, deduped, gatekeeper
+    setattr(state.telemetry, "gate_explain", gate_explain)
+    setattr(state.telemetry, "gatekeeper_explain", gate_explain)
+
+    return buttons_enabled, deduped_missing, gatekeeper, gate_explain
 
 
 def _any_keyword_match(lowered: str, keywords: Tuple[str, ...]) -> bool:
