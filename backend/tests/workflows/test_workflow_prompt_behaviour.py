@@ -249,10 +249,19 @@ def test_answer_first_dates_no_menus_in_intake(tmp_path: Path, monkeypatch: pyte
         db_path=tmp_path / "no-menus.json",
     )
     assert result["action"] == "smart_shortcut_processed"
-    body = result["message"].lower()
-    assert "menu" not in body
-    assert "catering" not in body
-    assert result.get("answered_question_first") is True
+    message = result["message"]
+    lines = [line for line in message.splitlines() if line.strip()]
+    assert lines and lines[0].startswith("AVAILABLE DATES (")
+    assert any(line.startswith("1)") for line in lines)
+    assert lines[-1].lower().startswith(("reply with a number", "tell me another"))
+    body_lower = message.lower()
+    assert "menu" not in body_lower
+    assert "catering" not in body_lower
+    telemetry = result.get("telemetry") or {}
+    assert telemetry.get("answered_question_first") is True
+    assert telemetry.get("dag_blocked") == "room_requires_date"
+    assert telemetry.get("menus_included") == "false"
+    assert telemetry.get("menus_phase") == "none"
 
 
 def test_preask_interest_before_any_menus(
@@ -298,7 +307,7 @@ def test_preask_interest_before_any_menus(
     assert "Would you like to see AV add-ons" in message
     assert "Bar Tables" not in message  # limited to two prompts
     assert "1." not in message
-    assert result_payload["menus_included"] == "false"
+    assert result_payload["menus_included"] == "brief_upsell"
     assert result_payload["menus_phase"] == "post_room"
     assert result_payload["room_checked"] is True
     assert "catering" in (result_payload.get("preask_shown") or [])
@@ -315,11 +324,15 @@ def test_explicit_user_requests_menus_allows_menu(tmp_path: Path, monkeypatch: p
     )
 
     assert result["action"] == "smart_shortcut_processed"
-    message_lower = result["message"].lower()
-    assert "which date should i check for you" in message_lower
+    message = result["message"]
+    lines = [line for line in message.splitlines() if line.strip()]
+    assert lines and lines[0].startswith("AVAILABLE DATES (")
+    assert any(line.startswith("1)") for line in lines)
+    assert lines[-1].lower().startswith(("reply with a number", "tell me another"))
+    message_lower = message.lower()
     assert "add-ons (optional)" not in message_lower
     assert result["menus_included"] == "false"
-    assert result["menus_phase"] == "pre_room_blocked"
+    assert result["menus_phase"] == "none"
 
 
 def test_preask_yes_shows_compact_preview_max3_no_prices(
@@ -698,13 +711,14 @@ def test_atomic_dates_single_followup(tmp_path: Path, _stub_mapping: Dict[str, D
 
     assert result["action"] == "smart_shortcut_processed"
     message = result.get("message", "")
-    assert message.startswith("Which date should I check for you?")
-    assert "AVAILABLE DATES" not in message
+    lines = [line for line in message.splitlines() if line.strip()]
+    assert lines and lines[0].startswith("AVAILABLE DATES (")
+    assert lines[-1].lower().startswith(("reply with a number", "tell me another"))
     assert result.get("combined_confirmation") is False
     assert result.get("shortcut_path_used") == "none"
     telemetry = result.get("telemetry") or {}
     assert telemetry.get("atomic_default") is True
-    assert telemetry.get("dag_blocked") == "none"
+    assert telemetry.get("dag_blocked") == "room_requires_date"
 
 
 def test_atomic_room_preference_deferred(
@@ -730,8 +744,9 @@ def test_atomic_room_preference_deferred(
     assert telemetry.get("dag_blocked") == "room_requires_date"
     assert telemetry.get("atomic_default") is True
     message = result.get("message", "")
-    assert message.startswith("Next question:")
-    assert "Should I run availability for Room B" in message
+    lines = [line for line in message.splitlines() if line.strip()]
+    assert lines and lines[0].startswith("AVAILABLE DATES (")
+    assert lines[-1].lower().startswith(("reply with a number", "tell me another"))
 
     event = load_db(db_path)["events"][0]
     assert event.get("captured", {}).get("preferred_room") == "Room B"
