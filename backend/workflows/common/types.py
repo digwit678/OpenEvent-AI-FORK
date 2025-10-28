@@ -77,6 +77,7 @@ class TurnTelemetry:
     promoted_fields: List[str] = field(default_factory=list)
     deferred_intents: List[str] = field(default_factory=list)
     dag_blocked: str = "none"
+    atomic_default: bool = False
 
     def to_payload(self) -> Dict[str, Any]:
         """Serialise telemetry into a JSON-friendly payload."""
@@ -109,6 +110,7 @@ class TurnTelemetry:
             "promoted_fields": list(self.promoted_fields),
             "deferred_intents": list(self.deferred_intents),
             "dag_blocked": self.dag_blocked,
+            "atomic_default": self.atomic_default,
         }
 
     # ------------------------------------------------------------------ #

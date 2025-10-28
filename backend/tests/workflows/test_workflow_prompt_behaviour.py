@@ -684,6 +684,115 @@ def test_choice_selection_ambiguous_prompts_one_clarification(
     assert persisted_context is not None
 
 
+def test_atomic_dates_single_followup(tmp_path: Path, _stub_mapping: Dict[str, Dict[str, Any]], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SMART_SHORTCUTS", "true")
+    monkeypatch.setenv("NO_UNSOLICITED_MENUS", "true")
+    monkeypatch.setenv("ATOMIC_TURNS", "1")
+    monkeypatch.setenv("SHORTCUT_ALLOW_DATE_ROOM", "1")
+
+    db_path = tmp_path / "atomic-dates.json"
+    result = process_msg(
+        _message("Hello, could you share evening availability in April?"),
+        db_path=db_path,
+    )
+
+    assert result["action"] == "smart_shortcut_processed"
+    message = result.get("message", "")
+    assert message.startswith("Which date should I check for you?")
+    assert "AVAILABLE DATES" not in message
+    assert result.get("combined_confirmation") is False
+    assert result.get("shortcut_path_used") == "none"
+    telemetry = result.get("telemetry") or {}
+    assert telemetry.get("atomic_default") is True
+    assert telemetry.get("dag_blocked") == "none"
+
+
+def test_atomic_room_preference_deferred(
+    tmp_path: Path, _stub_mapping: Dict[str, Dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SMART_SHORTCUTS", "true")
+    monkeypatch.setenv("NO_UNSOLICITED_MENUS", "true")
+    monkeypatch.setenv("ATOMIC_TURNS", "1")
+    monkeypatch.setenv("SHORTCUT_ALLOW_DATE_ROOM", "1")
+
+    db_path = tmp_path / "atomic-room.json"
+    mapping = _stub_mapping
+    result = _run(
+        db_path,
+        mapping,
+        "pref-room",
+        "Looking for November evenings, preferably Room B.",
+        info={"room": "Room B"},
+    )
+
+    assert result["action"] == "smart_shortcut_processed"
+    telemetry = result.get("telemetry") or {}
+    assert telemetry.get("dag_blocked") == "room_requires_date"
+    assert telemetry.get("atomic_default") is True
+    message = result.get("message", "")
+    assert message.startswith("Next question:")
+    assert "Should I run availability for Room B" in message
+
+    event = load_db(db_path)["events"][0]
+    assert event.get("captured", {}).get("preferred_room") == "Room B"
+    assert "room_selection" in (event.get("deferred_intents") or [])
+    assert not event.get("verified", {}).get("preferred_room")
+
+
+def test_atomic_date_room_combined_shortcut(
+    tmp_path: Path, _stub_mapping: Dict[str, Dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SMART_SHORTCUTS", "true")
+    monkeypatch.setenv("NO_UNSOLICITED_MENUS", "true")
+    monkeypatch.setenv("ATOMIC_TURNS", "1")
+    monkeypatch.setenv("SHORTCUT_ALLOW_DATE_ROOM", "1")
+
+    db_path = tmp_path / "atomic-combo.json"
+    mapping = _stub_mapping
+
+    _run(
+        db_path,
+        mapping,
+        "lead",
+        "Initial request.",
+    )
+
+    db = load_db(db_path)
+    event = db["events"][0]
+    event["current_step"] = 2
+    event["chosen_date"] = None
+    event["requirements"] = {"number_of_participants": 20}
+    event["requirements_hash"] = requirements_hash(event["requirements"])
+    event["room_pending_decision"] = {
+        "selected_room": "Room B",
+        "selected_status": "Available",
+        "requirements_hash": event["requirements_hash"],
+    }
+    save_db(db, db_path)
+
+    result = _run(
+        db_path,
+        mapping,
+        "combo",
+        "Confirm 10.04.2026 18-22 and lock Room B.",
+        info={
+            "date": "2026-04-10",
+            "start_time": "18:00",
+            "end_time": "22:00",
+            "room": "Room B",
+        },
+    )
+
+    assert result["action"] == "smart_shortcut_processed"
+    assert result.get("combined_confirmation") is True
+    assert result.get("shortcut_path_used") == "date+room"
+    telemetry = result.get("telemetry") or {}
+    assert telemetry.get("atomic_default") is True
+    assert len(result.get("executed_intents", [])) <= 2
+    message = result.get("message", "")
+    assert message.count("Next question:") == 1
+    assert "Add-ons (optional)" not in message
+
 def test_step7_gate_ready_enables_buttons(tmp_path: Path) -> None:
     event_entry = _ready_confirmation_event()
     state = WorkflowState(

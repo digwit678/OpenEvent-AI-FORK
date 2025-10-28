@@ -608,6 +608,7 @@ def test_products_all_exist_added_in_confirmation(
 ) -> None:
     monkeypatch.setenv("SMART_SHORTCUTS", "true")
     monkeypatch.setenv("PRODUCT_FLOW_ENABLED", "true")
+    monkeypatch.setenv("LEGACY_SHORTCUTS_ALLOWED", "1")
     db_path = tmp_path / "products-all.json"
     mapping = _stub_agent
 
@@ -666,6 +667,7 @@ def test_products_partial_exist_offer_hil_and_capture_budget(
     monkeypatch.setenv("SMART_SHORTCUTS", "true")
     monkeypatch.setenv("PRODUCT_FLOW_ENABLED", "true")
     monkeypatch.setenv("CAPTURE_BUDGET_ON_HIL", "true")
+    monkeypatch.setenv("LEGACY_SHORTCUTS_ALLOWED", "1")
     db_path = tmp_path / "products-partial.json"
     mapping = _stub_agent
 
@@ -716,6 +718,7 @@ def test_products_none_exist_offer_hil_no_menus(
 ) -> None:
     monkeypatch.setenv("SMART_SHORTCUTS", "true")
     monkeypatch.setenv("PRODUCT_FLOW_ENABLED", "true")
+    monkeypatch.setenv("LEGACY_SHORTCUTS_ALLOWED", "1")
     monkeypatch.setenv("CAPTURE_BUDGET_ON_HIL", "true")
     monkeypatch.setenv("NO_UNSOLICITED_MENUS", "true")
     db_path = tmp_path / "products-none.json"
@@ -840,6 +843,8 @@ def test_idempotent_readdition_merges_line_items(
 ) -> None:
     monkeypatch.setenv("SMART_SHORTCUTS", "true")
     monkeypatch.setenv("PRODUCT_FLOW_ENABLED", "true")
+    monkeypatch.setenv("ATOMIC_TURNS", "0")
+    monkeypatch.setenv("LEGACY_SHORTCUTS_ALLOWED", "1")
     db_path = tmp_path / "products-idempotent.json"
     mapping = _stub_agent
 
@@ -889,6 +894,8 @@ def test_overstuffed_message_defers_lower_priority_items(
     monkeypatch.setenv("SMART_SHORTCUTS", "true")
     monkeypatch.setenv("PRODUCT_FLOW_ENABLED", "true")
     monkeypatch.setenv("CAPTURE_BUDGET_ON_HIL", "true")
+    monkeypatch.setenv("ATOMIC_TURNS", "0")
+    monkeypatch.setenv("LEGACY_SHORTCUTS_ALLOWED", "1")
     db_path = tmp_path / "smart-overstuffed.json"
     mapping = _stub_agent
 
