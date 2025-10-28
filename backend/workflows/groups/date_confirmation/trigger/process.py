@@ -13,6 +13,7 @@ from backend.workflows.common.datetime_parse import (
     to_iso_date,
 )
 from backend.workflows.common.requirements import requirements_hash
+from backend.workflows.common.gatekeeper import refresh_gatekeeper
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.groups.intake.condition.checks import suggest_dates
@@ -86,14 +87,35 @@ def _present_candidate_dates(state: WorkflowState, event_entry: dict) -> GroupRe
     if not candidate_dates:
         candidate_dates = []
 
-    options_lines = ["Here are our next available dates:"]
-    if candidate_dates:
-        options_lines.extend(f"- {value}" for value in candidate_dates)
+    start_pref = _normalize_time_value(state.user_info.get("start_time")) or "18:00"
+    end_pref = _normalize_time_value(state.user_info.get("end_time")) or "22:00"
+    if start_pref and end_pref:
+        slot_text = f"{start_pref}–{end_pref}"
+    elif start_pref:
+        slot_text = start_pref
+    elif end_pref:
+        slot_text = end_pref
     else:
-        options_lines.append("• No suitable slots in the next 45 days.")
-    options_lines.append("Would one of these work, or do you prefer a different date?")
-    options_lines.append("If you have alternatives, please share them and I’ll check feasibility.")
-    prompt = "\n".join(options_lines)
+        slot_text = "18:00–22:00"
+
+    formatted_dates: List[str] = []
+    for raw in candidate_dates:
+        iso_value = to_iso_date(raw)
+        formatted_dates.append(f"{iso_value or raw} {slot_text}".strip())
+
+    message_lines = ["AVAILABLE DATES:"]
+    if formatted_dates:
+        message_lines.extend(f"- {entry}" for entry in formatted_dates)
+    else:
+        message_lines.append("- No suitable slots within the next 45 days.")
+    message_lines.extend(
+        [
+            "",
+            "NEXT STEP:",
+            "Reply with the date that works best or share alternatives to check.",
+        ]
+    )
+    prompt = "\n".join(message_lines)
 
     draft_message = {
         "body": prompt,
@@ -117,7 +139,12 @@ def _present_candidate_dates(state: WorkflowState, event_entry: dict) -> GroupRe
         "thread_state": state.thread_state,
         "context": state.context_snapshot,
         "persisted": True,
+        "answered_question_first": True,
     }
+    gatekeeper = refresh_gatekeeper(event_entry)
+    state.telemetry.answered_question_first = True
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
+    payload["gatekeeper_passed"] = dict(gatekeeper)
     return GroupResult(action="date_options_proposed", payload=payload, halt=True)
 
 
@@ -301,7 +328,12 @@ def _handle_partial_confirmation(
         "thread_state": state.thread_state,
         "context": state.context_snapshot,
         "persisted": True,
+        "answered_question_first": True,
     }
+    gatekeeper = refresh_gatekeeper(event_entry)
+    state.telemetry.answered_question_first = True
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
+    payload["gatekeeper_passed"] = dict(gatekeeper)
     return GroupResult(action="date_time_clarification", payload=payload, halt=True)
 
 
@@ -403,7 +435,12 @@ def _finalize_confirmation(
         "cache_reused": reuse_previous,
         "context": state.context_snapshot,
         "persisted": True,
+        "answered_question_first": True,
     }
+    gatekeeper = refresh_gatekeeper(event_entry)
+    state.telemetry.answered_question_first = True
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
+    payload["gatekeeper_passed"] = dict(gatekeeper)
     return GroupResult(action="date_confirmed", payload=payload)
 
 

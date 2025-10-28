@@ -10,6 +10,7 @@ import hashlib
 from typing import Any, Dict
 
 from backend.workflows.io.database import append_audit_entry
+from backend.workflows.common.billing import update_billing_details
 from backend.utils import json_io
 
 _STABLE_HASH_CACHE: Dict[str, str] = {}
@@ -121,6 +122,9 @@ def merge_client_profile(event_entry: Dict[str, Any], incoming: Dict[str, Any]) 
 
     if not changed_fields:
         return False
+
+    if any(field in changed_fields for field in {"Billing Address", "Company", "Name"}):
+        update_billing_details(event_entry)
 
     current_step = event_entry.get("current_step")
     if not isinstance(current_step, int):

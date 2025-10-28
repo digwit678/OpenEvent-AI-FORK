@@ -17,6 +17,7 @@ from backend.workflows.groups.event_confirmation.trigger import process as proce
 from backend.workflows.io import database as db_io
 from backend.workflows.io import tasks as task_io
 from backend.workflows.llm import adapter as llm_adapter
+from backend.workflows.planner import maybe_run_smart_shortcuts
 from backend.utils.profiler import profile_step
 
 
@@ -98,6 +99,11 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     _persist_if_needed(state, path, lock_path)
     if last_result.halt:
         return _flush_and_finalize(last_result, state, path, lock_path)
+
+    shortcut_result = maybe_run_smart_shortcuts(state)
+    if shortcut_result is not None:
+        _persist_if_needed(state, path, lock_path)
+        return _flush_and_finalize(shortcut_result, state, path, lock_path)
 
     for _ in range(6):
         event_entry = state.event_entry
@@ -265,4 +271,6 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
         payload["draft_messages"] = state.draft_messages
     else:
         payload.setdefault("draft_messages", [])
+    if state.telemetry:
+        payload["telemetry"] = state.telemetry.to_payload()
     return payload

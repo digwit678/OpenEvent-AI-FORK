@@ -304,15 +304,18 @@ def ensure_event_defaults(event: Dict[str, Any]) -> None:
     event.setdefault("chosen_date", None)
     event.setdefault("date_confirmed", False)
     event.setdefault("locked_room_id", None)
+    event.setdefault("requested_window", {})
     event.setdefault("requirements", {})
     event.setdefault("requirements_hash", None)
     event.setdefault("room_eval_hash", None)
     event.setdefault("offer_id", None)
+    event.setdefault("offer_hash", None)
     event.setdefault("audit", [])
     event.setdefault("offers", [])
     event.setdefault("current_offer_id", None)
     event.setdefault("offer_sequence", 0)
     event.setdefault("products", [])
+    event.setdefault("selected_products", [])
     event.setdefault("negotiation_state", {"counter_count": 0, "manual_review_task_id": None})
     event.setdefault("transition_ready", False)
     event.setdefault("calendar_blocks", [])
@@ -325,6 +328,35 @@ def ensure_event_defaults(event: Dict[str, Any]) -> None:
         {"status": "idle", "proposed_slots": [], "scheduled_slot": None},
     )
     event.setdefault("confirmation_state", {"last_response_type": None})
+    products_state = event.setdefault(
+        "products_state",
+        {
+            "available_items": [],
+            "manager_added_items": [],
+            "line_items": [],
+            "pending_hil_requests": [],
+            "budgets": {},
+            "presented_interest": {},
+            "preask_pending": {},
+        },
+    )
+    products_state.setdefault("available_items", [])
+    products_state.setdefault("manager_added_items", [])
+    products_state.setdefault("line_items", [])
+    products_state.setdefault("pending_hil_requests", [])
+    products_state.setdefault("budgets", {})
+    products_state.setdefault("presented_interest", {})
+    products_state.setdefault("preask_pending", {})
+    event.setdefault("pending_intents", [])
+    event.setdefault("edit_trace", [])
+    event.setdefault("choice_context", None)
+    gatekeeper = event.setdefault(
+        "gatekeeper_passed",
+        {"step2": False, "step3": False, "step4": False, "step7": False},
+    )
+    for key in ("step2", "step3", "step4", "step7"):
+        gatekeeper.setdefault(key, False)
+    event.setdefault("decision", "pending")
 
 
 def append_audit_entry(
