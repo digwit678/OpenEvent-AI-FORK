@@ -5,7 +5,7 @@ import uuid
 import os
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 from backend.domain import ConversationState, EventInformation
 from backend.conversation_manager import (
     create_summary,

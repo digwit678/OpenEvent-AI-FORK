@@ -163,6 +163,8 @@ export default function EmailThreadUI() {
   const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
   const [hasStarted, setHasStarted] = useState(false);
   const [isUserNearBottom, setIsUserNearBottom] = useState(true);
+  const [backendHealthy, setBackendHealthy] = useState<boolean | null>(null);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
   const inputDebounce = useMemo(() => debounce((value: string) => setInputText(value), 80), []);
 
@@ -255,23 +257,51 @@ export default function EmailThreadUI() {
       setTasks(Array.isArray(data.tasks) ? data.tasks : []);
     } catch (error) {
       if (isMountedRef.current) {
-        console.error('Error fetching tasks:', error);
+        // Downgrade to warn to avoid dev overlay while backend is offline
+        console.warn('Tasks polling failed (backend offline?):', error);
       }
     }
   }, []);
 
   useEffect(() => {
     isMountedRef.current = true;
-    refreshTasks().catch(() => undefined);
-    const interval = window.setInterval(() => {
-      refreshTasks().catch(() => undefined);
+    // Ping backend health and start polling only when reachable
+    let cancelled = false;
+    const checkHealth = async () => {
+      try {
+        await requestJSON(`${API_BASE}/workflow/health`);
+        if (!cancelled) {
+          setBackendHealthy(true);
+          setBackendError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setBackendHealthy(false);
+          setBackendError(`Cannot reach backend at ${API_BASE}`);
+        }
+      }
+    };
+    checkHealth().then(() => {
+      if (backendHealthy !== false) {
+        refreshTasks().catch(() => undefined);
+      }
+    });
+    const healthInterval = window.setInterval(() => {
+      checkHealth().catch(() => undefined);
+    }, 15000);
+    const tasksInterval = window.setInterval(() => {
+      if (backendHealthy) {
+        refreshTasks().catch(() => undefined);
+      }
     }, 5000);
     return () => {
       isMountedRef.current = false;
       stopStreaming();
-      window.clearInterval(interval);
+      cancelled = true;
+      window.clearInterval(healthInterval);
+      window.clearInterval(tasksInterval);
     };
-  }, [refreshTasks, stopStreaming]);
+  }, [refreshTasks, stopStreaming, backendHealthy]);
 
   useEffect(() => {
     if (!isUserNearBottom) {
@@ -578,6 +608,12 @@ export default function EmailThreadUI() {
             </div>
           )}
         </div>
+
+        {backendHealthy === false && (
+          <div className="mt-2 p-3 bg-red-50 border border-red-300 text-red-700 rounded">
+            Backend unreachable: {backendError || `Failed to fetch ${API_BASE}`} — please ensure the server is running and NEXT_PUBLIC_BACKEND_BASE is correct.
+          </div>
+        )}
 
         <div
           ref={threadRef}

@@ -929,6 +929,13 @@
           "from_step": 1,
           "to_step": 2,
           "reason": "date_missing"
+        },
+        {
+          "ts": "2025-10-29T18:26:29Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
         }
       ],
       "event_data": {
@@ -952,7 +959,8 @@
         "Additional Info": "U-shape seating layout with a projector"
       },
       "msgs": [
-        "e37e6eda-84ed-4bec-b317-2e529a6ac069"
+        "e37e6eda-84ed-4bec-b317-2e529a6ac069",
+        "4176f339-b8a7-45f0-baa7-8c8d2a07fbe8"
       ],
       "captured": {
         "billing": {
@@ -969,7 +977,11 @@
         "e37e6eda-84ed-4bec-b317-2e529a6ac069:billing.company",
         "e37e6eda-84ed-4bec-b317-2e529a6ac069:contact.name",
         "e37e6eda-84ed-4bec-b317-2e529a6ac069:contact.email",
-        "e37e6eda-84ed-4bec-b317-2e529a6ac069:contact.phone"
+        "e37e6eda-84ed-4bec-b317-2e529a6ac069:contact.phone",
+        "4176f339-b8a7-45f0-baa7-8c8d2a07fbe8:billing.company",
+        "4176f339-b8a7-45f0-baa7-8c8d2a07fbe8:contact.name",
+        "4176f339-b8a7-45f0-baa7-8c8d2a07fbe8:contact.email",
+        "4176f339-b8a7-45f0-baa7-8c8d2a07fbe8:contact.phone"
       ],
       "deferred_intents": [
         "billing_update",
@@ -2143,6 +2155,99 @@
             "room_feedback": null,
             "event_date": null
           }
+        },
+        {
+          "msg_id": "4176f339-b8a7-45f0-baa7-8c8d2a07fbe8",
+          "ts": "2025-10-29T18:26:23.302101Z",
+          "subject": "Subject: Team Strategy Workshop – Availability in December?",
+          "body_preview": "Subject: Team Strategy Workshop – Availability in December?\n\nBody:\n\nHello,\n\nWe’re planning a full-day strategy workshop for our Zurich office team in December. ",
+          "intent": "event_request",
+          "confidence": 0.9,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": 22,
+            "room": null,
+            "name": "Sophie Müller",
+            "email": "sophie.mueller@arcturus-consulting.ch",
+            "type": "workshop",
+            "catering": "coffee service",
+            "phone": "+41441234567",
+            "company": "Arcturus Consulting AG",
+            "language": null,
+            "notes": "U-shape seating layout with a projector",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "68ba27a4-b82a-4f50-9e1c-15ccb784d2b4",
+          "ts": "2025-10-29T19:51:39.712822Z",
+          "subject": "Subject: Team Strategy Workshop – Availability in December?",
+          "body_preview": "Subject: Team Strategy Workshop – Availability in December?\n\nBody:\n\nHello,\n\nWe’re planning a full-day strategy workshop for our Zurich office team in December. ",
+          "intent": "other",
+          "confidence": 0.9,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": 22,
+            "room": null,
+            "name": "Sophie Müller",
+            "email": "sophie.mueller@arcturus-consulting.ch",
+            "type": "workshop",
+            "catering": "coffee service",
+            "phone": "+41441234567",
+            "company": "Arcturus Consulting AG",
+            "language": null,
+            "notes": "U-shape seating layout with a projector",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "88035fb9-4ba5-4583-ba7e-30d311506061",
+          "ts": "2025-10-29T19:52:54.893783Z",
+          "subject": "Client message",
+          "body_preview": "ok lets check",
+          "intent": "other",
+          "confidence": 0.2,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
         }
       ],
       "event_ids": []
@@ -2287,6 +2392,36 @@
         "reason": "manual_review_required"
       },
       "notes": "event request? , reviewed and confirmed. "
+    },
+    {
+      "task_id": "b1e2a3ec-c1c9-4108-bf1e-770e03bdc005",
+      "created_at": "2025-10-29T19:51:46.515175",
+      "type": "manual_review",
+      "status": "approved",
+      "client_id": "sophie.mueller@arcturus-consulting.ch",
+      "event_id": "66be0dda-5d67-46e7-966c-50167d9a592d",
+      "payload": {
+        "subject": "Subject: Team Strategy Workshop – Availability in December?",
+        "snippet": "Subject: Team Strategy Workshop – Availability in December?\n\nBody:\n\nHello,\n\nWe’re planning a full-day strategy workshop for our Zurich office team in December. Ideally sometime during the second week ",
+        "ts": "2025-10-29T19:51:39.712822Z",
+        "reason": "manual_review_required"
+      },
+      "notes": "Hi Sophie, I think so but to be sure check with your assistant for availability "
+    },
+    {
+      "task_id": "83f621ff-eb56-40db-a6f6-1ec88f7438e3",
+      "created_at": "2025-10-29T19:52:59.021427",
+      "type": "manual_review",
+      "status": "pending",
+      "client_id": "sophie.mueller@arcturus-consulting.ch",
+      "event_id": "66be0dda-5d67-46e7-966c-50167d9a592d",
+      "payload": {
+        "subject": "Client message",
+        "snippet": "ok lets check",
+        "ts": "2025-10-29T19:52:54.893783Z",
+        "reason": "manual_review_required"
+      },
+      "notes": ""
     }
   ]
 }
