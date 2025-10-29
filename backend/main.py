@@ -8,8 +8,8 @@ from datetime import datetime
 from typing import Optional
 from backend.domain import ConversationState, EventInformation
 from backend.conversation_manager import (
-    classify_email, generate_response, create_summary,
-    active_conversations, extract_information_incremental,
+    create_summary,
+    active_conversations,
 )
 from pathlib import Path
 from backend.adapters.calendar_adapter import get_calendar_adapter
@@ -207,6 +207,18 @@ def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: 
 
     return "Date confirmed. I'm checking room availability now and will share options in a moment."
 
+
+def _wf_compose_reply(wf_res: Dict[str, Any]) -> str:
+    drafts = wf_res.get("draft_messages") or []
+    bodies = [str(d.get("body", "")) for d in drafts if d.get("body")]
+    if bodies:
+        return "\n\n".join(bodies)
+    if wf_res.get("summary"):
+        return str(wf_res.get("summary"))
+    if wf_res.get("reason"):
+        return str(wf_res.get("reason"))
+    return "\u200b"
+
 @app.post("/api/start-conversation")
 async def start_conversation(request: StartConversationRequest):
     """Condition (purple): kick off workflow and branch on manual or ask-for-date pauses before legacy flow."""
@@ -305,74 +317,27 @@ async def start_conversation(request: StartConversationRequest):
             "pending_actions": None,
         }
 
-    # Classify the email
-    workflow_type = classify_email(request.email_body)
-    
-    # Handle different workflow types
-    if workflow_type == "update":
-        return {
-            "session_id": None,
-            "workflow_type": workflow_type,
-            "response": "This appears to be a request to update an existing booking. This feature is coming soon! For now, please contact us directly at info@theatelier.ch to modify your booking.",
-            "is_complete": False,
-            "event_info": None
-        }
-    
-    elif workflow_type == "follow_up":
-        return {
-            "session_id": None,
-            "workflow_type": workflow_type,
-            "response": "Thank you for your follow-up message! This feature is under development. For immediate assistance, please email us at info@theatelier.ch",
-            "is_complete": False,
-            "event_info": None
-        }
-    
-    elif workflow_type == "other":
-        return {
-            "session_id": None,
-            "workflow_type": workflow_type,
-            "response": "Thank you for your message. However, this doesn't appear to be a new event booking request. I specialize in processing new venue bookings. For other inquiries, please contact our team at info@theatelier.ch",
-            "is_complete": False,
-            "event_info": None
-        }
-    
-    # Only proceed if it's a new event
-    if workflow_type != "new_event":
-        return {
-            "session_id": None,
-            "workflow_type": workflow_type,
-            "response": "I apologize, but I can only process new event booking requests at this time. For other matters, please reach out to info@theatelier.ch",
-            "is_complete": False,
-            "event_info": None
-        }
-    
-    # Create new conversation for new_event
+    # Default: create a session and reply using Workflow v3 drafts (strict Step2->3->4)
     session_id = str(uuid.uuid4())
-    
     event_info = EventInformation(
         date_email_received=datetime.now().strftime("%d.%m.%Y"),
-        email=request.client_email
+        email=request.client_email,
     )
-    
     conversation_state = ConversationState(
         session_id=session_id,
         event_info=event_info,
-        conversation_history=[],
-        workflow_type=workflow_type
+        conversation_history=[{"role": "user", "content": request.email_body or ""}],
+        workflow_type="new_event",
     )
-    
-    # Generate first response
-    response_text = generate_response(conversation_state, request.email_body)
-    
-    # Store in memory
     active_conversations[session_id] = conversation_state
-    
+    assistant_reply = _wf_compose_reply(wf_res or {})
+    conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
     return {
         "session_id": session_id,
-        "workflow_type": workflow_type,
-        "response": response_text,
+        "workflow_type": "new_event",
+        "response": assistant_reply,
         "is_complete": conversation_state.is_complete,
-        "event_info": conversation_state.event_info.model_dump()
+        "event_info": conversation_state.event_info.model_dump(),
     }
 
 @app.post("/api/send-message")
@@ -383,76 +348,23 @@ async def send_message(request: SendMessageRequest):
 
     conversation_state = active_conversations[request.session_id]
 
-    previous_date = conversation_state.event_info.event_date
-    try:
-        conversation_state.event_info = extract_information_incremental(
-            request.message,
-            conversation_state.event_info,
-        )
-    except Exception as exc:
-        print(f"[WF][WARN] incremental extraction failed: {exc}")
-
-    current_date = conversation_state.event_info.event_date or ""
-    has_new_date = (
-        current_date
-        and DATE_PATTERN.fullmatch(current_date.strip())
-        and current_date.strip() != (previous_date or "").strip()
-    )
-
-    if has_new_date:
-        chosen_date = current_date.strip()
-        conversation_state.conversation_history.append({"role": "user", "content": request.message})
-        assistant_reply = (
-            f"Thanks - I've noted {chosen_date}. Please confirm this is your preferred date."
-        )
-        conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
-        return {
-            "session_id": request.session_id,
-            "workflow_type": conversation_state.workflow_type,
-            "response": assistant_reply,
-            "is_complete": conversation_state.is_complete,
-            "event_info": conversation_state.event_info.dict(),
-            "pending_actions": {"type": "confirm_date", "date": chosen_date},
-        }
-
-    user_message_clean = request.message.strip().lower()
-    stored_date = (conversation_state.event_info.event_date or "").strip()
-    if (
-        stored_date
-        and stored_date not in {"Not specified", "none"}
-        and user_message_clean in CONFIRM_PHRASES
-    ):
-        if not DATE_PATTERN.fullmatch(stored_date):
-            iso_candidate = _to_iso_date(stored_date)
-            if iso_candidate:
-                try:
-                    stored_date = datetime.strptime(iso_candidate, "%Y-%m-%d").strftime("%d.%m.%Y")
-                except ValueError:
-                    pass
-        conversation_state.conversation_history.append({"role": "user", "content": request.message})
-        assistant_reply = _persist_confirmed_date(conversation_state, stored_date)
-        conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
-        return {
-            "session_id": request.session_id,
-            "workflow_type": conversation_state.workflow_type,
-            "response": assistant_reply,
-            "is_complete": conversation_state.is_complete,
-            "event_info": conversation_state.event_info.dict(),
-            "pending_actions": None,
-        }
-
-    response_text = generate_response(conversation_state, request.message)
-
-    print(f"\n=== DEBUG INFO ===")
-    print(f"User message: {request.message}")
-    print(f"Is complete: {conversation_state.is_complete}")
-    print(f"Event info complete: {conversation_state.event_info.is_complete()}")
-    print(f"==================\n")
-
+    # Route all messages through Workflow v3 and return its drafts
+    msg = {
+        "msg_id": str(uuid.uuid4()),
+        "from_name": "Client (GUI)",
+        "from_email": conversation_state.event_info.email or "unknown@example.com",
+        "subject": "Client message",
+        "ts": datetime.utcnow().isoformat() + "Z",
+        "body": request.message or "",
+    }
+    wf_res = wf_process_msg(msg)
+    assistant_reply = _wf_compose_reply(wf_res or {})
+    conversation_state.conversation_history.append({"role": "user", "content": request.message})
+    conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
     return {
         "session_id": request.session_id,
         "workflow_type": conversation_state.workflow_type,
-        "response": response_text,
+        "response": assistant_reply,
         "is_complete": conversation_state.is_complete,
         "event_info": conversation_state.event_info.dict(),
         "pending_actions": None,
