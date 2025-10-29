@@ -160,6 +160,7 @@ export default function EmailThreadUI() {
   const [eventInfo, setEventInfo] = useState<EventInfo | null>(null);
   const [tasks, setTasks] = useState<PendingTask[]>([]);
   const [taskActionId, setTaskActionId] = useState<string | null>(null);
+  const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
   const [hasStarted, setHasStarted] = useState(false);
   const [isUserNearBottom, setIsUserNearBottom] = useState(true);
 
@@ -397,19 +398,28 @@ export default function EmailThreadUI() {
       }
       setTaskActionId(task.task_id);
       try {
+        const notes = taskNotes[task.task_id] || undefined;
         await requestJSON(`${API_BASE}/tasks/${task.task_id}/${decision}`, {
           method: 'POST',
-          body: JSON.stringify({}),
+          body: JSON.stringify({ notes }),
         });
         if (sessionId) {
-          appendMessage({
-            role: 'assistant',
-            content:
+          const note = (taskNotes[task.task_id] || '').trim();
+          let content = '';
+          if (task.type === 'ask_for_date') {
+            content =
               decision === 'approve'
                 ? "I've proposed these dates to the client. Please pick one."
-                : "I won't send the date suggestion yet.",
-            timestamp: new Date(),
-          });
+                : "I won't send the date suggestion yet.";
+          } else if (task.type === 'manual_review') {
+            content =
+              decision === 'approve'
+                ? `Manual review approved.${note ? ' ' + note : ''}`
+                : `Manual review rejected.${note ? ' ' + note : ''}`;
+          }
+          if (content) {
+            appendMessage({ role: 'assistant', content, timestamp: new Date() });
+          }
         }
         refreshTasks().catch(() => undefined);
       } catch (error) {
@@ -419,7 +429,7 @@ export default function EmailThreadUI() {
         setTaskActionId(null);
       }
     },
-    [appendMessage, refreshTasks, sessionId]
+    [appendMessage, refreshTasks, sessionId, taskNotes]
   );
 
   const handleConfirmDate = useCallback(
@@ -773,23 +783,38 @@ export default function EmailThreadUI() {
                     {task.payload?.snippet && (
                       <div className="text-xs text-gray-600 mt-1 italic">"{task.payload.snippet}"</div>
                     )}
-                    {task.type === 'ask_for_date' && (
-                      <div className="flex gap-2 mt-3">
-                        <button
-                          onClick={() => handleTaskAction(task, 'approve')}
-                          disabled={taskActionId === task.task_id}
-                          className="px-3 py-1 text-xs font-semibold rounded bg-green-600 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
-                        >
-                          {taskActionId === task.task_id ? 'Saving...' : 'Approve'}
-                        </button>
-                        <button
-                          onClick={() => handleTaskAction(task, 'reject')}
-                          disabled={taskActionId === task.task_id}
-                          className="px-3 py-1 text-xs font-semibold rounded border border-gray-400 text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed"
-                        >
-                          {taskActionId === task.task_id ? 'Saving...' : 'Reject'}
-                        </button>
-                      </div>
+                    {(task.type === 'ask_for_date' || task.type === 'manual_review') && (
+                      <>
+                        <div className="mt-2">
+                          <textarea
+                            value={taskNotes[task.task_id] || ''}
+                            onChange={(e) =>
+                              setTaskNotes((prev) => ({ ...prev, [task.task_id!]: e.target.value }))
+                            }
+                            placeholder="Optional manager notes (sent with decision)"
+                            className="w-full text-xs p-2 border border-gray-300 rounded-md"
+                            rows={2}
+                          />
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            onClick={() => handleTaskAction(task, 'approve')}
+                            disabled={taskActionId === task.task_id}
+                            title="Approve"
+                            className="px-3 py-1 text-xs font-semibold rounded bg-green-600 text-white disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-1"
+                          >
+                            {taskActionId === task.task_id ? 'Saving...' : 'Approve'}
+                          </button>
+                          <button
+                            onClick={() => handleTaskAction(task, 'reject')}
+                            disabled={taskActionId === task.task_id}
+                            title="Reject"
+                            className="px-3 py-1 text-xs font-semibold rounded border border-gray-400 text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed flex items-center gap-1"
+                          >
+                            {taskActionId === task.task_id ? 'Saving...' : 'Reject'}
+                          </button>
+                        </div>
+                      </>
                     )}
                   </div>
                 );

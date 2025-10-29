@@ -229,15 +229,31 @@ async def start_conversation(request: StartConversationRequest):
     except Exception as e:
         print(f"[WF][ERROR] {e}")
     if wf_action == "manual_review_enqueued":
-        response_text = (
+        # Create a session even when manual review is enqueued so the client can continue messaging.
+        session_id = str(uuid.uuid4())
+        event_info = EventInformation(
+            date_email_received=datetime.now().strftime("%d.%m.%Y"),
+            email=request.client_email,
+        )
+        assistant_reply = (
             "Thanks for your message. We routed it for manual review and will get back to you shortly."
         )
+        conversation_state = ConversationState(
+            session_id=session_id,
+            event_info=event_info,
+            conversation_history=[
+                {"role": "user", "content": request.email_body or ""},
+                {"role": "assistant", "content": assistant_reply},
+            ],
+            workflow_type="new_event",
+        )
+        active_conversations[session_id] = conversation_state
         return {
-            "session_id": None,
-            "workflow_type": "other",
-            "response": response_text,
-            "is_complete": False,
-            "event_info": None,
+            "session_id": session_id,
+            "workflow_type": "new_event",
+            "response": assistant_reply,
+            "is_complete": conversation_state.is_complete,
+            "event_info": conversation_state.event_info.model_dump(),
         }
     if wf_action == "ask_for_date_enqueued":
         session_id = str(uuid.uuid4())
