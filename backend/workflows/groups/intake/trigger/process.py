@@ -31,6 +31,30 @@ from ..llm.analysis import classify_intent, extract_user_information
 __workflow_role__ = "trigger"
 
 
+def _log_intake_event(state: WorkflowState, name: str, details: Dict[str, Any]) -> None:
+    try:
+        entry = {"log": name, **details}
+        logs = getattr(state.telemetry, "log_events", None)
+        if isinstance(logs, list):
+            logs.append(entry)
+        else:
+            state.telemetry.log_events = [entry]
+    except Exception:
+        # Never crash the workflow due to diagnostics
+        return
+
+
+def _explicit_room_change_text(text: str) -> bool:
+    if not text:
+        return False
+    t = str(text).lower()
+    verbs = ("change", "switch", "different room", "other room", "choose room", "select room")
+    if not any(v in t for v in verbs):
+        return False
+    rooms = ("room a", "room b", "room c", "atelier")
+    return any(r in t for r in rooms)
+
+
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Entry point for Group A — intake and data capture."""
 
@@ -152,14 +176,52 @@ def process(state: WorkflowState) -> GroupResult:
     if merge_client_profile(event_entry, user_info):
         state.extras["persist"] = True
 
-    requirements = build_requirements(user_info)
-    new_req_hash = requirements_hash(requirements)
+    # Standard requirements update with live post-lock safeguards
+    incoming_req = build_requirements(user_info)
     prev_req_hash = event_entry.get("requirements_hash")
-    update_event_metadata(
-        event_entry,
-        requirements=requirements,
-        requirements_hash=new_req_hash,
+    prev_requirements = dict(event_entry.get("requirements") or {})
+    # Detect availability-impacting fields in the incoming payload
+    inc_dur = incoming_req.get("event_duration") or {}
+    incoming_has_availability = any(
+        [
+            incoming_req.get("number_of_participants") is not None,
+            bool(incoming_req.get("seating_layout")),
+            bool(inc_dur.get("start") or inc_dur.get("end")),
+        ]
     )
+    live_mode = os.getenv("AGENT_MODE") == "openai"
+    current_step_val = event_entry.get("current_step") or (state.current_step or 1)
+    post_struct_lock = bool(event_entry.get("locked_room_id")) and current_step_val >= 4
+    # Merge strategy: start from previous requirements and overlay only provided availability fields
+    merged_req = dict(prev_requirements)
+    if incoming_req.get("number_of_participants") is not None:
+        merged_req["number_of_participants"] = incoming_req.get("number_of_participants")
+    if incoming_req.get("seating_layout"):
+        merged_req["seating_layout"] = incoming_req.get("seating_layout")
+    if inc_dur.get("start") or inc_dur.get("end"):
+        prev_dur = (prev_requirements.get("event_duration") or {}) if isinstance(prev_requirements, dict) else {}
+        merged_req["event_duration"] = {
+            "start": inc_dur.get("start") or prev_dur.get("start"),
+            "end": inc_dur.get("end") or prev_dur.get("end"),
+        }
+    # Allow non-availability notes to update freely
+    if incoming_req.get("special_requirements"):
+        merged_req["special_requirements"] = incoming_req.get("special_requirements")
+    # Choose requirements update strategy
+    if live_mode:
+        # Live post-lock: if no availability fields present, do not change requirements at all
+        if post_struct_lock and not incoming_has_availability:
+            requirements = prev_requirements
+            new_req_hash = prev_req_hash
+        else:
+            requirements = merged_req
+            new_req_hash = requirements_hash(requirements)
+            update_event_metadata(event_entry, requirements=requirements, requirements_hash=new_req_hash)
+    else:
+        # Stub/offline: preserve original overwrite behavior for test stability
+        requirements = incoming_req
+        new_req_hash = requirements_hash(requirements)
+        update_event_metadata(event_entry, requirements=requirements, requirements_hash=new_req_hash)
 
     new_preferred_room = requirements.get("preferred_room")
 
@@ -223,20 +285,34 @@ def process(state: WorkflowState) -> GroupResult:
         and not detoured_to_step2
     ):
         target_step = 3
-        # Avoid unintended detour back to step 3 immediately after a room lock
-        # when no meaningful requirement changes were provided and a lock exists.
-        suppress_detour = (
-            previous_step == 4
-            and bool(event_entry.get("locked_room_id"))
-            and not any(
-                [
-                    user_info.get("participants") is not None,
-                    bool(user_info.get("layout") or user_info.get("type")),
-                    bool(user_info.get("start_time") or user_info.get("end_time")),
-                    bool(user_info.get("notes")),
-                    bool(user_info.get("room")),
-                ]
-            )
+        # Avoid unintended detour back to Step 3 in live mode immediately after a room lock
+        # when no availability-impacting requirement changes were provided.
+        def _avail_subset(req: Dict[str, Any]) -> Dict[str, Any]:
+            duration = (req.get("event_duration") or {}) if isinstance(req, dict) else {}
+            # Ignore preferred_room differences after a lock; the lock governs availability now.
+            preferred_room_value = None if post_struct_lock else (req.get("preferred_room") if isinstance(req, dict) else None)
+            return {
+                "number_of_participants": req.get("number_of_participants") if isinstance(req, dict) else None,
+                "seating_layout": req.get("seating_layout") if isinstance(req, dict) else None,
+                "event_duration": {
+                    "start": duration.get("start"),
+                    "end": duration.get("end"),
+                },
+                "preferred_room": preferred_room_value,
+            }
+        availability_changed = _avail_subset(prev_requirements) != _avail_subset(requirements)
+        suppress_detour = bool(live_mode and post_struct_lock and not availability_changed)
+        _log_intake_event(
+            state,
+            "intake.requirements_change",
+            {
+                "prev_req_hash": prev_req_hash,
+                "new_req_hash": new_req_hash,
+                "availability_changed": availability_changed,
+                "live_mode": live_mode,
+                "post_lock": post_struct_lock,
+                "suppress_detour": suppress_detour,
+            },
         )
         if not suppress_detour and previous_step != target_step and event_entry.get("caller_step") is None:
             update_event_metadata(event_entry, caller_step=previous_step)
@@ -244,12 +320,37 @@ def process(state: WorkflowState) -> GroupResult:
             append_audit_entry(event_entry, previous_step, target_step, "requirements_updated")
 
     if new_preferred_room and new_preferred_room != event_entry.get("locked_room_id"):
-        if not detoured_to_step2:
-            prev_step_for_room = event_entry.get("current_step") or previous_step
-            if prev_step_for_room != 3 and event_entry.get("caller_step") is None:
-                update_event_metadata(event_entry, caller_step=prev_step_for_room)
-                update_event_metadata(event_entry, current_step=3)
-                append_audit_entry(event_entry, prev_step_for_room, 3, "room_preference_updated")
+        live_mode = os.getenv("AGENT_MODE") == "openai"
+        current = event_entry.get("current_step") or previous_step
+        post_lock = (current == 4) and bool(event_entry.get("locked_room_id"))
+        # Compose raw user text for explicit room-change detection
+        raw_subject = state.message.subject or ""
+        raw_body = state.message.body or ""
+        user_text = f"{raw_subject} {raw_body}".strip()
+        # Post-lock in live mode: only detour when explicit room-change phrasing exists
+        will_detour = True
+        if live_mode and post_lock:
+            will_detour = _explicit_room_change_text(user_text)
+        _log_intake_event(
+            state,
+            "intake.room_pref_check",
+            {
+                "new_preferred_room": new_preferred_room,
+                "locked_room_id": event_entry.get("locked_room_id"),
+                "intent": (state.intent.value if hasattr(state.intent, "value") else str(state.intent)),
+                "live_mode": live_mode,
+                "post_lock": post_lock,
+                "will_detour": will_detour,
+                "current_step": current,
+            },
+        )
+        if will_detour:
+            if not detoured_to_step2:
+                prev_step_for_room = current
+                if prev_step_for_room != 3 and event_entry.get("caller_step") is None:
+                    update_event_metadata(event_entry, caller_step=prev_step_for_room)
+                    update_event_metadata(event_entry, current_step=3)
+                    append_audit_entry(event_entry, prev_step_for_room, 3, "room_preference_updated")
 
     tag_message(event_entry, message_payload.get("msg_id"))
 
