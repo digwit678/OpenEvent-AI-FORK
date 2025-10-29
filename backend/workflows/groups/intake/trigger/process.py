@@ -106,7 +106,30 @@ def process(state: WorkflowState) -> GroupResult:
     state.record_context(context)
 
     needs_manual_review = not is_event_request(intent) or confidence < 0.85
-    if needs_manual_review and not _manual_review_disabled():
+    # Suppress repeat manual review when a prior manual review was approved for this client,
+    # or when an event already exists for this client and is in progress.
+    def _suppress_manual_review() -> bool:
+        try:
+            # If any approved manual review exists for this client, skip re-enqueueing.
+            for task in state.db.get("tasks", []):
+                if (
+                    str(task.get("type")) == "manual_review"
+                    and str(task.get("client_id", "")).lower() == state.client_id
+                    and str(task.get("status")) in {"approved", "done"}
+                ):
+                    return True
+        except Exception:
+            pass
+        try:
+            existing = last_event_for_email(state.db, (state.client_id or "").lower())
+            if existing and isinstance(existing, dict):
+                # If we already have an event, prefer progressing the workflow instead of HIL.
+                return True
+        except Exception:
+            pass
+        return False
+
+    if needs_manual_review and not _manual_review_disabled() and not _suppress_manual_review():
         linked_event = last_event_for_email(state.db, state.client_id)
         linked_event_id = linked_event.get("event_id") if linked_event else None
         task_payload: Dict[str, Any] = {
