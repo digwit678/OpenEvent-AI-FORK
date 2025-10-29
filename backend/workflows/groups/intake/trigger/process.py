@@ -216,9 +216,29 @@ def process(state: WorkflowState) -> GroupResult:
         append_audit_entry(event_entry, previous_step, 2, "date_missing")
         detoured_to_step2 = True
 
-    if prev_req_hash is not None and prev_req_hash != new_req_hash and not detoured_to_step2:
+    if (
+        prev_req_hash is not None
+        and new_req_hash is not None
+        and prev_req_hash != new_req_hash
+        and not detoured_to_step2
+    ):
         target_step = 3
-        if previous_step != target_step and event_entry.get("caller_step") is None:
+        # Avoid unintended detour back to step 3 immediately after a room lock
+        # when no meaningful requirement changes were provided and a lock exists.
+        suppress_detour = (
+            previous_step == 4
+            and bool(event_entry.get("locked_room_id"))
+            and not any(
+                [
+                    user_info.get("participants") is not None,
+                    bool(user_info.get("layout") or user_info.get("type")),
+                    bool(user_info.get("start_time") or user_info.get("end_time")),
+                    bool(user_info.get("notes")),
+                    bool(user_info.get("room")),
+                ]
+            )
+        )
+        if not suppress_detour and previous_step != target_step and event_entry.get("caller_step") is None:
             update_event_metadata(event_entry, caller_step=previous_step)
             update_event_metadata(event_entry, current_step=target_step)
             append_audit_entry(event_entry, previous_step, target_step, "requirements_updated")

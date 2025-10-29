@@ -15,7 +15,6 @@ from backend.workflows.common.gatekeeper import refresh_gatekeeper
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata
 from backend.utils.profiler import profile_step
-from backend.config.flags import env_flag
 
 from ..condition.decide import room_status_on_date
 from ..llm.analysis import summarize_room_statuses
@@ -37,6 +36,11 @@ ROOM_SIZE_ORDER = {
 ROOM_CACHE_TTL_MINUTES = 10
 
 _LOCK_KEYWORD_PATTERN = re.compile(r"\b(lock|reserve|hold|secure|keep|confirm|book|take)\b", re.IGNORECASE)
+_ROOM_ALIAS_MAP = {
+    "room a": "Room A",
+    "room b": "Room B",
+    "room c": "Room C",
+}
 
 
 def _auto_lock_min_confidence() -> float:
@@ -55,7 +59,6 @@ def _utc_now() -> str:
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Execute Group C — room availability assessment with entry guards and caching."""
 
-    AUTO_LOCK = env_flag("ALLOW_AUTO_ROOM_LOCK", False)
     event_entry = state.event_entry
     if not event_entry:
         payload = {
@@ -110,6 +113,41 @@ def process(state: WorkflowState) -> GroupResult:
     missing_lock = locked_room_id is None
     cache_payload = event_entry.get("room_eval_cache") or {}
 
+    # Early explicit lock handling: parse user command before any cache short-circuit
+    message_text = _message_text(state.message)
+    early_explicit = _extract_explicit_lock_request(message_text)
+    if early_explicit:
+        # Evaluate availability and lock immediately if possible, regardless of auto-lock flag
+        room_statuses = evaluate_room_statuses(state.db, chosen_date)
+        status_map = _flatten_statuses(room_statuses)
+        requirements = event_entry.get("requirements") or {}
+        summary = summarize_room_statuses(room_statuses)
+        explicit_room = _canonical_room_name(early_explicit, status_map) or (
+            early_explicit if early_explicit in status_map else None
+        )
+        if explicit_room:
+            existing_lock = event_entry.get("locked_room_id")
+            explicit_status = status_map.get(explicit_room)
+            same_room = _same_room(existing_lock, explicit_room)
+            if same_room or explicit_status in (ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION):
+                return _finalize_room_lock(
+                    state,
+                    event_entry,
+                    explicit_room,
+                    chosen_date,
+                    requirements,
+                    room_statuses,
+                    summary,
+                    current_req_hash,
+                    reason="explicit_lock",
+                    audit_reason="room_lock_retained" if same_room else "room_explicit_lock",
+                    action="room_lock_retained" if same_room else "room_auto_locked",
+                    final_action="room_lock_retained" if same_room else "room_auto_locked",
+                    auto_payload=False,
+                    policy_flag=True,
+                )
+        # If we couldn't resolve the explicit room or it's not available, fall through to normal flow
+
     cached_result = _maybe_use_cached_eval(
         state,
         event_entry,
@@ -142,60 +180,76 @@ def process(state: WorkflowState) -> GroupResult:
         except ValueError:
             intent_label = IntentLabel.NON_EVENT
     intent_value = intent_label.value if isinstance(intent_label, IntentLabel) else str(intent_label).lower()
+    allow_auto = str(os.getenv("ALLOW_AUTO_ROOM_LOCK", "true")).lower() == "true"
+    message_text = _message_text(state.message)
+    text_explicit_room = _extract_explicit_lock_request(message_text)
     requested_room_id = user_requested_room or ""
-    explicit_room = _canonical_room_name(requested_room_id, status_map)
-    text_room, keyword_found = _detect_textual_room_request(state.message, status_map)
-    if text_room:
-        explicit_room = text_room
+    canonical_user_room = _canonical_room_name(requested_room_id, status_map)
     explicit_from_intent = isinstance(intent_label, IntentLabel) and intent_label == IntentLabel.EDIT_ROOM
-    user_explicit_room = bool(explicit_room) and (keyword_found or explicit_from_intent)
-    if keyword_found and not explicit_room:
+
+    explicit_room: Optional[str] = None
+    explicit_reason: Optional[str] = None
+    explicit_policy_allowed = allow_auto
+    if text_explicit_room:
+        explicit_room = _canonical_room_name(text_explicit_room, status_map) or (
+            text_explicit_room if text_explicit_room in status_map else None
+        )
+        explicit_reason = "explicit_lock"
+        explicit_policy_allowed = True
+    elif explicit_from_intent and canonical_user_room:
+        explicit_room = canonical_user_room
+        explicit_reason = "user_explicit"
+
+    existing_lock = event_entry.get("locked_room_id")
+    if text_explicit_room and not explicit_room:
         _record_lock_attempt(
             state,
             allowed=False,
-            policy=AUTO_LOCK,
+            policy=True,
             intent=intent_value,
             selected_room=None,
             path="room_availability.process",
             reason="room_not_recognized",
         )
 
-    existing_lock = event_entry.get("locked_room_id")
     explicit_status = status_map.get(explicit_room) if explicit_room else None
-    if user_explicit_room and explicit_room and explicit_status == ROOM_OUTCOME_AVAILABLE:
+    if explicit_room and explicit_reason:
         same_room = _same_room(existing_lock, explicit_room)
-        return _finalize_room_lock(
-            state,
-            event_entry,
-            explicit_room,
-            chosen_date,
-            requirements,
-            room_statuses,
-            summary,
-            current_req_hash,
-            reason="user_explicit",
-            audit_reason="room_user_locked" if not same_room else "room_lock_retained",
-            action="room_auto_locked" if not same_room else "room_lock_retained",
-            final_action="room_auto_locked" if not same_room else "room_lock_retained",
-            auto_payload=False,
-            policy_flag=AUTO_LOCK,
-        )
-
-    if user_explicit_room and explicit_room and explicit_status != ROOM_OUTCOME_AVAILABLE:
+        if same_room or explicit_status in (ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION):
+            audit_reason = (
+                explicit_reason
+                if explicit_reason == "explicit_lock"
+                else ("room_lock_retained" if same_room else "room_user_locked")
+            )
+            action = "room_lock_retained" if same_room else "room_auto_locked"
+            return _finalize_room_lock(
+                state,
+                event_entry,
+                explicit_room,
+                chosen_date,
+                requirements,
+                room_statuses,
+                summary,
+                current_req_hash,
+                reason=explicit_reason,
+                audit_reason=audit_reason,
+                action=action,
+                final_action=action,
+                auto_payload=False,
+                policy_flag=explicit_policy_allowed,
+            )
         _record_lock_attempt(
             state,
             allowed=False,
-            policy=AUTO_LOCK,
+            policy=explicit_policy_allowed,
             intent=intent_value,
             selected_room=explicit_room,
             path="room_availability.process",
             reason=f"room_status_{explicit_status or 'unknown'}",
         )
-
-    if user_explicit_room and explicit_room:
         autolock_meta = state.telemetry.setdefault("autolock", {})
         autolock_meta["considered"] = True
-        autolock_meta["allowed"] = AUTO_LOCK
+        autolock_meta["allowed"] = explicit_policy_allowed
         autolock_meta["explicit"] = True
         autolock_meta["skipped"] = True
         autolock_meta["status"] = explicit_status or "unknown"
@@ -207,7 +261,7 @@ def process(state: WorkflowState) -> GroupResult:
         and outcome == ROOM_OUTCOME_AVAILABLE
         and auto_lock_score >= _auto_lock_min_confidence()
     )
-    if auto_lock_candidate and AUTO_LOCK:
+    if auto_lock_candidate and allow_auto:
         return _finalize_room_lock(
             state,
             event_entry,
@@ -222,13 +276,13 @@ def process(state: WorkflowState) -> GroupResult:
             action="room_auto_locked",
             final_action="room_auto_locked",
             auto_payload=True,
-            policy_flag=AUTO_LOCK,
+            policy_flag=allow_auto,
         )
 
     if auto_lock_candidate:
         autolock_meta = state.telemetry.setdefault("autolock", {})
         autolock_meta["considered"] = True
-        autolock_meta["allowed"] = AUTO_LOCK
+        autolock_meta["allowed"] = allow_auto
         autolock_meta["explicit"] = False
         autolock_meta["skipped"] = True
         if "room_selection" not in state.telemetry.deferred_intents:
@@ -236,7 +290,7 @@ def process(state: WorkflowState) -> GroupResult:
         _record_lock_attempt(
             state,
             allowed=False,
-            policy=AUTO_LOCK,
+            policy=allow_auto,
             intent=intent_value,
             selected_room=selected_room,
             path="room_availability.process",
@@ -667,10 +721,44 @@ def _preferred_room(event_entry: dict, user_requested_room: Optional[str]) -> Op
     return event_entry.get("locked_room_id")
 
 
+def _message_text(message) -> str:
+    if not message:
+        return ""
+    parts: List[str] = []
+    subject = getattr(message, "subject", None)
+    body = getattr(message, "body", None)
+    if subject:
+        parts.append(str(subject))
+    if body:
+        parts.append(str(body))
+    return " \n".join(part for part in parts if part)
+
+
+def _extract_explicit_lock_request(text: str) -> Optional[str]:
+    if not text:
+        return None
+    lowered = text.lower()
+    if not _LOCK_KEYWORD_PATTERN.search(lowered):
+        return None
+    # Match "room a", "room-b", "the room b", etc.
+    match = re.search(r"\b(?:the\s+)?room[-\s]*([ab])\b", lowered)
+    if match:
+        letter = match.group(1).upper()
+        return f"Room {letter}"
+    # Fallback to alias map lookups (only canonical room labels).
+    for alias, canonical in _ROOM_ALIAS_MAP.items():
+        if canonical not in {"Room A", "Room B"}:
+            continue
+        alias_pattern = re.sub(r"\s+", r"\\s*", re.escape(alias))
+        if re.search(rf"\b{alias_pattern}\b", lowered):
+            return canonical
+    return None
+
+
 def _canonical_room_name(requested_room: str, status_map: Dict[str, str]) -> Optional[str]:
     if not requested_room:
         return None
-    normalized = requested_room.strip().lower()
+    normalized = re.sub(r"\s+", " ", requested_room).strip().lower()
     if not normalized:
         return None
     for room_name in status_map:
@@ -679,26 +767,10 @@ def _canonical_room_name(requested_room: str, status_map: Dict[str, str]) -> Opt
     for room_name in ROOM_SIZE_ORDER:
         if room_name.strip().lower() == normalized:
             return room_name
+    alias_match = _ROOM_ALIAS_MAP.get(normalized)
+    if alias_match:
+        return alias_match
     return None
-
-
-def _detect_textual_room_request(message, status_map: Dict[str, str]) -> Tuple[Optional[str], bool]:
-    text_parts = [message.subject or "", message.body or ""]
-    text = " \n".join(part for part in text_parts if part).lower()
-    if not text:
-        return None, False
-    keyword_match = _LOCK_KEYWORD_PATTERN.search(text)
-    keyword_found = bool(keyword_match)
-    candidate: Optional[str] = None
-    if keyword_found:
-        for room_name in status_map:
-            if not room_name:
-                continue
-            pattern = rf"\b{re.escape(room_name.lower())}\b"
-            if re.search(pattern, text):
-                candidate = room_name
-                break
-    return candidate, keyword_found
 
 
 def _same_room(existing: Optional[str], candidate: Optional[str]) -> bool:
@@ -1082,7 +1154,7 @@ def _finalize_room_lock(
         autolock_meta["explicit"] = True
         autolock_meta.pop("skipped", None)
 
-    if not policy_flag and reason != "user_explicit":
+    if not policy_flag and reason not in {"user_explicit", "explicit_lock"}:
         raise AssertionError("room lock policy violation: auto lock attempted while disabled")
 
     intent_field = state.intent.value if isinstance(state.intent, IntentLabel) else state.intent
@@ -1152,7 +1224,8 @@ def _finalize_room_lock(
     state.telemetry.gatekeeper_passed = dict(gatekeeper)
     state.telemetry.final_action = final_action
     state.telemetry.detour_completed = True
-    return GroupResult(action=action, payload=payload, halt=False)
+    halt_value = not auto_payload
+    return GroupResult(action=action, payload=payload, halt=halt_value)
 
 
 def _record_lock_attempt(
