@@ -79,10 +79,14 @@ def _present_candidate_dates(state: WorkflowState, event_entry: dict) -> GroupRe
 
     requirements = event_entry.get("requirements") or {}
     preferred_room = requirements.get("preferred_room") or "Not specified"
+    # Prefer anchoring suggestions around any month/day mentioned in the latest message.
+    user_text = f"{state.message.subject or ''} {state.message.body or ''}".strip()
+    anchor = parse_first_date(user_text, fallback_year=datetime.utcnow().year)
+    anchor_iso = anchor.isoformat() if anchor else state.message.ts
     candidate_dates: List[str] = suggest_dates(
         state.db,
         preferred_room=preferred_room,
-        start_from_iso=state.message.ts,
+        start_from_iso=anchor_iso,
         days_ahead=45,
         max_results=5,
     )

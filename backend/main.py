@@ -219,6 +219,21 @@ def _wf_compose_reply(wf_res: Dict[str, Any]) -> str:
         return str(wf_res.get("reason"))
     return "\u200b"
 
+def _name_from_email(email: Optional[str]) -> Optional[str]:
+    if not email:
+        return None
+    local = (email.split("@", 1)[0] or "").strip()
+    if not local:
+        return None
+    # Split on common separators and take first token
+    for sep in (".", "_", "-"):
+        if sep in local:
+            local = local.split(sep, 1)[0]
+            break
+    if not local:
+        return None
+    return local.capitalize()
+
 @app.post("/api/start-conversation")
 async def start_conversation(request: StartConversationRequest):
     """Condition (purple): kick off workflow and branch on manual or ask-for-date pauses before legacy flow."""
@@ -331,6 +346,12 @@ async def start_conversation(request: StartConversationRequest):
     )
     active_conversations[session_id] = conversation_state
     assistant_reply = _wf_compose_reply(wf_res or {})
+    # Optional greeting for GUI conversations to avoid abrupt starts.
+    # Keep workflow drafts intact for tests; this only affects the GUI endpoint.
+    if isinstance(assistant_reply, str) and assistant_reply.startswith("AVAILABLE DATES"):
+        name = _name_from_email(request.client_email)
+        salutation = f"Hi {name}," if name else "Hi,"
+        assistant_reply = f"{salutation}\n\n{assistant_reply}"
     conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
     return {
         "session_id": session_id,
