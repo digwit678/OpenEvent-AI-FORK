@@ -14,7 +14,7 @@ from openai import OpenAI
 
 from backend.domain import ConversationState, EventInformation
 
-load_dotenv()
+load_dotenv(override=False)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 

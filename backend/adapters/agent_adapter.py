@@ -206,6 +206,15 @@ class StubAgentAdapter(AgentAdapter):
         return None
 
 
+_TEST_MODE_SYSTEM_PREFACE = "TESTMODE: obey DAG; answer-first; no menus unless asked."
+_LOCK_POLICY_PREFACE = (
+    "POLICY:\n"
+    "- Never lock a room or create an offer unless the user explicitly says 'lock <RoomName>' or presses a Lock button."
+    "\n- If unsure, present ROOM OPTIONS followed by NEXT STEP guidance instead of locking."
+    "\n- Do not create or show an offer until a room is locked."
+)
+
+
 class OpenAIAgentAdapter(AgentAdapter):
     """Adapter backed by OpenAI chat completions for intent/entity tasks."""
 
@@ -256,11 +265,22 @@ class OpenAIAgentAdapter(AgentAdapter):
             "entity_model": self._entity_model,
         }
 
-    def _run_completion(self, *, prompt: str, body: str, subject: str, model: str) -> Dict[str, Any]:
+    def _run_completion(self, *, prompt: str, body: str, subject: str, model: str, phase: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         message = f"Subject: {subject}\n\nBody:\n{body}"
         deterministic = os.getenv("OPENAI_TEST_MODE") == "1"
-        system_preface = os.getenv("OPENAI_TEST_SYSTEM_PREFACE")
-        system_prompt = f"{system_preface}\n\n{prompt}" if system_preface else prompt
+        custom_preface = os.getenv("OPENAI_TEST_SYSTEM_PREFACE")
+        if deterministic:
+            preface_parts = [_TEST_MODE_SYSTEM_PREFACE, _LOCK_POLICY_PREFACE]
+            if custom_preface:
+                preface_parts.append(custom_preface.strip())
+            preface_parts.append(prompt)
+            system_prompt = "\n\n".join(part for part in preface_parts if part)
+        else:
+            general_parts = [_LOCK_POLICY_PREFACE]
+            if custom_preface:
+                general_parts.append(custom_preface.strip())
+            general_parts.append(prompt)
+            system_prompt = "\n\n".join(part for part in general_parts if part)
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": message},
@@ -274,21 +294,35 @@ class OpenAIAgentAdapter(AgentAdapter):
         response = self._client.chat.completions.create(**completion_kwargs)
         content = response.choices[0].message.content if response.choices else "{}"
         try:
-            return json.loads(content or "{}")
+            payload = json.loads(content or "{}")
         except json.JSONDecodeError:
-            return {}
+            payload = {}
+        metadata = self._build_completion_metadata(
+            response,
+            model=model,
+            phase=phase,
+            deterministic=deterministic,
+        )
+        return payload, metadata
 
     def route_intent(self, msg: Dict[str, Any]) -> Tuple[str, float]:
         subject = msg.get("subject") or ""
         body = msg.get("body") or ""
         try:
-            payload = self._run_completion(
+            payload, metadata = self._run_completion(
                 prompt=self._INTENT_PROMPT,
                 body=body,
                 subject=subject,
                 model=self._intent_model,
+                phase="intent",
             )
-            self._set_last_call_info(adapter_label="openai", model=self._intent_model, phase="intent")
+            derived_model = metadata.get("model", self._intent_model)
+            self._set_last_call_info(
+                adapter_label="openai",
+                model=derived_model,
+                phase="intent",
+                extra=metadata,
+            )
             intent = str(payload.get("intent") or "").strip().lower()
             if intent not in {IntentLabel.EVENT_REQUEST.value, IntentLabel.NON_EVENT.value}:
                 intent = IntentLabel.NON_EVENT.value
@@ -299,27 +333,44 @@ class OpenAIAgentAdapter(AgentAdapter):
                 confidence = 0.5
             confidence = max(0.0, min(1.0, confidence))
             return intent or IntentLabel.NON_EVENT.value, confidence
-        except Exception:
-            self._set_last_call_info(adapter_label="stub", model="stub", phase="intent")
+        except Exception as exc:
+            self._set_last_call_info(
+                adapter_label="stub",
+                model="stub",
+                phase="intent",
+                extra={"error": str(exc)},
+            )
             return self._fallback.route_intent(msg)
 
     def extract_entities(self, msg: Dict[str, Any]) -> Dict[str, Any]:
         subject = msg.get("subject") or ""
         body = msg.get("body") or ""
         try:
-            payload = self._run_completion(
+            payload, metadata = self._run_completion(
                 prompt=self._ENTITY_PROMPT,
                 body=body,
                 subject=subject,
                 model=self._entity_model,
+                phase="entities",
             )
-            self._set_last_call_info(adapter_label="openai", model=self._entity_model, phase="entities")
+            derived_model = metadata.get("model", self._entity_model)
+            self._set_last_call_info(
+                adapter_label="openai",
+                model=derived_model,
+                phase="entities",
+                extra=metadata,
+            )
             entities: Dict[str, Any] = {}
             for key in self._ENTITY_KEYS:
                 entities[key] = payload.get(key)
             return entities
-        except Exception:
-            self._set_last_call_info(adapter_label="stub", model="stub", phase="entities")
+        except Exception as exc:
+            self._set_last_call_info(
+                adapter_label="stub",
+                model="stub",
+                phase="entities",
+                extra={"error": str(exc)},
+            )
             return self._fallback.extract_entities(msg)
 
     def extract_user_information(self, msg: Dict[str, Any]) -> Dict[str, Any]:
@@ -345,8 +396,8 @@ class OpenAIAgentAdapter(AgentAdapter):
     def _sampling_parameters(self, deterministic: bool) -> Dict[str, Any]:
         if deterministic:
             params: Dict[str, Any] = {
-                "temperature": 0.0,
-                "top_p": 0.0,
+                "temperature": 0.2,
+                "top_p": 0.3,
                 "presence_penalty": 0.0,
                 "frequency_penalty": 0.0,
             }
@@ -369,14 +420,71 @@ class OpenAIAgentAdapter(AgentAdapter):
         except (TypeError, ValueError):
             return default
 
-    def _set_last_call_info(self, *, adapter_label: str, model: str, phase: str) -> None:
-        self._last_call_info = {
+    def _set_last_call_info(
+        self,
+        *,
+        adapter_label: str,
+        model: str,
+        phase: str,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        info: Dict[str, Any] = {
             "adapter": adapter_label,
             "model": model,
             "phase": phase,
             "intent_model": self._intent_model,
             "entity_model": self._entity_model,
         }
+        if extra:
+            for key, value in extra.items():
+                if value is None:
+                    continue
+                if key == "usage" and isinstance(value, dict):
+                    info[key] = dict(value)
+                else:
+                    info[key] = value
+        self._last_call_info = info
+
+    def _build_completion_metadata(
+        self,
+        response: Any,
+        *,
+        model: str,
+        phase: str,
+        deterministic: bool,
+    ) -> Dict[str, Any]:
+        metadata: Dict[str, Any] = {
+            "adapter": "openai",
+            "model": getattr(response, "model", model) or model,
+            "phase": phase,
+            "deterministic": deterministic,
+        }
+        created = getattr(response, "created", None)
+        if isinstance(created, (int, float)):
+            try:
+                iso_ts = datetime.utcfromtimestamp(created).isoformat() + "Z"
+            except (OverflowError, OSError, ValueError):  # pragma: no cover - defensive
+                iso_ts = None
+            if iso_ts:
+                metadata["timestamp"] = iso_ts
+        response_id = getattr(response, "id", None)
+        if response_id:
+            metadata["response_id"] = response_id
+        usage = getattr(response, "usage", None)
+        if usage:
+            usage_dict: Dict[str, Any] = {}
+            for field in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                value = getattr(usage, field, None)
+                if value is not None:
+                    usage_dict[field] = value
+            if usage_dict:
+                metadata["usage"] = usage_dict
+        choices = getattr(response, "choices", None)
+        if isinstance(choices, list) and choices:
+            finish_reason = getattr(choices[0], "finish_reason", None)
+            if finish_reason:
+                metadata["finish_reason"] = finish_reason
+        return metadata
 
 
 _AGENT_SINGLETON: Optional[AgentAdapter] = None
