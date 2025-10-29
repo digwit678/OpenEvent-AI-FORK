@@ -79,6 +79,8 @@ class TurnTelemetry:
     deferred_intents: List[str] = field(default_factory=list)
     dag_blocked: str = "none"
     atomic_default: bool = False
+    # Ad-hoc diagnostic events appended by steps for deep debugging
+    log_events: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_payload(self) -> Dict[str, Any]:
         """Serialise telemetry into a JSON-friendly payload."""
@@ -113,6 +115,7 @@ class TurnTelemetry:
             "deferred_intents": list(self.deferred_intents),
             "dag_blocked": self.dag_blocked,
             "atomic_default": self.atomic_default,
+            "log_events": list(self.log_events),
         }
 
     # ------------------------------------------------------------------ #
