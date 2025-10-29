@@ -45,10 +45,10 @@ def process(state: WorkflowState) -> GroupResult:
     if metadata:
         llm_meta = state.telemetry.setdefault("llm", {})
         adapter_label = metadata.get("adapter")
-        if adapter_label:
+        if adapter_label and "adapter" not in llm_meta:
             llm_meta["adapter"] = adapter_label
         model_name = metadata.get("model")
-        if model_name:
+        if model_name and "model" not in llm_meta:
             llm_meta["model"] = model_name
         intent_model = metadata.get("intent_model")
         if intent_model and "intent_model" not in llm_meta:
@@ -56,6 +56,15 @@ def process(state: WorkflowState) -> GroupResult:
         entity_model = metadata.get("entity_model")
         if entity_model and "entity_model" not in llm_meta:
             llm_meta["entity_model"] = entity_model
+        timestamp = metadata.get("timestamp")
+        if timestamp and "timestamp" not in llm_meta:
+            llm_meta["timestamp"] = timestamp
+        response_id = metadata.get("response_id")
+        if response_id and "response_id" not in llm_meta:
+            llm_meta["response_id"] = response_id
+        usage = metadata.get("usage")
+        if isinstance(usage, dict) and "usage" not in llm_meta:
+            llm_meta["usage"] = dict(usage)
         phase = metadata.get("phase")
         if phase:
             llm_meta["phase"] = phase

@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
+from backend.config.flags import env_flag
 from backend.workflows.common.capture import capture_user_fields, promote_billing_from_captured
 from backend.workflows.common.gatekeeper import refresh_gatekeeper
 from backend.workflows.common.requirements import merge_client_profile
@@ -33,6 +34,73 @@ def process(state: WorkflowState) -> GroupResult:
             "context": state.context_snapshot,
         }
         return GroupResult(action="offer_missing_event", payload=payload, halt=True)
+
+    auto_lock_enabled = env_flag("ALLOW_AUTO_ROOM_LOCK", False)
+    locked_room_id = event_entry.get("locked_room_id")
+    if not locked_room_id:
+        pending_decision = event_entry.get("room_pending_decision") or {}
+        summary = pending_decision.get("summary")
+        lines: List[str] = [
+            "Before I can prepare an offer I need to lock a room.",
+            "",
+        ]
+        if summary:
+            lines.append(summary)
+            lines.append("")
+        lines.extend(
+            [
+                "NEXT STEP:",
+                "Reply with \"lock <Room Name>\" (e.g., \"lock Room B\") to secure your preferred room, and I'll generate the offer immediately.",
+            ]
+        )
+        draft_message = {
+            "body": "\n".join(line for line in lines if line is not None),
+            "step": 4,
+            "topic": "lock_required",
+            "requires_approval": True,
+        }
+        state.add_draft_message(draft_message)
+        update_event_metadata(
+            event_entry,
+            current_step=3,
+            thread_state="Awaiting Client Response",
+            caller_step=4,
+        )
+        state.current_step = 3
+        state.caller_step = 4
+        state.set_thread_state("Awaiting Client Response")
+        state.extras["persist"] = True
+        deferred = state.telemetry.setdefault("deferred_intents", [])
+        if isinstance(deferred, list) and "room_selection" not in deferred:
+            deferred.append("room_selection")
+        logs = state.telemetry.setdefault("log_events", [])
+        if isinstance(logs, list):
+            logs.append(
+                {
+                    "log": "offer_blocked_no_lock",
+                    "allowed": False,
+                    "policy_flag": auto_lock_enabled,
+                    "intent": state.intent.value if state.intent else "unknown",
+                    "selected_room": None,
+                    "source_turn_id": state.message.msg_id,
+                    "path": "offer.process",
+                    "reason": "locked_room_missing",
+                }
+            )
+        gatekeeper = refresh_gatekeeper(event_entry)
+        state.telemetry.gatekeeper_passed = dict(gatekeeper)
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "draft_messages": state.draft_messages,
+            "thread_state": state.thread_state,
+            "context": state.context_snapshot,
+            "persisted": True,
+            "gatekeeper_passed": dict(gatekeeper),
+        }
+        return GroupResult(action="offer_blocked_no_lock", payload=payload, halt=True)
 
     previous_step = event_entry.get("current_step") or 3
     state.current_step = 4
