@@ -936,6 +936,13 @@
           "from_step": 2,
           "to_step": 2,
           "reason": "date_missing"
+        },
+        {
+          "ts": "2025-10-29T19:57:17Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
         }
       ],
       "event_data": {
@@ -960,7 +967,8 @@
       },
       "msgs": [
         "e37e6eda-84ed-4bec-b317-2e529a6ac069",
-        "4176f339-b8a7-45f0-baa7-8c8d2a07fbe8"
+        "4176f339-b8a7-45f0-baa7-8c8d2a07fbe8",
+        "4f5f9b56-268a-40e7-94b7-11e8fdc71d33"
       ],
       "captured": {
         "billing": {
@@ -981,7 +989,11 @@
         "4176f339-b8a7-45f0-baa7-8c8d2a07fbe8:billing.company",
         "4176f339-b8a7-45f0-baa7-8c8d2a07fbe8:contact.name",
         "4176f339-b8a7-45f0-baa7-8c8d2a07fbe8:contact.email",
-        "4176f339-b8a7-45f0-baa7-8c8d2a07fbe8:contact.phone"
+        "4176f339-b8a7-45f0-baa7-8c8d2a07fbe8:contact.phone",
+        "4f5f9b56-268a-40e7-94b7-11e8fdc71d33:billing.company",
+        "4f5f9b56-268a-40e7-94b7-11e8fdc71d33:contact.name",
+        "4f5f9b56-268a-40e7-94b7-11e8fdc71d33:contact.email",
+        "4f5f9b56-268a-40e7-94b7-11e8fdc71d33:contact.phone"
       ],
       "deferred_intents": [
         "billing_update",
@@ -2240,6 +2252,37 @@
             "company": null,
             "language": null,
             "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "4f5f9b56-268a-40e7-94b7-11e8fdc71d33",
+          "ts": "2025-10-29T19:57:12.197339Z",
+          "subject": "Subject: Team Strategy Workshop – Availability in December?",
+          "body_preview": "Subject: Team Strategy Workshop – Availability in December?\n\nBody:\n\nHello,\n\nWe’re planning a full-day strategy workshop for our Zurich office team in December. ",
+          "intent": "event_request",
+          "confidence": 0.9,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": 22,
+            "room": null,
+            "name": "Sophie Müller",
+            "email": "sophie.mueller@arcturus-consulting.ch",
+            "type": "workshop",
+            "catering": "coffee service",
+            "phone": "+41441234567",
+            "company": "Arcturus Consulting AG",
+            "language": null,
+            "notes": "U-shape seating layout with a projector",
             "billing_address": null,
             "hil_approve_step": null,
             "hil_decision": null,
