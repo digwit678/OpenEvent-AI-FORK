@@ -457,6 +457,8 @@ def _handle_decline(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
     state.telemetry.final_action = "discard"
     event_entry["decision"] = "discarded"
     payload = _base_payload(state, event_entry)
+    state.telemetry.buttons_enabled = False
+    payload["buttons_enabled"] = False
     return GroupResult(action="confirmation_decline", payload=payload, halt=True)
 
 

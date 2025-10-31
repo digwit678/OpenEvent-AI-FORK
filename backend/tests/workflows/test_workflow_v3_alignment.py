@@ -1,5 +1,6 @@
 import os
 import sys
+import importlib
 from pathlib import Path
 from typing import Any, Dict, Optional, List
 
@@ -14,6 +15,10 @@ from backend.workflows.common.requirements import requirements_hash  # noqa: E40
 from backend.workflows.common.types import IncomingMessage, WorkflowState  # noqa: E402
 from backend.workflows.planner import maybe_run_smart_shortcuts  # noqa: E402
 import backend.workflows.groups.room_availability.trigger.process as room_trigger  # noqa: E402
+
+date_trigger_module = importlib.import_module(
+    "backend.workflows.groups.date_confirmation.trigger.process"
+)
 from backend.domain import TaskType  # noqa: E402
 
 
@@ -281,6 +286,48 @@ def test_step2_confirm_without_time_requests_clarification(
     assert pending.get("iso_date") == "2026-04-09"
     assert event["date_confirmed"] is False
     assert event["thread_state"] == "Awaiting Client Response"
+
+
+def test_present_candidate_dates_sets_future_confirmation(tmp_path: Path) -> None:
+    db_path = tmp_path / "present-candidates.json"
+    message = IncomingMessage.from_dict(
+        {
+            "msg_id": "past-date",
+            "from_name": "Client",
+            "from_email": "client@example.com",
+            "subject": "Event request",
+            "ts": "2025-01-01T09:00:00Z",
+            "body": "We're looking at March 20, 2024 around 14:00–20:00 for 45 guests. Do you have availability?",
+        }
+    )
+    state = WorkflowState(message=message, db_path=db_path, db={"events": [], "tasks": []})
+    state.client_id = "client@example.com"
+    event_entry: Dict[str, Any] = {
+        "event_id": "evt-unit",
+        "requirements": {"number_of_participants": 45},
+    }
+    state.event_entry = event_entry
+    state.event_id = event_entry["event_id"]
+    state.current_step = 2
+    state.user_info = {
+        "date": "2024-03-20",
+        "start_time": "14:00",
+        "end_time": "20:00",
+        "participants": 45,
+        "layout": "Standing reception",
+    }
+
+    result = date_trigger_module._present_candidate_dates(
+        state,
+        event_entry,
+        reason="That date is already in the past."
+    )
+    assert result.action == "date_options_proposed"
+    pending_future = event_entry.get("pending_future_confirmation")
+    assert isinstance(pending_future, dict)
+    assert pending_future.get("display_date")
+    body = state.draft_messages[-1]["body"].lower()
+    assert "would" in body and "work for you instead" in body
 
 
 def test_gatekeeping_dates_block_until_complete_window(

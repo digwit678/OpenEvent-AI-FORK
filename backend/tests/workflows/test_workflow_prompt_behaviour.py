@@ -208,7 +208,8 @@ def test_regex_date_integration_and_prompt_copy(tmp_path: Path, _frozen_today: N
 
     assert first_result["action"] == "date_options_proposed"
     date_prompt = _draft_by_topic(first_result["draft_messages"], "date_candidates")["body"]
-    assert date_prompt.startswith("AVAILABLE DATES:")
+    assert date_prompt.splitlines()[0].startswith("Hello")
+    assert "AVAILABLE DATES:" in date_prompt
     assert "NEXT STEP:" in date_prompt
 
     second_result = process_msg(
@@ -223,7 +224,9 @@ def test_regex_date_integration_and_prompt_copy(tmp_path: Path, _frozen_today: N
 
     drafts = second_result["draft_messages"]
     clarification_copy = _draft_by_topic(drafts, "date_time_clarification")["body"]
-    assert clarification_copy.startswith("Noted 15.03.2025")
+    clarification_lines = clarification_copy.splitlines()
+    assert clarification_lines[0].startswith("Hello")
+    assert "Noted 15.03.2025" in clarification_copy
     assert "Preferred time" in clarification_copy
 
     event_entry = load_db(db_path)["events"][0]
@@ -251,7 +254,8 @@ def test_answer_first_dates_no_menus_in_intake(tmp_path: Path, monkeypatch: pyte
     assert result["action"] == "smart_shortcut_processed"
     message = result["message"]
     lines = [line for line in message.splitlines() if line.strip()]
-    assert lines and lines[0].startswith("AVAILABLE DATES (")
+    assert lines and lines[0].startswith("Hello")
+    assert any(line.startswith("AVAILABLE DATES (") for line in lines)
     assert any(line.startswith("1)") for line in lines)
     assert lines[-1].lower().startswith(("reply with a number", "tell me another"))
     body_lower = message.lower()
@@ -326,7 +330,8 @@ def test_explicit_user_requests_menus_allows_menu(tmp_path: Path, monkeypatch: p
     assert result["action"] == "smart_shortcut_processed"
     message = result["message"]
     lines = [line for line in message.splitlines() if line.strip()]
-    assert lines and lines[0].startswith("AVAILABLE DATES (")
+    assert lines and lines[0].startswith("Hello")
+    assert any(line.startswith("AVAILABLE DATES (") for line in lines)
     assert any(line.startswith("1)") for line in lines)
     assert lines[-1].lower().startswith(("reply with a number", "tell me another"))
     message_lower = message.lower()
@@ -712,7 +717,8 @@ def test_atomic_dates_single_followup(tmp_path: Path, _stub_mapping: Dict[str, D
     assert result["action"] == "smart_shortcut_processed"
     message = result.get("message", "")
     lines = [line for line in message.splitlines() if line.strip()]
-    assert lines and lines[0].startswith("AVAILABLE DATES (")
+    assert lines and lines[0].startswith("Hello")
+    assert any(line.startswith("AVAILABLE DATES (") for line in lines)
     assert lines[-1].lower().startswith(("reply with a number", "tell me another"))
     assert result.get("combined_confirmation") is False
     assert result.get("shortcut_path_used") == "none"
@@ -745,7 +751,8 @@ def test_atomic_room_preference_deferred(
     assert telemetry.get("atomic_default") is True
     message = result.get("message", "")
     lines = [line for line in message.splitlines() if line.strip()]
-    assert lines and lines[0].startswith("AVAILABLE DATES (")
+    assert lines and lines[0].startswith("Hello")
+    assert any(line.startswith("AVAILABLE DATES (") for line in lines)
     assert lines[-1].lower().startswith(("reply with a number", "tell me another"))
 
     event = load_db(db_path)["events"][0]

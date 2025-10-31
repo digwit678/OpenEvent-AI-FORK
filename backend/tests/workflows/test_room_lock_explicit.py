@@ -32,6 +32,7 @@ def test_explicit_lock_bypasses_auto_lock_flag(monkeypatch: pytest.MonkeyPatch, 
         "requirements": {"number_of_participants": 15},
         "requirements_hash": None,
         "room_eval_hash": None,
+        "date_confirmed": True,
     }
     ensure_event_defaults(event_entry)
     event_entry["current_step"] = 3

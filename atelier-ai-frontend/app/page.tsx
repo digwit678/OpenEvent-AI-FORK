@@ -429,27 +429,18 @@ export default function EmailThreadUI() {
       setTaskActionId(task.task_id);
       try {
         const notes = taskNotes[task.task_id] || undefined;
-        await requestJSON(`${API_BASE}/tasks/${task.task_id}/${decision}`, {
+        const result = await requestJSON<{
+          task_status: string;
+          review_state?: string;
+          thread_id?: string | null;
+          event_id?: string | null;
+          assistant_reply?: string;
+        }>(`${API_BASE}/tasks/${task.task_id}/${decision}`, {
           method: 'POST',
           body: JSON.stringify({ notes }),
         });
-        if (sessionId) {
-          const note = (taskNotes[task.task_id] || '').trim();
-          let content = '';
-          if (task.type === 'ask_for_date') {
-            content =
-              decision === 'approve'
-                ? "I've proposed these dates to the client. Please pick one."
-                : "I won't send the date suggestion yet.";
-          } else if (task.type === 'manual_review') {
-            content =
-              decision === 'approve'
-                ? `Manual review approved.${note ? ' ' + note : ''}`
-                : `Manual review rejected.${note ? ' ' + note : ''}`;
-          }
-          if (content) {
-            appendMessage({ role: 'assistant', content, timestamp: new Date() });
-          }
+        if (sessionId && result?.thread_id === sessionId && result.assistant_reply) {
+          appendMessage({ role: 'assistant', content: result.assistant_reply, timestamp: new Date() });
         }
         refreshTasks().catch(() => undefined);
       } catch (error) {

@@ -19,6 +19,7 @@ from backend.workflows.io import tasks as task_io
 from backend.workflows.llm import adapter as llm_adapter
 from backend.workflows.planner import maybe_run_smart_shortcuts
 from backend.utils.profiler import profile_step
+from backend.workflow.state import stage_payload
 
 
 DB_PATH = Path(__file__).with_name("events_database.json")
@@ -265,6 +266,7 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
         payload["current_step"] = event_entry.get("current_step")
         payload["caller_step"] = event_entry.get("caller_step")
         payload["thread_state"] = event_entry.get("thread_state")
+        payload.setdefault("stage", stage_payload(event_entry))
     elif state.thread_state:
         payload["thread_state"] = state.thread_state
     if state.draft_messages:

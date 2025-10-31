@@ -3,11 +3,12 @@ from __future__ import annotations
 import datetime as dt
 import os
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from backend.adapters.agent_adapter import AgentAdapter, get_agent_adapter, reset_agent_adapter
 from backend.domain import IntentLabel
 
+from backend.services.products import list_product_records, normalise_product_payload
 from backend.workflows.common.room_rules import (
     USER_INFO_KEYS,
     clean_text,
@@ -27,6 +28,75 @@ _MONTHS = {name.lower(): idx for idx, name in enumerate(
     start=1,
 )}
 _DAY_RE = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+of\s+([A-Za-z]+)\b", re.IGNORECASE)
+
+_LAYOUT_KEYWORDS = {
+    "u-shape": "U-shape",
+    "u shape": "U-shape",
+    "u-shaped": "U-shape",
+    "boardroom": "Boardroom",
+    "standing": "Standing reception",
+    "cocktail": "Standing reception",
+}
+
+_FEATURE_KEYWORDS = {
+    "projector": ["projector", "screen", "beamer"],
+    "sound system": ["sound system", "speakers", "audio", "music"],
+    "coffee service": ["coffee service", "coffee bar", "coffee", "barista", "espresso", "tea service"],
+}
+
+
+def _extract_requirement_hints(text: str) -> Dict[str, Any]:
+    lowered = text.lower()
+    layout = None
+    for token, label in _LAYOUT_KEYWORDS.items():
+        if token in lowered:
+            layout = label
+            break
+
+    features: List[str] = []
+    for label, keywords in _FEATURE_KEYWORDS.items():
+        if any(keyword in lowered for keyword in keywords):
+            features.append(label)
+
+    catering = None
+    if "coffee" in lowered or "barista" in lowered or "espresso" in lowered:
+        catering = "Coffee service"
+
+    return {"layout": layout, "features": features, "catering": catering}
+
+
+def _match_catalog_products(text: str) -> List[Dict[str, Any]]:
+    if not text:
+        return []
+    catalog_names = [record.name for record in list_product_records()]
+    raw_matches = _agent().match_catalog_items(text, catalog_names)
+    matches: List[Dict[str, Any]] = []
+    if not raw_matches:
+        return matches
+
+    for entry in raw_matches:
+        name: Optional[str]
+        score: float
+        if isinstance(entry, tuple) and entry:
+            name = str(entry[0]) if entry[0] is not None else None
+            try:
+                score = float(entry[1]) if len(entry) > 1 else 0.0
+            except (TypeError, ValueError):
+                score = 0.0
+        elif isinstance(entry, dict):
+            name = entry.get("name")
+            raw_score = entry.get("confidence")
+            try:
+                score = float(raw_score) if raw_score is not None else 0.0
+            except (TypeError, ValueError):
+                score = 0.0
+        else:
+            name = str(entry) if entry else None
+            score = 0.65
+        if not name:
+            continue
+        matches.append({"name": name, "confidence": max(0.0, min(1.0, score))})
+    return matches
 
 
 def _infer_date_from_body(body: str) -> Optional[str]:
@@ -134,6 +204,56 @@ def extract_user_information(message: Dict[str, Optional[str]]) -> Dict[str, Opt
             sanitized["date"] = inferred
             if not sanitized.get("event_date"):
                 sanitized["event_date"] = dt.datetime.strptime(inferred, "%Y-%m-%d").strftime("%d.%m.%Y")
+
+    body_text = payload.get("body") or ""
+    hints = _extract_requirement_hints(body_text)
+    if hints.get("layout") and not sanitized.get("layout"):
+        sanitized["layout"] = hints["layout"]
+    if hints.get("catering") and not sanitized.get("catering"):
+        sanitized["catering"] = hints["catering"]
+
+    note_tokens: List[str] = []
+    if sanitized.get("notes"):
+        note_tokens.extend([token.strip() for token in str(sanitized["notes"]).split(",") if token.strip()])
+    for token in hints.get("features", []):
+        if token not in note_tokens:
+            note_tokens.append(token)
+    if note_tokens:
+        sanitized["notes"] = ", ".join(note_tokens)
+
+    matched_products = _match_catalog_products(body_text)
+    if matched_products:
+        high_confidence: List[str] = []
+        for item in matched_products:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            if not name:
+                continue
+            try:
+                score = float(item.get("confidence", 0.0))
+            except (TypeError, ValueError):
+                score = 0.0
+            if score >= 0.6:
+                high_confidence.append(str(name))
+        if high_confidence:
+            participant_count = sanitized.get("participants")
+            participant_value = participant_count if isinstance(participant_count, int) else None
+            normalised = normalise_product_payload(
+                high_confidence,
+                participant_count=participant_value,
+            )
+            if normalised:
+                existing = normalise_product_payload(
+                    sanitized.get("products_add"),
+                    participant_count=participant_value,
+                )
+                combined_names = {item["name"] for item in existing}
+                for item in normalised:
+                    if item["name"] not in combined_names:
+                        existing.append(item)
+                sanitized["products_add"] = existing
+
     return sanitized
 
 
@@ -154,6 +274,8 @@ def sanitize_user_info(raw: Dict[str, Any]) -> Dict[str, Optional[Any]]:
         elif key in {"catering", "company", "notes", "billing_address"}:
             sanitized[key] = clean_text(value, trailing=" .;")
         elif key == "type":
+            sanitized[key] = clean_text(value)
+        elif key == "layout":
             sanitized[key] = clean_text(value)
         elif key in {"name", "email"}:
             sanitized[key] = clean_text(value)

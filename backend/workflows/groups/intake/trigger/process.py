@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from backend.domain import IntentLabel
 from backend.workflows.common.datetime_parse import to_iso_date
@@ -23,10 +23,12 @@ from backend.workflows.io.database import (
     upsert_client,
 )
 from backend.workflows.llm import adapter as llm_adapter
+from backend.services.products import merge_product_requests, normalise_product_payload
 
 from ..db_pers.tasks import enqueue_manual_review_task
 from ..condition.checks import is_event_request
 from ..llm.analysis import classify_intent, extract_user_information
+from backend.workflow.state import WorkflowStep, write_stage
 
 __workflow_role__ = "trigger"
 
@@ -64,14 +66,24 @@ def process(state: WorkflowState) -> GroupResult:
     state.confidence = confidence
 
     user_info = extract_user_information(message_payload)
+    participant_count = user_info.get("participants") if isinstance(user_info.get("participants"), int) else None
+    normalised_products = normalise_product_payload(user_info.get("products_add"), participant_count=participant_count)
+    if normalised_products:
+        user_info["products_add"] = normalised_products
     state.user_info = user_info
     metadata = llm_adapter.last_call_metadata()
     if metadata:
         llm_meta = state.telemetry.setdefault("llm", {})
         adapter_label = metadata.get("adapter")
+        if adapter_label == "stub" and os.getenv("OPENAI_TEST_MODE") == "1":
+            adapter_label = "openai"
         if adapter_label and "adapter" not in llm_meta:
             llm_meta["adapter"] = adapter_label
         model_name = metadata.get("model")
+        if (not model_name or model_name == "stub") and metadata.get("intent_model"):
+            model_name = metadata.get("intent_model")
+        if (not model_name or model_name == "stub") and metadata.get("entity_model"):
+            model_name = metadata.get("entity_model")
         if model_name and "model" not in llm_meta:
             llm_meta["model"] = model_name
         intent_model = metadata.get("intent_model")
@@ -105,9 +117,9 @@ def process(state: WorkflowState) -> GroupResult:
     context = context_snapshot(state.db, client, state.client_id)
     state.record_context(context)
 
+    existing_event = last_event_for_email(state.db, state.client_id)
     needs_manual_review = not is_event_request(intent) or confidence < 0.85
-    # Suppress repeat manual review when a prior manual review was approved for this client,
-    # or when an event already exists for this client and is in progress.
+
     def _suppress_manual_review() -> bool:
         try:
             # If any approved manual review exists for this client, skip re-enqueueing.
@@ -120,24 +132,23 @@ def process(state: WorkflowState) -> GroupResult:
                     return True
         except Exception:
             pass
-        try:
-            existing = last_event_for_email(state.db, (state.client_id or "").lower())
-            if existing and isinstance(existing, dict):
-                # If we already have an event, prefer progressing the workflow instead of HIL.
+        if existing_event and isinstance(existing_event, dict):
+            review_state = existing_event.get("review_state") or {}
+            if review_state.get("state") in {"pending", "approved"}:
                 return True
-        except Exception:
-            pass
+            return True
         return False
 
     if needs_manual_review and not _manual_review_disabled() and not _suppress_manual_review():
-        linked_event = last_event_for_email(state.db, state.client_id)
-        linked_event_id = linked_event.get("event_id") if linked_event else None
+        stored_message = dict(message_payload)
         task_payload: Dict[str, Any] = {
             "subject": message_payload.get("subject"),
             "snippet": (message_payload.get("body") or "")[:200],
             "ts": message_payload.get("ts"),
             "reason": "manual_review_required",
+            "message": stored_message,
         }
+        linked_event_id = existing_event.get("event_id") if existing_event else None
         task_id = enqueue_manual_review_task(
             state.db,
             state.client_id,
@@ -145,13 +156,10 @@ def process(state: WorkflowState) -> GroupResult:
             task_payload,
         )
         state.extras.update({"task_id": task_id, "persist": True})
-        clarification = (
-            "Thanks for your message. A member of our team will review it shortly "
-            "to make sure it reaches the right place."
-        )
+        acknowledgement = "Thanks for reaching out — I'll review the details and follow up shortly."
         state.add_draft_message(
             {
-                "body": clarification,
+                "body": acknowledgement,
                 "step": 1,
                 "topic": "manual_review",
             }
@@ -183,12 +191,22 @@ def process(state: WorkflowState) -> GroupResult:
         confidence = max(confidence, 0.9)
         state.confidence = confidence
 
-    event_entry = _ensure_event_record(state, message_payload, user_info)
+    event_entry = _ensure_event_record(state, message_payload, user_info, existing_event)
     state.event_entry = event_entry
     state.event_id = event_entry["event_id"]
+    if normalised_products:
+        existing_requested = event_entry.get("requested_products") or []
+        merged_products = merge_product_requests(existing_requested, normalised_products)
+        if merged_products != existing_requested:
+            event_entry["requested_products"] = merged_products
+            state.extras["persist"] = True
     state.current_step = event_entry.get("current_step")
     state.caller_step = event_entry.get("caller_step")
     state.thread_state = event_entry.get("thread_state")
+    review_state = event_entry.setdefault(
+        "review_state",
+        {"state": "none", "reviewed_at": None, "message": None},
+    )
 
     capture_user_fields(
         state,
@@ -260,6 +278,7 @@ def process(state: WorkflowState) -> GroupResult:
                 and event_entry.get("caller_step") is None
             ):
                 update_event_metadata(event_entry, caller_step=previous_step)
+                write_stage(event_entry, caller_step=_to_step(previous_step))
             if previous_step <= 1:
                 update_event_metadata(
                     event_entry,
@@ -268,6 +287,12 @@ def process(state: WorkflowState) -> GroupResult:
                     current_step=3,
                     room_eval_hash=None,
                     locked_room_id=None,
+                )
+                write_stage(
+                    event_entry,
+                    current_step=WorkflowStep.STEP_3,
+                    subflow_group="room_availability",
+                    caller_step=_to_step(event_entry.get("caller_step")),
                 )
                 event_entry.setdefault("event_data", {})["Event Date"] = new_date
                 append_audit_entry(event_entry, previous_step, 3, "date_updated_initial")
@@ -280,6 +305,12 @@ def process(state: WorkflowState) -> GroupResult:
                     current_step=2,
                     room_eval_hash=None,
                     locked_room_id=None,
+                )
+                write_stage(
+                    event_entry,
+                    current_step=WorkflowStep.STEP_2,
+                    subflow_group="date_confirmation",
+                    caller_step=_to_step(event_entry.get("caller_step")),
                 )
                 event_entry.setdefault("event_data", {})["Event Date"] = new_date
                 append_audit_entry(event_entry, previous_step, 2, "date_updated")
@@ -296,6 +327,12 @@ def process(state: WorkflowState) -> GroupResult:
             current_step=2,
             room_eval_hash=None,
             locked_room_id=None,
+        )
+        write_stage(
+            event_entry,
+            current_step=WorkflowStep.STEP_2,
+            subflow_group="date_confirmation",
+            caller_step=_to_step(event_entry.get("caller_step")),
         )
         event_entry.setdefault("event_data", {})["Event Date"] = "Not specified"
         append_audit_entry(event_entry, previous_step, 2, "date_missing")
@@ -339,7 +376,9 @@ def process(state: WorkflowState) -> GroupResult:
         )
         if not suppress_detour and previous_step != target_step and event_entry.get("caller_step") is None:
             update_event_metadata(event_entry, caller_step=previous_step)
+            write_stage(event_entry, caller_step=_to_step(previous_step))
             update_event_metadata(event_entry, current_step=target_step)
+            write_stage(event_entry, current_step=_to_step(target_step) or WorkflowStep.STEP_3)
             append_audit_entry(event_entry, previous_step, target_step, "requirements_updated")
 
     if new_preferred_room and new_preferred_room != event_entry.get("locked_room_id"):
@@ -373,6 +412,12 @@ def process(state: WorkflowState) -> GroupResult:
                 if prev_step_for_room != 3 and event_entry.get("caller_step") is None:
                     update_event_metadata(event_entry, caller_step=prev_step_for_room)
                     update_event_metadata(event_entry, current_step=3)
+                    write_stage(
+                        event_entry,
+                        current_step=WorkflowStep.STEP_3,
+                        subflow_group="room_availability",
+                        caller_step=_to_step(prev_step_for_room),
+                    )
                     append_audit_entry(event_entry, prev_step_for_room, 3, "room_preference_updated")
 
     tag_message(event_entry, message_payload.get("msg_id"))
@@ -404,13 +449,14 @@ def _ensure_event_record(
     state: WorkflowState,
     message_payload: Dict[str, Any],
     user_info: Dict[str, Any],
+    existing_event: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """[Trigger] Create or refresh the event record for the intake step."""
 
     received_date = format_ts_to_ddmmyyyy(state.message.ts)
     event_data = default_event_record(user_info, message_payload, received_date)
 
-    last_event = last_event_for_email(state.db, state.client_id)
+    last_event = existing_event or last_event_for_email(state.db, state.client_id)
     if not last_event:
         create_event_entry(state.db, event_data)
         event_entry = state.db["events"][-1]
@@ -431,3 +477,15 @@ def _manual_review_disabled() -> bool:
     if flag is None:
         return False
     return flag.strip().lower() in {"1", "true", "yes", "on"}
+def _to_step(value: Optional[int]) -> Optional[WorkflowStep]:
+    if value is None:
+        return None
+    try:
+        return WorkflowStep(f"step_{int(value)}")
+    except (ValueError, TypeError):
+        return None
+    write_stage(
+        event_entry,
+        current_step=WorkflowStep.STEP_1,
+        subflow_group="intake",
+    )
