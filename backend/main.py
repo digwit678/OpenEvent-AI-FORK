@@ -501,6 +501,12 @@ def _compose_turn_drafts(
     sections: List[str] = []
     include_resume_prompt = not bool(step_drafts)
 
+    for draft in step_drafts or []:
+        body = str(draft.get("body") or "").strip()
+        if body:
+            sections.append(body)
+        drafts.append(draft)
+
     for block in qna_payload.get("pre_step") or []:
         prepared_body = _prepare_qna_body(str(block.get("body") or ""), include_resume_prompt)
         if not prepared_body:
@@ -509,12 +515,6 @@ def _compose_turn_drafts(
         block_payload["body"] = prepared_body
         sections.append(prepared_body)
         drafts.append(block_payload)
-
-    for draft in step_drafts or []:
-        body = str(draft.get("body") or "").strip()
-        if body:
-            sections.append(body)
-        drafts.append(draft)
 
     for block in qna_payload.get("post_step") or []:
         prepared_body = _prepare_qna_body(str(block.get("body") or ""), include_resume_prompt)

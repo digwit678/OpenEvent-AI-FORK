@@ -202,6 +202,29 @@ def test_intake_guard_manual_review(tmp_path: Path, _stub_agent: Dict[str, Dict[
     assert all(draft["requires_approval"] for draft in result["draft_messages"])
 
 
+def test_intake_skips_manual_review_with_clear_details(
+    tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]
+) -> None:
+    db_path = tmp_path / "intake-clear.json"
+    mapping = _stub_agent
+
+    body = (
+        "Hello team,\n"
+        "We're planning a two-day internal training on June 12-13 2025 for 25 people.\n"
+        "We need a U-shape layout with projector, whiteboard, lunch and two coffee breaks.\n"
+        "Do you have availability?"
+    )
+
+    result = _run(
+        db_path,
+        mapping,
+        "clear-details",
+        body,
+    )
+
+    assert result["action"] != "manual_review_enqueued"
+
+
 def test_step2_five_date_loop_and_confirmation(tmp_path: Path, _stub_agent: Dict[str, Dict[str, Any]]) -> None:
     db_path = tmp_path / "step2.json"
     mapping = _stub_agent

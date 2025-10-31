@@ -92,9 +92,48 @@ def _extract_first_name(raw: Optional[str]) -> Optional[str]:
     return token or None
 
 
+_SIGNATURE_MARKERS = (
+    "best regards",
+    "kind regards",
+    "regards",
+    "many thanks",
+    "thanks",
+    "thank you",
+    "cheers",
+    "beste grüsse",
+    "freundliche grüsse",
+)
+
+
+def _extract_signature_name(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for idx, line in enumerate(lines):
+        lowered = line.lower()
+        if any(marker in lowered for marker in _SIGNATURE_MARKERS):
+            if idx + 1 < len(lines):
+                candidate = lines[idx + 1].strip(", ")
+                if candidate and len(candidate.split()) <= 4:
+                    return candidate
+    if lines:
+        tail = lines[-1]
+        if 1 <= len(tail.split()) <= 4:
+            return tail
+    return None
+
+
 def _compose_greeting(state: WorkflowState) -> str:
     profile = (state.client or {}).get("profile", {}) if state.client else {}
-    raw_name = profile.get("name") or state.message.from_name
+    user_info_name = None
+    if state.user_info:
+        user_info_name = state.user_info.get("name") or state.user_info.get("company_contact")
+    raw_name = (
+        user_info_name
+        or profile.get("name")
+        or _extract_signature_name(state.message.body)
+        or state.message.from_name
+    )
     first = _extract_first_name(raw_name)
     if not first:
         return "Hello,"
