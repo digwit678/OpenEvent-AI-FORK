@@ -57,6 +57,121 @@ def _explicit_room_change_text(text: str) -> bool:
     return any(r in t for r in rooms)
 
 
+_EVENT_SIGNAL_KEYS = (
+    "date",
+    "event_date",
+    "start_time",
+    "end_time",
+    "participants",
+    "room",
+    "layout",
+    "products_add",
+    "city",
+    "type",
+)
+
+_MONTH_TOKENS = (
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+)
+
+
+def _has_event_signals(info: Dict[str, Any]) -> bool:
+    for key in _EVENT_SIGNAL_KEYS:
+        value = info.get(key)
+        if value:
+            if isinstance(value, (list, tuple, set)) and not value:
+                continue
+            return True
+    notes = info.get("notes")
+    if isinstance(notes, str) and notes.strip():
+        return True
+    return False
+
+
+def _text_has_event_signals(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    lowered = text.lower()
+    if any(month in lowered for month in _MONTH_TOKENS):
+        return True
+    if any(token in lowered for token in ("preferred date", "preferred dates", "date:", "dates:")):
+        return True
+    if "participants" in lowered or "attendees" in lowered or "people" in lowered or "pax" in lowered:
+        return True
+    if "u-shape" in lowered or "classroom" in lowered or "boardroom" in lowered:
+        return True
+    if "projector" in lowered or "whiteboard" in lowered:
+        return True
+    if "coffee" in lowered or "lunch" in lowered or "break" in lowered:
+        return True
+    if any(char.isdigit() for char in lowered):
+        return True
+    return False
+
+
+def _extract_first_name(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return None
+    token = str(raw).strip()
+    if not token:
+        return None
+    first = token.split()[0].strip(",. ")
+    return first or None
+
+
+_SIGNATURE_MARKERS = (
+    "best regards",
+    "kind regards",
+    "regards",
+    "many thanks",
+    "thanks",
+    "thank you",
+    "cheers",
+    "beste grüsse",
+    "freundliche grüsse",
+)
+
+
+def _extract_signature_name(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for idx, line in enumerate(lines):
+        lowered = line.lower()
+        if any(marker in lowered for marker in _SIGNATURE_MARKERS):
+            if idx + 1 < len(lines):
+                candidate = lines[idx + 1].strip(", ")
+                if candidate and len(candidate.split()) <= 4:
+                    return candidate
+    if lines:
+        tail = lines[-1]
+        if 1 <= len(tail.split()) <= 4:
+            return tail
+    return None
+
+
+def _manual_review_greeting(user_info: Dict[str, Any], message_payload: Dict[str, Any]) -> str:
+    candidate = user_info.get("name") or user_info.get("company_contact")
+    if not candidate:
+        from_name = message_payload.get("from_name") or _extract_signature_name(message_payload.get("body"))
+        candidate = from_name
+    first = _extract_first_name(candidate)
+    if first:
+        return f"Hello {first},"
+    return "Hello," 
+
+
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Entry point for Group A — intake and data capture."""
 
@@ -118,7 +233,18 @@ def process(state: WorkflowState) -> GroupResult:
     state.record_context(context)
 
     existing_event = last_event_for_email(state.db, state.client_id)
+
+    event_signals_detected = _has_event_signals(user_info) or _text_has_event_signals(message_payload.get("body"))
+
+    if not is_event_request(intent) and event_signals_detected:
+        intent = IntentLabel.EVENT_REQUEST
+        state.intent = intent
+        confidence = max(confidence, 0.9)
+        state.confidence = confidence
+
     needs_manual_review = not is_event_request(intent) or confidence < 0.85
+    if intent == IntentLabel.EVENT_REQUEST and event_signals_detected:
+        needs_manual_review = False
 
     def _suppress_manual_review() -> bool:
         try:
@@ -156,7 +282,11 @@ def process(state: WorkflowState) -> GroupResult:
             task_payload,
         )
         state.extras.update({"task_id": task_id, "persist": True})
-        acknowledgement = "Thanks for reaching out — I'll review the details and follow up shortly."
+        greeting = _manual_review_greeting(user_info, message_payload)
+        acknowledgement = (
+            f"{greeting}\n\n"
+            "Thanks for reaching out — I'll review the details and follow up shortly."
+        )
         state.add_draft_message(
             {
                 "body": acknowledgement,

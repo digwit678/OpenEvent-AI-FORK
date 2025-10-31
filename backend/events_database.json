@@ -2463,6 +2463,159 @@
         "reason": "locked_room_id"
       },
       "requested_products": []
+    },
+    {
+      "event_id": "caf6384d-a94f-40b7-96b0-30b81f3477d6",
+      "created_at": "2025-10-31T14:17:25.568052",
+      "status": "Lead",
+      "current_step": 1,
+      "caller_step": null,
+      "thread_state": "In Progress",
+      "chosen_date": null,
+      "date_confirmed": false,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 25,
+        "seating_layout": "U-shape",
+        "special_requirements": "projector, coffee service"
+      },
+      "requirements_hash": "ee48222a854306473a9c5792b23433622cc0bf99bd15df2a2b136097363b5f43",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2025-10-31T14:17:25Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 1,
+          "reason": "info_update",
+          "fields": [
+            "Name"
+          ]
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "31.10.2025",
+        "Status": "Lead",
+        "Event Date": "12.06.2025",
+        "Name": "Nadine Keller",
+        "Email": "nadine.keller@solviontech.ch",
+        "Phone": "+41798809122",
+        "Company": "Solvion Tech AG",
+        "Billing Address": "Not specified",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Not specified",
+        "Number of Participants": "25",
+        "Type of Event": "Training Workshop",
+        "Catering Preference": "Lunch and two coffee breaks per day",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "projector, coffee service"
+      },
+      "msgs": [
+        "d683999e-ff17-4208-b389-ed1e757a0872"
+      ],
+      "captured": {
+        "date": "2025-06-12",
+        "event_date": "12.06.2025",
+        "billing": {
+          "company": "Solvion Tech AG"
+        },
+        "contact": {
+          "name": "Nadine Keller",
+          "email": "nadine.keller@solviontech.ch",
+          "phone": "+41798809122"
+        }
+      },
+      "verified": {},
+      "captured_sources": [
+        "d683999e-ff17-4208-b389-ed1e757a0872:date",
+        "d683999e-ff17-4208-b389-ed1e757a0872:event_date",
+        "d683999e-ff17-4208-b389-ed1e757a0872:billing.company",
+        "d683999e-ff17-4208-b389-ed1e757a0872:contact.name",
+        "d683999e-ff17-4208-b389-ed1e757a0872:contact.email",
+        "d683999e-ff17-4208-b389-ed1e757a0872:contact.phone"
+      ],
+      "deferred_intents": [
+        "date_confirmation",
+        "billing_update",
+        "contact_update"
+      ],
+      "requested_products": [
+        {
+          "name": "Coffee & Tea Bar",
+          "quantity": 25,
+          "unit_price": 7.5,
+          "unit": "per_person",
+          "product_id": "beverage-coffee-bar",
+          "category": "Beverages"
+        }
+      ],
+      "billing_details": {
+        "name_or_company": "Solvion Tech AG",
+        "street": null,
+        "postal_code": null,
+        "city": "Not specified",
+        "country": null,
+        "raw": "Not specified"
+      },
+      "current_step_stage": "step_1",
+      "caller_step_stage": null,
+      "subflow_group": "intake",
+      "requested_window": {},
+      "offer_hash": null,
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "selected_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending"
     }
   ],
   "clients": {
@@ -5782,6 +5935,98 @@
         }
       ],
       "event_ids": []
+    },
+    "nadine.keller@solviontech.ch": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "3e477e98-541e-405d-929d-96ab220155b3",
+          "ts": "2025-10-31T06:59:23.043996Z",
+          "subject": "Subject: Training Workshop – 2-Day Booking Request in June",
+          "body_preview": "Subject: Training Workshop – 2-Day Booking Request in June\nBody:\nHello,\nWe’re planning a two-day internal training workshop for our support team and are looking",
+          "intent": "other",
+          "confidence": 0.9,
+          "user_info": {
+            "date": "2025-06-12",
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": 25,
+            "room": null,
+            "layout": "U-shape",
+            "name": "Nadine Keller",
+            "email": "nadine.keller@solviontech.ch",
+            "type": "Training Workshop",
+            "catering": "Lunch and two coffee breaks per day",
+            "phone": "+41798809122",
+            "company": "Solvion Tech AG",
+            "language": null,
+            "notes": "Classroom or U-shape setup, Projector + whiteboard, On-site parking if available, projector, coffee service",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [
+              {
+                "name": "Coffee & Tea Bar",
+                "quantity": 25,
+                "unit_price": 7.5,
+                "unit": "per_person",
+                "product_id": "beverage-coffee-bar",
+                "category": "Beverages"
+              }
+            ],
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "12.06.2025"
+          }
+        },
+        {
+          "msg_id": "d683999e-ff17-4208-b389-ed1e757a0872",
+          "ts": "2025-10-31T14:17:19.158483Z",
+          "subject": "Subject: Training Workshop – 2-Day Booking Request in June",
+          "body_preview": "Subject: Training Workshop – 2-Day Booking Request in June\nBody:\nHello,\nWe’re planning a two-day internal training workshop for our support team and are looking",
+          "intent": "other",
+          "confidence": 0.9,
+          "user_info": {
+            "date": "2025-06-12",
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": 25,
+            "room": null,
+            "layout": "U-shape",
+            "name": "Nadine Keller",
+            "email": "nadine.keller@solviontech.ch",
+            "type": "Training Workshop",
+            "catering": "Lunch and two coffee breaks per day",
+            "phone": "+41798809122",
+            "company": "Solvion Tech AG",
+            "language": null,
+            "notes": "projector, coffee service",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [
+              {
+                "name": "Coffee & Tea Bar",
+                "quantity": 25,
+                "unit_price": 7.5,
+                "unit": "per_person",
+                "product_id": "beverage-coffee-bar",
+                "category": "Beverages"
+              }
+            ],
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "12.06.2025"
+          }
+        }
+      ],
+      "event_ids": []
     }
   },
   "tasks": [
@@ -6131,6 +6376,29 @@
         "note": "Subject: Networking Event – Availability for May 8 2025\nBody:\nDear Event Team,\nWe’d like to organize a networking evening for our business partners on Thursday, May 8 2025, in Basel.\nExpected attendance: around 60 guests.\nWe’d need a cocktail / standing setup, with bar tables, sound system for background music, and light catering (finger food + drinks).\nIdeally the event would run from 18:00 to 22:00.\nCould you please confirm availability and recommend suitable rooms?\nMany thanks,\nJulia Steiner\nCorporate Relations Manager, Alpine Finance AG\n+41 79 222 66 14\njulia.steiner@alpinefinance.ch",
         "from_name": "Not specified",
         "msg_id": "716d8dee-f6f9-4728-a2dd-0cd60ab0450d"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "d7eeeaea-4858-4149-bdda-31dd950648f7",
+      "created_at": "2025-10-31T06:59:30.301205",
+      "type": "manual_review",
+      "status": "approved",
+      "client_id": "nadine.keller@solviontech.ch",
+      "event_id": null,
+      "payload": {
+        "subject": "Subject: Training Workshop – 2-Day Booking Request in June",
+        "snippet": "Subject: Training Workshop – 2-Day Booking Request in June\nBody:\nHello,\nWe’re planning a two-day internal training workshop for our support team and are looking for a venue in Zurich or nearby.\nPrefer",
+        "ts": "2025-10-31T06:59:23.043996Z",
+        "reason": "manual_review_required",
+        "message": {
+          "msg_id": "3e477e98-541e-405d-929d-96ab220155b3",
+          "from_name": "Not specified",
+          "from_email": "nadine.keller@solviontech.ch",
+          "subject": "Subject: Training Workshop – 2-Day Booking Request in June",
+          "body": "Subject: Training Workshop – 2-Day Booking Request in June\nBody:\nHello,\nWe’re planning a two-day internal training workshop for our support team and are looking for a venue in Zurich or nearby.\nPreferred dates: June 12–13 2025 (Thursday & Friday).\nParticipants: about 25 people.\nRequirements:\n– Classroom or U-shape setup\n– Projector + whiteboard\n– Lunch and two coffee breaks per day\n– On-site parking if available\nCould you please let us know if you have availability for those dates and what package options you recommend?\nThank you,\nNadine Keller\nTraining Coordinator, Solvion Tech AG\nnadine.keller@solviontech.ch\n+41 79 880 91 22\n07:50",
+          "ts": "2025-10-31T06:59:23.043996Z"
+        }
       },
       "notes": ""
     }

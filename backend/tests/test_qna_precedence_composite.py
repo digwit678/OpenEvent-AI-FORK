@@ -74,15 +74,15 @@ def test_compose_turn_drafts_strips_extra_next_step() -> None:
     }
     drafts, _ = _compose_turn_drafts(step_drafts, qna_payload, None)
     assert len(drafts) == 3
-    pre_body = drafts[0]["body"]
-    step_body = drafts[1]["body"]
+    step_body = drafts[0]["body"]
+    pre_body = drafts[1]["body"]
     post_body = drafts[2]["body"]
-
-    assert pre_body.startswith("INFO:")
-    assert "NEXT STEP:" not in pre_body
 
     assert "ROOM OPTIONS:" in step_body
     assert step_body.count("NEXT STEP:") == 1
+
+    assert pre_body.startswith("INFO:")
+    assert "NEXT STEP:" not in pre_body
 
     assert post_body.startswith("INFO:")
     assert "NEXT STEP:" not in post_body

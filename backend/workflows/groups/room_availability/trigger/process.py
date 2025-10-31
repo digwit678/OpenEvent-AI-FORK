@@ -69,9 +69,47 @@ def _extract_first_name(raw: Optional[str]) -> Optional[str]:
     return first or None
 
 
+_SIGNATURE_MARKERS = (
+    "best regards",
+    "kind regards",
+    "regards",
+    "many thanks",
+    "thanks",
+    "thank you",
+    "cheers",
+    "beste grüsse",
+    "freundliche grüsse",
+)
+
+
+def _extract_signature_name(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for idx, line in enumerate(lines):
+        lowered = line.lower()
+        if any(marker in lowered for marker in _SIGNATURE_MARKERS):
+            if idx + 1 < len(lines):
+                candidate = lines[idx + 1].strip(", ")
+                if candidate and len(candidate.split()) <= 4:
+                    return candidate
+    if lines:
+        tail = lines[-1]
+        if 1 <= len(tail.split()) <= 4:
+            return tail
+    return None
+
+
 def _compose_room_greeting(state: WorkflowState) -> str:
     profile = (state.client or {}).get("profile", {}) if state.client else {}
-    raw_name = profile.get("name")
+    user_info_name = None
+    if state.user_info:
+        user_info_name = state.user_info.get("name") or state.user_info.get("company_contact")
+    raw_name = (
+        user_info_name
+        or profile.get("name")
+        or _extract_signature_name(getattr(state.message, "body", None))
+    )
     if not raw_name and state.message:
         raw_name = getattr(state.message, "from_name", None)
     first = _extract_first_name(raw_name)
@@ -819,20 +857,42 @@ def _extract_explicit_lock_request(text: str) -> Optional[str]:
     if not text:
         return None
     lowered = text.lower()
-    if not _LOCK_KEYWORD_PATTERN.search(lowered):
-        return None
+    keyword_match = _LOCK_KEYWORD_PATTERN.search(lowered)
     # Match "room a", "room-b", "the room b", etc.
     match = re.search(r"\b(?:the\s+)?room[-\s]*([ab])\b", lowered)
+    fallback_room: Optional[str] = None
     if match:
         letter = match.group(1).upper()
-        return f"Room {letter}"
-    # Fallback to alias map lookups (only canonical room labels).
-    for alias, canonical in _ROOM_ALIAS_MAP.items():
-        if canonical not in {"Room A", "Room B"}:
-            continue
-        alias_pattern = re.sub(r"\s+", r"\\s*", re.escape(alias))
-        if re.search(rf"\b{alias_pattern}\b", lowered):
-            return canonical
+        fallback_room = f"Room {letter}"
+    else:
+        for alias, canonical in _ROOM_ALIAS_MAP.items():
+            if canonical not in {"Room A", "Room B"}:
+                continue
+            alias_pattern = re.sub(r"\s+", r"\\s*", re.escape(alias))
+            if re.search(rf"\b{alias_pattern}\b", lowered):
+                fallback_room = canonical
+                break
+
+    if keyword_match:
+        return fallback_room
+
+    if fallback_room:
+        stripped = lowered.strip(" ,.!?")
+        simple_match = re.fullmatch(
+            r"(?:hi|hello|hey)?\s*(?:room\s*[ab]|punkt\.?\s*null)\s*(?:pls|please|thanks|thank you)?",
+            stripped,
+        )
+        if simple_match:
+            return fallback_room
+        segments = [line.strip(" ,.!?") for line in lowered.splitlines() if line.strip()]
+        if segments:
+            tail = segments[-1]
+            if re.fullmatch(
+                r"(?:hi|hello|hey)?\s*(?:room\s*[ab]|punkt\.?\s*null)\s*(?:pls|please|thanks|thank you)?",
+                tail,
+            ):
+                return fallback_room
+
     return None
 
 
@@ -1284,7 +1344,8 @@ def _compose_locked_message(
     return (
         "ROOM OPTIONS:\n"
         f"- {room_name} — Locked for {chosen_date}; fits {capacity_text}.\n\n"
-        "NEXT STEP:\nI'll prepare the offer with this configuration. Let me know if you need any adjustments."
+        "NEXT STEP:\n"
+        "- I'll prepare the offer with this configuration. Let me know if you need any adjustments."
     )
 
 
