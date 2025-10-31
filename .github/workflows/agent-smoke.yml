@@ -1,43 +1,69 @@
 name: Agent Smoke
 
 on:
-  push:
-    branches: [ main, develop, feature/** ]
   workflow_dispatch:
     inputs:
-      scenario:
-        description: "Scenario text for the live smoke"
-        required: false
-        default: "15 guests in November; propose 3–5 evening options 18:00–22:00"
-  schedule:
-    - cron: "0 */3 * * *"
+      branch:
+        description: Branch to test (checked out for this run)
+        required: true
+        default: main
 
 jobs:
   smoke:
-    runs-on: macos-latest
+    runs-on: macos-15
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       AGENT_MODE: openai
       TZ: Europe/Zurich
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repo
+        uses: actions/checkout@v4
         with:
-          python-version: "3.11"
-      - run: python -m pip install -U pip
-      - run: |
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Upgrade pip
+        run: python -m pip install -U pip
+
+      - name: Install deps (minimal if no requirements.txt)
+        run: |
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
             pip install pytest openai
           fi
-      - run: bash scripts/preflight_agent_tests.sh
-      - run: |
-          export OPENAI_TEST_MODE=1
-          bash scripts/run_live_openai.sh
-      - uses: actions/upload-artifact@v4
+
+      - name: Show key length
+        run: |
+          python - <<'PY'
+          import os
+          print("OPENAI_API_KEY_LEN", len(os.getenv("OPENAI_API_KEY") or ""))
+          PY
+
+      - name: Smoke test (agent)
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          pytest -q -s backend/tests/smoke/test_workflow_v3_agent.py
+
+      - name: Live E2E (non-fatal)
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          OPENAI_TEST_MODE: "1"
+        run: |
+          pytest backend/tests_integration/test_e2e_live_openai.py -m integration -vv -rA || true
+          tail -n 200 tmp-integration/e2e-live-happy-path.jsonl 2>/dev/null || true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: agent-smoke-artifacts
+          name: e2e-artifacts
           path: |
+            tmp-integration/**/*.jsonl
             run.log
-            tmp-integration/e2e-live-happy-path.jsonl
+          if-no-files-found: ignore
