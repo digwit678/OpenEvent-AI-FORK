@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from backend.domain import TaskType
+from backend.workflows.groups.negotiation_close import _handle_accept
+from backend.workflows.io.tasks import enqueue_task
+
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.utils.profiler import profile_step
@@ -26,7 +30,30 @@ def process(state: WorkflowState) -> GroupResult:
         return GroupResult(action="transition_missing_event", payload=payload, halt=True)
 
     state.current_step = 6
+    negotiation_state = event_entry.setdefault("negotiation_state", {"counter_count": 0, "manual_review_task_id": None})
     blockers = _collect_blockers(event_entry)
+    if negotiation_state.get("pending_acceptance"):
+        non_offer_blockers = [blocker for blocker in blockers if blocker != "accepted offer version"]
+        if not non_offer_blockers:
+            response = _handle_accept(event_entry)
+            state.add_draft_message(response["draft"])
+            negotiation_state["pending_acceptance"] = False
+            task_payload = {
+                "reason": "offer_accepted",
+                "offer_id": response["offer_id"],
+                "room": event_entry.get("locked_room_id"),
+                "date": event_entry.get("chosen_date"),
+                "total_amount": response.get("total_amount"),
+            }
+            enqueue_task(
+                state.db,
+                TaskType.ROUTE_POST_OFFER,
+                state.client_id or "",
+                event_entry.get("event_id"),
+                task_payload,
+            )
+            state.telemetry.final_action = "accepted"
+            blockers = _collect_blockers(event_entry)
     if blockers:
         blocker_text = "; ".join(blockers)
         draft = {

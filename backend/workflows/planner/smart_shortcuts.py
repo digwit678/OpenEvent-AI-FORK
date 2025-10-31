@@ -22,6 +22,7 @@ from backend.config.flags import env_flag
 date_process_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
 ConfirmationWindow = getattr(date_process_module, "ConfirmationWindow")
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
+from backend.services.products import normalise_product_payload
 
 # Feature flags ----------------------------------------------------------------
 
@@ -361,6 +362,25 @@ class _ShortcutPlanner:
         self._parsed = False
         self.preask_ack_lines: List[str] = []
         self._dag_block_reason: str = "none"
+
+    def _greeting_line(self) -> str:
+        profile = (self.state.client or {}).get("profile", {}) if self.state.client else {}
+        raw_name = profile.get("name") or self.state.message.from_name
+        if raw_name:
+            token = str(raw_name).strip().split()
+            if token:
+                first = token[0].strip(",. ")
+                if first:
+                    return f"Hello {first},"
+        return "Hello,"
+
+    def _with_greeting(self, body: str) -> str:
+        greeting = self._greeting_line()
+        if not body:
+            return greeting
+        if body.startswith(greeting):
+            return body
+        return f"{greeting}\n\n{body}"
 
     def handle_lightweight_turn(self) -> Optional[PlannerResult]:
         choice_context_result = self._maybe_handle_choice_context_reply()
@@ -800,7 +820,7 @@ class _ShortcutPlanner:
         self.telemetry.menus_phase = "none"
         self.state.telemetry.answered_question_first = True
         self._set_dag_block("room_requires_date")
-        return self._build_payload("\n".join(lines))
+        return self._build_payload(self._with_greeting("\n".join(lines)))
 
     def _should_execute_date_room_combo(self) -> bool:
         date_intent = next((intent for intent in self.verifiable if intent.type == "date_confirmation"), None)
@@ -1907,36 +1927,8 @@ class _ShortcutPlanner:
         return lookup
 
     def _normalise_products(self, payload: Any) -> List[Dict[str, Any]]:
-        if not payload:
-            return []
-        items = payload if isinstance(payload, list) else [payload]
-        normalised: List[Dict[str, Any]] = []
-        for entry in items:
-            if isinstance(entry, str):
-                name = entry.strip()
-                if name:
-                    normalised.append({"name": name})
-                continue
-            if not isinstance(entry, dict):
-                continue
-            name = str(entry.get("name") or "").strip()
-            if not name:
-                continue
-            item_data: Dict[str, Any] = {"name": name}
-            qty = entry.get("quantity")
-            if qty is not None:
-                try:
-                    item_data["quantity"] = max(1, int(qty))
-                except (TypeError, ValueError):
-                    pass
-            unit_price = entry.get("unit_price")
-            if unit_price is not None:
-                try:
-                    item_data["unit_price"] = float(unit_price)
-                except (TypeError, ValueError):
-                    pass
-            normalised.append(item_data)
-        return normalised
+        participant_count = self.user_info.get("participants") if isinstance(self.user_info.get("participants"), int) else None
+        return normalise_product_payload(payload, participant_count=participant_count)
 
     @staticmethod
     def _missing_item_display(item: Dict[str, Any]) -> str:

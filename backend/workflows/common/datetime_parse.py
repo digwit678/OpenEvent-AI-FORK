@@ -44,10 +44,10 @@ _DATE_ISO = re.compile(
     r"\b(?P<year>\d{4})-(?P<month>\d{1,2})-(?P<day>\d{1,2})\b"
 )
 _DATE_TEXTUAL_DMY = re.compile(
-    r"\b(?P<day>\d{1,2})\s+(?P<month>[A-Za-z]{3,9})(?:\s+(?P<year>\d{2,4}))?\b"
+    r"\b(?P<day>\d{1,2})(?:st|nd|rd|th)?\s+(?P<month>[A-Za-z]{3,9})(?:\s*,?\s*(?P<year>\d{2,4}))?\b"
 )
 _DATE_TEXTUAL_MDY = re.compile(
-    r"\b(?P<month>[A-Za-z]{3,9})\s+(?P<day>\d{1,2})(?:\s+(?P<year>\d{2,4}))?\b"
+    r"\b(?P<month>[A-Za-z]{3,9})\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(?P<year>\d{2,4}))?\b"
 )
 
 _TIME_RANGE = re.compile(

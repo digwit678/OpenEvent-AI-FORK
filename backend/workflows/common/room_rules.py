@@ -31,6 +31,7 @@ USER_INFO_KEYS = [
     "city",
     "participants",
     "room",
+    "layout",
     "name",
     "email",
     "type",

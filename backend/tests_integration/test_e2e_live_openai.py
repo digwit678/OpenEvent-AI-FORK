@@ -253,7 +253,9 @@ def test_happy_path_live_openai(live_ctx: LiveContext) -> None:
         dag_flag = first_telemetry.get("dag_blocked")
         assert dag_flag in (None, "none"), f"DAG should be clear on first turn; saw {dag_flag}"
 
-        assert first_body.startswith("AVAILABLE DATES:"), "Assistant must lead with AVAILABLE DATES header"
+        first_lines = first_body.splitlines()
+        assert first_lines and first_lines[0].startswith("Hello"), "Assistant must greet the client"
+        assert any(line.strip() == "AVAILABLE DATES:" for line in first_lines), "Assistant must include AVAILABLE DATES header"
         assert "NEXT STEP:" in first_body, "Assistant must include NEXT STEP guidance on first turn"
         offered_slots = _parse_slots(first_body)
         assert 3 <= len(offered_slots) <= 5, "Expected 3–5 suggested dates"

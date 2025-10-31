@@ -9,7 +9,7 @@ import json
 import os
 import re
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from backend.domain import IntentLabel
 
@@ -17,6 +17,89 @@ try:  # pragma: no cover - optional dependency resolved at runtime
     from openai import OpenAI  # type: ignore
 except Exception:  # pragma: no cover - library may be unavailable in tests
     OpenAI = None  # type: ignore
+
+
+_PRODUCT_SYNONYMS: Dict[str, List[str]] = {
+    "coffee & tea bar": [
+        "coffee service",
+        "coffee bar",
+        "coffee",
+        "tea service",
+        "barista",
+        "espresso",
+        "hot beverages",
+    ],
+    "classic apéro": [
+        "finger food",
+        "light catering",
+        "snacks",
+        "apero",
+        "aperitif",
+    ],
+    "premium apéro": [
+        "premium catering",
+        "deluxe snacks",
+        "upscale finger food",
+    ],
+    "prosecco service": [
+        "prosecco",
+        "sparkling wine",
+        "bubbles",
+        "welcome drink",
+    ],
+    "projector & screen": [
+        "projector",
+        "screen",
+        "beamer",
+        "presentation screen",
+    ],
+    "wireless microphone": [
+        "wireless microphone",
+        "wireless mic",
+        "microphone",
+        "mic",
+    ],
+    "hybrid streaming kit": [
+        "hybrid",
+        "streaming",
+        "video kit",
+        "virtual",
+        "live stream",
+    ],
+}
+
+
+def _heuristic_match_catalog_items(message: str, catalog: Sequence[str]) -> List[Tuple[str, float]]:
+    if not message or not catalog:
+        return []
+    lower_text = message.lower()
+    catalog_map = {name.lower(): name for name in catalog}
+
+    matches: List[Tuple[str, float]] = []
+
+    def record(name: str, score: float) -> None:
+        if not name:
+            return
+        normalized = name.lower()
+        for idx, (existing, existing_score) in enumerate(matches):
+            if existing.lower() == normalized:
+                if score > existing_score:
+                    matches[idx] = (existing, score)
+                return
+        matches.append((name, max(0.0, min(1.0, score))))
+
+    for lowered, canonical in catalog_map.items():
+        if lowered and lowered in lower_text:
+            record(canonical, 0.9)
+
+    for canonical_lower, synonyms in _PRODUCT_SYNONYMS.items():
+        canonical_name = catalog_map.get(canonical_lower)
+        if not canonical_name:
+            continue
+        if any(token in lower_text for token in synonyms):
+            record(canonical_name, 0.7)
+
+    return matches
 
 
 class AgentAdapter:
@@ -31,6 +114,11 @@ class AgentAdapter:
         """Return normalized entities for the event workflow."""
 
         raise NotImplementedError("extract_entities must be implemented by subclasses.")
+
+    def match_catalog_items(self, message: str, catalog: Sequence[str]) -> List[Tuple[str, float]]:
+        """Return (name, confidence) pairs for catalog entries that align with the message."""
+
+        return _heuristic_match_catalog_items(message, catalog)
 
     def describe(self) -> Dict[str, Any]:
         """Metadata describing the underlying adapter implementation."""
@@ -161,6 +249,22 @@ class StubAgentAdapter(AgentAdapter):
         if language_inline:
             entities["language"] = language_inline.group(1)
 
+        if any(token in lower_body for token in ("u-shape", "u shape", "u-shaped")):
+            entities["layout"] = "U-shape"
+        elif "boardroom" in lower_body:
+            entities["layout"] = "Boardroom"
+        elif any(token in lower_body for token in ("standing", "cocktail")):
+            entities["layout"] = "Standing reception"
+
+        if "projector" in lower_body or "screen" in lower_body or "beamer" in lower_body:
+            note_token = "projector"
+            entities["notes"] = f"{entities['notes']}, {note_token}" if entities.get("notes") else note_token
+
+        if "coffee" in lower_body or "barista" in lower_body or "espresso" in lower_body:
+            entities["catering"] = entities.get("catering") or "Coffee service"
+            note_token = "coffee service"
+            entities["notes"] = f"{entities['notes']}, {note_token}" if entities.get("notes") else note_token
+
         city_match = re.search(r"\bin\s+([A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+)?)\b", body)
         if city_match:
             entities["city"] = city_match.group(1)
@@ -190,7 +294,7 @@ class StubAgentAdapter(AgentAdapter):
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 groups = match.groups()
-                if len(groups) == 3 and groups[0].isdigit():
+                if len(groups) == 3 and groups[0].isdigit() and groups[1].isdigit():
                     day, month, year = map(int, groups)
                 elif len(groups) == 3 and groups[1].isdigit():
                     year, month, day = map(int, groups)

@@ -9,12 +9,17 @@ import re
 from backend.workflows.common.datetime_parse import to_iso_date
 from backend.workflows.common.room_rules import find_better_room_dates
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from backend.workflows.common.capacity import alternative_rooms, fits_capacity
 from backend.workflows.common.capture import capture_user_fields
 from backend.domain import IntentLabel
 from backend.workflows.common.gatekeeper import refresh_gatekeeper
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata
 from backend.utils.profiler import profile_step
+from backend.workflow.state import WorkflowStep, default_subflow, write_stage
+from backend.services.room_eval import evaluate_rooms, rank_rooms
+from backend.services.products import merge_product_requests, normalise_product_payload
+from backend.workflows.common.catalog import list_free_dates
 
 from ..condition.decide import room_status_on_date
 from ..llm.analysis import summarize_room_statuses
@@ -35,7 +40,10 @@ ROOM_SIZE_ORDER = {
 
 ROOM_CACHE_TTL_MINUTES = 10
 
-_LOCK_KEYWORD_PATTERN = re.compile(r"\b(lock|reserve|hold|secure|keep|confirm|book|take)\b", re.IGNORECASE)
+_LOCK_KEYWORD_PATTERN = re.compile(
+    r"\b(lock|reserve|hold|secure|keep|confirm|take|proceed|choose|select|pick|go\s+with)\b",
+    re.IGNORECASE,
+)
 _ROOM_ALIAS_MAP = {
     "room a": "Room A",
     "room b": "Room B",
@@ -49,6 +57,27 @@ def _auto_lock_min_confidence() -> float:
         return max(0.0, min(1.0, float(raw)))
     except (TypeError, ValueError):
         return 0.85
+
+
+def _extract_first_name(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return None
+    token = str(raw).strip()
+    if not token:
+        return None
+    first = token.split()[0].strip(",. ")
+    return first or None
+
+
+def _compose_room_greeting(state: WorkflowState) -> str:
+    profile = (state.client or {}).get("profile", {}) if state.client else {}
+    raw_name = profile.get("name")
+    if not raw_name and state.message:
+        raw_name = getattr(state.message, "from_name", None)
+    first = _extract_first_name(raw_name)
+    if not first:
+        return "Hello,"
+    return f"Hello {first},"
 
 
 def _utc_now() -> str:
@@ -75,6 +104,8 @@ def process(state: WorkflowState) -> GroupResult:
         return _reuse_locked_room(state, event_entry)
 
     state.current_step = 3
+    state.subflow_group = "room_availability"
+    write_stage(event_entry, current_step=WorkflowStep.STEP_3, subflow_group="room_availability")
     capture_user_fields(state, current_step=3, source=state.message.msg_id)
 
     hil_step = state.user_info.get("hil_approve_step")
@@ -84,6 +115,9 @@ def process(state: WorkflowState) -> GroupResult:
 
     chosen_date = event_entry.get("chosen_date")
     if not chosen_date:
+        return _detour_to_date(state, event_entry)
+
+    if not event_entry.get("date_confirmed"):
         return _detour_to_date(state, event_entry)
 
     requested_window = event_entry.get("requested_window") or {}
@@ -166,10 +200,42 @@ def process(state: WorkflowState) -> GroupResult:
     room_statuses = evaluate_room_statuses(state.db, chosen_date)
     summary = summarize_room_statuses(room_statuses)
     status_map = _flatten_statuses(room_statuses)
+    requested_products = event_entry.get("requested_products") or []
+    participant_count = None
+    if isinstance(state.user_info.get("participants"), int):
+        participant_count = state.user_info.get("participants")
+    else:
+        req_participants = (event_entry.get("requirements") or {}).get("number_of_participants")
+        try:
+            participant_count = int(req_participants) if req_participants is not None else None
+        except (TypeError, ValueError):
+            participant_count = None
+    user_products = state.user_info.get("products_add")
+    if user_products:
+        normalised_products = normalise_product_payload(user_products, participant_count=participant_count)
+        if normalised_products:
+            merged = merge_product_requests(requested_products, normalised_products)
+            if merged != requested_products:
+                event_entry["requested_products"] = merged
+                requested_products = merged
+                state.extras["persist"] = True
+                state.user_info["products_add"] = normalised_products
+    room_evaluations = evaluate_rooms(event_entry, requested_products)
+    evaluation_lookup = {evaluation.record.name.lower(): evaluation for evaluation in room_evaluations}
+    ranked_evaluations = rank_rooms(room_evaluations)
 
     preferred_room = _preferred_room(event_entry, user_requested_room)
     selected_room, selected_status = _select_room(preferred_room, status_map)
     requirements = event_entry.get("requirements") or {}
+    canonical_user_room = _canonical_room_name(user_requested_room, status_map) if user_requested_room else None
+    attendee_count = _coerce_attendees(requirements.get("number_of_participants"))
+    layout_pref = requirements.get("seating_layout")
+    if canonical_user_room and selected_room and canonical_user_room == selected_room:
+        evaluation = evaluation_lookup.get(selected_room.lower())
+        if not fits_capacity(selected_room, attendee_count, layout_pref) and not (
+            evaluation and evaluation.status in {"Available", "Option"}
+        ):
+            return _capacity_shortfall(state, event_entry, selected_room, chosen_date, attendee_count, layout_pref)
 
     outcome = selected_status or ROOM_OUTCOME_UNAVAILABLE
     auto_lock_score = _auto_lock_confidence(status_map, selected_room, outcome)
@@ -180,7 +246,7 @@ def process(state: WorkflowState) -> GroupResult:
         except ValueError:
             intent_label = IntentLabel.NON_EVENT
     intent_value = intent_label.value if isinstance(intent_label, IntentLabel) else str(intent_label).lower()
-    allow_auto = str(os.getenv("ALLOW_AUTO_ROOM_LOCK", "true")).lower() == "true"
+    allow_auto = str(os.getenv("AUTO_LOCK_SINGLE_ROOM", "false")).strip().lower() in {"1", "true", "yes", "on"}
     message_text = _message_text(state.message)
     text_explicit_room = _extract_explicit_lock_request(message_text)
     requested_room_id = user_requested_room or ""
@@ -189,7 +255,7 @@ def process(state: WorkflowState) -> GroupResult:
 
     explicit_room: Optional[str] = None
     explicit_reason: Optional[str] = None
-    explicit_policy_allowed = allow_auto
+    explicit_policy_allowed = True
     if text_explicit_room:
         explicit_room = _canonical_room_name(text_explicit_room, status_map) or (
             text_explicit_room if text_explicit_room in status_map else None
@@ -297,13 +363,15 @@ def process(state: WorkflowState) -> GroupResult:
             reason="blocked_by_policy_no_explicit_selection",
         )
 
-    draft_text = _compose_outcome_message(
-        status_map,
-        outcome,
-        selected_room,
+    draft_text, room_eval_payloads, manager_request_needed = _compose_outcome_message(
+        state,
+        ranked_evaluations,
         chosen_date,
+        event_entry.get("requested_window") or {},
+        selected_room,
         requirements,
-        preferred_room,
+        outcome,
+        state.db,
     )
 
     alt_dates: List[str] = []
@@ -324,7 +392,10 @@ def process(state: WorkflowState) -> GroupResult:
         "topic": outcome_topic,
         "room": selected_room,
         "status": outcome,
+        "room_evaluations": room_eval_payloads,
     }
+    if manager_request_needed:
+        draft_message["manager_special_request"] = True
     if alt_dates:
         draft_message["alt_dates_for_better_room"] = alt_dates
     state.add_draft_message(draft_message)
@@ -334,6 +405,7 @@ def process(state: WorkflowState) -> GroupResult:
         "selected_status": outcome,
         "requirements_hash": current_req_hash,
         "summary": summary,
+        "evaluations": room_eval_payloads,
     }
     event_entry["room_decision"] = {
         "status": outcome.lower(),
@@ -367,11 +439,14 @@ def process(state: WorkflowState) -> GroupResult:
         "summary": summary,
         "selected_room": selected_room,
         "selected_status": outcome,
+        "room_evaluations": room_eval_payloads,
         "draft_messages": state.draft_messages,
         "thread_state": state.thread_state,
         "context": state.context_snapshot,
         "persisted": True,
     }
+    if manager_request_needed:
+        payload["manager_special_request"] = True
     if alt_dates:
         payload["alt_dates_for_better_room"] = alt_dates
     gatekeeper = refresh_gatekeeper(event_entry)
@@ -616,6 +691,12 @@ def _detour_to_date(state: WorkflowState, event_entry: dict) -> GroupResult:
         current_step=2,
         date_confirmed=False,
         thread_state="Awaiting Client Response",
+    )
+    write_stage(
+        event_entry,
+        current_step=WorkflowStep.STEP_2,
+        subflow_group="date_confirmation",
+        caller_step=WorkflowStep.STEP_3,
     )
     append_audit_entry(event_entry, 3, 2, "room_requires_confirmed_date")
     state.current_step = 2
@@ -947,7 +1028,7 @@ def _append_alt_dates(message: str, alt_dates: List[str]) -> str:
         next_step_idx = lines.index("NEXT STEP:")
     except ValueError:
         next_step_idx = len(lines)
-    insert_block: List[str] = ["", "ALTERNATE DATES:"]
+    insert_block: List[str] = ["", "Alternative dates:"]
     insert_block.extend(f"- {date}" for date in alt_dates)
     insert_block.append("")
     updated = lines[:next_step_idx] + insert_block + lines[next_step_idx:]
@@ -955,93 +1036,234 @@ def _append_alt_dates(message: str, alt_dates: List[str]) -> str:
 
 
 def _compose_outcome_message(
-    status_map: Dict[str, str],
-    status: str,
-    room_name: Optional[str],
+    state: WorkflowState,
+    evaluations: List["RoomEvaluation"],
     chosen_date: str,
-    requirements: Dict[str, Any],
-    preferred_room: Optional[str],
-) -> str:
-    """[Trigger] Build the draft message for the selected outcome."""
-
-    participants = requirements.get("number_of_participants")
-    layout = requirements.get("seating_layout")
-
-    if participants and layout:
-        capacity_text = f"{participants} guests in {layout}"
-    elif participants:
-        capacity_text = f"{participants} guests"
-    elif layout:
-        capacity_text = f"a {layout} layout"
-    else:
-        capacity_text = "your requirements"
-
-    lines: List[str] = ["ROOM OPTIONS:"]
-
-    candidates = _ordered_room_candidates(status_map, room_name, preferred_room)
-
-    if not candidates:
-        lines.append(f"- No rooms currently open on {chosen_date} for {capacity_text}.")
-        guidance = "Share alternative dates or adjustments and I'll re-check availability."
-    else:
-        for candidate_name, candidate_status in candidates:
-            status_label = (
-                "Available"
-                if candidate_status == ROOM_OUTCOME_AVAILABLE
-                else "On option"
-            )
-            recommendation = " — Recommended" if candidate_name == room_name else ""
-            lines.append(
-                f"- {candidate_name} — {status_label} on {chosen_date}; fits {capacity_text}{recommendation}."
-            )
-        guidance = "Confirm if you'd like me to lock one of these rooms or check another option."
-
-    lines.extend(["", "NEXT STEP:", guidance])
-    return "\n".join(lines)
-
-
-def _ordered_room_candidates(
-    status_map: Dict[str, str],
+    requested_window: Dict[str, Any],
     selected_room: Optional[str],
-    preferred_room: Optional[str],
-    max_items: int = 3,
-) -> List[Tuple[str, str]]:
-    """[Trigger] Determine the list of room candidates to surface to the user."""
+    requirements: Dict[str, Any],
+    overall_status: str,
+    db: Dict[str, Any],
+) -> Tuple[str, List[Dict[str, Any]], bool]:
+    """Build the room availability reply using enriched evaluation data."""
 
-    allowed_statuses = {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}
-    order: List[str] = []
+    time_range = ""
+    start_time = requested_window.get("start_time")
+    end_time = requested_window.get("end_time")
+    if start_time and end_time:
+        time_range = f"{start_time}–{end_time}"
 
-    def _maybe_add(room: Optional[str]) -> None:
-        if not room:
-            return
-        status = status_map.get(room)
-        if status not in allowed_statuses:
-            return
-        if room not in order:
-            order.append(room)
+    top_evaluations = evaluations[:3]
+    available_exists = any(evaluation.status == "Available" for evaluation in evaluations)
+    manager_special_needed = not available_exists or any(e.missing_products for e in evaluations)
 
-    _maybe_add(selected_room)
-    _maybe_add(preferred_room)
+    descriptor = chosen_date + (f" {time_range}" if time_range else "")
+    greeting = _compose_room_greeting(state)
+    context_line = f"Thanks for the details — here's how {descriptor.strip()} is looking on our side."
 
-    def sort_key(room: str) -> int:
-        return ROOM_SIZE_ORDER.get(room, len(ROOM_SIZE_ORDER) + 1)
+    lines: List[str] = [greeting, context_line, "", "ROOM OPTIONS:"]
+    if top_evaluations and available_exists:
+        for evaluation in top_evaluations:
+            date_options = _room_date_options(evaluation, requested_window, db, chosen_date)
+            lines.append(
+                _format_evaluation_line(
+                    evaluation,
+                    chosen_date,
+                    time_range,
+                    selected_room,
+                    date_options,
+                )
+            )
+    elif top_evaluations:
+        descriptor = f"{chosen_date}" + (f" {time_range}" if time_range else "")
+        lines.append(f"- None of our rooms are free on {descriptor} for your current setup.")
+        lines.append("")
+        lines.append("INFO:")
+        for evaluation in top_evaluations:
+            reason_text = "; ".join(evaluation.reasons) if evaluation.reasons else "No availability at that time."
+            lines.append(f"- {evaluation.record.name}: {reason_text}")
+    else:
+        lines.append("- No room data available right now.")
 
-    available = sorted(
-        (room for room, status in status_map.items() if status == ROOM_OUTCOME_AVAILABLE),
-        key=sort_key,
+    if manager_special_needed:
+        lines.extend(
+            [
+                "",
+                "NEXT STEP:",
+                "- Share another date or time so I can check again.",
+                "- Adjust the guest count or layout.",
+                "- Ask me to create a manager special request to explore alternatives.",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                "NEXT STEP:",
+                "- Tell me which room you'd like me to reserve.",
+                "- Need a different configuration? Let me know and I’ll check additional options.",
+            ]
+        )
+
+    room_payloads = [evaluation.to_payload() for evaluation in top_evaluations]
+    return "\n".join(lines), room_payloads, manager_special_needed
+
+
+def _room_date_options(
+    evaluation: "RoomEvaluation",
+    requested_window: Dict[str, Any],
+    db: Dict[str, Any],
+    chosen_date: str,
+) -> List[str]:
+    iso_value = requested_window.get("date_iso")
+    anchor_date = None
+    if iso_value:
+        try:
+            anchor_date = datetime.fromisoformat(iso_value).date()
+        except ValueError:
+            anchor_date = None
+    if anchor_date is None and chosen_date:
+        try:
+            anchor_date = datetime.strptime(chosen_date, "%d.%m.%Y").date()
+        except ValueError:
+            anchor_date = None
+    if anchor_date is None:
+        return []
+
+    raw_dates = list_free_dates(
+        anchor_month=anchor_date.month,
+        anchor_day=anchor_date.day,
+        count=3,
+        db=db,
+        preferred_room=evaluation.record.name,
     )
-    options = sorted(
-        (room for room, status in status_map.items() if status == ROOM_OUTCOME_OPTION),
-        key=sort_key,
+    formatted: List[str] = []
+    for iso in raw_dates:
+        display = format_iso_date_to_ddmmyyyy(iso) or iso
+        if display not in formatted:
+            formatted.append(display)
+    return formatted
+
+
+def _format_evaluation_line(
+    evaluation: "RoomEvaluation",
+    chosen_date: str,
+    time_range: str,
+    selected_room: Optional[str],
+    date_options: List[str],
+) -> str:
+    line = f"- {evaluation.record.name} — {evaluation.status} on {chosen_date}"
+    if time_range:
+        line += f" {time_range}"
+
+    segments: List[str] = []
+    if evaluation.coverage_total > 0:
+        segments.append(f"Req fit: {evaluation.coverage_matched}/{evaluation.coverage_total}")
+    elif evaluation.coverage_matched:
+        segments.append(f"Req fit: {evaluation.coverage_matched}")
+    if evaluation.matched_features:
+        segments.append("Matched: " + ", ".join(f"{feature} ✓" for feature in evaluation.matched_features))
+    if evaluation.missing_features:
+        segments.append("Missing: " + ", ".join(f"{feature} ✗" for feature in evaluation.missing_features))
+    if evaluation.capacity_slack is not None:
+        if evaluation.capacity_slack >= 0:
+            segments.append(f"Capacity slack: +{evaluation.capacity_slack}")
+        else:
+            segments.append(f"Capacity shortfall: {evaluation.capacity_slack}")
+    if evaluation.reasons and evaluation.status != "Available":
+        segments.append("; ".join(evaluation.reasons))
+    if date_options:
+        segments.append("Alternative dates: " + ", ".join(date_options))
+    if evaluation.available_products:
+        product_labels = ", ".join(item.get("name", "Item") for item in evaluation.available_products if item.get("name"))
+        if product_labels:
+            segments.append(f"Products: {product_labels}")
+    if evaluation.missing_products:
+        missing_labels = ", ".join(item.get("name", "Item") for item in evaluation.missing_products if item.get("name"))
+        if missing_labels:
+            segments.append(f"Missing products: {missing_labels}")
+
+    if segments:
+        line += "; " + "; ".join(segments)
+    if selected_room and evaluation.record.name.lower() == selected_room.lower():
+        line += " — Recommended"
+    return line
+
+
+def _coerce_attendees(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _capacity_shortfall(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    room_name: str,
+    chosen_date: str,
+    attendees: Optional[int],
+    layout: Optional[str],
+) -> GroupResult:
+    descriptor = f"{attendees} guests" if attendees else "your group"
+    if layout:
+        descriptor = f"{descriptor} in {layout}"
+    lines = [
+        "ROOM OPTIONS:",
+        f"- {room_name} cannot comfortably host {descriptor} on {chosen_date}.",
+    ]
+    alternatives = alternative_rooms(event_entry.get("requested_window", {}).get("date_iso"), attendees, layout)
+    for alt in alternatives[:3]:
+        cap_text = ""
+        if layout and alt.get("layout_max"):
+            cap_text = f"{layout} up to {alt['layout_max']}"
+        elif alt.get("max"):
+            cap_text = f"up to {alt['max']} guests"
+        else:
+            cap_text = "flexible capacity"
+        lines.append(f"- {alt['name']} — {cap_text}.")
+    lines.extend(
+        [
+            "",
+            "NEXT STEP:",
+            "- Proceed with Room Selection? Reply with an alternative room and I'll recheck availability.",
+        ]
     )
-
-    for room in available:
-        _maybe_add(room)
-    for room in options:
-        _maybe_add(room)
-
-    ordered = [(room, status_map[room]) for room in order[:max_items]]
-    return ordered
+    message = "\n".join(lines)
+    draft = {
+        "body": message,
+        "step": 3,
+        "topic": "room_capacity_shortfall",
+        "requires_approval": True,
+    }
+    state.add_draft_message(draft)
+    update_event_metadata(event_entry, current_step=3, thread_state="Awaiting Client Response")
+    state.current_step = 3
+    state.set_thread_state("Awaiting Client Response")
+    state.extras["persist"] = True
+    gatekeeper = refresh_gatekeeper(event_entry)
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
+    payload = {
+        "client_id": state.client_id,
+        "event_id": state.event_id,
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "draft_messages": state.draft_messages,
+        "alternatives": alternatives,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+        "gatekeeper_passed": dict(gatekeeper),
+    }
+    state.telemetry.answered_question_first = True
+    return GroupResult(action="room_capacity_blocked", payload=payload, halt=True)
 
 
 def _compose_locked_message(

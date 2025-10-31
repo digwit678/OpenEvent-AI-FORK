@@ -14,6 +14,9 @@ class IntentLabel(str, Enum):
     EDIT_DATE = "edit_date"
     EDIT_ROOM = "edit_room"
     EDIT_REQUIREMENTS = "edit_requirements"
+    CAPABILITY_QNA = "capability_qna"
+    RESUME_MAIN_FLOW = "resume_main_flow"
+    MESSAGE_MANAGER = "message_manager"
     NON_EVENT = "other"
 
     @classmethod
@@ -36,6 +39,7 @@ class TaskType(str, Enum):
     ROUTE_POST_OFFER = "route_post_offer"
     ROUTE_SITE_VISIT = "route_site_visit"
     SITE_VISIT_HIL_REVIEW = "site_visit_hil_review"
+    MESSAGE_MANAGER = "message_manager"
 
 
 class TaskStatus(str, Enum):

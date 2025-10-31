@@ -255,6 +255,11 @@ def create_event_entry(db: Dict[str, Any], event_data: Dict[str, Any]) -> str:
         "room_eval_hash": None,
         "offer_id": None,
         "audit": [],
+        "review_state": {
+            "state": "none",
+            "reviewed_at": None,
+            "message": None,
+        },
         "event_data": event_data,
         "msgs": [],
         "captured": {},
@@ -303,7 +308,10 @@ def ensure_event_defaults(event: Dict[str, Any]) -> None:
 
     event.setdefault("status", EventStatus.LEAD.value)
     event.setdefault("current_step", 1)
+    event.setdefault("current_step_stage", "step_1")
     event.setdefault("caller_step", None)
+    event.setdefault("caller_step_stage", None)
+    event.setdefault("subflow_group", "intake")
     event.setdefault("thread_state", "In Progress")
     event.setdefault("chosen_date", None)
     event.setdefault("date_confirmed", False)
@@ -315,11 +323,17 @@ def ensure_event_defaults(event: Dict[str, Any]) -> None:
     event.setdefault("offer_id", None)
     event.setdefault("offer_hash", None)
     event.setdefault("audit", [])
+    event.setdefault(
+        "review_state",
+        {"state": "none", "reviewed_at": None, "message": None},
+    )
     event.setdefault("offers", [])
     event.setdefault("current_offer_id", None)
     event.setdefault("offer_sequence", 0)
     event.setdefault("products", [])
     event.setdefault("selected_products", [])
+    event.setdefault("requested_products", [])
+    event.setdefault("selected_catering", [])
     event.setdefault("negotiation_state", {"counter_count": 0, "manual_review_task_id": None})
     event.setdefault("transition_ready", False)
     event.setdefault("captured", {})

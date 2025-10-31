@@ -80,7 +80,8 @@ def explain_step7_gate(event_entry: Dict[str, Any]) -> Dict[str, Any]:
         missing.append("locked_room_id")
 
     offer_status = str(event_entry.get("offer_status") or "").strip().lower()
-    if offer_status not in _ACCEPTED_STATUSES:
+    offer_gate_ready = bool(event_entry.get("offer_gate_ready"))
+    if offer_status not in _ACCEPTED_STATUSES and not offer_gate_ready:
         missing.append("offer_status")
 
     event_data = event_entry.get("event_data") or {}

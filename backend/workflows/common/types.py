@@ -173,6 +173,7 @@ class WorkflowState:
     extras: Dict[str, Any] = field(default_factory=dict)
     current_step: Optional[int] = None
     caller_step: Optional[int] = None
+    subflow_group: Optional[str] = None
     thread_state: Optional[str] = None
     draft_messages: List[Dict[str, Any]] = field(default_factory=list)
     audit_log: List[Dict[str, Any]] = field(default_factory=list)
