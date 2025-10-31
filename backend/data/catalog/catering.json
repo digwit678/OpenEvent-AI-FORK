@@ -1,0 +1,52 @@
+{
+  "products": [
+    {
+      "id": "catering-classic-apero",
+      "name": "Classic Apéro",
+      "category": "Catering",
+      "unit": "per_person",
+      "unit_price": 18.0,
+      "unavailable_in": []
+    },
+    {
+      "id": "catering-premium-apero",
+      "name": "Premium Apéro",
+      "category": "Catering",
+      "unit": "per_person",
+      "unit_price": 28.0,
+      "unavailable_in": []
+    },
+    {
+      "id": "beverage-prosecco",
+      "name": "Prosecco Service",
+      "category": "Beverages",
+      "unit": "per_bottle",
+      "unit_price": 35.0,
+      "unavailable_in": ["atelier-room-a"]
+    },
+    {
+      "id": "beverage-coffee-bar",
+      "name": "Coffee & Tea Bar",
+      "category": "Beverages",
+      "unit": "per_person",
+      "unit_price": 7.5,
+      "unavailable_in": []
+    },
+    {
+      "id": "equipment-hybrid-kit",
+      "name": "Hybrid Streaming Kit",
+      "category": "Equipment",
+      "unit": "per_event",
+      "unit_price": 420.0,
+      "unavailable_in": ["atelier-room-d"]
+    },
+    {
+      "id": "equipment-wireless-mics",
+      "name": "Wireless Microphone",
+      "category": "Equipment",
+      "unit": "per_unit",
+      "unit_price": 25.0,
+      "unavailable_in": []
+    }
+  ]
+}
