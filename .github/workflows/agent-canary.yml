@@ -14,7 +14,7 @@ on:
       scenario:
         description: Tiny scenario prompt
         required: false
-        default: "15 guests in November; propose 2 evening options 18:00–22:00 for Punkt.Null (Bern)."
+        default: "15 guests in November; propose 3 evening slots (HH:MM) between 18:00 and 22:00 for Punkt.Null (Bern). Mention '15 guests' once."
 
 jobs:
   canary:
@@ -45,7 +45,11 @@ jobs:
           try:
               r=client.responses.create(
                   model=model,
-                  instructions="You are the OpenEvent assistant. Be concise; output plain text lines. Always mention the attendee count '15' explicitly.",
+                  instructions=(
+                      "You are the OpenEvent assistant. Respond with 3 to 5 bullet lines. "
+                      "Each line must start with '- ' followed by an HH:MM time between 18:00 and 22:00 inclusive, "
+                      "then a concise description. Always mention the attendee count '15'."
+                  ),
                   input=[{"role":"user","content":scenario}]
               )
               text=getattr(r,"output_text","").strip()
