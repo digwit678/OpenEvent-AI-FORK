@@ -35,11 +35,13 @@ jobs:
       - name: Agent-style canary
         run: |
           python - <<'PY'
-          import os, sys
+          import os, re, sys
           from openai import OpenAI
           client=OpenAI()
           model=os.getenv("OPENAI_AGENT_MODEL","gpt-4o-mini")
           scenario=os.getenv("SCENARIO","ping")
+          print("canary_model:", model)
+          print("canary_scenario:", scenario)
           try:
               r=client.responses.create(
                   model=model,
@@ -47,10 +49,32 @@ jobs:
                   input=[{"role":"user","content":scenario}]
               )
               text=getattr(r,"output_text","").strip()
-              print("canary_text:",text[:400])
-              sys.exit(0 if len(text)>=5 else 4)
           except Exception as e:
               print("canary_exception:",e); sys.exit(1)
+          print("canary_text:", text[:400] or "<empty>")
+          if len(text) < 5:
+              print("canary_too_short"); sys.exit(4)
+          times = re.findall(r'\b([0-2]?\d):([0-5]\d)\b', text)
+          unique_times = []
+          for hour_str, minute_str in times:
+              hour = int(hour_str)
+              minute = int(minute_str)
+              time_str = f"{hour:02d}:{minute:02d}"
+              if time_str not in unique_times:
+                  unique_times.append(time_str)
+          print("canary_times:", ", ".join(unique_times) or "<none>")
+          if len(unique_times) < 3 or len(unique_times) > 5:
+              print("canary_time_count_invalid:", len(unique_times)); sys.exit(5)
+          for time_str in unique_times:
+              hour = int(time_str[:2])
+              minute = int(time_str[3:])
+              if hour < 18 or hour > 22:
+                  print("canary_time_out_of_range:", time_str); sys.exit(6)
+              if hour == 22 and minute > 0:
+                  print("canary_time_past_cutoff:", time_str); sys.exit(6)
+          if "15" not in text:
+              print("canary_missing_attendee_count"); sys.exit(7)
+          sys.exit(0)
           PY
       - uses: actions/upload-artifact@v4
         if: always()
