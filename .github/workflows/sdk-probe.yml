@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TZ: Europe/Zurich
+      AGENT_MODE: openai
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
