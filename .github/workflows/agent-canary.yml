@@ -1,0 +1,61 @@
+name: OpenAI Agent Canary
+
+on:
+  push:
+    branches: [ main, develop, feature/** ]
+  schedule:
+    - cron: "15 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to test (checked out for this run)
+        required: true
+        default: main
+      scenario:
+        description: Tiny scenario prompt
+        required: false
+        default: "15 guests in November; propose 2 evening options 18:00–22:00 for Punkt.Null (Bern)."
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Europe/Zurich
+      AGENT_MODE: openai
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      SCENARIO: ${{ inputs.scenario }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || 'main' }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -U pip && pip install openai==2.6.1
+      - name: Agent-style canary
+        run: |
+          python - <<'PY'
+          import os, sys
+          from openai import OpenAI
+          client=OpenAI()
+          model=os.getenv("OPENAI_AGENT_MODEL","gpt-4o-mini")
+          scenario=os.getenv("SCENARIO","ping")
+          try:
+              r=client.responses.create(
+                  model=model,
+                  instructions="You are the OpenEvent assistant. Be concise; output plain text lines.",
+                  input=[{"role":"user","content":scenario}]
+              )
+              text=getattr(r,"output_text","").strip()
+              print("canary_text:",text[:400])
+              sys.exit(0 if len(text)>=5 else 4)
+          except Exception as e:
+              print("canary_exception:",e); sys.exit(1)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent-canary-logs
+          path: |
+            **/*.log
+          if-no-files-found: ignore

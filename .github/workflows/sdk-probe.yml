@@ -1,0 +1,55 @@
+name: OpenAI SDK Probe
+
+on:
+  push:
+    branches: [ main, develop, feature/** ]
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to test (checked out for this run)
+        required: true
+        default: main
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Europe/Zurich
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || 'main' }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -U pip && pip install openai==2.6.1
+      - name: SDK probe
+        run: |
+          python - <<'PY'
+          import os, sys
+          from openai import OpenAI
+          key=os.getenv("OPENAI_API_KEY")
+          if not key or len(key)<20: print("key_missing"); sys.exit(2)
+          c=OpenAI()
+          ms=list(c.models.list().data)
+          if not ms: print("no_models"); sys.exit(3)
+          try:
+              m=os.getenv("OPENAI_AGENT_MODEL","gpt-4o-mini")
+              r=c.responses.create(model=m,instructions="Respond with 'pong'.",input=[{"role":"user","content":"ping"}])
+              text=getattr(r,"output_text","").strip()
+              ok=("pong" in text.lower()) or bool(text)
+              print("probe_text:",text[:200])
+              sys.exit(0 if ok else 4)
+          except Exception as e:
+              print("exception:",e); sys.exit(1)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sdk-probe-logs
+          path: |
+            **/*.log
+          if-no-files-found: ignore
