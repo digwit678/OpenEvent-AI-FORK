@@ -1,0 +1,1080 @@
+{
+  "events": [
+    {
+      "event_id": "8933378b-eb8e-4914-8812-25d6edef46b7",
+      "created_at": "2025-10-30T03:55:40.004727",
+      "status": "Lead",
+      "current_step": 6,
+      "caller_step": null,
+      "thread_state": "Awaiting Client Response",
+      "chosen_date": "10.09.2025",
+      "date_confirmed": true,
+      "locked_room_id": "Room A",
+      "requirements": {
+        "number_of_participants": null,
+        "seating_layout": null,
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": null
+      },
+      "requirements_hash": "f7a9acafde4167480c885e89b816fbcf57924d7fad42d61dc2be9fd643135ae7",
+      "room_eval_hash": "f7a9acafde4167480c885e89b816fbcf57924d7fad42d61dc2be9fd643135ae7",
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2025-10-30T03:55:40Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 3,
+          "reason": "room_preference_updated"
+        },
+        {
+          "ts": "2025-10-30T03:55:40Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 2,
+          "reason": "room_requires_confirmed_date"
+        },
+        {
+          "ts": "2025-10-30T03:55:40Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 1,
+          "reason": "date_confirmed"
+        },
+        {
+          "ts": "2025-10-30T03:55:40Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 3,
+          "reason": "requirements_updated"
+        },
+        {
+          "ts": "2025-10-30T03:55:40Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 4,
+          "reason": "room_hil_approved"
+        },
+        {
+          "ts": "2025-10-30T03:55:40Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_generated"
+        },
+        {
+          "ts": "2025-10-30T03:55:40Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 1,
+          "reason": "return_to_caller"
+        },
+        {
+          "ts": "2025-10-30T03:56:44Z",
+          "actor": "system",
+          "from_step": 6,
+          "to_step": 3,
+          "reason": "requirements_updated"
+        },
+        {
+          "ts": "2025-10-30T03:56:44Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 4,
+          "reason": "room_hil_approved"
+        },
+        {
+          "ts": "2025-10-30T03:56:44Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_generated"
+        },
+        {
+          "ts": "2025-10-30T03:56:44Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 6,
+          "reason": "return_to_caller"
+        },
+        {
+          "ts": "2025-10-30T03:57:08Z",
+          "actor": "system",
+          "from_step": 6,
+          "to_step": 3,
+          "reason": "requirements_updated"
+        },
+        {
+          "ts": "2025-10-30T03:57:08Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 4,
+          "reason": "room_hil_approved"
+        },
+        {
+          "ts": "2025-10-30T03:57:08Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_generated"
+        },
+        {
+          "ts": "2025-10-30T03:57:08Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 6,
+          "reason": "return_to_caller"
+        },
+        {
+          "ts": "2025-10-30T03:58:57Z",
+          "actor": "system",
+          "from_step": 6,
+          "to_step": 3,
+          "reason": "requirements_updated"
+        },
+        {
+          "ts": "2025-10-30T03:58:57Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 4,
+          "reason": "room_hil_approved"
+        },
+        {
+          "ts": "2025-10-30T03:58:57Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_generated"
+        },
+        {
+          "ts": "2025-10-30T03:58:57Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 6,
+          "reason": "return_to_caller"
+        },
+        {
+          "ts": "2025-10-30T04:00:03Z",
+          "actor": "system",
+          "from_step": 6,
+          "to_step": 3,
+          "reason": "requirements_updated"
+        },
+        {
+          "ts": "2025-10-30T04:00:03Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 4,
+          "reason": "room_hil_approved"
+        },
+        {
+          "ts": "2025-10-30T04:00:03Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_generated"
+        },
+        {
+          "ts": "2025-10-30T04:00:03Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 6,
+          "reason": "return_to_caller"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "01.01.2025",
+        "Status": "Lead",
+        "Event Date": "10.09.2025",
+        "Name": "Test Client",
+        "Email": "client@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "09:00",
+        "End Time": "17:00",
+        "Preferred Room": "Room A",
+        "Number of Participants": "20",
+        "Type of Event": "Not specified",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "lead",
+        "room-cycle",
+        "hil-room",
+        "accept",
+        "retry"
+      ],
+      "captured": {
+        "preferred_room": "Room A",
+        "date": "2025-09-10",
+        "event_date": "10.09.2025",
+        "start_time": "09:00",
+        "end_time": "17:00"
+      },
+      "verified": {
+        "date": "2025-09-10",
+        "event_date": "10.09.2025",
+        "start_time": "09:00",
+        "end_time": "17:00"
+      },
+      "captured_sources": [
+        "lead:date",
+        "lead:event_date",
+        "lead:start_time",
+        "lead:end_time",
+        "lead:preferred_room"
+      ],
+      "deferred_intents": [
+        "room_selection"
+      ],
+      "requested_window": {
+        "display_date": "10.09.2025",
+        "date_iso": "2025-09-10",
+        "start_time": "09:00",
+        "end_time": "17:00",
+        "start": "2025-09-10T09:00:00+02:00",
+        "end": "2025-09-10T17:00:00+02:00",
+        "tz": "Europe/Zurich",
+        "hash": "085997cd9e5aa5b7d18c3920f84e542379a446d3c8a4fe0cf0e9fd58e5e1fa06",
+        "times_inherited": false,
+        "source_message_id": "lead",
+        "updated_at": "2025-10-30T03:55:40Z",
+        "cached": false
+      },
+      "offer_hash": "69bf45eeacc5d64eb2ba85e66f693181dc0b01cb2f2199e3fea955a1c5200319",
+      "offers": [
+        {
+          "offer_id": "8933378b-eb8e-4914-8812-25d6edef46b7-OFFER-1",
+          "version": 1,
+          "status": "Superseded",
+          "created_at": "2025-10-30T03:55:40+00:00",
+          "total_amount": 0.0,
+          "pricing_inputs": {
+            "line_items": []
+          },
+          "superseded_at": "2025-10-30T03:56:44+00:00"
+        },
+        {
+          "offer_id": "8933378b-eb8e-4914-8812-25d6edef46b7-OFFER-2",
+          "version": 2,
+          "status": "Superseded",
+          "created_at": "2025-10-30T03:56:44+00:00",
+          "total_amount": 0.0,
+          "pricing_inputs": {
+            "line_items": []
+          },
+          "superseded_at": "2025-10-30T03:57:08+00:00"
+        },
+        {
+          "offer_id": "8933378b-eb8e-4914-8812-25d6edef46b7-OFFER-3",
+          "version": 3,
+          "status": "Superseded",
+          "created_at": "2025-10-30T03:57:08+00:00",
+          "total_amount": 0.0,
+          "pricing_inputs": {
+            "line_items": []
+          },
+          "superseded_at": "2025-10-30T03:58:57+00:00"
+        },
+        {
+          "offer_id": "8933378b-eb8e-4914-8812-25d6edef46b7-OFFER-4",
+          "version": 4,
+          "status": "Superseded",
+          "created_at": "2025-10-30T03:58:57+00:00",
+          "total_amount": 0.0,
+          "pricing_inputs": {
+            "line_items": []
+          },
+          "superseded_at": "2025-10-30T04:00:03+00:00"
+        },
+        {
+          "offer_id": "8933378b-eb8e-4914-8812-25d6edef46b7-OFFER-5",
+          "version": 5,
+          "status": "Draft",
+          "created_at": "2025-10-30T04:00:03+00:00",
+          "total_amount": 0.0,
+          "pricing_inputs": {
+            "line_items": []
+          }
+        }
+      ],
+      "current_offer_id": "8933378b-eb8e-4914-8812-25d6edef46b7-OFFER-5",
+      "offer_sequence": 5,
+      "products": [],
+      "selected_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null,
+        "pending_acceptance": true
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": true,
+        "step3": true,
+        "step4": true,
+        "step7": false
+      },
+      "decision": "pending",
+      "gatekeeper_explain": {
+        "ready": false,
+        "missing_now": [
+          "offer_status"
+        ],
+        "reason": "offer_status"
+      },
+      "logs": [
+        {
+          "ts": "2025-10-30T03:55:40Z",
+          "actor": "workflow",
+          "action": "date_confirmed",
+          "details": {
+            "intent": "event_request",
+            "requested_window": {
+              "date": "2025-09-10",
+              "start": "2025-09-10T09:00:00+02:00",
+              "end": "2025-09-10T17:00:00+02:00",
+              "tz": "Europe/Zurich"
+            },
+            "times_inherited": false,
+            "source_message_id": "lead",
+            "reused": false
+          }
+        }
+      ],
+      "room_decision": {
+        "status": "locked",
+        "reason": "hil_approved",
+        "evaluated_at": "2025-10-30T04:00:03Z"
+      },
+      "room_eval_cache": {
+        "window_hash": "085997cd9e5aa5b7d18c3920f84e542379a446d3c8a4fe0cf0e9fd58e5e1fa06",
+        "requirements_hash": "9d6ae7ddd431d5b0f2aa6e94cffe7ec352ae729509729e6956080a4b1adc5996",
+        "expires_at": "2025-10-30T04:10:03Z",
+        "draft_message": {
+          "body": "ROOM OPTIONS:\n- Room A — On option on 10.09.2025; fits 20 guests — Recommended.\n- Room B — Available on 10.09.2025; fits 20 guests.\n- Room C — Available on 10.09.2025; fits 20 guests.\n\nNEXT STEP:\nConfirm if you'd like me to lock one of these rooms or check another option.",
+          "step": 3,
+          "topic": "room_option",
+          "room": "Room A",
+          "status": "Option",
+          "requires_approval": true,
+          "created_at_step": 3
+        },
+        "pending_decision": {
+          "selected_room": "Room A",
+          "selected_status": "Option",
+          "requirements_hash": "9d6ae7ddd431d5b0f2aa6e94cffe7ec352ae729509729e6956080a4b1adc5996",
+          "summary": "Room availability summary — Room A: Option; Room B: Available; Room C: Available."
+        }
+      },
+      "pricing_inputs": {
+        "line_items": []
+      },
+      "offer_status": "Draft"
+    }
+  ],
+  "clients": {
+    "client@example.com": {
+      "profile": {
+        "name": "Test Client",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "lead",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "Hello, we need a room for 20 people.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2025-09-10",
+            "start_time": "09:00",
+            "end_time": "17:00",
+            "city": null,
+            "participants": 20,
+            "room": "Room A",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "10.09.2025"
+          }
+        },
+        {
+          "msg_id": "room-cycle",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "Checking availability.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "hil-room",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "HIL approval for room",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": 3,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "accept",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "We accept the offer as presented.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "retry",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "Providing requested confirmation info.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "lead",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "Hello, we need a room for 20 people.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2025-09-10",
+            "start_time": "09:00",
+            "end_time": "17:00",
+            "city": null,
+            "participants": 20,
+            "room": "Room A",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "10.09.2025"
+          }
+        },
+        {
+          "msg_id": "hil-room",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "HIL approval for room",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": 3,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "accept",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "We accept the offer as presented.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "retry",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "Providing requested confirmation info.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "lead",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "Hello, we need a room for 20 people.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2025-09-10",
+            "start_time": "09:00",
+            "end_time": "17:00",
+            "city": null,
+            "participants": 20,
+            "room": "Room A",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "10.09.2025"
+          }
+        },
+        {
+          "msg_id": "hil-room",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "HIL approval for room",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": 3,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "accept",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "We accept the offer as presented.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "retry",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "Providing requested confirmation info.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "lead",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "Hello, we need a room for 20 people.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2025-09-10",
+            "start_time": "09:00",
+            "end_time": "17:00",
+            "city": null,
+            "participants": 20,
+            "room": "Room A",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "10.09.2025"
+          }
+        },
+        {
+          "msg_id": "hil-room",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "HIL approval for room",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": 3,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "accept",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "We accept the offer as presented.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "retry",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "Providing requested confirmation info.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "lead",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "Hello, we need a room for 20 people.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2025-09-10",
+            "start_time": "09:00",
+            "end_time": "17:00",
+            "city": null,
+            "participants": 20,
+            "room": "Room A",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": "10.09.2025"
+          }
+        },
+        {
+          "msg_id": "hil-room",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "HIL approval for room",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": 3,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "accept",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "We accept the offer as presented.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "retry",
+          "ts": "2025-01-01T09:00:00Z",
+          "subject": "Event request",
+          "body_preview": "Providing requested confirmation info.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        }
+      ],
+      "event_ids": [
+        "8933378b-eb8e-4914-8812-25d6edef46b7"
+      ]
+    }
+  },
+  "tasks": []
+}

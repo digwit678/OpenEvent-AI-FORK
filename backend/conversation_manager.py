@@ -1,31 +1,44 @@
+"""Legacy conversation helpers for the deprecated UI flow."""
+
+# DEPRECATED: Legacy wrapper kept for compatibility. Do not add workflow logic here.
+# Intake/Date/Availability live in backend/workflows/groups/* and are orchestrated by workflow_email.py.
+
 import json
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
-from openai import OpenAI
-from models import EventInformation, ConversationState
-from dotenv import load_dotenv
 
-load_dotenv()
+from dotenv import load_dotenv
+from openai import OpenAI
+
+from backend.domain import ConversationState, EventInformation
+
+load_dotenv(override=False)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # In-memory storage for demo
 active_conversations: dict[str, ConversationState] = {}
 
+# Resolve static data paths relative to this module so imports work from any CWD.
+BASE_PATH = Path(__file__).resolve().parent
+
+
 # Load reference data
 def load_room_info():
     """Load room information from JSON file"""
     try:
-        with open('room_info.json', 'r', encoding='utf-8') as f:
+        with (BASE_PATH / "room_info.json").open('r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
         return {"rooms": []}
 
+
 def load_catering_menu():
     """Load catering menu from JSON file"""
     try:
-        with open('catering_menu.json', 'r', encoding='utf-8') as f:
+        with (BASE_PATH / "catering_menu.json").open('r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
         return {"catering_packages": [], "beverages": {}}
