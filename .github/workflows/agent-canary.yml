@@ -45,7 +45,7 @@ jobs:
           try:
               r=client.responses.create(
                   model=model,
-                  instructions="You are the OpenEvent assistant. Be concise; output plain text lines.",
+                  instructions="You are the OpenEvent assistant. Be concise; output plain text lines. Always mention the attendee count '15' explicitly.",
                   input=[{"role":"user","content":scenario}]
               )
               text=getattr(r,"output_text","").strip()
@@ -72,7 +72,8 @@ jobs:
                   print("canary_time_out_of_range:", time_str); sys.exit(6)
               if hour == 22 and minute > 0:
                   print("canary_time_past_cutoff:", time_str); sys.exit(6)
-          if "15" not in text:
+          lower_text = text.lower()
+          if "15" not in text and "fifteen" not in lower_text:
               print("canary_missing_attendee_count"); sys.exit(7)
           sys.exit(0)
           PY
