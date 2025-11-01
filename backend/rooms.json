@@ -1,0 +1,98 @@
+{
+  "rooms": [
+    {
+      "id": "atelier-room-a",
+      "name": "Room A",
+      "capacity_max": 40,
+      "capacity_min": 12,
+      "capacity_by_layout": {
+        "theatre": 40,
+        "u_shape": 22,
+        "workshop": 28
+      },
+      "features": ["stage", "screen", "projector", "parking"],
+      "calendar_id": "atelier-room-a",
+      "buffer_before_min": 30,
+      "buffer_after_min": 30,
+      "max_parallel_events": 1
+    },
+    {
+      "id": "atelier-room-b",
+      "name": "Room B",
+      "capacity_max": 60,
+      "capacity_min": 20,
+      "capacity_by_layout": {
+        "theatre": 60,
+        "classroom": 36,
+        "workshop": 32
+      },
+      "features": ["screen", "projector", "sound_system", "parking"],
+      "calendar_id": "atelier-room-b",
+      "buffer_before_min": 30,
+      "buffer_after_min": 30,
+      "max_parallel_events": 1
+    },
+    {
+      "id": "atelier-room-c",
+      "name": "Room C",
+      "capacity_max": 80,
+      "capacity_min": 30,
+      "capacity_by_layout": {
+        "theatre": 80,
+        "banquet": 56,
+        "workshop": 40
+      },
+      "features": ["stage", "sound_system", "screen"],
+      "calendar_id": "atelier-room-c",
+      "buffer_before_min": 45,
+      "buffer_after_min": 45,
+      "max_parallel_events": 1
+    },
+    {
+      "id": "atelier-room-d",
+      "name": "Room D",
+      "capacity_max": 26,
+      "capacity_min": 10,
+      "capacity_by_layout": {
+        "boardroom": 16,
+        "workshop": 22
+      },
+      "features": ["screen", "projector"],
+      "calendar_id": "atelier-room-d",
+      "buffer_before_min": 20,
+      "buffer_after_min": 20,
+      "max_parallel_events": 1
+    },
+    {
+      "id": "atelier-room-e",
+      "name": "Room E",
+      "capacity_max": 120,
+      "capacity_min": 40,
+      "capacity_by_layout": {
+        "theatre": 120,
+        "banquet": 80
+      },
+      "features": ["stage", "sound_system", "parking"],
+      "calendar_id": "atelier-room-e",
+      "buffer_before_min": 60,
+      "buffer_after_min": 60,
+      "max_parallel_events": 1
+    },
+    {
+      "id": "atelier-room-f",
+      "name": "Room F",
+      "capacity_max": 45,
+      "capacity_min": 18,
+      "capacity_by_layout": {
+        "theatre": 45,
+        "u_shape": 20,
+        "workshop": 30
+      },
+      "features": ["screen", "projector", "parking"],
+      "calendar_id": "atelier-room-f",
+      "buffer_before_min": 30,
+      "buffer_after_min": 30,
+      "max_parallel_events": 1
+    }
+  ]
+}

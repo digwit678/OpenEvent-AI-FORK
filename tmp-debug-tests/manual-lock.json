@@ -1,0 +1,372 @@
+{
+  "events": [
+    {
+      "event_id": "fd3c9a6b-da0e-4bf7-90b6-2c2199ba876d",
+      "created_at": "2025-10-29T00:33:45.713693",
+      "status": "Lead",
+      "current_step": 3,
+      "caller_step": null,
+      "thread_state": "Awaiting Client Response",
+      "chosen_date": "02.11.2025",
+      "date_confirmed": true,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": null,
+        "seating_layout": null,
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": "Room B"
+      },
+      "requirements_hash": "e790bf5a47d4d294b4c230fadbb3acbb540019b43977db4dd91f2c6a59103cfd",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2025-10-29T00:33:45Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-10-29T00:33:45Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-10-29T00:33:45Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 3,
+          "reason": "date_confirmed"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "02.11.2025",
+        "Status": "Lead",
+        "Event Date": "02.11.2025",
+        "Name": "Client",
+        "Email": "client@example.com",
+        "Phone": "2025110218",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "18:00",
+        "End Time": "22:00",
+        "Preferred Room": "Room B",
+        "Number of Participants": "15",
+        "Type of Event": "Not specified",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "1",
+        "2",
+        "3"
+      ],
+      "captured": {
+        "contact": {
+          "phone": "2025110218"
+        },
+        "date": "2025-11-02",
+        "event_date": "02.11.2025",
+        "start_time": "18:00",
+        "end_time": "22:00",
+        "preferred_room": "Room B"
+      },
+      "verified": {
+        "date": "2025-11-02",
+        "event_date": "02.11.2025",
+        "start_time": "18:00",
+        "end_time": "22:00"
+      },
+      "captured_sources": [
+        "2:start_time",
+        "2:end_time",
+        "2:contact.phone",
+        "2:date",
+        "2:event_date",
+        "3:preferred_room"
+      ],
+      "deferred_intents": [
+        "contact_update"
+      ],
+      "requested_window": {
+        "display_date": "02.11.2025",
+        "date_iso": "2025-11-02",
+        "start_time": "18:00",
+        "end_time": "22:00",
+        "start": "2025-11-02T18:00:00+01:00",
+        "end": "2025-11-02T22:00:00+01:00",
+        "tz": "Europe/Zurich",
+        "hash": "066a75ceb229665dca51bbbb4147418416e16925f96e7e22a1e86328c6b29780",
+        "times_inherited": false,
+        "source_message_id": "2",
+        "updated_at": "2025-10-29T00:33:45Z",
+        "cached": false
+      },
+      "offer_hash": null,
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "selected_products": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": true,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "gatekeeper_explain": {
+        "ready": false,
+        "missing_now": [
+          "locked_room_id",
+          "offer_status"
+        ],
+        "reason": "locked_room_id"
+      },
+      "logs": [
+        {
+          "ts": "2025-10-29T00:33:45Z",
+          "actor": "workflow",
+          "action": "date_confirmed",
+          "details": {
+            "intent": "confirm_date_partial",
+            "requested_window": {
+              "date": "2025-11-02",
+              "start": "2025-11-02T18:00:00+01:00",
+              "end": "2025-11-02T22:00:00+01:00",
+              "tz": "Europe/Zurich"
+            },
+            "times_inherited": false,
+            "source_message_id": "2",
+            "reused": false
+          }
+        }
+      ],
+      "room_pending_decision": {
+        "selected_room": "Room B",
+        "selected_status": "Option",
+        "requirements_hash": "e790bf5a47d4d294b4c230fadbb3acbb540019b43977db4dd91f2c6a59103cfd",
+        "summary": "Room availability summary — Room A: Available; Room B: Option; Room C: Available."
+      },
+      "room_decision": {
+        "status": "option",
+        "reason": "awaiting_confirmation",
+        "evaluated_at": "2025-10-29T00:33:45Z"
+      },
+      "room_eval_cache": {
+        "window_hash": "066a75ceb229665dca51bbbb4147418416e16925f96e7e22a1e86328c6b29780",
+        "requirements_hash": "e790bf5a47d4d294b4c230fadbb3acbb540019b43977db4dd91f2c6a59103cfd",
+        "expires_at": "2025-10-29T00:43:45Z",
+        "draft_message": {
+          "body": "ROOM OPTIONS:\n- Room B — On option on 02.11.2025; fits your requirements — Recommended.\n- Room A — Available on 02.11.2025; fits your requirements.\n- Room C — Available on 02.11.2025; fits your requirements.\n\nNEXT STEP:\nConfirm if you'd like me to lock one of these rooms or check another option.",
+          "step": 3,
+          "topic": "room_option",
+          "room": "Room B",
+          "status": "Option",
+          "requires_approval": true,
+          "created_at_step": 3
+        },
+        "pending_decision": {
+          "selected_room": "Room B",
+          "selected_status": "Option",
+          "requirements_hash": "e790bf5a47d4d294b4c230fadbb3acbb540019b43977db4dd91f2c6a59103cfd",
+          "summary": "Room availability summary — Room A: Available; Room B: Option; Room C: Available."
+        }
+      }
+    }
+  ],
+  "clients": {
+    "client@example.com": {
+      "profile": {
+        "name": "Client",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "1",
+          "ts": "2025-11-01T09:00:00Z",
+          "subject": "Availability",
+          "body_preview": "Need evening dates for 15 people in November",
+          "intent": "event_request",
+          "confidence": 0.925,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "November",
+            "participants": 15,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "2",
+          "ts": "2025-11-02T09:00:00Z",
+          "subject": "Confirm date",
+          "body_preview": "We will take 2025-11-02 18:00-22:00",
+          "intent": "confirm_date_partial",
+          "confidence": 0.93,
+          "user_info": {
+            "date": null,
+            "start_time": "18:00",
+            "end_time": "22:00",
+            "city": null,
+            "participants": null,
+            "room": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "2025110218",
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "3",
+          "ts": "2025-11-02T10:00:00Z",
+          "subject": "Room selection",
+          "body_preview": "Please lock Room B for that date",
+          "intent": "event_request",
+          "confidence": 0.925,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": "Room B",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "4",
+          "ts": "2025-11-02T10:05:00Z",
+          "subject": "Room confirm",
+          "body_preview": "Just confirming Room B is perfect, lock it in",
+          "intent": "event_request",
+          "confidence": 0.775,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": "Room B",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "event_date": null
+          }
+        }
+      ],
+      "event_ids": [
+        "fd3c9a6b-da0e-4bf7-90b6-2c2199ba876d"
+      ]
+    }
+  },
+  "tasks": [
+    {
+      "task_id": "e00f424a-b909-496d-baf9-ebed87ff1ff8",
+      "created_at": "2025-10-29T00:33:45.721782",
+      "type": "manual_review",
+      "status": "pending",
+      "client_id": "client@example.com",
+      "event_id": "fd3c9a6b-da0e-4bf7-90b6-2c2199ba876d",
+      "payload": {
+        "subject": "Room confirm",
+        "snippet": "Just confirming Room B is perfect, lock it in",
+        "ts": "2025-11-02T10:05:00Z",
+        "reason": "manual_review_required"
+      },
+      "notes": ""
+    }
+  ]
+}
