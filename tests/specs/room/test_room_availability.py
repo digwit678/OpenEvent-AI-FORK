@@ -2,6 +2,14 @@ import json
 from hashlib import sha256
 from pathlib import Path
 
+import importlib
+
+from backend.workflows.common.requirements import requirements_hash
+from backend.workflows.common.types import IncomingMessage, WorkflowState
+
+room_module = importlib.import_module("backend.workflows.groups.room_availability.trigger.process")
+from backend.workflows.groups.room_availability.trigger.process import process as room_process
+
 from ...utils.seeds import set_seed
 
 FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "room_search_cases.json"
@@ -47,3 +55,66 @@ def test_lock_room_records_hash():
     assert lock_payload["locked_room_id"] == "R1"
     assert lock_payload["room_eval_hash"] == requirements_hash
     assert lock_payload["next_step"] == 4
+
+
+def _build_room_state(tmp_path: Path) -> WorkflowState:
+    msg = IncomingMessage(msg_id="msg-1", from_name=None, from_email=None, subject=None, body=None, ts=None)
+    state = WorkflowState(message=msg, db_path=tmp_path / "events.json", db={"events": []})
+    state.event_id = "EVT-1"
+    state.current_step = 3
+    state.user_info = {}
+    return state
+
+
+def test_room_process_structured_payload(tmp_path, monkeypatch):
+    state = _build_room_state(tmp_path)
+    requirements = {"number_of_participants": 80, "seating_layout": "theatre"}
+    req_hash = requirements_hash(requirements)
+    event_entry = {
+        "event_id": state.event_id,
+        "chosen_date": "15.03.2025",
+        "requirements": requirements,
+        "requirements_hash": req_hash,
+        "room_eval_hash": None,
+        "locked_room_id": None,
+        "thread_state": "Awaiting Client",
+    }
+    state.event_entry = event_entry
+
+    def fake_evaluate(db, target_date):
+        return [{"Room A": "Available"}, {"Room B": "Option"}]
+
+    monkeypatch.setattr(room_module, "evaluate_room_statuses", fake_evaluate)
+    monkeypatch.setattr(room_module, "_needs_better_room_alternatives", lambda *_: False)
+
+    result = room_process(state)
+    draft = state.draft_messages[-1]
+
+    assert result.action == "room_avail_result"
+    assert draft["footer"].startswith("Step: 3 Room Availability")
+    assert draft["table_blocks"][0]["header"] == ["Room", "Status"]
+    assert any(action["type"] == "select_room" for action in draft["actions"])
+
+
+def test_room_process_skips_when_hash_cached(tmp_path, monkeypatch):
+    state = _build_room_state(tmp_path)
+    requirements = {"number_of_participants": 60}
+    req_hash = requirements_hash(requirements)
+    state.event_entry = {
+        "event_id": state.event_id,
+        "chosen_date": "15.03.2025",
+        "requirements": requirements,
+        "requirements_hash": req_hash,
+        "room_eval_hash": req_hash,
+        "locked_room_id": "Room A",
+        "thread_state": "Awaiting Client",
+    }
+
+    def fail_evaluate(*args, **kwargs):  # pragma: no cover - should not be called
+        raise AssertionError("Room evaluation should be skipped when hashes match")
+
+    monkeypatch.setattr(room_module, "evaluate_room_statuses", fail_evaluate)
+
+    result = room_process(state)
+    assert result.action == "room_eval_skipped"
+    assert not state.draft_messages

@@ -11,21 +11,40 @@ from pydantic import ValidationError
 
 from backend.agents.guardrails import safe_envelope
 from backend.agents.openevent_agent import OpenEventAgent
-from backend.agents.tools.dates import SuggestDatesInput, tool_suggest_dates
+from backend.agents.tools.dates import (
+    SuggestDatesInput,
+    ParseDateIntentInput,
+    tool_suggest_dates,
+    tool_parse_date_intent,
+)
 from backend.agents.tools.rooms import (
     EvaluateRoomsInput,
     RoomStatusInput,
+    CapacityCheckInput,
     tool_evaluate_rooms,
     tool_room_status_on_date,
+    tool_capacity_check,
 )
 from backend.agents.tools.offer import (
+    ComposeOfferInput,
+    PersistOfferInput,
+    ModifyProductInput,
+    FollowUpSuggestInput,
     ListCateringInput,
     ListProductsInput,
     SendOfferInput,
+    tool_build_offer_draft,
+    tool_persist_offer,
+    tool_add_product_to_offer,
+    tool_remove_product_from_offer,
+    tool_follow_up_suggest,
     tool_list_catering,
     tool_list_products,
     tool_send_offer,
 )
+from backend.agents.tools.negotiation import NegotiationInput, tool_negotiate_offer
+from backend.agents.tools.transition import TransitionInput, tool_transition_sync
+from backend.agents.tools.confirmation import ConfirmationInput, tool_classify_confirmation
 
 logger = logging.getLogger(__name__)
 
@@ -37,19 +56,24 @@ ENGINE_TOOL_ALLOWLIST: Dict[str, Set[str]] = {
     "3": {
         "tool_room_status_on_date",
         "tool_capacity_check",
+        "tool_evaluate_rooms",
     },
     "4": {
         "tool_build_offer_draft",
+        "tool_persist_offer",
         "tool_list_products",
         "tool_list_catering",
         "tool_add_product_to_offer",
         "tool_remove_product_from_offer",
+        "tool_send_offer",
     },
     "5": {
-        "tool_site_visit_slots",
+        "tool_negotiate_offer",
+        "tool_transition_sync",
     },
     "7": {
         "tool_follow_up_suggest",
+        "tool_classify_confirmation",
     },
 }
 
@@ -125,6 +149,105 @@ TOOL_SCHEMAS: Dict[str, Dict[str, Any]] = {
         "required": ["event_entry", "offer_id", "to_email"],
         "additionalProperties": False,
     },
+    "tool_parse_date_intent": {
+        "type": "object",
+        "properties": {
+            "message": {"type": "string"},
+        },
+        "required": ["message"],
+        "additionalProperties": False,
+    },
+    "tool_capacity_check": {
+        "type": "object",
+        "properties": {
+            "room": {"type": "string"},
+            "attendees": {"type": ["integer", "null"], "minimum": 1},
+            "layout": {"type": ["string", "null"]},
+        },
+        "required": ["room"],
+        "additionalProperties": False,
+    },
+    "tool_build_offer_draft": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "user_info": {"type": ["object", "null"]},
+        },
+        "required": ["event_entry"],
+        "additionalProperties": False,
+    },
+    "tool_persist_offer": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "pricing_inputs": {"type": "object"},
+            "user_info": {"type": ["object", "null"]},
+        },
+        "required": ["event_entry", "pricing_inputs"],
+        "additionalProperties": False,
+    },
+    "tool_add_product_to_offer": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "product": {"type": "object"},
+        },
+        "required": ["event_entry", "product"],
+        "additionalProperties": False,
+    },
+    "tool_remove_product_from_offer": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "product": {"type": "object"},
+        },
+        "required": ["event_entry", "product"],
+        "additionalProperties": False,
+    },
+    "tool_follow_up_suggest": {
+        "type": "object",
+        "properties": {
+            "status": {"type": ["string", "null"]},
+            "pending_actions": {
+                "type": ["array", "null"],
+                "items": {"type": "string"},
+            },
+        },
+        "additionalProperties": False,
+    },
+    "tool_negotiate_offer": {
+        "type": "object",
+        "properties": {
+            "event_id": {"type": "string"},
+            "client_email": {"type": "string"},
+            "message": {"type": "string"},
+            "msg_id": {"type": ["string", "null"]},
+        },
+        "required": ["event_id", "client_email", "message"],
+        "additionalProperties": False,
+    },
+    "tool_transition_sync": {
+        "type": "object",
+        "properties": {
+            "event_id": {"type": "string"},
+            "client_email": {"type": "string"},
+            "message": {"type": "string"},
+            "msg_id": {"type": ["string", "null"]},
+        },
+        "required": ["event_id", "client_email", "message"],
+        "additionalProperties": False,
+    },
+    "tool_classify_confirmation": {
+        "type": "object",
+        "properties": {
+            "event_id": {"type": "string"},
+            "client_email": {"type": "string"},
+            "message": {"type": "string"},
+            "msg_id": {"type": ["string", "null"]},
+        },
+        "required": ["event_id", "client_email", "message"],
+        "additionalProperties": False,
+    },
 }
 
 
@@ -134,6 +257,7 @@ class ToolDefinition:
     input_model: Any
     requires_db: bool = False
     schema: Dict[str, Any] = field(default_factory=dict)
+    use_event_entry: bool = False
 
 
 TOOL_DEFINITIONS: Dict[str, ToolDefinition] = {
@@ -172,6 +296,68 @@ TOOL_DEFINITIONS: Dict[str, ToolDefinition] = {
         input_model=SendOfferInput,
         requires_db=False,
         schema=TOOL_SCHEMAS["tool_send_offer"],
+    ),
+    "tool_parse_date_intent": ToolDefinition(
+        handler=tool_parse_date_intent,
+        input_model=ParseDateIntentInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_parse_date_intent"],
+    ),
+    "tool_capacity_check": ToolDefinition(
+        handler=tool_capacity_check,
+        input_model=CapacityCheckInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_capacity_check"],
+    ),
+    "tool_build_offer_draft": ToolDefinition(
+        handler=tool_build_offer_draft,
+        input_model=ComposeOfferInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_build_offer_draft"],
+        use_event_entry=True,
+    ),
+    "tool_persist_offer": ToolDefinition(
+        handler=tool_persist_offer,
+        input_model=PersistOfferInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_persist_offer"],
+        use_event_entry=True,
+    ),
+    "tool_add_product_to_offer": ToolDefinition(
+        handler=tool_add_product_to_offer,
+        input_model=ModifyProductInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_add_product_to_offer"],
+    ),
+    "tool_remove_product_from_offer": ToolDefinition(
+        handler=tool_remove_product_from_offer,
+        input_model=ModifyProductInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_remove_product_from_offer"],
+    ),
+    "tool_follow_up_suggest": ToolDefinition(
+        handler=tool_follow_up_suggest,
+        input_model=FollowUpSuggestInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_follow_up_suggest"],
+    ),
+    "tool_negotiate_offer": ToolDefinition(
+        handler=tool_negotiate_offer,
+        input_model=NegotiationInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_negotiate_offer"],
+    ),
+    "tool_transition_sync": ToolDefinition(
+        handler=tool_transition_sync,
+        input_model=TransitionInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_transition_sync"],
+    ),
+    "tool_classify_confirmation": ToolDefinition(
+        handler=tool_classify_confirmation,
+        input_model=ConfirmationInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_classify_confirmation"],
     ),
 }
 
@@ -434,10 +620,31 @@ def execute_tool_call(
                 policy.current_step,
                 reason="db_required",
             )
-        result = definition.handler(db, params)
+        if definition.use_event_entry:
+            event_entry_data = getattr(params, "event_entry", None)
+            if event_entry_data is None:
+                raise ToolExecutionError(
+                    tool_name,
+                    policy.current_step,
+                    reason="schema_validation_failed",
+                    extra={"errors": ["event_entry missing"]},
+                )
+            result = definition.handler(db, event_entry_data, params)
+        else:
+            result = definition.handler(db, params)
     else:
-        # Some handlers expect only params, others accept (params) with optional payload.
-        result = definition.handler(params)
+        if definition.use_event_entry:
+            event_entry_data = getattr(params, "event_entry", None)
+            if event_entry_data is None:
+                raise ToolExecutionError(
+                    tool_name,
+                    policy.current_step,
+                    reason="schema_validation_failed",
+                    extra={"errors": ["event_entry missing"]},
+                )
+            result = definition.handler(event_entry_data, params)
+        else:
+            result = definition.handler(params)
 
     if hasattr(result, "dict"):
         content = result.dict()
