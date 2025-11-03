@@ -4,6 +4,11 @@ from pydantic import BaseModel
 import uuid
 import os
 import re
+import atexit
+import subprocess
+import socket
+import time
+import webbrowser
 from datetime import datetime
 from typing import Optional
 from backend.domain import ConversationState, EventInformation
@@ -43,6 +48,53 @@ app.add_middleware(
 
 # CENTRALIZED EVENTS DATABASE
 EVENTS_FILE = "events_database.json"
+FRONTEND_DIR = Path(__file__).resolve().parents[1] / "atelier-ai-frontend"
+FRONTEND_PORT = int(os.getenv("FRONTEND_PORT", "3000"))
+_frontend_process: Optional[subprocess.Popen] = None
+
+
+def _is_port_in_use(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _launch_frontend() -> Optional[subprocess.Popen]:
+    if os.getenv("AUTO_LAUNCH_FRONTEND", "1") != "1":
+        return None
+    if _is_port_in_use(FRONTEND_PORT):
+        print(f"[Frontend] Port {FRONTEND_PORT} already in use – assuming frontend is running.")
+        return None
+    if not FRONTEND_DIR.exists():
+        print(f"[Frontend][WARN] Directory {FRONTEND_DIR} not found; skipping auto-launch.")
+        return None
+    cmd = ["npm", "run", "dev", "--", "-p", str(FRONTEND_PORT), "-H", "0.0.0.0"]
+    try:
+        proc = subprocess.Popen(cmd, cwd=str(FRONTEND_DIR))
+        print(f"[Frontend] npm dev server starting on http://localhost:{FRONTEND_PORT}")
+        return proc
+    except FileNotFoundError:
+        print("[Frontend][WARN] npm not found on PATH; skipping auto-launch.")
+    except Exception as exc:
+        print(f"[Frontend][ERROR] Failed to launch npm dev server: {exc}")
+    return None
+
+
+def _open_browser_when_ready() -> None:
+    if os.getenv("AUTO_OPEN_FRONTEND", "1") != "1":
+        return
+    target_url = f"http://localhost:{FRONTEND_PORT}"
+    for _ in range(20):
+        if _is_port_in_use(FRONTEND_PORT):
+            try:
+                webbrowser.open_new_tab(target_url)
+            except Exception as exc:  # pragma: no cover - environment dependent
+                print(f"[Frontend][WARN] Unable to open browser automatically: {exc}")
+            else:
+                print(f"[Frontend] Opened browser window at {target_url}")
+            return
+        time.sleep(0.5)
+
 
 def load_events_database():
     """Load all events from the database file"""
@@ -632,6 +684,32 @@ async def root():
         "total_saved_events": len(database["events"])
     }
 
+
+def _stop_frontend_process() -> None:
+    global _frontend_process
+    proc = _frontend_process
+    if not proc:
+        return
+    try:
+        if proc.poll() is None:
+            proc.terminate()
+            proc.wait(timeout=5)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    finally:
+        _frontend_process = None
+
+
+atexit.register(_stop_frontend_process)
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    _frontend_process = _launch_frontend()
+    _open_browser_when_ready()
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    finally:
+        _stop_frontend_process()
