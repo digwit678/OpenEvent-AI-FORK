@@ -33,13 +33,14 @@ from backend.workflow_email import (
     update_task_status as wf_update_task_status,
     enqueue_task as wf_enqueue_task,
 )
+from backend.workflow.hil_resume import hil_resume
 from backend.api.agent_router import router as agent_router
 from backend.llm.verbalizer_agent import verbalize_gui_reply, _split_required_sections
-from backend.workflows.advance import advance_after_review
 from backend.llm.intent_classifier import classify_intent as classify_turn_intent
 from backend.workflows.io.database import find_event_idx_by_id, last_event_for_email
 from backend.workflows.qna.router import route_general_qna
 from backend.workflows.qna.templates import build_qna_info_and_next_step
+from backend.workflows.advance import advance_after_review
 from scripts.ports import is_port_in_use, first_free_port, kill_port_process
 
 app = FastAPI(title="AI Event Manager")
@@ -936,24 +937,30 @@ async def approve_task(task_id: str, request: TaskDecisionRequest):
 
     event_id = task.get("event_id")
     client_email = (task.get("client_id") or "").lower() or None
+    task_type = task.get("type")
     message_payload = (task.get("payload") or {}).get("message")
     step_before = None
+    event_entry: Optional[Dict[str, Any]] = None
 
     if event_id:
         for event in db.get("events", []):
             if event.get("event_id") == event_id:
                 ensure_event_defaults(event)
-                step_before = event.get("current_step")
-                review_state = event.setdefault(
-                    "review_state",
-                    {"state": "none", "reviewed_at": None, "message": None},
-                )
-                if review_state.get("message"):
-                    message_payload = review_state.get("message")
-                review_state["state"] = "approved"
-                review_state["reviewed_at"] = datetime.utcnow().isoformat() + "Z"
-                review_state["message"] = None
+                event_entry = event
+                step_before = event_entry.get("current_step")
+                if task_type == TaskType.MANUAL_REVIEW.value:
+                    review_state = event_entry.setdefault(
+                        "review_state",
+                        {"state": "none", "reviewed_at": None, "message": None},
+                    )
+                    if review_state.get("message"):
+                        message_payload = review_state.get("message")
+                    review_state["state"] = "approved"
+                    review_state["reviewed_at"] = datetime.utcnow().isoformat() + "Z"
+                    review_state["message"] = None
                 break
+
+    hil_payload = hil_resume(db, event_id, task_id, client_email=client_email) if event_id else None
 
     try:
         wf_update_task_status(db, task_id, "approved", request.notes)
@@ -963,21 +970,40 @@ async def approve_task(task_id: str, request: TaskDecisionRequest):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to approve task: {exc}") from exc
 
-    assistant_payload: Dict[str, Any] = {"assistant_text": "", "draft_messages": [], "action": "manual_review_approved", "payload": {}}
+    assistant_payload: Dict[str, Any] = {
+        "assistant_text": "",
+        "draft_messages": [],
+        "action": "manual_review_approved",
+        "payload": {},
+    }
 
-    if message_payload and event_id:
-        result = advance_after_review(message_payload)
-        draft_messages = result.get("draft_messages") or []
-        fallback_text = _wf_compose_reply(result or {})
+    if hil_payload:
+        assistant_payload = hil_payload
+        step_after = assistant_payload.get("step") or step_before
+        status_after = assistant_payload.get("status")
+        DEV_LOGGER.info(
+            "workflow.hil.resume",
+            extra={
+                "event_id": event_id,
+                "task_id": task_id,
+                "step_before": step_before,
+                "step_after": step_after,
+            },
+        )
+        _append_conversation_message(event_id, client_email, assistant_payload.get("assistant_text", ""))
+    elif message_payload and event_id:
+        workflow_result = advance_after_review(message_payload) or {}
+        draft_messages = workflow_result.get("draft_messages") or []
+        fallback_text = _wf_compose_reply(workflow_result or {})
         verbalized = verbalize_gui_reply(draft_messages, fallback_text, client_email=message_payload.get("from_email"))
         combined = verbalized or fallback_text or ""
         assistant_payload = {
             "assistant_text": combined,
             "draft_messages": draft_messages,
-            "action": result.get("action"),
-            "payload": result,
-            "step": result.get("step") or (draft_messages[0].get("step") if draft_messages else None),
-            "status": result.get("status"),
+            "action": workflow_result.get("action"),
+            "payload": workflow_result,
+            "step": workflow_result.get("step") or (draft_messages[0].get("step") if draft_messages else None),
+            "status": workflow_result.get("status"),
         }
 
         db_after = wf_load_db()
@@ -1010,8 +1036,10 @@ async def approve_task(task_id: str, request: TaskDecisionRequest):
         _append_conversation_message(event_id, client_email, combined)
     else:
         step_after = step_before
-        status_after = None
-        _append_conversation_message(event_id, client_email, assistant_payload["assistant_text"])
+        status_after = event_entry.get("status") if event_entry else None
+        final_text = assistant_payload.get("assistant_text")
+        if final_text:
+            _append_conversation_message(event_id, client_email, final_text)
 
     thread_id = next(
         (
@@ -1056,6 +1084,7 @@ async def reject_task(task_id: str, request: TaskDecisionRequest):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    task_type = task.get("type")
     event_id = task.get("event_id")
     client_email = (task.get("client_id") or "").lower() or None
 
@@ -1063,13 +1092,16 @@ async def reject_task(task_id: str, request: TaskDecisionRequest):
         for event in db.get("events", []):
             if event.get("event_id") == event_id:
                 ensure_event_defaults(event)
-                review_state = event.setdefault(
-                    "review_state",
-                    {"state": "none", "reviewed_at": None, "message": None},
-                )
-                review_state["state"] = "rejected"
-                review_state["reviewed_at"] = datetime.utcnow().isoformat() + "Z"
-                review_state["message"] = None
+                if task_type == TaskType.MANUAL_REVIEW.value:
+                    review_state = event.setdefault(
+                        "review_state",
+                        {"state": "none", "reviewed_at": None, "message": None},
+                    )
+                    review_state["state"] = "rejected"
+                    review_state["reviewed_at"] = datetime.utcnow().isoformat() + "Z"
+                    review_state["message"] = None
+                pending = event.get("pending_hil_requests") or []
+                event["pending_hil_requests"] = [entry for entry in pending if entry.get("task_id") != task_id]
                 break
 
     try:

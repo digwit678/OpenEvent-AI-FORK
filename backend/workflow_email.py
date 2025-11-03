@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import sys
 from pathlib import Path
 from typing import Any, Dict
 
-from backend.domain import TaskStatus
+from backend.domain import TaskStatus, TaskType
 
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 from backend.workflows.common.types import GroupResult
@@ -20,6 +22,7 @@ from backend.workflows.llm import adapter as llm_adapter
 from backend.workflows.planner import maybe_run_smart_shortcuts
 from backend.utils.profiler import profile_step
 from backend.workflow.state import stage_payload
+from backend.workflow.guards import evaluate as evaluate_guards
 
 
 DB_PATH = Path(__file__).with_name("events_database.json")
@@ -81,8 +84,80 @@ def _flush_pending_save(state: WorkflowState, path: Path, lock_path: Path) -> No
 def _flush_and_finalize(result: GroupResult, state: WorkflowState, path: Path, lock_path: Path) -> Dict[str, Any]:
     """Persist pending state and normalise the outgoing payload."""
 
+    output = _finalize_output(result, state)
     _flush_pending_save(state, path, lock_path)
-    return _finalize_output(result, state)
+    return output
+
+
+def _hil_signature(draft: Dict[str, Any], event_entry: Dict[str, Any]) -> str:
+    base = {
+        "step": draft.get("step"),
+        "topic": draft.get("topic"),
+        "caller": event_entry.get("caller_step"),
+        "requirements_hash": event_entry.get("requirements_hash"),
+        "room_eval_hash": event_entry.get("room_eval_hash"),
+        "body": draft.get("body"),
+    }
+    payload = json.dumps(base, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _enqueue_hil_tasks(state: WorkflowState, event_entry: Dict[str, Any]) -> None:
+    pending_records = event_entry.setdefault("pending_hil_requests", [])
+    seen_signatures = {entry.get("signature") for entry in pending_records if entry.get("signature")}
+
+    for draft in state.draft_messages:
+        if draft.get("requires_approval") is False:
+            continue
+        signature = _hil_signature(draft, event_entry)
+        if signature in seen_signatures:
+            continue
+
+        step_id = draft.get("step")
+        try:
+            step_num = int(step_id)
+        except (TypeError, ValueError):
+            continue
+        if step_num not in {2, 3, 4}:
+            continue
+        if step_num == 4:
+            task_type = TaskType.OFFER_MESSAGE
+        elif step_num == 3:
+            task_type = TaskType.ROOM_AVAILABILITY_MESSAGE
+        elif step_num == 2:
+            task_type = TaskType.DATE_CONFIRMATION_MESSAGE
+        else:
+            task_type = TaskType.MANUAL_REVIEW
+
+        task_payload = {
+            "step_id": step_num,
+            "intent": state.intent.value if state.intent else None,
+            "event_id": event_entry.get("event_id"),
+            "draft_msg": draft.get("body"),
+            "language": (state.user_info or {}).get("language"),
+            "caller_step": event_entry.get("caller_step"),
+            "requirements_hash": event_entry.get("requirements_hash"),
+            "room_eval_hash": event_entry.get("room_eval_hash"),
+        }
+
+        client_id = state.client_id or (state.message.from_email or "unknown@example.com").lower()
+        task_id = enqueue_task(
+            state.db,
+            task_type,
+            client_id,
+            event_entry.get("event_id"),
+            task_payload,
+        )
+        pending_records.append(
+            {
+                "task_id": task_id,
+                "signature": signature,
+                "step": step_num,
+                "draft": dict(draft),
+            }
+        )
+        seen_signatures.add(signature)
+        state.extras["persist"] = True
 
 
 @profile_step("workflow.router.process_msg")
@@ -100,6 +175,10 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     _persist_if_needed(state, path, lock_path)
     if last_result.halt:
         return _flush_and_finalize(last_result, state, path, lock_path)
+
+    guard_snapshot = evaluate_guards(state)
+    if guard_snapshot.step2_required and guard_snapshot.candidate_dates:
+        state.extras["guard_candidate_dates"] = list(guard_snapshot.candidate_dates)
 
     shortcut_result = maybe_run_smart_shortcuts(state)
     if shortcut_result is not None:
@@ -271,6 +350,8 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
         payload["thread_state"] = state.thread_state
     if state.draft_messages:
         payload["draft_messages"] = state.draft_messages
+        if event_entry:
+            _enqueue_hil_tasks(state, event_entry)
     else:
         payload.setdefault("draft_messages", [])
     if state.telemetry:

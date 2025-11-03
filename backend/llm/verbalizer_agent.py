@@ -6,6 +6,8 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.ux.verb_rubric import enforce as enforce_rubric
+
 logger = logging.getLogger(__name__)
 
 HEADERS_TO_PRESERVE = {
@@ -50,7 +52,7 @@ def verbalize_gui_reply(
             "verbalizer plain tone used",
             extra=_telemetry_extra(tone, drafts, len(sections), False, None),
         )
-        return fallback_text
+        return enforce_rubric(fallback_text, fallback_text)
 
     try:
         prompt_input = _build_prompt_payload(drafts, fallback_text, sections, client_email)
@@ -60,7 +62,7 @@ def verbalize_gui_reply(
             "verbalizer fallback to plain tone",
             extra=_telemetry_extra(tone, drafts, len(sections), True, str(exc)),
         )
-        return fallback_text
+        return enforce_rubric(fallback_text, fallback_text)
 
     candidate = raw_response.strip()
     if not candidate:
@@ -68,27 +70,27 @@ def verbalize_gui_reply(
             "verbalizer empty response; using plain tone",
             extra=_telemetry_extra(tone, drafts, len(sections), True, "empty"),
         )
-        return fallback_text
+        return enforce_rubric(fallback_text, fallback_text)
 
     if not _validate_sections(candidate, sections):
         logger.warning(
             "verbalizer failed section validation; using plain tone",
             extra=_telemetry_extra(tone, drafts, len(sections), True, "section_mismatch"),
         )
-        return fallback_text
+        return enforce_rubric(fallback_text, fallback_text)
 
     if must_contain_slot and "18:00–22:00" not in candidate:
         logger.warning(
             "verbalizer missing 18:00–22:00 slot; using plain tone",
             extra=_telemetry_extra(tone, drafts, len(sections), True, "missing_slot"),
         )
-        return fallback_text
+        return enforce_rubric(fallback_text, fallback_text)
 
     logger.debug(
         "verbalizer empathetic tone applied",
         extra=_telemetry_extra(tone, drafts, len(sections), False, None),
     )
-    return candidate
+    return enforce_rubric(candidate, fallback_text)
 
 
 def _resolve_tone() -> str:

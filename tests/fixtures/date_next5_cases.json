@@ -1,0 +1,5 @@
+{
+  "none_feasible": {"today": "2025-11-03", "candidates": [], "feasible": []},
+  "one_feasible": {"today": "2025-11-03", "candidates": ["2025-11-12"], "feasible": ["2025-11-12"]},
+  "many_feasible": {"today": "2025-11-03", "candidates": ["2025-11-12","2025-11-14","2025-11-19"], "feasible": ["2025-11-12","2025-11-19"]}
+}
