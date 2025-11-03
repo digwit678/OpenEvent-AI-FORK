@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
+from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.groups.intake.condition.checks import suggest_dates
@@ -56,11 +57,19 @@ def _present_candidate_dates(state: WorkflowState, event_entry: dict) -> GroupRe
     if not candidate_dates:
         candidate_dates = []
 
-    options_text = "\n".join(f"- {value}" for value in candidate_dates) or "• No suitable slots in the next 45 days."
-    prompt = (
-        "Here are the next available dates at The Atelier:\n"
-        f"{options_text}\n"
-        "Please pick one that works for you, or share another date and I'll check it immediately."
+    options_lines = ["Here are our next available dates:"]
+    if candidate_dates:
+        options_lines.extend(f"- {value}" for value in candidate_dates)
+    else:
+        options_lines.append("• No suitable slots in the next 45 days.")
+    options_lines.append("Would one of these work, or do you prefer a different date?")
+    options_lines.append("If you have alternatives, please share them and I’ll check feasibility.")
+    prompt = "\n".join(options_lines)
+    prompt = append_footer(
+        prompt,
+        step=2,
+        next_step=3,
+        thread_state="Awaiting Client Response",
     )
 
     draft_message = {
@@ -128,6 +137,12 @@ def _finalize_confirmation(state: WorkflowState, event_entry: dict, confirmed_da
     update_event_metadata(event_entry, current_step=next_step, caller_step=None)
 
     reply = compose_date_confirmation_reply(confirmed_date, _preferred_room(event_entry))
+    reply = append_footer(
+        reply,
+        step=2,
+        next_step=next_step,
+        thread_state="In Progress",
+    )
     draft_message = {
         "body": reply,
         "step": 2,

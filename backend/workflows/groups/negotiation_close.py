@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from backend.domain import TaskType
+from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
@@ -133,9 +134,12 @@ def process(state: WorkflowState) -> GroupResult:
                 )
                 negotiation_state["manual_review_task_id"] = manual_id
             draft = {
-                "body": (
+                "body": append_footer(
                     "Thanks for the suggestions — I’ve escalated this to our manager to review pricing. "
-                    "We’ll get back to you shortly."
+                    "We’ll get back to you shortly.",
+                    step=5,
+                    next_step=5,
+                    thread_state="Awaiting Client Response",
                 ),
                 "step": 5,
                 "topic": "negotiation_manual_review",
@@ -177,8 +181,11 @@ def process(state: WorkflowState) -> GroupResult:
 
     # Clarification by default.
     clarification = {
-        "body": (
-            "Happy to clarify any part of the proposal — let me know which detail you’d like more information on."
+        "body": append_footer(
+            "Happy to clarify any part of the proposal — let me know which detail you’d like more information on.",
+            step=5,
+            next_step=5,
+            thread_state="Awaiting Client Response",
         ),
         "step": 5,
         "topic": "negotiation_clarification",
@@ -251,7 +258,12 @@ def _handle_accept(event_entry: Dict[str, Any]) -> Dict[str, Any]:
             offer["accepted_at"] = timestamp
     event_entry["offer_status"] = "Accepted"
     draft = {
-        "body": "Fantastic — I’ve noted your acceptance. I’ll lock everything in now and send the final confirmation shortly.",
+        "body": append_footer(
+            "Fantastic — I’ve noted your acceptance. I’ll lock everything in now and send the final confirmation shortly.",
+            step=5,
+            next_step=6,
+            thread_state="In Progress",
+        ),
         "step": 5,
         "topic": "negotiation_accept",
         "requires_approval": True,
@@ -269,7 +281,12 @@ def _handle_decline(event_entry: Dict[str, Any]) -> Dict[str, Any]:
             offer["declined_at"] = timestamp
     event_entry["offer_status"] = "Declined"
     return {
-        "body": "Thank you for letting me know. I’ve noted the cancellation — we’d be happy to help with future events anytime.",
+        "body": append_footer(
+            "Thank you for letting me know. I’ve noted the cancellation — we’d be happy to help with future events anytime.",
+            step=5,
+            next_step=7,
+            thread_state="In Progress",
+        ),
         "step": 5,
         "topic": "negotiation_decline",
         "requires_approval": True,

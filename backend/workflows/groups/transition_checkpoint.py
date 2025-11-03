@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.utils.profiler import profile_step
@@ -28,8 +29,14 @@ def process(state: WorkflowState) -> GroupResult:
     state.current_step = 6
     blockers = _collect_blockers(event_entry)
     if blockers:
+        blocker_text = "; ".join(blockers)
         draft = {
-            "body": "I need a quick clarification before we confirm: " + "; ".join(blockers) + ".",
+            "body": append_footer(
+                f"Transition halted: {blocker_text}. Please resolve before continuing.",
+                step=6,
+                next_step=6,
+                thread_state="Awaiting Client Response",
+            ),
             "step": 6,
             "topic": "transition_clarification",
             "requires_approval": True,

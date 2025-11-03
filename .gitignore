@@ -7,6 +7,12 @@ tmp*.json
 manual_ux_conversation.json
 artifacts/*.json
 
+# coverage artifacts
+coverage.xml
+junit.xml
+.pytest_cache/
+htmlcov/
+
 # manual UX artifacts
 manual_ux_conversation.json
 artifacts/*.json

@@ -1,0 +1,6 @@
+{
+  "python": ["3.10", "3.11"],
+  "platform": ["ubuntu-latest"],
+  "features": ["workflow", "llm-stub"],
+  "generated_at": "2025-01-01T00:00:00Z"
+}
