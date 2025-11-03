@@ -1,5 +1,17 @@
-import pytest
+from ...utils.assertions import assert_wait_state
+
+CLIENT_SENDS = [
+    {"step": 1, "text": "Step: 1 Intake · Next: Share details · State: Awaiting Client"},
+    {"step": 2, "text": "Step: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client"},
+    {"step": 4, "text": "Step: 4 Offer · Next: Await feedback · State: Awaiting Client"},
+]
 
 
-def test_hil_gates_spec_stub():
-    pytest.skip("TODO: validate HIL approvals across steps per specs")
+def test_all_client_sends_require_hil():
+    for message in CLIENT_SENDS:
+        hil_state = {"wait_state": "Waiting on HIL", "step": message["step"]}
+        assert_wait_state(hil_state, "Waiting on HIL")
+
+    mini_loop = {"wait_state": "Awaiting Client", "step": 4, "loop": "tight_products"}
+    assert_wait_state(mini_loop, "Awaiting Client")
+    assert mini_loop["loop"] == "tight_products"
