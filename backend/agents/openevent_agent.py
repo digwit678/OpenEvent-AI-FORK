@@ -34,7 +34,7 @@ class OpenEventAgent:
         self._client = None
         self._agent_id: Optional[str] = None
         self._sessions: Dict[str, Dict[str, Any]] = {}
-        self._tool_cache: Dict[str, Dict[str, Any]] = {}
+        self._tool_cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
         self._initialise_sdk()
 
     def _initialise_sdk(self) -> None:
@@ -114,8 +114,10 @@ class OpenEventAgent:
     ) -> Dict[str, Any]:
         """Execute a tool deterministically with idempotent caching."""
 
-        if tool_call_id in self._tool_cache:
-            cached = self._tool_cache[tool_call_id]
+        thread_id = session.get("thread_id") or "unknown-thread"
+        cache = self._tool_cache.setdefault(thread_id, {})
+        if tool_call_id in cache:
+            cached = cache[tool_call_id]
             return dict(cached)
 
         # Import locally to avoid circular import during module initialisation.
@@ -129,7 +131,7 @@ class OpenEventAgent:
             "name": tool_name,
             "content": json.dumps(result.get("content", {}), ensure_ascii=False),
         }
-        self._tool_cache[tool_call_id] = message
+        cache[tool_call_id] = message
         self._persist_thread_delta(session, result.get("content"))
         return dict(message)
 

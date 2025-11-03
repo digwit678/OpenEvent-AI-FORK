@@ -48,3 +48,14 @@ def test_tool_call_idempotency_uses_cache():
         db={"events": []},
     )
     assert first == second
+
+
+def test_tool_choice_enforces_allowlist():
+    state = {"current_step": 2}
+    with pytest.raises(ToolExecutionError):
+        execute_tool_call(
+            tool_name="tool_build_offer_draft",
+            tool_call_id="call-999",
+            arguments={"event_entry": {}, "user_info": {}},
+            state=state,
+        )

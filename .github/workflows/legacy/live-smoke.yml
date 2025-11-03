@@ -3,7 +3,7 @@ name: live-smoke
 on: workflow_dispatch
 jobs:
   run:
-    if: ${{ secrets.OPENAI_API_KEY != '' }}
+    if: false  # disabled; retained for reference only
     runs-on: ubuntu-latest
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # <-- maps secret to env var

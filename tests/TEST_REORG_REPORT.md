@@ -43,3 +43,14 @@
   - None
 - Notes:
   - Created tests/specs/{intake,date,room,products_offer,gatekeeping,determinism,detours}, tests/utils, tests/fixtures, and docs/reports scaffolding with .gitkeep files for v4 layout.
+
+## SDK Alignment (2025-11-07)
+- New suites:
+  - tests/specs/ux/test_message_hygiene_and_continuations.py (footer/actions hygiene)
+  - tests/e2e_v4/test_full_flow_stubbed.py (stubbed Step 1–4 regression)
+  - tests/specs/gatekeeping/test_tool_allowlist_and_schema.py (tool schema + allowlist)
+  - Extended tests/specs/date/test_date_confirmation_next5.py & tests/specs/room/test_room_availability.py for structured payload assertions
+- Tooling:
+  - scripts/test-all.sh added for local pytest aggregation
+- CI:
+  - Legacy smoke workflows kept under .github/workflows/legacy but gated via `if: false`
