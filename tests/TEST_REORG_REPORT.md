@@ -1,0 +1,17 @@
+# Test Suite Reorganization Report
+
+## Cleanup (2025-11-03)
+- Files moved → tests/_legacy/:
+  - backend/tests/__init__.py
+  - backend/tests/conftest.py
+  - backend/tests/workflows/__init__.py
+  - backend/tests/workflows/test_availability_and_offer_flow.py
+  - backend/tests/workflows/test_event_confirmation_flow.py
+  - backend/tests/workflows/test_event_confirmation_post_offer.py
+  - backend/tests/workflows/test_event_confirmation_post_offer_actions.py
+  - backend/tests/workflows/test_workflow_prompt_behaviour.py
+  - backend/tests/workflows/test_workflow_v3_alignment.py
+  - backend/tests/workflows/test_workflow_v3_steps_4_to_7.py
+  - scripts/manual_ux_conversation_test.py
+- Duplicate configs removed: None
+- .gitignore additions: Entries for coverage.xml, junit.xml, .pytest_cache/, htmlcov/ already present

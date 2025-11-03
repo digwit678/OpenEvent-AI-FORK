@@ -29,7 +29,7 @@ jobs:
         run: |
           python - <<'PY'
           import importlib
-          m = importlib.import_module('backend')
+          m = importlib.import_module('backend.main')
           assert m is not None
           PY
 

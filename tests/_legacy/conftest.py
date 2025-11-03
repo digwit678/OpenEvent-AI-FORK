@@ -14,3 +14,5 @@ try:
 except AttributeError:
     pass
 
+collect_ignore_glob = ["test_*.py", "*_test.py"]
+
