@@ -22,14 +22,33 @@ except Exception:  # pragma: no cover - library may be unavailable in tests
 class AgentAdapter:
     """Base adapter defining the agent interface for intent routing and entity extraction."""
 
+    def analyze_message(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a combined payload containing intent, confidence, and extracted fields."""
+
+        raise NotImplementedError("analyze_message must be implemented by subclasses.")
+
     def route_intent(self, msg: Dict[str, Any]) -> Tuple[str, float]:
         """Classify an inbound email into intent labels understood by the workflow."""
 
-        raise NotImplementedError("route_intent must be implemented by subclasses.")
+        analysis = self.analyze_message(msg)
+        intent = analysis.get("intent") if isinstance(analysis, dict) else None
+        confidence = analysis.get("confidence") if isinstance(analysis, dict) else None
+        if intent is None:
+            raise NotImplementedError("route_intent must be implemented by subclasses.")
+        try:
+            conf = float(confidence) if confidence is not None else 0.0
+        except (TypeError, ValueError):
+            conf = 0.0
+        return str(intent), conf
 
     def extract_entities(self, msg: Dict[str, Any]) -> Dict[str, Any]:
         """Return normalized entities for the event workflow."""
 
+        analysis = self.analyze_message(msg)
+        if isinstance(analysis, dict):
+            fields = analysis.get("fields")
+            if isinstance(fields, dict):
+                return fields
         raise NotImplementedError("extract_entities must be implemented by subclasses.")
 
 
@@ -69,7 +88,18 @@ class StubAgentAdapter(AgentAdapter):
         "dec": 12,
     }
 
+    def analyze_message(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+        intent, confidence = self._classify_intent(msg)
+        fields = self._extract_entities(msg)
+        return {"intent": intent, "confidence": confidence, "fields": fields}
+
     def route_intent(self, msg: Dict[str, Any]) -> Tuple[str, float]:
+        return self._classify_intent(msg)
+
+    def extract_entities(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+        return self._extract_entities(msg)
+
+    def _classify_intent(self, msg: Dict[str, Any]) -> Tuple[str, float]:
         subject = (msg.get("subject") or "").lower()
         body = (msg.get("body") or "").lower()
         score = 0.0
@@ -86,7 +116,7 @@ class StubAgentAdapter(AgentAdapter):
         conf = min(1.0, 0.2 + 0.1 * score)
         return IntentLabel.NON_EVENT.value, conf
 
-    def extract_entities(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+    def _extract_entities(self, msg: Dict[str, Any]) -> Dict[str, Any]:
         body = msg.get("body") or ""
         lower_body = body.lower()
         entities: Dict[str, Any] = {

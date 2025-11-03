@@ -35,7 +35,7 @@ def test_gt5_rooms_triggers_narrowing():
     scenario = cases["gt5_needs_narrow"]
 
     narrowing_prompt = {
-        "text": "Step: 4 Offer · Next: Narrow down preferred rooms · State: Awaiting Client",
+        "footer": "Step: 4 Offer · Next: Narrow down preferred rooms · State: Awaiting Client",
     }
     assert_next_step_cue(narrowing_prompt)
 

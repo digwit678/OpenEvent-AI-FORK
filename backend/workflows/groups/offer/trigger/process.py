@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import merge_client_profile, requirements_hash
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
@@ -67,21 +66,39 @@ def process(state: WorkflowState) -> GroupResult:
     offer_id, offer_version, total_amount = _record_offer(event_entry, pricing_inputs, state.user_info)
     summary_lines = _compose_offer_summary(event_entry, total_amount)
 
-    draft_body = append_footer(
-        "\n".join(summary_lines),
-        step=4,
-        next_step="Await feedback",
-        thread_state="Awaiting Client",
-    )
-
     draft_message = {
-        "body": draft_body,
+        "body_markdown": "\n".join(summary_lines),
         "step": 4,
+        "next_step": "Await feedback",
+        "thread_state": "Awaiting Client",
         "topic": "offer_draft",
         "offer_id": offer_id,
         "offer_version": offer_version,
         "total_amount": total_amount,
         "requires_approval": True,
+        "table_blocks": [
+            {
+                "type": "table",
+                "header": ["Field", "Value"],
+                "rows": [
+                    ["Event Date", event_entry.get("chosen_date") or "TBD"],
+                    ["Room", event_entry.get("locked_room_id") or "TBD"],
+                    ["Total", f"CHF {total_amount:,.2f}"],
+                ],
+            }
+        ],
+        "actions": [
+            {
+                "type": "review_offer",
+                "label": "Review offer draft",
+                "offer_id": offer_id,
+            },
+            {
+                "type": "send_offer",
+                "label": "Send to client",
+                "offer_id": offer_id,
+            },
+        ],
     }
     state.add_draft_message(draft_message)
 
@@ -194,17 +211,19 @@ def _handle_products_pending(state: WorkflowState, event_entry: Dict[str, Any], 
             "Before I prepare your tailored proposal, could you share which catering or add-ons you'd like to include? "
             "Let me know if you'd prefer to proceed without extras."
         )
-        draft_body = append_footer(
-            prompt,
-            step=4,
-            next_step="Share preferred products",
-            thread_state="Awaiting Client",
-        )
         draft_message = {
-            "body": draft_body,
+            "body_markdown": prompt,
             "step": 4,
+            "next_step": "Share preferred products",
+            "thread_state": "Awaiting Client",
             "topic": "offer_products_prompt",
             "requires_approval": True,
+            "actions": [
+                {
+                    "type": "share_products",
+                    "label": "Provide preferred products",
+                }
+            ],
         }
         state.add_draft_message(draft_message)
         append_audit_entry(event_entry, 4, 4, "offer_products_prompt")

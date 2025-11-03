@@ -50,11 +50,15 @@ def _normalize_thread_state(state: str) -> str:
     return "Awaiting Client"
 
 
+def compose_footer(step: int, next_step: Union[int, str], thread_state: str) -> str:
+    """Compose the standard footer string without mutating the body copy."""
+
+    return f"Step: {_format_step_label(step)} · Next: {_format_next_step(next_step)} · State: {_normalize_thread_state(thread_state)}"
+
+
 def append_footer(body: str, *, step: int, next_step: Union[int, str], thread_state: str) -> str:
     """Append the standardized UX footer to a draft body."""
 
     sanitized_body = body.rstrip()
-    footer = (
-        f"Step: {_format_step_label(step)} · Next: {_format_next_step(next_step)} · State: {_normalize_thread_state(thread_state)}"
-    )
+    footer = compose_footer(step, next_step, thread_state)
     return f"{sanitized_body}{FOOTER_SEPARATOR}{footer}"

@@ -9,7 +9,7 @@ FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "intake_loops.json"
 def test_capacity_shortcut_not_asked_twice():
     payloads = json.loads(FIXTURE.read_text())
     capacity_prompt = {
-        "text": "Step: 1 Intake · Next: Tell us the expected capacity · State: Awaiting Client",
+        "footer": "Step: 1 Intake · Next: Tell us the expected capacity · State: Awaiting Client",
         "field": "capacity",
     }
 
@@ -19,7 +19,7 @@ def test_capacity_shortcut_not_asked_twice():
     # Step 3 prompts should not request capacity again once stored
     step3_prompts = [
         {
-            "text": "Step: 3 Room Availability · Next: Choose a room layout · State: Awaiting Client",
+            "footer": "Step: 3 Room Availability · Next: Choose a room layout · State: Awaiting Client",
             "field": "seating_layout",
         }
     ]

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.room_rules import find_better_room_dates
 from backend.workflows.common.types import GroupResult, WorkflowState
@@ -109,22 +108,44 @@ def process(state: WorkflowState) -> GroupResult:
         ROOM_OUTCOME_UNAVAILABLE: "room_unavailable",
     }[outcome]
 
-    draft_body = append_footer(
-        draft_text,
-        step=3,
-        next_step="Choose a room",
-        thread_state="Awaiting Client",
-    )
-
+    room_rows = [[room, status_map.get(room, "Unknown")] for room in sorted(status_map.keys())]
     draft_message = {
-        "body": draft_body,
+        "body_markdown": draft_text,
         "step": 3,
+        "next_step": "Choose a room",
+        "thread_state": "Awaiting Client",
         "topic": outcome_topic,
         "room": selected_room,
         "status": outcome,
+        "table_blocks": [
+            {
+                "type": "table",
+                "header": ["Room", "Status"],
+                "rows": room_rows,
+            }
+        ],
+        "actions": (
+            [
+                {
+                    "type": "select_room",
+                    "label": f"Proceed with {selected_room}",
+                    "room": selected_room,
+                    "status": outcome,
+                }
+            ]
+            if selected_room
+            else []
+        ),
     }
     if alt_dates:
         draft_message["alt_dates_for_better_room"] = alt_dates
+        draft_message.setdefault("table_blocks", []).append(
+            {
+                "type": "table",
+                "header": ["Alternative Dates"],
+                "rows": [[value] for value in alt_dates],
+            }
+        )
     state.add_draft_message(draft_message)
 
     event_entry["room_pending_decision"] = {

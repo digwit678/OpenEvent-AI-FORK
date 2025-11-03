@@ -3,6 +3,9 @@ from pathlib import Path
 
 import pytest
 
+from backend.domain import IntentLabel
+from backend.workflows.llm import adapter as llm_adapter
+
 from ...utils.assertions import (
     assert_next_step_cue,
     assert_no_duplicate_prompt,
@@ -16,15 +19,18 @@ FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "intake_loops.json"
     [
         [
             {
-                "text": "Step: 1 Intake · Next: Share your email · State: Awaiting Client",
+                "footer": "Step: 1 Intake · Next: Share your email · State: Awaiting Client",
+                "body_markdown": "Could we have your email address to keep you posted?",
                 "field": "email",
             },
             {
-                "text": "Step: 1 Intake · Next: Share event date (YYYY-MM-DD) · State: Awaiting Client",
+                "footer": "Step: 1 Intake · Next: Share event date (YYYY-MM-DD) · State: Awaiting Client",
+                "body_markdown": "What's the confirmed date for your event?",
                 "field": "chosen_date",
             },
             {
-                "text": "Step: 1 Intake · Next: Tell us the expected capacity · State: Awaiting Client",
+                "footer": "Step: 1 Intake · Next: Tell us the expected capacity · State: Awaiting Client",
+                "body_markdown": "How many guests should we plan for?",
                 "field": "capacity",
             },
         ]
@@ -56,3 +62,19 @@ def test_intake_loops_enforce_unique_prompts(prompts):
     state = {"event_id": "EVT-001", "next_step": 2}
     assert state["event_id"].startswith("EVT-")
     assert state["next_step"] == 2
+
+
+def test_structured_analysis_fallback(monkeypatch):
+    class BrokenAdapter(llm_adapter.StubAgentAdapter):
+        def analyze_message(self, msg):  # type: ignore[override]
+            raise ValueError("malformed json")
+
+    monkeypatch.setattr(llm_adapter, "get_agent_adapter", lambda: BrokenAdapter())
+    llm_adapter.reset_llm_adapter()
+
+    intent, confidence = llm_adapter.classify_intent({"subject": "Hello", "body": "Event for 20 people"})
+    assert intent in {IntentLabel.EVENT_REQUEST, IntentLabel.NON_EVENT}
+    assert 0.0 <= confidence <= 1.0
+
+    user_info = llm_adapter.extract_user_information({"subject": "Catering", "body": "We need projector"})
+    assert isinstance(user_info, dict)
