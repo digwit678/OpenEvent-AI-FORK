@@ -74,8 +74,8 @@ def process(state: WorkflowState) -> GroupResult:
         clarification = append_footer(
             clarification,
             step=1,
-            next_step=2,
-            thread_state="In Progress",
+            next_step="Team review (HIL)",
+            thread_state="Waiting on HIL",
         )
         state.add_draft_message(
             {
@@ -84,7 +84,7 @@ def process(state: WorkflowState) -> GroupResult:
                 "topic": "manual_review",
             }
         )
-        state.set_thread_state("In Progress")
+        state.set_thread_state("Waiting on HIL")
         if os.getenv("OE_DEBUG") == "1":
             print(
                 "[DEBUG] manual_review_enqueued:",
@@ -191,7 +191,7 @@ def process(state: WorkflowState) -> GroupResult:
 
     tag_message(event_entry, message_payload.get("msg_id"))
 
-    update_event_metadata(event_entry, thread_state="In Progress")
+    update_event_metadata(event_entry, thread_state="Waiting on HIL")
 
     state.current_step = event_entry.get("current_step")
     state.caller_step = event_entry.get("caller_step")

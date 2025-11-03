@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.workflows.common.prompts import append_footer
+from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.room_rules import find_better_room_dates
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata
@@ -44,6 +45,20 @@ def process(state: WorkflowState) -> GroupResult:
 
     state.current_step = 3
 
+    requirements = event_entry.get("requirements") or {}
+    current_req_hash = event_entry.get("requirements_hash")
+    computed_hash = requirements_hash(requirements) if requirements else None
+    if computed_hash and computed_hash != current_req_hash:
+        update_event_metadata(event_entry, requirements_hash=computed_hash)
+        current_req_hash = computed_hash
+        state.extras["persist"] = True
+
+    if state.user_info.get("shortcut_capacity_ok"):
+        shortcuts = event_entry.setdefault("shortcuts", {})
+        if not shortcuts.get("capacity_ok"):
+            shortcuts["capacity_ok"] = True
+            state.extras["persist"] = True
+
     hil_step = state.user_info.get("hil_approve_step")
     if hil_step == 3:
         decision = state.user_info.get("hil_decision") or "approve"
@@ -55,10 +70,9 @@ def process(state: WorkflowState) -> GroupResult:
 
     user_requested_room = state.user_info.get("room")
     locked_room_id = event_entry.get("locked_room_id")
-    current_req_hash = event_entry.get("requirements_hash")
     room_eval_hash = event_entry.get("room_eval_hash")
 
-    requirements_changed = bool(current_req_hash and current_req_hash != room_eval_hash)
+    requirements_changed = current_req_hash != room_eval_hash
     explicit_room_change = bool(user_requested_room and user_requested_room != locked_room_id)
     missing_lock = locked_room_id is None
 
@@ -71,7 +85,6 @@ def process(state: WorkflowState) -> GroupResult:
 
     preferred_room = _preferred_room(event_entry, user_requested_room)
     selected_room, selected_status = _select_room(preferred_room, status_map)
-    requirements = event_entry.get("requirements") or {}
 
     outcome = selected_status or ROOM_OUTCOME_UNAVAILABLE
     skip_capacity_prompt = bool(state.user_info.get("shortcut_capacity_ok"))
@@ -99,8 +112,8 @@ def process(state: WorkflowState) -> GroupResult:
     draft_body = append_footer(
         draft_text,
         step=3,
-        next_step=4,
-        thread_state="Awaiting Client Response",
+        next_step="Choose a room",
+        thread_state="Awaiting Client",
     )
 
     draft_message = {
@@ -123,11 +136,11 @@ def process(state: WorkflowState) -> GroupResult:
 
     update_event_metadata(
         event_entry,
-        thread_state="Awaiting Client Response",
+        thread_state="Awaiting Client",
         current_step=3,
     )
 
-    state.set_thread_state("Awaiting Client Response")
+    state.set_thread_state("Awaiting Client")
     state.caller_step = event_entry.get("caller_step")
     state.current_step = 3
     state.extras["persist"] = True
@@ -173,12 +186,12 @@ def _detour_to_date(state: WorkflowState, event_entry: dict) -> GroupResult:
         event_entry,
         current_step=2,
         date_confirmed=False,
-        thread_state="Awaiting Client Response",
+        thread_state="Awaiting Client",
     )
     append_audit_entry(event_entry, 3, 2, "room_requires_confirmed_date")
     state.current_step = 2
     state.caller_step = 3
-    state.set_thread_state("Awaiting Client Response")
+    state.set_thread_state("Awaiting Client")
     state.extras["persist"] = True
     payload = {
         "client_id": state.client_id,
@@ -282,8 +295,8 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
             "requires_approval": True,
         }
         state.add_draft_message(draft)
-        update_event_metadata(event_entry, current_step=3, thread_state="Awaiting Client Response")
-        state.set_thread_state("Awaiting Client Response")
+        update_event_metadata(event_entry, current_step=3, thread_state="Waiting on HIL")
+        state.set_thread_state("Waiting on HIL")
         state.extras["persist"] = True
         payload = {
             "client_id": state.client_id,
@@ -305,14 +318,14 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
         locked_room_id=selected_room,
         room_eval_hash=requirements_hash,
         current_step=4,
-        thread_state="In Progress",
+        thread_state="Waiting on HIL",
     )
     append_audit_entry(event_entry, 3, 4, "room_hil_approved")
     event_entry.pop("room_pending_decision", None)
 
     state.current_step = 4
     state.caller_step = None
-    state.set_thread_state("In Progress")
+    state.set_thread_state("Waiting on HIL")
     state.extras["persist"] = True
 
     payload = {
