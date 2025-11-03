@@ -1,0 +1,90 @@
+name: OpenAI Agent Canary
+
+on:
+  push:
+    branches: [ main, develop, feature/** ]
+  schedule:
+    - cron: "15 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to test (checked out for this run)
+        required: true
+        default: main
+      scenario:
+        description: Tiny scenario prompt
+        required: false
+        default: "15 guests in November; propose 3 evening slots (HH:MM) between 18:00 and 22:00 for Punkt.Null (Bern). Mention '15 guests' once."
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Europe/Zurich
+      AGENT_MODE: openai
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      SCENARIO: ${{ inputs.scenario }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || 'main' }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -U pip && pip install openai==2.6.1
+      - name: Agent-style canary
+        run: |
+          python - <<'PY'
+          import os, re, sys
+          from openai import OpenAI
+          client=OpenAI()
+          model=os.getenv("OPENAI_AGENT_MODEL","gpt-4o-mini")
+          scenario=os.getenv("SCENARIO","ping")
+          print("canary_model:", model)
+          print("canary_scenario:", scenario)
+          try:
+              r=client.responses.create(
+                  model=model,
+                  instructions=(
+                      "You are the OpenEvent assistant. Respond with 3 to 5 bullet lines. "
+                      "Each line must start with '- ' followed by an HH:MM time between 18:00 and 22:00 inclusive, "
+                      "then a concise description. Always mention the attendee count '15'."
+                  ),
+                  input=[{"role":"user","content":scenario}]
+              )
+              text=getattr(r,"output_text","").strip()
+          except Exception as e:
+              print("canary_exception:",e); sys.exit(1)
+          print("canary_text:", text[:400] or "<empty>")
+          if len(text) < 5:
+              print("canary_too_short"); sys.exit(4)
+          times = re.findall(r'\b([0-2]?\d):([0-5]\d)\b', text)
+          unique_times = []
+          for hour_str, minute_str in times:
+              hour = int(hour_str)
+              minute = int(minute_str)
+              time_str = f"{hour:02d}:{minute:02d}"
+              if time_str not in unique_times:
+                  unique_times.append(time_str)
+          print("canary_times:", ", ".join(unique_times) or "<none>")
+          if len(unique_times) < 3 or len(unique_times) > 5:
+              print("canary_time_count_invalid:", len(unique_times)); sys.exit(5)
+          for time_str in unique_times:
+              hour = int(time_str[:2])
+              minute = int(time_str[3:])
+              if hour < 18 or hour > 22:
+                  print("canary_time_out_of_range:", time_str); sys.exit(6)
+              if hour == 22 and minute > 0:
+                  print("canary_time_past_cutoff:", time_str); sys.exit(6)
+          lower_text = text.lower()
+          if "15" not in text and "fifteen" not in lower_text:
+              print("canary_missing_attendee_count"); sys.exit(7)
+          sys.exit(0)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent-canary-logs
+          path: |
+            **/*.log
+          if-no-files-found: ignore
