@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import List
+from dataclasses import dataclass
+from typing import List, Optional
 
-from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.groups.intake.condition.checks import suggest_dates
@@ -13,6 +13,20 @@ from ..condition.decide import is_valid_ddmmyyyy
 from ..llm.analysis import compose_date_confirmation_reply
 
 __workflow_role__ = "trigger"
+
+
+@dataclass
+class ConfirmationWindow:
+    display_date: Optional[str]
+    iso_date: Optional[str]
+    start_time: Optional[str]
+    end_time: Optional[str]
+    start_iso: Optional[str]
+    end_iso: Optional[str]
+    inherited_times: bool = False
+    partial: bool = False
+    source_message_id: Optional[str] = None
+    tz: str = "Europe/Zurich"
 
 
 @profile_step("workflow.step2.date_confirmation")
@@ -64,19 +78,28 @@ def _present_candidate_dates(state: WorkflowState, event_entry: dict) -> GroupRe
         options_lines.append("• No suitable slots in the next 45 days.")
     options_lines.append("Would one of these work, or do you prefer a different date?")
     options_lines.append("If you have alternatives, please share them and I’ll check feasibility.")
-    prompt = "\n".join(options_lines)
-    prompt = append_footer(
-        prompt,
-        step=2,
-        next_step="Confirm date",
-        thread_state="Awaiting Client",
-    )
-
     draft_message = {
-        "body": prompt,
+        "body_markdown": "\n".join(options_lines),
         "step": 2,
+        "next_step": "Confirm date",
+        "thread_state": "Awaiting Client",
         "topic": "date_candidates",
         "candidate_dates": candidate_dates,
+        "table_blocks": [
+            {
+                "type": "table",
+                "header": ["Option", "Date"],
+                "rows": [[str(idx + 1), value] for idx, value in enumerate(candidate_dates)],
+            }
+        ] if candidate_dates else [],
+        "actions": [
+            {
+                "type": "select_date",
+                "label": f"Select {value}",
+                "date": value,
+            }
+            for value in candidate_dates
+        ],
     }
     state.add_draft_message(draft_message)
 
@@ -137,15 +160,11 @@ def _finalize_confirmation(state: WorkflowState, event_entry: dict, confirmed_da
     update_event_metadata(event_entry, current_step=next_step, caller_step=None)
 
     reply = compose_date_confirmation_reply(confirmed_date, _preferred_room(event_entry))
-    reply = append_footer(
-        reply,
-        step=2,
-        next_step="Room availability review",
-        thread_state="Waiting on HIL",
-    )
     draft_message = {
-        "body": reply,
+        "body_markdown": reply,
         "step": 2,
+        "next_step": "Room availability review",
+        "thread_state": "Waiting on HIL",
         "topic": "date_confirmation",
         "date": confirmed_date,
     }

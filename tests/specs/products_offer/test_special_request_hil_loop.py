@@ -10,7 +10,7 @@ def test_special_request_waits_for_hil():
     cases = json.loads(FIXTURE.read_text())
     approve = cases["approve_all"]
 
-    hil_state = {"wait_state": "Waiting on HIL", "items": approve["items"], "decision": None}
+    hil_state = {"thread_state": "Waiting on HIL", "items": approve["items"], "decision": None}
     assert_wait_state(hil_state, "Waiting on HIL")
 
     hil_state["decision"] = approve["decision"]
@@ -22,10 +22,10 @@ def test_denied_request_recommends_alternative():
     deny = cases["deny_partial"]
 
     alt_response = {
-        "text": "Step: 4 Offer · Next: Review alternatives · State: Awaiting Client",
+        "footer": "Step: 4 Offer · Next: Review alternatives · State: Awaiting Client",
         "recommendations": ["Partner café"],
         "decision": deny["decision"],
     }
 
     assert alt_response["decision"] == "denied"
-    assert "alternatives" in alt_response["text"].lower()
+    assert "alternatives" in alt_response["footer"].lower()

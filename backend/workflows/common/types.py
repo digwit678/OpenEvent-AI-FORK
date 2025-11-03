@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.domain import IntentLabel
+from backend.workflows.common.prompts import compose_footer, FOOTER_SEPARATOR
 
 
 @dataclass
@@ -187,8 +188,41 @@ class WorkflowState:
     def add_draft_message(self, message: Dict[str, Any]) -> None:
         """[HIL] Register a draft message awaiting approval before sending."""
 
+        step_value = message.get("step") or self.current_step or 0
+        next_step = message.get("next_step", step_value)
+        thread_state = message.get("thread_state") or self.thread_state or "Awaiting Client"
+
+        body_markdown = message.pop("body_markdown", None)
+        raw_body = message.get("body")
+        footer = message.get("footer")
+
+        if body_markdown is None and isinstance(raw_body, str) and raw_body:
+            if FOOTER_SEPARATOR in raw_body:
+                before, _, after = raw_body.partition(FOOTER_SEPARATOR)
+                body_markdown = before.strip()
+                if not footer:
+                    footer = after.strip()
+            else:
+                body_markdown = raw_body.strip()
+
+        if body_markdown is None:
+            body_markdown = ""
+
+        if not footer:
+            footer = compose_footer(step_value or 0, next_step, thread_state)
+
+        message["body_markdown"] = body_markdown
+        message["footer"] = footer
+        message.setdefault("table_blocks", [])
+        message.setdefault("actions", [])
+        message["thread_state"] = thread_state
+        message.setdefault("next_step", next_step)
+
+        combined_body = f"{body_markdown}{FOOTER_SEPARATOR}{footer}" if body_markdown else footer
+        message["body"] = combined_body
+
         message.setdefault("requires_approval", True)
-        message.setdefault("created_at_step", self.current_step)
+        message.setdefault("created_at_step", step_value)
         self.draft_messages.append(message)
 
     def set_thread_state(self, value: str) -> None:

@@ -44,3 +44,28 @@ def test_confirm_sets_chosen_date_and_flag():
     assert datetime.fromisoformat(thread_state["chosen_date"])
     assert thread_state["date_confirmed"] is True
     assert thread_state["timezone"] == TZ
+
+
+def test_candidate_actions_and_table_shape():
+    cases = json.loads(FIXTURE.read_text())
+    many = cases["many_feasible"]
+    candidate_dates = many["candidates"]
+
+    table_block = {
+        "type": "table",
+        "header": ["Option", "Date"],
+        "rows": [[str(idx + 1), value] for idx, value in enumerate(candidate_dates)],
+    }
+    actions = [
+        {
+            "type": "select_date",
+            "label": f"Select {value}",
+            "date": value,
+        }
+        for value in candidate_dates
+    ]
+
+    assert table_block["header"] == ["Option", "Date"]
+    assert all(len(row) == 2 for row in table_block["rows"])
+    assert all(action["type"] == "select_date" for action in actions)
+    assert [row[1] for row in table_block["rows"]] == [action["date"] for action in actions]

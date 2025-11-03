@@ -35,3 +35,27 @@ def test_date_change_fast_path_when_hash_matches():
 
     assert detour_payload["caller_step"] == 4
     assert detour_payload["recomputed_hash"] == locked["requirements_hash"]
+
+
+def test_structured_room_payload_includes_table_and_action():
+    draft = {
+        "body_markdown": "Good news — Room A is available on your requested date.",
+        "table_blocks": [
+            {
+                "type": "table",
+                "header": ["Room", "Status"],
+                "rows": [["Room A", "Available"], ["Room B", "Option"]],
+            }
+        ],
+        "actions": [
+            {
+                "type": "select_room",
+                "room": "Room A",
+                "status": "Available",
+            }
+        ],
+        "footer": "Step: 3 Room Availability · Next: Choose a room · State: Awaiting Client",
+    }
+
+    assert draft["table_blocks"][0]["header"] == ["Room", "Status"]
+    assert draft["actions"][0]["type"] == "select_room"

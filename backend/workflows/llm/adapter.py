@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import logging
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.adapters.agent_adapter import AgentAdapter, get_agent_adapter, reset_agent_adapter
+from backend.adapters.agent_adapter import AgentAdapter, StubAgentAdapter, get_agent_adapter, reset_agent_adapter
 from backend.domain import IntentLabel
 
 from backend.services.products import list_product_records, normalise_product_payload
@@ -22,6 +24,12 @@ from backend.workflows.common.datetime_parse import parse_first_date, parse_time
 
 adapter: AgentAdapter = get_agent_adapter()
 _LAST_CALL_METADATA: Dict[str, Any] = {}
+_ANALYSIS_CACHE: Dict[str, Dict[str, Any]] = {}
+
+logger = logging.getLogger(__name__)
+
+_FALLBACK_ADAPTER = StubAgentAdapter()
+_MAX_RETRIES = 2
 
 _MONTHS = {name.lower(): idx for idx, name in enumerate(
     ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
@@ -69,7 +77,10 @@ def _match_catalog_products(text: str) -> List[Dict[str, Any]]:
     if not text:
         return []
     catalog_names = [record.name for record in list_product_records()]
-    raw_matches = _agent().match_catalog_items(text, catalog_names)
+    agent_instance = _agent()
+    if not hasattr(agent_instance, "match_catalog_items"):
+        return []
+    raw_matches = agent_instance.match_catalog_items(text, catalog_names)
     matches: List[Dict[str, Any]] = []
     if not raw_matches:
         return matches
@@ -167,6 +178,84 @@ def _prepare_payload(message: Dict[str, Optional[str]]) -> Dict[str, str]:
     return payload
 
 
+def _analysis_cache_key(payload: Dict[str, str]) -> str:
+    msg_id = payload.get("msg_id") or ""
+    subject = payload.get("subject") or ""
+    body = payload.get("body") or ""
+    fingerprint = f"{msg_id}::{subject}::{body}"
+    return hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
+
+
+def _validated_analysis(result: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(result, dict):
+        return None
+    intent = result.get("intent")
+    if not isinstance(intent, str) or not intent.strip():
+        return None
+    fields = result.get("fields") if isinstance(result.get("fields"), dict) else {}
+    confidence_raw = result.get("confidence")
+    try:
+        confidence = float(confidence_raw)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+    return {
+        "intent": intent,
+        "confidence": confidence,
+        "fields": dict(fields),
+    }
+
+
+def _invoke_adapter_with_retry(agent: AgentAdapter, payload: Dict[str, str], phase: str) -> Optional[Dict[str, Any]]:
+    last_error: Optional[Exception] = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            result = agent.analyze_message(payload)
+            validated = _validated_analysis(result)
+            if validated is not None:
+                _record_last_call(agent, phase=phase)
+                return validated
+            logger.warning("Adapter returned invalid analysis payload on attempt %s", attempt + 1)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            last_error = exc
+            logger.warning("Adapter analysis failed (attempt %s): %s", attempt + 1, exc)
+    if last_error:
+        logger.info("Falling back to heuristics after adapter failure: %s", last_error)
+    return None
+
+
+def _fallback_analysis(payload: Dict[str, str]) -> Dict[str, Any]:
+    global _LAST_CALL_METADATA
+    try:
+        result = _FALLBACK_ADAPTER.analyze_message(payload)
+        validated = _validated_analysis(result)
+        if validated is not None:
+            _LAST_CALL_METADATA = {"phase": "analysis", "adapter": "stub"}
+            return validated
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.debug("Stub fallback failed: %s", exc)
+    _LAST_CALL_METADATA = {"phase": "analysis", "adapter": "fallback"}
+    return {
+        "intent": IntentLabel.NON_EVENT.value,
+        "confidence": 0.0,
+        "fields": {},
+    }
+
+
+def _analyze_payload(payload: Dict[str, str]) -> Dict[str, Any]:
+    cache_key = _analysis_cache_key(payload)
+    cached = _ANALYSIS_CACHE.get(cache_key)
+    if cached is not None:
+        return dict(cached)
+
+    agent = _agent()
+    analysis = _invoke_adapter_with_retry(agent, payload, phase="analysis")
+    if analysis is None:
+        analysis = _fallback_analysis(payload)
+    _ANALYSIS_CACHE[cache_key] = analysis
+    return dict(analysis)
+
+
 def classify_intent(message: Dict[str, Optional[str]]) -> Tuple[IntentLabel, float]:
     """[LLM] Delegate intent classification to the agent adapter and normalize output."""
 
@@ -174,10 +263,9 @@ def classify_intent(message: Dict[str, Optional[str]]) -> Tuple[IntentLabel, flo
     if os.getenv("INTENT_FORCE_EVENT_REQUEST") == "1":
         print("[DEV] intent override -> event_request")
         return IntentLabel.EVENT_REQUEST, 0.99
-    agent = _agent()
-    intent, confidence = agent.route_intent(payload)
-    _record_last_call(agent, phase="intent")
-    normalized = IntentLabel.normalize(intent)
+    analysis = _analyze_payload(payload)
+    normalized = IntentLabel.normalize(analysis.get("intent"))
+    confidence = float(analysis.get("confidence", 0.0))
     override = _heuristic_intent_override(payload, normalized)
     if override is not None:
         normalized = override
@@ -189,13 +277,9 @@ def extract_user_information(message: Dict[str, Optional[str]]) -> Dict[str, Opt
     """[LLM] Extract structured event details from free-form text."""
 
     payload = _prepare_payload(message)
-    agent = _agent()
-    if hasattr(agent, "extract_user_information"):
-        raw = agent.extract_user_information(payload) or {}
-    else:
-        raw = agent.extract_entities(payload) or {}
-    _record_last_call(agent, phase="entities")
-    sanitized = sanitize_user_info(raw)
+    analysis = _analyze_payload(payload)
+    raw_fields = analysis.get("fields") if isinstance(analysis.get("fields"), dict) else {}
+    sanitized = sanitize_user_info(raw_fields)
     if not sanitized.get("date") and (
         os.getenv("AGENT_MODE", "").lower() == "stub" or os.getenv("INTENT_FORCE_EVENT_REQUEST") == "1"
     ):
@@ -298,9 +382,11 @@ def reset_llm_adapter() -> None:
 
     global adapter
     global _LAST_CALL_METADATA
+    global _ANALYSIS_CACHE
     reset_agent_adapter()
     adapter = get_agent_adapter()
     _LAST_CALL_METADATA = {}
+    _ANALYSIS_CACHE = {}
 
 
 _CONFIRM_TOKENS = (
