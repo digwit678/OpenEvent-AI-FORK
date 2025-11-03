@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
+from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
@@ -43,8 +44,15 @@ def process(state: WorkflowState) -> GroupResult:
     offer_id, offer_version, total_amount = _record_offer(event_entry, pricing_inputs, state.user_info)
     summary_lines = _compose_offer_summary(event_entry, total_amount)
 
+    draft_body = append_footer(
+        "\n".join(summary_lines),
+        step=4,
+        next_step=5,
+        thread_state="Awaiting Client Response",
+    )
+
     draft_message = {
-        "body": "\n".join(summary_lines),
+        "body": draft_body,
         "step": 4,
         "topic": "offer_draft",
         "offer_id": offer_id,

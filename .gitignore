@@ -7,6 +7,12 @@ tmp*.json
 manual_ux_conversation.json
 artifacts/*.json
 
+# coverage artifacts
+coverage.xml
+junit.xml
+.pytest_cache/
+htmlcov/
+
 # manual UX artifacts
 manual_ux_conversation.json
 artifacts/*.json
@@ -16,3 +22,4 @@ atelier-ai-frontend/.env.local
 atelier-ai-frontend/.next-dev.log
 atelier-ai-frontend/.ui-url
 backend-uvicorn.log
+__pycache__/
