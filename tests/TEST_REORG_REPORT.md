@@ -33,3 +33,13 @@
   - None
 - Notes:
   - Migrated hygiene commit history onto branch feature/agent-workflow-ui-3-1-11-25.
+
+## Cleanup (2025-11-06)
+- Files moved → tests/_legacy/:
+  - None (directory scaffolding only)
+- Duplicate configs removed:
+  - None
+- .gitignore additions:
+  - None
+- Notes:
+  - Created tests/specs/{intake,date,room,products_offer,gatekeeping,determinism,detours}, tests/utils, tests/fixtures, and docs/reports scaffolding with .gitkeep files for v4 layout.
