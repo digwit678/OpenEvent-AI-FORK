@@ -1,0 +1,5 @@
+{
+  "available": {"date": "2025-11-12", "capacity": 60, "rooms": [{"id": "R1", "fits": true, "option": false}]},
+  "option_only": {"date": "2025-11-12", "capacity": 60, "rooms": [{"id": "R2", "fits": true, "option": true}]},
+  "unavailable": {"date": "2025-11-12", "capacity": 200, "rooms": []}
+}

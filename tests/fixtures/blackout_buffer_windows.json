@@ -1,0 +1,4 @@
+{
+  "blackouts": ["2025-11-10","2025-12-24"],
+  "buffers": [{"days_before": 2, "days_after": 1}]
+}
