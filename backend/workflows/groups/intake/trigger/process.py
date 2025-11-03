@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict
 
+from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import build_requirements, merge_client_profile, requirements_hash
 from backend.workflows.common.timeutils import format_ts_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
@@ -69,6 +70,12 @@ def process(state: WorkflowState) -> GroupResult:
         clarification = (
             "Thanks for your message. A member of our team will review it shortly "
             "to make sure it reaches the right place."
+        )
+        clarification = append_footer(
+            clarification,
+            step=1,
+            next_step=2,
+            thread_state="In Progress",
         )
         state.add_draft_message(
             {

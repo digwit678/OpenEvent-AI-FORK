@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.room_rules import find_better_room_dates
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata
@@ -73,11 +74,14 @@ def process(state: WorkflowState) -> GroupResult:
     requirements = event_entry.get("requirements") or {}
 
     outcome = selected_status or ROOM_OUTCOME_UNAVAILABLE
+    skip_capacity_prompt = bool(state.user_info.get("shortcut_capacity_ok"))
+
     draft_text = _compose_outcome_message(
         outcome,
         selected_room,
         chosen_date,
         requirements,
+        skip_capacity_prompt=skip_capacity_prompt,
     )
 
     alt_dates: List[str] = []
@@ -92,8 +96,15 @@ def process(state: WorkflowState) -> GroupResult:
         ROOM_OUTCOME_UNAVAILABLE: "room_unavailable",
     }[outcome]
 
+    draft_body = append_footer(
+        draft_text,
+        step=3,
+        next_step=4,
+        thread_state="Awaiting Client Response",
+    )
+
     draft_message = {
-        "body": draft_text,
+        "body": draft_body,
         "step": 3,
         "topic": outcome_topic,
         "room": selected_room,
@@ -137,6 +148,8 @@ def process(state: WorkflowState) -> GroupResult:
     }
     if alt_dates:
         payload["alt_dates_for_better_room"] = alt_dates
+    if skip_capacity_prompt:
+        payload["shortcut_capacity_ok"] = True
     return GroupResult(action="room_avail_result", payload=payload, halt=True)
 
 
@@ -373,33 +386,43 @@ def _compose_outcome_message(
     room_name: Optional[str],
     chosen_date: str,
     requirements: Dict[str, Any],
+    *,
+    skip_capacity_prompt: bool = False,
 ) -> str:
     """[Trigger] Build the draft message for the selected outcome."""
 
     participants = requirements.get("number_of_participants")
     layout = requirements.get("seating_layout")
-    requirements_short = []
-    if participants:
-        requirements_short.append(f"{participants} guests")
-    if layout:
-        requirements_short.append(layout)
-    requirement_text = ", ".join(requirements_short) if requirements_short else "your requirements"
+
+    if participants and layout:
+        capacity_text = f"{participants} guests in {layout}"
+    elif participants:
+        capacity_text = f"{participants} guests"
+    elif layout:
+        capacity_text = f"a {layout} layout"
+    else:
+        capacity_text = "your requirements"
+
+    capacity_sentence = ""
+    if not skip_capacity_prompt:
+        capacity_sentence = f"It comfortably fits {capacity_text}. "
 
     if status == ROOM_OUTCOME_AVAILABLE and room_name:
         return (
-            f"Great news — {room_name} is available on {chosen_date}. "
-            f"It comfortably fits {requirement_text}. "
+            f"Good news — {room_name} is available on {chosen_date}. "
+            f"{capacity_sentence}"
             "Shall we proceed with this room and date?"
-        )
+        ).replace("  ", " ").strip()
 
     if status == ROOM_OUTCOME_OPTION and room_name:
         return (
             f"{room_name} is currently on option for {chosen_date}. "
-            f"It matches {requirement_text}. "
-            "Would you like to confirm under this option, look at other dates, or consider a different room?"
-        )
+            f"{capacity_sentence}"
+            "We can proceed under this option or consider other dates/rooms — what would you prefer?"
+        ).replace("  ", " ").strip()
 
+    capacity_clause = f" for {capacity_text}" if not skip_capacity_prompt else ""
     return (
-        f"Thank you. On {chosen_date}, we do not have a room that meets {requirement_text}. "
-        "Would you like to consider alternative dates, adjust the guest count/layout, or explore other rooms?"
-    )
+        f"Thanks for your request. Unfortunately, no suitable room is available on {chosen_date}{capacity_clause}. "
+        "Would one of these alternative dates work, or would you like to adjust the attendee count or layout?"
+    ).strip()
