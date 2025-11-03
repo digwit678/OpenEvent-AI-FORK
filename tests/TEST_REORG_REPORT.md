@@ -15,3 +15,11 @@
   - scripts/manual_ux_conversation_test.py
 - Duplicate configs removed: None
 - .gitignore additions: Entries for coverage.xml, junit.xml, .pytest_cache/, htmlcov/ already present
+
+## Cleanup (2025-11-04)
+- Files moved → tests/_legacy/:
+  - None
+- Duplicate configs removed:
+  - None
+- .gitignore additions:
+  - None (entries already covered)
