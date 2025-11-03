@@ -284,7 +284,7 @@ def process(state: WorkflowState) -> GroupResult:
         except ValueError:
             intent_label = IntentLabel.NON_EVENT
     intent_value = intent_label.value if isinstance(intent_label, IntentLabel) else str(intent_label).lower()
-    allow_auto = str(os.getenv("ALLOW_AUTO_ROOM_LOCK", "false")).strip().lower() in {"1", "true", "yes", "on"}
+    allow_auto = str(os.getenv("AUTO_LOCK_SINGLE_ROOM", "false")).strip().lower() in {"1", "true", "yes", "on"}
     message_text = _message_text(state.message)
     text_explicit_room = _extract_explicit_lock_request(message_text)
     requested_room_id = user_requested_room or ""
