@@ -4,19 +4,13 @@ import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.domain import EventStatus, IntentLabel
-from backend.workflows.common.billing import (
-    billing_prompt_for_missing_fields,
-    missing_billing_fields,
-    update_billing_details,
-)
-from backend.workflows.common.capture import capture_user_fields, promote_billing_from_captured
+from backend.domain import EventStatus
+from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.room_rules import site_visit_allowed
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.utils.profiler import profile_step
-from backend.workflows.common.gatekeeper import explain_step7_gate, refresh_gatekeeper
 
 __workflow_role__ = "trigger"
 
@@ -49,21 +43,31 @@ def process(state: WorkflowState) -> GroupResult:
         state.extras["persist"] = True
 
     state.current_step = 7
-    state.telemetry.final_action = "none"
     conf_state = event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})
 
     if state.user_info.get("hil_approve_step") == 7:
         return _process_hil_confirmation(state, event_entry)
 
-    capture_user_fields(state, current_step=7, source=state.message.msg_id)
-    promote_billing_from_captured(state, event_entry)
-
-    _sync_gate_context(state, event_entry)
-
-    structural = _detect_structural_change(state.user_info, event_entry, state.intent)
+    structural = _detect_structural_change(state.user_info, event_entry)
     if structural:
-        target_step, reason, details = structural
-        return _launch_edit_detour(state, event_entry, target_step, reason, details)
+        target_step, reason = structural
+        update_event_metadata(event_entry, caller_step=7, current_step=target_step)
+        append_audit_entry(event_entry, 7, target_step, reason)
+        state.caller_step = 7
+        state.current_step = target_step
+        state.set_thread_state("In Progress" if target_step == 4 else "Awaiting Client Response")
+        state.extras["persist"] = True
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "reason": reason,
+            "target_step": target_step,
+            "context": state.context_snapshot,
+            "persisted": True,
+        }
+        return GroupResult(action="confirmation_detour", payload=payload, halt=False)
 
     message_text = (state.message.body or "").strip()
     classification = _classify_message(message_text, event_entry)
@@ -110,146 +114,29 @@ def _classify_message(message_text: str, event_entry: Dict[str, Any]) -> str:
     return "question"
 
 
-def _detect_structural_change(
-    user_info: Dict[str, Any],
-    event_entry: Dict[str, Any],
-    intent: Optional[IntentLabel],
-) -> Optional[Tuple[int, str, Dict[str, Any]]]:
+def _detect_structural_change(user_info: Dict[str, Any], event_entry: Dict[str, Any]) -> Optional[Tuple[int, str]]:
     new_iso_date = user_info.get("date")
     new_ddmmyyyy = user_info.get("event_date")
     if new_iso_date or new_ddmmyyyy:
         candidate = new_ddmmyyyy or _iso_to_ddmmyyyy(new_iso_date)
         if candidate and candidate != event_entry.get("chosen_date"):
-            details = {
-                "type": IntentLabel.EDIT_DATE.value,
-                "previous": event_entry.get("chosen_date"),
-                "new": candidate,
-            }
-            return 2, "confirmation_changed_date", details
+            return 2, "confirmation_changed_date"
 
     new_room = user_info.get("room")
     if new_room and new_room != event_entry.get("locked_room_id"):
-        details = {
-            "type": IntentLabel.EDIT_ROOM.value,
-            "previous": event_entry.get("locked_room_id"),
-            "new": new_room,
-        }
-        return 3, "confirmation_changed_room", details
+        return 3, "confirmation_changed_room"
 
     participants = user_info.get("participants")
     req = event_entry.get("requirements") or {}
     if participants and participants != req.get("number_of_participants"):
-        details = {
-            "type": IntentLabel.EDIT_REQUIREMENTS.value,
-            "field": "number_of_participants",
-            "previous": req.get("number_of_participants"),
-            "new": participants,
-        }
-        return 3, "confirmation_changed_participants", details
+        return 3, "confirmation_changed_participants"
 
     products_add = user_info.get("products_add")
     products_remove = user_info.get("products_remove")
     if products_add or products_remove:
-        details = {
-            "type": IntentLabel.EDIT_REQUIREMENTS.value,
-            "field": "products",
-            "add": products_add,
-            "remove": products_remove,
-        }
-        return 4, "confirmation_changed_products", details
-
-    if intent in {IntentLabel.EDIT_DATE, IntentLabel.EDIT_ROOM, IntentLabel.EDIT_REQUIREMENTS}:
-        mapping = {
-            IntentLabel.EDIT_DATE: (2, "confirmation_edit_date"),
-            IntentLabel.EDIT_ROOM: (3, "confirmation_edit_room"),
-            IntentLabel.EDIT_REQUIREMENTS: (3, "confirmation_edit_requirements"),
-        }
-        target_step, reason = mapping[intent]
-        details = {"type": intent.value, "previous": None, "new": None}
-        return target_step, reason, details
+        return 4, "confirmation_changed_products"
 
     return None
-
-
-def _launch_edit_detour(
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-    target_step: int,
-    reason: str,
-    details: Dict[str, Any],
-) -> GroupResult:
-    acknowledgement = (
-        "Got it - let's adjust that. I'll check availability again and refresh your offer, "
-        "then bring you back here to confirm."
-    )
-    state.add_draft_message(
-        {"body": acknowledgement, "step": 7, "topic": "confirmation_edit_ack", "requires_approval": True}
-    )
-
-    trace_size = _append_edit_trace(event_entry, details)
-    thread_state = "In Progress" if target_step == 4 else "Awaiting Client Response"
-    update_event_metadata(event_entry, caller_step=7, current_step=target_step, thread_state=thread_state)
-    append_audit_entry(event_entry, 7, target_step, reason)
-    state.caller_step = 7
-    state.current_step = target_step
-    state.set_thread_state(thread_state)
-    state.extras["persist"] = True
-    _record_detour_log(event_entry, reason, details, trace_size)
-    edit_type = details.get("type")
-    if details.get("field") == "products":
-        edit_type = "edit_products"
-    state.telemetry.detour_started = True
-    state.telemetry.detour_completed = False
-    state.telemetry.no_op_detour = details.get("previous") == details.get("new")
-    state.telemetry.final_action = edit_type or "none"
-
-    payload = {
-        "client_id": state.client_id,
-        "event_id": event_entry.get("event_id"),
-        "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "reason": reason,
-        "target_step": target_step,
-        "context": state.context_snapshot,
-        "persisted": True,
-        "edit_details": details,
-        "edit_trace_size": trace_size,
-    }
-    return GroupResult(action="confirmation_detour", payload=payload, halt=False)
-
-
-def _append_edit_trace(event_entry: Dict[str, Any], details: Dict[str, Any]) -> int:
-    trace = event_entry.setdefault("edit_trace", [])
-    entry: Dict[str, Any] = {
-        "ts": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-        "type": details.get("type"),
-    }
-    for key in ("previous", "new", "field", "add", "remove"):
-        if details.get(key) is not None:
-            entry[key] = details.get(key)
-    trace.append(entry)
-    return len(trace)
-
-
-def _record_detour_log(
-    event_entry: Dict[str, Any],
-    reason: str,
-    details: Dict[str, Any],
-    trace_size: int,
-) -> None:
-    logs = event_entry.setdefault("logs", [])
-    logs.append(
-        {
-            "ts": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-            "actor": "workflow",
-            "action": "detour_started",
-            "details": {
-                "reason": reason,
-                "edit": details,
-                "edit_trace_size": trace_size,
-            },
-        }
-    )
 
 
 def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:
@@ -259,25 +146,6 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
     conf_state = event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})
     room_name = event_entry.get("locked_room_id") or event_entry.get("room_pending_decision", {}).get("selected_room")
     event_date = event_entry.get("chosen_date") or event_entry.get("event_data", {}).get("Event Date")
-
-    update_billing_details(event_entry)
-    missing_fields = missing_billing_fields(event_entry)
-    if missing_fields:
-        prompt = billing_prompt_for_missing_fields(missing_fields)
-        draft = {
-            "body": prompt,
-            "step": 7,
-            "topic": "confirmation_billing_missing",
-            "requires_approval": True,
-        }
-        state.add_draft_message(draft)
-        update_event_metadata(event_entry, thread_state="Awaiting Client Response")
-        state.set_thread_state("Awaiting Client Response")
-        state.extras["persist"] = True
-        payload = _base_payload(state, event_entry)
-        payload["missing_billing_fields"] = missing_fields
-        state.telemetry.final_action = "confirm"
-        return GroupResult(action="confirmation_billing_missing", payload=payload, halt=True)
 
     if deposit_state.get("required") and deposit_state.get("status") != "paid":
         deposit_state["status"] = "requested"
@@ -293,7 +161,12 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
             "I’ll send payment details now. Once received, I’ll confirm your event officially."
         )
         draft = {
-            "body": message,
+            "body": append_footer(
+                message,
+                step=7,
+                next_step=7,
+                thread_state="Awaiting Client Response",
+            ),
             "step": 7,
             "topic": "confirmation_deposit_pending",
             "requires_approval": True,
@@ -304,15 +177,20 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
         state.set_thread_state("Awaiting Client Response")
         state.extras["persist"] = True
         payload = _base_payload(state, event_entry)
-        state.telemetry.final_action = "confirm"
         return GroupResult(action="confirmation_deposit_requested", payload=payload, halt=True)
 
     room_fragment = f" for {room_name}" if room_name else ""
     date_fragment = f" on {event_date}" if event_date else ""
+    final_message = (
+        f"Wonderful — we’re ready to proceed with your booking{room_fragment}{date_fragment}. "
+        "I’ll place the booking and send a confirmation message shortly."
+    )
     draft = {
-        "body": (
-            f"Wonderful — we’re ready to proceed with your booking{room_fragment}{date_fragment}. "
-            "I’ll place the booking and send a confirmation message shortly."
+        "body": append_footer(
+            final_message,
+            step=7,
+            next_step=7,
+            thread_state="In Progress",
         ),
         "step": 7,
         "topic": "confirmation_final",
@@ -320,11 +198,10 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
     }
     state.add_draft_message(draft)
     conf_state["pending"] = {"kind": "final_confirmation"}
-    update_event_metadata(event_entry, thread_state="Awaiting Client Response")
-    state.set_thread_state("Awaiting Client Response")
+    update_event_metadata(event_entry, thread_state="In Progress")
+    state.set_thread_state("In Progress")
     state.extras["persist"] = True
     payload = _base_payload(state, event_entry)
-    state.telemetry.final_action = "confirm"
     return GroupResult(action="confirmation_draft", payload=payload, halt=True)
 
 
@@ -373,7 +250,12 @@ def _handle_reserve(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
     ]
     body = " ".join(part for part in reservation_text_parts if part)
     draft = {
-        "body": body,
+        "body": append_footer(
+            body,
+            step=7,
+            next_step=7,
+            thread_state="Awaiting Client Response",
+        ),
         "step": 7,
         "topic": "confirmation_reserve",
         "requires_approval": True,
@@ -405,7 +287,12 @@ def _handle_site_visit(state: WorkflowState, event_entry: Dict[str, Any]) -> Gro
     draft_lines.extend(f"- {slot}" for slot in slots)
     draft_lines.append("Which would suit you? If you have other preferences, let me know and I’ll try to accommodate.")
     draft = {
-        "body": "\n".join(draft_lines),
+        "body": append_footer(
+            "\n".join(draft_lines),
+            step=7,
+            next_step=7,
+            thread_state="Awaiting Client Response",
+        ),
         "step": 7,
         "topic": "confirmation_site_visit",
         "requires_approval": True,
@@ -423,9 +310,12 @@ def _handle_site_visit(state: WorkflowState, event_entry: Dict[str, Any]) -> Gro
 
 def _site_visit_unavailable_response(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:
     draft = {
-        "body": (
+        "body": append_footer(
             "Thanks for checking — for this room we aren't able to offer on-site visits before confirmation, "
-            "but I'm happy to share additional details or photos."
+            "but I'm happy to share additional details or photos.",
+            step=7,
+            next_step=7,
+            thread_state="Awaiting Client Response",
         ),
         "step": 7,
         "topic": "confirmation_question",
@@ -442,7 +332,12 @@ def _site_visit_unavailable_response(state: WorkflowState, event_entry: Dict[str
 def _handle_decline(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:
     event_entry.setdefault("event_data", {})["Status"] = EventStatus.CANCELLED.value
     draft = {
-        "body": "Thank you for letting us know. We’ve released the date, and we’d be happy to assist with any future events.",
+        "body": append_footer(
+            "Thank you for letting us know. We’ve released the date, and we’d be happy to assist with any future events.",
+            step=7,
+            next_step=7,
+            thread_state="In Progress",
+        ),
         "step": 7,
         "topic": "confirmation_decline",
         "requires_approval": True,
@@ -454,17 +349,18 @@ def _handle_decline(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
     update_event_metadata(event_entry, thread_state="In Progress")
     state.set_thread_state("In Progress")
     state.extras["persist"] = True
-    state.telemetry.final_action = "discard"
-    event_entry["decision"] = "discarded"
     payload = _base_payload(state, event_entry)
-    state.telemetry.buttons_enabled = False
-    payload["buttons_enabled"] = False
     return GroupResult(action="confirmation_decline", payload=payload, halt=True)
 
 
 def _handle_question(state: WorkflowState) -> GroupResult:
     draft = {
-        "body": "Happy to help — could you share a bit more detail so I can advise?",
+        "body": append_footer(
+            "Happy to help — could you share a bit more detail so I can advise?",
+            step=7,
+            next_step=7,
+            thread_state="Awaiting Client Response",
+        ),
         "step": 7,
         "topic": "confirmation_question",
         "requires_approval": True,
@@ -496,19 +392,16 @@ def _process_hil_confirmation(state: WorkflowState, event_entry: Dict[str, Any])
     if kind == "final_confirmation":
         _ensure_calendar_block(event_entry)
         event_entry.setdefault("event_data", {})["Status"] = EventStatus.CONFIRMED.value
-        event_entry["decision"] = "accepted"
         conf_state["pending"] = None
         update_event_metadata(event_entry, transition_ready=True, thread_state="In Progress")
         append_audit_entry(event_entry, 7, 7, "confirmation_sent")
         state.set_thread_state("In Progress")
         state.extras["persist"] = True
-        state.telemetry.final_action = "accepted"
         payload = _base_payload(state, event_entry)
         return GroupResult(action="confirmation_finalized", payload=payload, halt=True)
 
     if kind == "decline":
         conf_state["pending"] = None
-        event_entry["decision"] = "discarded"
         update_event_metadata(event_entry, thread_state="In Progress")
         append_audit_entry(event_entry, 7, 7, "confirmation_declined")
         state.set_thread_state("In Progress")
@@ -584,8 +477,6 @@ def _iso_to_ddmmyyyy(raw: Optional[str]) -> Optional[str]:
 
 
 def _base_payload(state: WorkflowState, event_entry: Dict[str, Any]) -> Dict[str, Any]:
-    buttons_enabled, missing_fields, gatekeeper, gate_explain = _sync_gate_context(state, event_entry)
-
     payload = {
         "client_id": state.client_id,
         "event_id": event_entry.get("event_id"),
@@ -595,42 +486,8 @@ def _base_payload(state: WorkflowState, event_entry: Dict[str, Any]) -> Dict[str
         "thread_state": state.thread_state,
         "context": state.context_snapshot,
         "persisted": True,
-        "buttons_rendered": True,
-        "buttons_enabled": buttons_enabled,
-        "missing_fields": missing_fields,
-        "gatekeeper_passed": dict(gatekeeper),
-        "gate_explain": gate_explain,
-        "gatekeeper_explain": gate_explain,
     }
     return payload
-
-
-def _sync_gate_context(
-    state: WorkflowState, event_entry: Dict[str, Any]
-) -> Tuple[bool, List[str], Dict[str, bool], Dict[str, Any]]:
-    update_billing_details(event_entry)
-    gatekeeper = refresh_gatekeeper(event_entry)
-    gate_explain = event_entry.get("gatekeeper_explain") or explain_step7_gate(event_entry)
-    missing_now = gate_explain.get("missing_now") or []
-    deduped_missing: List[str] = []
-    seen: set[str] = set()
-    for entry in missing_now:
-        if entry not in seen:
-            seen.add(entry)
-            deduped_missing.append(entry)
-
-    buttons_enabled = bool(gate_explain.get("ready"))
-
-    state.telemetry.buttons_rendered = True
-    state.telemetry.buttons_enabled = buttons_enabled
-    state.telemetry.missing_fields = deduped_missing
-    state.telemetry.gatekeeper_passed = dict(gatekeeper)
-    state.telemetry.caller_step = state.caller_step or event_entry.get("caller_step")
-    state.telemetry.detour_completed = event_entry.get("caller_step") is None
-    setattr(state.telemetry, "gate_explain", gate_explain)
-    setattr(state.telemetry, "gatekeeper_explain", gate_explain)
-
-    return buttons_enabled, deduped_missing, gatekeeper, gate_explain
 
 
 def _any_keyword_match(lowered: str, keywords: Tuple[str, ...]) -> bool:
