@@ -36,3 +36,12 @@ coverage.xml
 junit.xml
 .pytest_cache/
 htmlcov/
+
+# test artifacts
+coverage.xml
+junit.xml
+.pytest_cache/
+htmlcov/
+# repo tmp
+tmp/
+**/.DS_Store
