@@ -89,15 +89,10 @@ def process(state: WorkflowState) -> GroupResult:
         ],
         "actions": [
             {
-                "type": "review_offer",
-                "label": "Review offer draft",
-                "offer_id": offer_id,
-            },
-            {
                 "type": "send_offer",
                 "label": "Send to client",
                 "offer_id": offer_id,
-            },
+            }
         ],
     }
     state.add_draft_message(draft_message)

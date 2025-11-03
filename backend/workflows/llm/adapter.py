@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import json
 import logging
 import os
 import re
@@ -9,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from backend.adapters.agent_adapter import AgentAdapter, StubAgentAdapter, get_agent_adapter, reset_agent_adapter
 from backend.domain import IntentLabel
+from backend.llm.provider_registry import get_provider, reset_provider_for_tests
 
 from backend.services.products import list_product_records, normalise_product_payload
 from backend.workflows.common.room_rules import (
@@ -206,21 +208,29 @@ def _validated_analysis(result: Any) -> Optional[Dict[str, Any]]:
     }
 
 
-def _invoke_adapter_with_retry(agent: AgentAdapter, payload: Dict[str, str], phase: str) -> Optional[Dict[str, Any]]:
+def _invoke_provider_with_retry(payload: Dict[str, str], phase: str) -> Optional[Dict[str, Any]]:
+    provider = get_provider()
+    text = json.dumps(payload, ensure_ascii=False)
     last_error: Optional[Exception] = None
     for attempt in range(_MAX_RETRIES):
         try:
-            result = agent.analyze_message(payload)
+            result = provider.classify_extract(text)
             validated = _validated_analysis(result)
             if validated is not None:
-                _record_last_call(agent, phase=phase)
+                try:
+                    _record_last_call(_agent(), phase=phase)
+                except Exception:  # pragma: no cover - defensive guard
+                    pass
                 return validated
-            logger.warning("Adapter returned invalid analysis payload on attempt %s", attempt + 1)
+            logger.warning("Provider returned invalid analysis payload on attempt %s", attempt + 1)
+        except NotImplementedError as exc:
+            last_error = exc
+            break
         except Exception as exc:  # pragma: no cover - defensive guard
             last_error = exc
-            logger.warning("Adapter analysis failed (attempt %s): %s", attempt + 1, exc)
+            logger.warning("Provider analysis failed (attempt %s): %s", attempt + 1, exc)
     if last_error:
-        logger.info("Falling back to heuristics after adapter failure: %s", last_error)
+        logger.info("Falling back to heuristics after provider failure: %s", last_error)
     return None
 
 
@@ -248,8 +258,7 @@ def _analyze_payload(payload: Dict[str, str]) -> Dict[str, Any]:
     if cached is not None:
         return dict(cached)
 
-    agent = _agent()
-    analysis = _invoke_adapter_with_retry(agent, payload, phase="analysis")
+    analysis = _invoke_provider_with_retry(payload, phase="analysis")
     if analysis is None:
         analysis = _fallback_analysis(payload)
     _ANALYSIS_CACHE[cache_key] = analysis
@@ -387,6 +396,7 @@ def reset_llm_adapter() -> None:
     adapter = get_agent_adapter()
     _LAST_CALL_METADATA = {}
     _ANALYSIS_CACHE = {}
+    reset_provider_for_tests()
 
 
 _CONFIRM_TOKENS = (

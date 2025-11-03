@@ -4,10 +4,15 @@ import pytest
 
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.groups.date_confirmation.trigger import _present_candidate_dates, _finalize_confirmation
-from backend.workflows.groups.room_availability.trigger import process as room_process
-from backend.workflows.groups.offer.trigger import process as offer_process
-import backend.workflows.groups.room_availability.trigger.process as room_module
+from backend.workflows.groups.date_confirmation.trigger.process import (
+    _present_candidate_dates,
+    _finalize_confirmation,
+)
+from backend.workflows.groups.room_availability.trigger.process import process as room_process
+from backend.workflows.groups.offer.trigger.process import process as offer_process
+import importlib
+
+room_module = importlib.import_module("backend.workflows.groups.room_availability.trigger.process")
 
 
 def _build_state(tmp_path: Path) -> WorkflowState:
@@ -112,7 +117,7 @@ def test_stubbed_flow_progression(tmp_path, monkeypatch, room_status):
             "date_confirmed": True,
             "requirements_hash": req_hash,
             "room_eval_hash": req_hash,
-            "products_state": {"line_items": []},
+            "products_state": {"line_items": [], "skip_products": True},
             "products": [],
             "selected_products": [],
         }
@@ -123,4 +128,4 @@ def test_stubbed_flow_progression(tmp_path, monkeypatch, room_status):
 
     assert offer_result.action == "offer_draft_prepared"
     assert draft_step4["table_blocks"]
-    assert any(action["type"] in {"review_offer", "send_offer"} for action in draft_step4["actions"])
+    assert any(action["type"] == "send_offer" for action in draft_step4["actions"])
