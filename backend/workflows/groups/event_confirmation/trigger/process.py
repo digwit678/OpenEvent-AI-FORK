@@ -55,7 +55,7 @@ def process(state: WorkflowState) -> GroupResult:
         append_audit_entry(event_entry, 7, target_step, reason)
         state.caller_step = 7
         state.current_step = target_step
-        state.set_thread_state("In Progress" if target_step == 4 else "Awaiting Client Response")
+        state.set_thread_state("Waiting on HIL" if target_step == 4 else "Awaiting Client")
         state.extras["persist"] = True
         payload = {
             "client_id": state.client_id,
@@ -164,8 +164,8 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
             "body": append_footer(
                 message,
                 step=7,
-                next_step=7,
-                thread_state="Awaiting Client Response",
+                next_step="Confirm deposit payment",
+                thread_state="Awaiting Client",
             ),
             "step": 7,
             "topic": "confirmation_deposit_pending",
@@ -173,8 +173,8 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
         }
         state.add_draft_message(draft)
         conf_state["pending"] = {"kind": "deposit_request"}
-        update_event_metadata(event_entry, thread_state="Awaiting Client Response")
-        state.set_thread_state("Awaiting Client Response")
+        update_event_metadata(event_entry, thread_state="Awaiting Client")
+        state.set_thread_state("Awaiting Client")
         state.extras["persist"] = True
         payload = _base_payload(state, event_entry)
         return GroupResult(action="confirmation_deposit_requested", payload=payload, halt=True)
@@ -189,8 +189,8 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
         "body": append_footer(
             final_message,
             step=7,
-            next_step=7,
-            thread_state="In Progress",
+            next_step="Finalize booking (HIL)",
+            thread_state="Waiting on HIL",
         ),
         "step": 7,
         "topic": "confirmation_final",
@@ -198,8 +198,8 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
     }
     state.add_draft_message(draft)
     conf_state["pending"] = {"kind": "final_confirmation"}
-    update_event_metadata(event_entry, thread_state="In Progress")
-    state.set_thread_state("In Progress")
+    update_event_metadata(event_entry, thread_state="Waiting on HIL")
+    state.set_thread_state("Waiting on HIL")
     state.extras["persist"] = True
     payload = _base_payload(state, event_entry)
     return GroupResult(action="confirmation_draft", payload=payload, halt=True)
@@ -253,8 +253,8 @@ def _handle_reserve(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
         "body": append_footer(
             body,
             step=7,
-            next_step=7,
-            thread_state="Awaiting Client Response",
+            next_step="Confirm deposit payment",
+            thread_state="Awaiting Client",
         ),
         "step": 7,
         "topic": "confirmation_reserve",
@@ -264,8 +264,8 @@ def _handle_reserve(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
     event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})["pending"] = {
         "kind": "reserve_notification"
     }
-    update_event_metadata(event_entry, thread_state="Awaiting Client Response")
-    state.set_thread_state("Awaiting Client Response")
+    update_event_metadata(event_entry, thread_state="Awaiting Client")
+    state.set_thread_state("Awaiting Client")
     state.extras["persist"] = True
     payload = _base_payload(state, event_entry)
     return GroupResult(action="confirmation_reserve", payload=payload, halt=True)
@@ -290,8 +290,8 @@ def _handle_site_visit(state: WorkflowState, event_entry: Dict[str, Any]) -> Gro
         "body": append_footer(
             "\n".join(draft_lines),
             step=7,
-            next_step=7,
-            thread_state="Awaiting Client Response",
+            next_step="Pick a visit slot",
+            thread_state="Awaiting Client",
         ),
         "step": 7,
         "topic": "confirmation_site_visit",
@@ -301,8 +301,8 @@ def _handle_site_visit(state: WorkflowState, event_entry: Dict[str, Any]) -> Gro
     event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})["pending"] = {
         "kind": "site_visit"
     }
-    update_event_metadata(event_entry, thread_state="Awaiting Client Response")
-    state.set_thread_state("Awaiting Client Response")
+    update_event_metadata(event_entry, thread_state="Awaiting Client")
+    state.set_thread_state("Awaiting Client")
     state.extras["persist"] = True
     payload = _base_payload(state, event_entry)
     return GroupResult(action="confirmation_site_visit", payload=payload, halt=True)
@@ -314,16 +314,16 @@ def _site_visit_unavailable_response(state: WorkflowState, event_entry: Dict[str
             "Thanks for checking — for this room we aren't able to offer on-site visits before confirmation, "
             "but I'm happy to share additional details or photos.",
             step=7,
-            next_step=7,
-            thread_state="Awaiting Client Response",
+            next_step="Share any questions",
+            thread_state="Awaiting Client",
         ),
         "step": 7,
         "topic": "confirmation_question",
         "requires_approval": True,
     }
     state.add_draft_message(draft)
-    update_event_metadata(event_entry, thread_state="Awaiting Client Response")
-    state.set_thread_state("Awaiting Client Response")
+    update_event_metadata(event_entry, thread_state="Awaiting Client")
+    state.set_thread_state("Awaiting Client")
     state.extras["persist"] = True
     payload = _base_payload(state, event_entry)
     return GroupResult(action="confirmation_question", payload=payload, halt=True)
@@ -335,8 +335,8 @@ def _handle_decline(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
         "body": append_footer(
             "Thank you for letting us know. We’ve released the date, and we’d be happy to assist with any future events.",
             step=7,
-            next_step=7,
-            thread_state="In Progress",
+            next_step="Close booking (HIL)",
+            thread_state="Waiting on HIL",
         ),
         "step": 7,
         "topic": "confirmation_decline",
@@ -346,8 +346,8 @@ def _handle_decline(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
     event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})["pending"] = {
         "kind": "decline"
     }
-    update_event_metadata(event_entry, thread_state="In Progress")
-    state.set_thread_state("In Progress")
+    update_event_metadata(event_entry, thread_state="Waiting on HIL")
+    state.set_thread_state("Waiting on HIL")
     state.extras["persist"] = True
     payload = _base_payload(state, event_entry)
     return GroupResult(action="confirmation_decline", payload=payload, halt=True)
@@ -358,16 +358,16 @@ def _handle_question(state: WorkflowState) -> GroupResult:
         "body": append_footer(
             "Happy to help — could you share a bit more detail so I can advise?",
             step=7,
-            next_step=7,
-            thread_state="Awaiting Client Response",
+            next_step="Provide details",
+            thread_state="Awaiting Client",
         ),
         "step": 7,
         "topic": "confirmation_question",
         "requires_approval": True,
     }
     state.add_draft_message(draft)
-    update_event_metadata(state.event_entry, thread_state="Awaiting Client Response")
-    state.set_thread_state("Awaiting Client Response")
+    update_event_metadata(state.event_entry, thread_state="Awaiting Client")
+    state.set_thread_state("Awaiting Client")
     state.extras["persist"] = True
     payload = _base_payload(state, state.event_entry)
     return GroupResult(action="confirmation_question", payload=payload, halt=True)
@@ -393,18 +393,18 @@ def _process_hil_confirmation(state: WorkflowState, event_entry: Dict[str, Any])
         _ensure_calendar_block(event_entry)
         event_entry.setdefault("event_data", {})["Status"] = EventStatus.CONFIRMED.value
         conf_state["pending"] = None
-        update_event_metadata(event_entry, transition_ready=True, thread_state="In Progress")
+        update_event_metadata(event_entry, transition_ready=True, thread_state="Awaiting Client")
         append_audit_entry(event_entry, 7, 7, "confirmation_sent")
-        state.set_thread_state("In Progress")
+        state.set_thread_state("Awaiting Client")
         state.extras["persist"] = True
         payload = _base_payload(state, event_entry)
         return GroupResult(action="confirmation_finalized", payload=payload, halt=True)
 
     if kind == "decline":
         conf_state["pending"] = None
-        update_event_metadata(event_entry, thread_state="In Progress")
+        update_event_metadata(event_entry, thread_state="Awaiting Client")
         append_audit_entry(event_entry, 7, 7, "confirmation_declined")
-        state.set_thread_state("In Progress")
+        state.set_thread_state("Awaiting Client")
         state.extras["persist"] = True
         payload = _base_payload(state, event_entry)
         return GroupResult(action="confirmation_decline_sent", payload=payload, halt=True)
@@ -416,8 +416,8 @@ def _process_hil_confirmation(state: WorkflowState, event_entry: Dict[str, Any])
 
         conf_state["pending"] = None
         append_audit_entry(event_entry, 7, 7, "site_visit_proposed")
-        update_event_metadata(event_entry, thread_state="Awaiting Client Response")
-        state.set_thread_state("Awaiting Client Response")
+        update_event_metadata(event_entry, thread_state="Awaiting Client")
+        state.set_thread_state("Awaiting Client")
         state.extras["persist"] = True
         payload = _base_payload(state, event_entry)
         return GroupResult(action="confirmation_site_visit_sent", payload=payload, halt=True)
@@ -425,8 +425,8 @@ def _process_hil_confirmation(state: WorkflowState, event_entry: Dict[str, Any])
     if kind == "deposit_request":
         conf_state["pending"] = None
         append_audit_entry(event_entry, 7, 7, "deposit_requested")
-        update_event_metadata(event_entry, thread_state="Awaiting Client Response")
-        state.set_thread_state("Awaiting Client Response")
+        update_event_metadata(event_entry, thread_state="Awaiting Client")
+        state.set_thread_state("Awaiting Client")
         state.extras["persist"] = True
         payload = _base_payload(state, event_entry)
         return GroupResult(action="confirmation_deposit_notified", payload=payload, halt=True)
@@ -434,8 +434,8 @@ def _process_hil_confirmation(state: WorkflowState, event_entry: Dict[str, Any])
     if kind == "reserve_notification":
         conf_state["pending"] = None
         append_audit_entry(event_entry, 7, 7, "reserve_notified")
-        update_event_metadata(event_entry, thread_state="Awaiting Client Response")
-        state.set_thread_state("Awaiting Client Response")
+        update_event_metadata(event_entry, thread_state="Awaiting Client")
+        state.set_thread_state("Awaiting Client")
         state.extras["persist"] = True
         payload = _base_payload(state, event_entry)
         return GroupResult(action="confirmation_reserve_sent", payload=payload, halt=True)

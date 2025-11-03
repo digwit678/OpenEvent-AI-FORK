@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.requirements import merge_client_profile
+from backend.workflows.common.requirements import merge_client_profile, requirements_hash
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.utils.profiler import profile_step
+from backend.workflow.state import WorkflowStep, write_stage
 
 from ..llm.send_offer_llm import ComposeOffer
 
@@ -37,8 +37,31 @@ def process(state: WorkflowState) -> GroupResult:
     if merge_client_profile(event_entry, state.user_info or {}):
         state.extras["persist"] = True
 
+    requirements = event_entry.get("requirements") or {}
+    current_req_hash = event_entry.get("requirements_hash")
+    computed_hash = requirements_hash(requirements) if requirements else None
+    if computed_hash and computed_hash != current_req_hash:
+        update_event_metadata(event_entry, requirements_hash=computed_hash)
+        current_req_hash = computed_hash
+        state.extras["persist"] = True
+
     _ensure_products_container(event_entry)
-    _apply_product_operations(event_entry, state.user_info)
+    products_changed = _apply_product_operations(event_entry, state.user_info or {})
+    if products_changed:
+        state.extras["persist"] = True
+
+    precondition = _evaluate_preconditions(event_entry, current_req_hash)
+    if precondition:
+        code, target = precondition
+        if target in (2, 3):
+            return _route_to_owner_step(state, event_entry, target, code)
+        return _handle_products_pending(state, event_entry, code)
+
+    write_stage(event_entry, current_step=WorkflowStep.STEP_4, caller_step=None)
+    update_event_metadata(event_entry, caller_step=None)
+    state.extras["persist"] = True
+    state.caller_step = None
+
     pricing_inputs = _rebuild_pricing_inputs(event_entry, state.user_info)
 
     offer_id, offer_version, total_amount = _record_offer(event_entry, pricing_inputs, state.user_info)
@@ -47,8 +70,8 @@ def process(state: WorkflowState) -> GroupResult:
     draft_body = append_footer(
         "\n".join(summary_lines),
         step=4,
-        next_step=5,
-        thread_state="Awaiting Client Response",
+        next_step="Await feedback",
+        thread_state="Awaiting Client",
     )
 
     draft_message = {
@@ -73,7 +96,7 @@ def process(state: WorkflowState) -> GroupResult:
     update_event_metadata(
         event_entry,
         current_step=5,
-        thread_state="Awaiting Client Response",
+        thread_state="Awaiting Client",
         transition_ready=False,
         caller_step=None,
     )
@@ -81,7 +104,7 @@ def process(state: WorkflowState) -> GroupResult:
         append_audit_entry(event_entry, 4, caller, "return_to_caller")
     state.current_step = 5
     state.caller_step = None
-    state.set_thread_state("Awaiting Client Response")
+    state.set_thread_state("Awaiting Client")
     state.extras["persist"] = True
 
     payload = {
@@ -101,21 +124,165 @@ def process(state: WorkflowState) -> GroupResult:
     return GroupResult(action="offer_draft_prepared", payload=payload, halt=True)
 
 
+def _evaluate_preconditions(
+    event_entry: Dict[str, Any],
+    current_requirements_hash: Optional[str],
+) -> Optional[Tuple[str, Union[int, str]]]:
+    if not bool(event_entry.get("date_confirmed")):
+        return "P1", 2
+
+    locked_room_id = event_entry.get("locked_room_id")
+    room_eval_hash = event_entry.get("room_eval_hash")
+    if not (
+        locked_room_id
+        and current_requirements_hash
+        and room_eval_hash
+        and current_requirements_hash == room_eval_hash
+    ):
+        return "P2", 3
+
+    if not _has_capacity(event_entry):
+        return "P3", 3
+
+    if not _products_ready(event_entry):
+        return "P4", "products"
+
+    return None
+
+
+def _route_to_owner_step(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    target_step: int,
+    reason_code: str,
+) -> GroupResult:
+    caller_step = WorkflowStep.STEP_4
+    target_enum = WorkflowStep(f"step_{target_step}")
+    write_stage(event_entry, current_step=target_enum, caller_step=caller_step)
+
+    thread_state = "Awaiting Client" if target_step == 2 else "Waiting on HIL"
+    update_event_metadata(event_entry, thread_state=thread_state)
+    append_audit_entry(event_entry, 4, target_step, f"offer_gate_{reason_code.lower()}")
+
+    state.current_step = target_step
+    state.caller_step = caller_step.numeric
+    state.set_thread_state(thread_state)
+    state.extras["persist"] = True
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "missing": [reason_code],
+        "target_step": target_step,
+        "thread_state": state.thread_state,
+        "draft_messages": state.draft_messages,
+        "context": state.context_snapshot,
+        "persisted": True,
+    }
+    return GroupResult(action="offer_detour", payload=payload, halt=False)
+
+
+def _handle_products_pending(state: WorkflowState, event_entry: Dict[str, Any], reason_code: str) -> GroupResult:
+    products_state = event_entry.setdefault("products_state", {})
+    first_prompt = not products_state.get("awaiting_client_products")
+
+    if first_prompt:
+        products_state["awaiting_client_products"] = True
+        prompt = (
+            "Before I prepare your tailored proposal, could you share which catering or add-ons you'd like to include? "
+            "Let me know if you'd prefer to proceed without extras."
+        )
+        draft_body = append_footer(
+            prompt,
+            step=4,
+            next_step="Share preferred products",
+            thread_state="Awaiting Client",
+        )
+        draft_message = {
+            "body": draft_body,
+            "step": 4,
+            "topic": "offer_products_prompt",
+            "requires_approval": True,
+        }
+        state.add_draft_message(draft_message)
+        append_audit_entry(event_entry, 4, 4, "offer_products_prompt")
+
+    write_stage(event_entry, current_step=WorkflowStep.STEP_4)
+    update_event_metadata(event_entry, thread_state="Awaiting Client")
+
+    state.current_step = 4
+    state.caller_step = event_entry.get("caller_step")
+    state.set_thread_state("Awaiting Client")
+    state.extras["persist"] = True
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "missing": [reason_code],
+        "thread_state": state.thread_state,
+        "draft_messages": state.draft_messages,
+        "context": state.context_snapshot,
+        "persisted": True,
+    }
+    return GroupResult(action="offer_products_pending", payload=payload, halt=True)
+
+
+def _has_capacity(event_entry: Dict[str, Any]) -> bool:
+    requirements = event_entry.get("requirements") or {}
+    participants = requirements.get("number_of_participants")
+    if participants is None:
+        participants = (event_entry.get("event_data") or {}).get("Number of Participants")
+    if participants is None:
+        participants = (event_entry.get("captured") or {}).get("participants")
+    try:
+        return int(str(participants).strip()) > 0
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
+def _products_ready(event_entry: Dict[str, Any]) -> bool:
+    products = event_entry.get("products") or []
+    selected = event_entry.get("selected_products") or []
+    products_state = event_entry.get("products_state") or {}
+    line_items = products_state.get("line_items") or []
+    skip_flag = bool(products_state.get("skip_products") or event_entry.get("products_skipped"))
+    return bool(products or selected or line_items or skip_flag)
+
+
 def _ensure_products_container(event_entry: Dict[str, Any]) -> None:
     if "products" not in event_entry or not isinstance(event_entry["products"], list):
         event_entry["products"] = []
 
 
-def _apply_product_operations(event_entry: Dict[str, Any], user_info: Dict[str, Any]) -> None:
+def _apply_product_operations(event_entry: Dict[str, Any], user_info: Dict[str, Any]) -> bool:
     additions = _normalise_products(user_info.get("products_add"))
     removals = _normalise_product_names(user_info.get("products_remove"))
+    changes = False
 
     if additions:
         for item in additions:
             _upsert_product(event_entry["products"], item)
+        changes = True
 
     if removals:
         event_entry["products"] = [item for item in event_entry["products"] if item["name"].lower() not in removals]
+        changes = True
+
+    skip_flag = any(bool(user_info.get(key)) for key in ("products_skip", "skip_products", "products_none"))
+    if skip_flag:
+        products_state = event_entry.setdefault("products_state", {})
+        products_state["skip_products"] = True
+        changes = True
+
+    if changes:
+        products_state = event_entry.setdefault("products_state", {})
+        products_state.pop("awaiting_client_products", None)
+
+    return changes
 
 
 def _normalise_products(payload: Any) -> List[Dict[str, Any]]:

@@ -68,8 +68,8 @@ def _present_candidate_dates(state: WorkflowState, event_entry: dict) -> GroupRe
     prompt = append_footer(
         prompt,
         step=2,
-        next_step=3,
-        thread_state="Awaiting Client Response",
+        next_step="Confirm date",
+        thread_state="Awaiting Client",
     )
 
     draft_message = {
@@ -80,8 +80,8 @@ def _present_candidate_dates(state: WorkflowState, event_entry: dict) -> GroupRe
     }
     state.add_draft_message(draft_message)
 
-    update_event_metadata(event_entry, thread_state="Awaiting Client Response", current_step=2)
-    state.set_thread_state("Awaiting Client Response")
+    update_event_metadata(event_entry, thread_state="Awaiting Client", current_step=2)
+    state.set_thread_state("Awaiting Client")
     state.extras["persist"] = True
 
     payload = {
@@ -128,7 +128,7 @@ def _finalize_confirmation(state: WorkflowState, event_entry: dict, confirmed_da
         event_entry,
         chosen_date=confirmed_date,
         date_confirmed=True,
-        thread_state="In Progress",
+        thread_state="Waiting on HIL",
     )
 
     caller_step = event_entry.get("caller_step")
@@ -140,8 +140,8 @@ def _finalize_confirmation(state: WorkflowState, event_entry: dict, confirmed_da
     reply = append_footer(
         reply,
         step=2,
-        next_step=next_step,
-        thread_state="In Progress",
+        next_step="Room availability review",
+        thread_state="Waiting on HIL",
     )
     draft_message = {
         "body": reply,
@@ -154,7 +154,7 @@ def _finalize_confirmation(state: WorkflowState, event_entry: dict, confirmed_da
     if state.client and state.event_id:
         link_event_to_client(state.client, state.event_id)
 
-    state.set_thread_state("In Progress")
+    state.set_thread_state("Waiting on HIL")
     state.current_step = next_step
     state.caller_step = None
     state.extras["persist"] = True
