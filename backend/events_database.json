@@ -103,20 +103,20 @@
       "event_id": "76059788-dbae-4533-a4dd-3c3dd1857d41",
       "created_at": "2025-10-23T01:31:38.455183",
       "status": "Lead",
-      "current_step": 5,
-      "caller_step": null,
-      "thread_state": "Awaiting Client Response",
+      "current_step": 3,
+      "caller_step": 5,
+      "thread_state": "Awaiting Client",
       "chosen_date": "09.04.2026",
       "date_confirmed": true,
       "locked_room_id": "Room A",
       "requirements": {
-        "number_of_participants": null,
+        "number_of_participants": 30,
         "seating_layout": null,
         "event_duration": {},
-        "special_requirements": "Considering an event and requesting available evening dates in November",
-        "preferred_room": "Atelier"
+        "special_requirements": null,
+        "preferred_room": null
       },
-      "requirements_hash": "5a5583a6b40e3d24a6b13fd2c3829365184f1d8edd965684ebf4bb7a308cbe55",
+      "requirements_hash": "4919ac192a5fda3ee0c945f3d8a50c4a5486e4f67b70db2fce52b2217bae2737",
       "room_eval_hash": "5a5583a6b40e3d24a6b13fd2c3829365184f1d8edd965684ebf4bb7a308cbe55",
       "offer_id": null,
       "audit": [
@@ -206,10 +206,17 @@
           "from_step": 3,
           "to_step": 5,
           "reason": "room_eval_cache_hit"
+        },
+        {
+          "ts": "2025-11-04T18:43:12Z",
+          "actor": "system",
+          "from_step": 5,
+          "to_step": 3,
+          "reason": "requirements_updated"
         }
       ],
       "event_data": {
-        "Date Email Received": "31.10.2025",
+        "Date Email Received": "04.11.2025",
         "Status": "Lead",
         "Event Date": "2026-04-09",
         "Name": "Alex",
@@ -220,7 +227,7 @@
         "Start Time": "18:00",
         "End Time": "22:00",
         "Preferred Room": "Atelier",
-        "Number of Participants": "15",
+        "Number of Participants": "30",
         "Type of Event": "workshop",
         "Catering Preference": "Not specified",
         "Billing Amount": "none",
@@ -243,7 +250,8 @@
         "c411f45a-78d0-4727-915c-ad8b13eb263f",
         "92d1b572-d766-45a6-985c-6fd8fbf95c45",
         "3a2fc340-a501-4157-903f-ebbef91fa9e3",
-        "201e713c-4e2c-4b9c-9385-6887317cf68f"
+        "201e713c-4e2c-4b9c-9385-6887317cf68f",
+        "6e15eefc-afea-4bc4-b10a-94058f1e5a50"
       ],
       "offers": [
         {
@@ -361,7 +369,129 @@
       "current_step_stage": "step_3",
       "caller_step_stage": "step_5",
       "subflow_group": "room_availability",
-      "requested_products": []
+      "requested_products": [],
+      "vague_month": "february",
+      "vague_time_of_day": "evening",
+      "room_pending_decision": {
+        "selected_room": "Room A",
+        "selected_status": "Available",
+        "requirements_hash": "4919ac192a5fda3ee0c945f3d8a50c4a5486e4f67b70db2fce52b2217bae2737",
+        "summary": "Room availability summary — Room A: Available; Room B: Available; Room C: Available; Room D: Available; Room E: Available; Room F: Available.",
+        "menu": "Atelier seasonal menu",
+        "wish_products": []
+      },
+      "pending_hil_requests": [
+        {
+          "task_id": "7c75ddcc-9caa-41cf-ac2d-42e690d1f64d",
+          "signature": "ccdf1950f5ad67b8233188f37b5201bb57209584c09054e5a74e2bd72134a126",
+          "step": 3,
+          "draft": {
+            "body": "Good news — Room A is available on 09.04.2026. It comfortably fits 30 guests. Shall we proceed with this room and date?\n\nI've summarised the best room/menu pairings below. Please choose one so I can queue it for approval.\n\n---\nStep: 3 Room Availability · Next: Choose a room · State: Awaiting Client",
+            "step": 3,
+            "next_step": "Choose a room",
+            "thread_state": "Awaiting Client",
+            "topic": "room_available",
+            "room": "Room A",
+            "status": "Available",
+            "table_blocks": [
+              {
+                "type": "room_menu",
+                "label": "Room & menu options",
+                "rows": [
+                  {
+                    "date": "09.04.2026",
+                    "room": "Room A",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "09.04.2026",
+                    "room": "Room B",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "09.04.2026",
+                    "room": "Room C",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "09.04.2026",
+                    "room": "Room D",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "09.04.2026",
+                    "room": "Room E",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "09.04.2026",
+                    "room": "Room F",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_room",
+                "label": "Proceed with Room A (Atelier seasonal menu)",
+                "room": "Room A",
+                "date": "09.04.2026",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              },
+              {
+                "type": "select_room",
+                "label": "Proceed with Room B (Atelier seasonal menu)",
+                "room": "Room B",
+                "date": "09.04.2026",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              },
+              {
+                "type": "select_room",
+                "label": "Proceed with Room C (Atelier seasonal menu)",
+                "room": "Room C",
+                "date": "09.04.2026",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              },
+              {
+                "type": "select_room",
+                "label": "Proceed with Room D (Atelier seasonal menu)",
+                "room": "Room D",
+                "date": "09.04.2026",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              },
+              {
+                "type": "select_room",
+                "label": "Proceed with Room E (Atelier seasonal menu)",
+                "room": "Room E",
+                "date": "09.04.2026",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              }
+            ],
+            "body_markdown": "Good news — Room A is available on 09.04.2026. It comfortably fits 30 guests. Shall we proceed with this room and date?\n\nI've summarised the best room/menu pairings below. Please choose one so I can queue it for approval.",
+            "footer": "Step: 3 Room Availability · Next: Choose a room · State: Awaiting Client",
+            "requires_approval": true,
+            "created_at_step": 3
+          }
+        }
+      ]
     },
     {
       "event_id": "9b1a04a2-9acc-4962-8b89-500dd76828bb",
@@ -2761,6 +2891,13 @@
           "from_step": 2,
           "to_step": 2,
           "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-04T17:10:14Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
         }
       ],
       "review_state": {
@@ -2792,7 +2929,8 @@
         "c0aa2774-8174-43d4-a36a-ea75adb31925",
         "cd6fb54f-dae1-4e6f-9445-c91077a5095a",
         "b8d25292-a876-432c-ad00-3f120d57a654",
-        "86b1839d-c8ba-4ab7-98d8-23052f6ad8da"
+        "86b1839d-c8ba-4ab7-98d8-23052f6ad8da",
+        "2f17a909-9de5-493c-a52a-cc53dae137fc"
       ],
       "captured": {},
       "verified": {},
@@ -3636,6 +3774,41 @@
             "products_remove": null,
             "room_feedback": null,
             "event_date": null
+          }
+        },
+        {
+          "msg_id": "6e15eefc-afea-4bc4-b10a-94058f1e5a50",
+          "ts": "2025-11-04T18:43:12.524126Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_time_of_day": "evening"
           }
         }
       ],
@@ -6617,6 +6790,42 @@
             "vague_weekday": "saturday",
             "vague_time_of_day": "evening"
           }
+        },
+        {
+          "msg_id": "2f17a909-9de5-493c-a52a-cc53dae137fc",
+          "ts": "2025-11-04T17:10:14.693912Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening"
+          }
         }
       ],
       "event_ids": []
@@ -7049,6 +7258,25 @@
         "caller_step": null,
         "requirements_hash": "a5f3cf8d4de4e919ae1b8758b4cdc1cc95233d6413852439faba2a2aae6ba9f3",
         "room_eval_hash": null
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "7c75ddcc-9caa-41cf-ac2d-42e690d1f64d",
+      "created_at": "2025-11-04T18:43:12.537352",
+      "type": "room_availability_message",
+      "status": "pending",
+      "client_id": "unknown@example.com",
+      "event_id": "76059788-dbae-4533-a4dd-3c3dd1857d41",
+      "payload": {
+        "step_id": 3,
+        "intent": "event_request",
+        "event_id": "76059788-dbae-4533-a4dd-3c3dd1857d41",
+        "draft_msg": "Good news — Room A is available on 09.04.2026. It comfortably fits 30 guests. Shall we proceed with this room and date?\n\nI've summarised the best room/menu pairings below. Please choose one so I can queue it for approval.\n\n---\nStep: 3 Room Availability · Next: Choose a room · State: Awaiting Client",
+        "language": null,
+        "caller_step": 5,
+        "requirements_hash": "4919ac192a5fda3ee0c945f3d8a50c4a5486e4f67b70db2fce52b2217bae2737",
+        "room_eval_hash": "5a5583a6b40e3d24a6b13fd2c3829365184f1d8edd965684ebf4bb7a308cbe55"
       },
       "notes": ""
     }

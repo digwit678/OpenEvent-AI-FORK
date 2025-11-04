@@ -101,12 +101,12 @@ def test_debug_trace_contract(tmp_path, monkeypatch):
     assert payload["timeline"], "Expected timeline entries in debug trace payload"
 
     lanes = {event["lane"] for event in payload["trace"]}
-    for lane in ("steps", "gates", "db", "entities"):
+    for lane in ("step", "gate", "db", "entity"):
         assert lane in lanes, f"Expected events in lane '{lane}'"
 
-    step_events = [event for event in payload["trace"] if event["lane"] == "steps"]
+    step_events = [event for event in payload["trace"] if event["lane"] == "step"]
     assert any(event["kind"] == "STEP_ENTER" and event.get("step") == "Step1_Intake" for event in step_events)
-    draft_events = [event for event in step_events if event["kind"] == "DRAFT_SEND"]
+    draft_events = [event for event in payload["trace"] if event["kind"] == "DRAFT_SEND"]
     assert draft_events, "Expected at least one draft event"
     for event in draft_events:
         footer = event.get("data", {}).get("footer", {})
@@ -114,14 +114,17 @@ def test_debug_trace_contract(tmp_path, monkeypatch):
         assert footer.get("next") is not None
         assert footer.get("wait_state") is not None
 
-    gate_events = [event for event in payload["trace"] if event["lane"] == "gates"]
-    assert any("P1" in (event.get("detail") or "") for event in gate_events)
-    assert any("P4" in (event.get("detail") or "") for event in gate_events)
+    gate_events = [event for event in payload["trace"] if event["lane"] == "gate"]
+    assert any(
+        isinstance(event.get("detail"), dict) and event["detail"].get("fn") == "P1 date_confirmed"
+        for event in gate_events
+    )
+    assert any(event.get("owner_step") == "Step4_Offer" for event in gate_events)
 
     db_events = [event for event in payload["trace"] if event["lane"] == "db"]
     assert any(event["kind"] == "DB_WRITE" for event in db_events)
 
-    entity_events = [event for event in payload["trace"] if event["lane"] == "entities"]
+    entity_events = [event for event in payload["trace"] if event["lane"] == "entity"]
     assert any(event["kind"] == "ENTITY_CAPTURE" for event in entity_events)
 
     timeline_path = timeline_module.resolve_path(thread_id)

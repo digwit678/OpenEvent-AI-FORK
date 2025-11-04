@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
-from backend.debug.trace import BUS
+from backend.debug.trace import BUS, get_trace_summary
 from backend.workflow.state import get_thread_state
 from backend.debug import timeline
 from fastapi.responses import PlainTextResponse
@@ -24,12 +24,14 @@ def debug_get_trace(
                 break
     confirmed = _confirmed_map(state_snapshot)
     filtered_events = _apply_filters(raw_events, granularity, kinds)
+    summary = get_trace_summary(thread_id)
     return {
         "thread_id": thread_id,
         "state": state_snapshot,
         "confirmed": confirmed,
         "trace": filtered_events,
         "timeline": timeline.snapshot(thread_id),
+        "summary": summary,
     }
 
 
@@ -40,11 +42,13 @@ def debug_get_timeline(
     kinds: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     confirmed = _confirmed_map(get_thread_state(thread_id) or {})
+    summary = get_trace_summary(thread_id)
     return {
         "thread_id": thread_id,
         "confirmed": confirmed,
         "trace": _apply_filters(BUS.get(thread_id), granularity, kinds),
         "timeline": timeline.snapshot(thread_id),
+        "summary": summary,
     }
 
 
@@ -81,26 +85,30 @@ def _format_arrow_log(events: Iterable[Dict[str, Any]]) -> List[str]:
         loop = event.get("loop")
         detour_to = event.get("detour_to_step")
         gate_info = event.get("gate") or {}
-        entity_info = event.get("entity") or {}
-        db_info = event.get("db") or {}
+        entity_info = event.get("entity_context") or {}
+        io_info = event.get("io") or event.get("db") or {}
         draft_info = (event.get("draft") or {}).get("footer") or {}
 
         prefix = f"[{ts_label}]"
         if lane == "db":
-            op = db_info.get("op") or summary or subject
-            mode = db_info.get("mode") or "DB"
-            duration = db_info.get("duration_ms")
+            op = io_info.get("op") or summary or subject
+            mode = io_info.get("direction") or "DB"
+            duration = (event.get("db") or {}).get("duration_ms")
             duration_hint = f" ({duration}ms)" if duration is not None else ""
-            line = f"{prefix} {mode} {op}{duration_hint}"
+            result = io_info.get("result")
+            result_hint = f" → {result}" if result else ""
+            line = f"{prefix} {mode} {op}{result_hint}{duration_hint}"
         elif lane == "gate":
             verdict = (gate_info.get("result") or status or kind).upper()
-            inputs = gate_info.get("inputs") or {}
-            input_preview = ""
-            if inputs:
-                shortened = ", ".join(f"{key}={_stringify(value)}" for key, value in list(inputs.items())[:3])
-                input_preview = f" (inputs: {shortened})"
+            met = gate_info.get("met")
+            required = gate_info.get("required")
+            missing = gate_info.get("missing") or []
+            missing_hint = ""
+            if missing:
+                missing_hint = f" (missing: {', '.join(missing)})"
             loop_marker = " ↺" if loop else ""
-            line = f"{prefix} {event.get('step') or subject}{loop_marker} → Gate {verdict}{input_preview}"
+            ratio = f" {met}/{required}" if met is not None and required is not None else ""
+            line = f"{prefix} {event.get('step') or subject}{loop_marker} → Gate {verdict}{ratio}{missing_hint}"
         elif lane == "entity":
             lifecycle = entity_info.get("lifecycle") or status or "captured"
             key = entity_info.get("key") or subject
@@ -121,7 +129,9 @@ def _format_arrow_log(events: Iterable[Dict[str, Any]]) -> List[str]:
             if wait_state:
                 footer_bits.append(f"state: {wait_state}")
             footer_text = f" ({', '.join(footer_bits)})" if footer_bits else ""
-            line = f"{prefix} Draft: {summary or subject}{footer_text}"
+            preview = event.get("prompt_preview")
+            preview_hint = f" — {preview}" if preview else ""
+            line = f"{prefix} Draft: {summary or subject}{footer_text}{preview_hint}"
         elif lane == "qa":
             line = f"{prefix} QA: {summary or subject}"
         else:
@@ -143,16 +153,40 @@ def _format_ts(ts: Any) -> str:
 
 
 def _confirmed_map(snapshot: Dict[str, Any]) -> Dict[str, bool]:
+    chosen_date = snapshot.get("chosen_date") or snapshot.get("event_date") or snapshot.get("date")
     date_confirmed = bool(snapshot.get("date_confirmed"))
-    room_locked = bool(snapshot.get("locked_room_id"))
-    req_hash = snapshot.get("requirements_hash")
-    room_hash = snapshot.get("room_eval_hash")
-    hashes_match = bool(req_hash and room_hash and req_hash == room_hash)
+    room_status = _room_status(snapshot)
+    req_hash = snapshot.get("requirements_hash") or snapshot.get("req_hash")
+    room_hash = snapshot.get("room_eval_hash") or snapshot.get("eval_hash")
+    hash_status = "Match" if req_hash and room_hash and req_hash == room_hash else None
+    if hash_status is None and req_hash and room_hash:
+        hash_status = "Mismatch"
+    offer_status = snapshot.get("offer_status")
+    if isinstance(offer_status, str):
+        offer_status = offer_status.title()
+    wait_state = snapshot.get("thread_state") or snapshot.get("threadState")
     return {
-        "date": date_confirmed,
-        "room_locked": room_locked,
-        "requirements_hash_matches": hashes_match,
+        "date": {"confirmed": date_confirmed, "value": chosen_date},
+        "room_status": room_status,
+        "hash_status": hash_status,
+        "offer_status": offer_status,
+        "wait_state": wait_state,
     }
+
+
+def _room_status(snapshot: Dict[str, Any]) -> Optional[str]:
+    status = snapshot.get("selected_status") or snapshot.get("room_status") or snapshot.get("status")
+    if isinstance(status, str):
+        lowered = status.lower()
+        if "option" in lowered or "lock" in lowered:
+            return "Option"
+        if lowered in {"available", "ok", "open"}:
+            return "Available"
+        if lowered in {"unavailable", "full", "closed"}:
+            return "Unavailable"
+    if snapshot.get("locked_room_id"):
+        return "Option"
+    return None
 
 
 def _apply_filters(

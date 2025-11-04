@@ -2,263 +2,194 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import TraceRow, {
-  TraceEventRow,
-  GateInfo,
-  EntityInfo,
-  DbInfo,
-  DraftInfo,
-} from './TraceRow';
-import TraceLegend from './TraceLegend';
-import TimelineToolbar from './TimelineToolbar';
+import Toolbar from './debug/Toolbar';
+import ManagerView from './debug/ManagerView';
+import {
+  buildManagerTimeline,
+  computeStepProgress,
+  createBufferFlusher,
+  determineFetchGranularity,
+  filterByGranularity,
+  GranularityLevel,
+  RawTraceEvent,
+  STEP_KEYS,
+  STEP_TITLES,
+} from './debug/utils';
+import TraceTable from './trace/TraceTable';
+import TraceBadges from './trace/TraceBadges';
+import {
+  buildTraceRows,
+  collectStepSnapshots,
+  groupRowsByStep,
+  TraceRowData,
+  TraceSection,
+  StepSnapshotMap,
+} from './trace/TraceTypes';
 
-const LANES = ['step', 'gate', 'db', 'entity', 'detour', 'qa', 'draft'] as const;
-
-const STEP_ORDER = ['Step1_Intake', 'Step2_Date', 'Step3_Room', 'Step4_Offer'] as const;
-
-const STEP_LABELS: Record<string, string> = {
-  Step1_Intake: 'Intake',
-  Step2_Date: 'Date Confirmation',
-  Step3_Room: 'Room Availability',
-  Step4_Offer: 'Offer',
-};
-
-const STEP_FROM_NUMBER: Record<number, string> = {
-  1: 'Step1_Intake',
-  2: 'Step2_Date',
-  3: 'Step3_Room',
-  4: 'Step4_Offer',
-};
-
-interface TraceEvent {
-  thread_id: string;
-  ts: number;
-  kind: string;
-  lane: string;
-  step?: string | null;
-  detail?: string | null;
-  subject?: string | null;
-  status?: string | null;
-  summary?: string | null;
+interface SignalSummary {
+  date?: { confirmed?: boolean; value?: string | null };
+  room_status?: string | null;
+  hash_status?: string | null;
+  offer_status?: string | null;
   wait_state?: string | null;
-  loop?: boolean;
-  detour_to_step?: number | null;
-  details?: Record<string, unknown> | null;
-  data?: Record<string, unknown> | null;
-  owner_step?: string | null;
-  granularity?: string | null;
-  gate?: GateInfo | null;
-  entity?: EntityInfo | null;
-  db?: DbInfo | null;
-  detour?: Record<string, unknown> | null;
-  draft?: DraftInfo | null;
 }
 
-interface ConfirmedMap {
-  date: boolean;
-  room_locked: boolean;
-  requirements_hash_matches: boolean;
+interface TraceSummary {
+  current_step_major?: number;
+  wait_state?: string | null;
+  hash_status?: string | null;
+  hash_help?: string | null;
 }
 
 interface TraceResponse {
   thread_id: string;
   state: Record<string, unknown>;
-  confirmed?: ConfirmedMap;
-  trace: TraceEvent[];
+  confirmed?: SignalSummary;
+  summary?: TraceSummary;
+  trace: RawTraceEvent[];
 }
 
 interface DebugPanelProps {
   threadId: string | null;
   pollMs?: number;
+  initialManagerView?: boolean;
 }
 
-type Lane = (typeof LANES)[number];
-type StepKey = (typeof STEP_ORDER)[number];
-
-type Granularity = 'logic' | 'verbose';
-
-type PrereqResult = {
-  label: string;
-  value: string;
-  status: 'ok' | 'pending';
-};
-
-type PrereqResolver = (state: Record<string, unknown>, confirmed?: ConfirmedMap) => PrereqResult;
-
-const STEP_PREREQS: Record<StepKey, PrereqResolver[]> = {
-  Step1_Intake: [
-    (state) => ({
-      label: 'Intent',
-      value: String(state.intent || state.intent_label || '—'),
-      status: state.intent ? 'ok' : 'pending',
-    }),
-    (state) => ({
-      label: 'Participants',
-      value: state.participants ? String(state.participants) : '—',
-      status: state.participants ? 'ok' : 'pending',
-    }),
-  ],
-  Step2_Date: [
-    (state, confirmed) => ({
-      label: 'Chosen Date',
-      value: state.chosen_date ? String(state.chosen_date) : '—',
-      status: state.chosen_date ? 'ok' : 'pending',
-    }),
-    (state, confirmed) => ({
-      label: 'Date Confirmed',
-      value: confirmed?.date ? 'Confirmed' : 'Pending',
-      status: confirmed?.date ? 'ok' : 'pending',
-    }),
-  ],
-  Step3_Room: [
-    (state, confirmed) => ({
-      label: 'Date Confirmed',
-      value: confirmed?.date ? 'Yes' : 'No',
-      status: confirmed?.date ? 'ok' : 'pending',
-    }),
-    (state, confirmed) => ({
-      label: 'Locked Room',
-      value: state.locked_room_id ? String(state.locked_room_id) : 'Open',
-      status: confirmed?.room_locked ? 'ok' : 'pending',
-    }),
-    (state, confirmed) => ({
-      label: 'Hash Match',
-      value: confirmed?.requirements_hash_matches ? 'Match' : 'Mismatch',
-      status: confirmed?.requirements_hash_matches ? 'ok' : 'pending',
-    }),
-  ],
-  Step4_Offer: [
-    (state) => ({
-      label: 'Offer ID',
-      value: state.current_offer_id ? String(state.current_offer_id) : 'None',
-      status: state.current_offer_id ? 'ok' : 'pending',
-    }),
-    (state) => ({
-      label: 'Offer Status',
-      value: state.offer_status ? String(state.offer_status) : 'Draft',
-      status: state.offer_status && String(state.offer_status).toLowerCase() === 'sent' ? 'ok' : 'pending',
-    }),
-  ],
-};
-
-function formatTime(timestamp: number): string {
-  try {
-    return new Date(timestamp * 1000).toLocaleTimeString('en-GB', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-  } catch (error) {
-    return timestamp.toFixed(2);
-  }
+interface InspectModalProps {
+  row: TraceRowData;
+  onClose: () => void;
 }
 
-function createFilterMap(keys: readonly string[]): Record<string, boolean> {
-  return keys.reduce<Record<string, boolean>>((acc, key) => {
-    acc[key] = true;
-    return acc;
-  }, {});
+function InspectModal({ row, onClose }: InspectModalProps) {
+  const payload = row.raw.payload ?? row.raw.data ?? {};
+  return (
+    <div className="prompt-modal__backdrop" onClick={onClose} role="presentation">
+      <div className="prompt-modal" onClick={(event) => event.stopPropagation()} role="dialog">
+        <header className="prompt-modal__header">
+          <div>
+            <h2>Event payload</h2>
+            <p className="prompt-modal__meta">{row.event} · {row.functionName} · {row.entity}</p>
+          </div>
+          <button type="button" onClick={onClose} className="prompt-modal__close">
+            ×
+          </button>
+        </header>
+        <pre className="prompt-modal__content">{JSON.stringify(payload, null, 2)}</pre>
+      </div>
+    </div>
+  );
 }
 
-function getStepLabel(ownerStep?: string | null): string {
-  if (!ownerStep) {
-    return 'Global';
-  }
-  return STEP_LABELS[ownerStep] || ownerStep;
+function createCsv(rows: TraceRowData[]): string {
+  const header = ['Time', 'Step', 'Entity', 'Actor', 'Event', 'Details', 'Value', 'Gate', 'I/O', 'Wait', 'Prompt'];
+  const lines = rows.map((row) => {
+    const gate = row.gate ? `${row.gate.met}/${row.gate.required}` : '';
+    const io = row.io && (row.io.direction || row.io.op)
+      ? `${row.io.direction ? row.io.direction.toUpperCase() : ''} ${row.io.op || ''}`.trim() + (row.io.result ? ` → ${row.io.result}` : '')
+      : '';
+    const value = row.valueItems.map((item) => item.label).join(' | ');
+    const promptPieces = [] as string[];
+    if (row.prompt?.instruction) {
+      promptPieces.push(`Instruction: ${row.prompt.instruction}`);
+    }
+    if (row.prompt?.reply) {
+      promptPieces.push(`Reply: ${row.prompt.reply}`);
+    }
+    const cells = [
+      row.timeLabel,
+      row.stepLabel,
+      row.entity,
+      row.actor,
+      row.event,
+      row.functionName,
+      value,
+      gate,
+      io,
+      row.wait ?? '',
+      promptPieces.join(' || '),
+    ];
+    return cells.map((cell) => `"${(cell ?? '').replace(/"/g, '""')}"`).join(',');
+  });
+  return [header.join(','), ...lines].join('\n');
 }
 
-function resolveCurrentStep(state: Record<string, unknown>): string | null {
-  const numeric = typeof state.current_step === 'number' ? state.current_step : undefined;
-  if (numeric && STEP_FROM_NUMBER[numeric]) {
-    return STEP_FROM_NUMBER[numeric];
-  }
-  const stepName = typeof state.step === 'string' ? state.step : undefined;
-  if (stepName && STEP_LABELS[stepName]) {
-    return stepName;
-  }
-  return null;
-}
-
-function resolveCallerStep(state: Record<string, unknown>): string | null {
-  const numeric = typeof state.caller_step === 'number' ? state.caller_step : undefined;
-  if (numeric && STEP_FROM_NUMBER[numeric]) {
-    return STEP_FROM_NUMBER[numeric];
-  }
-  const stepName = typeof state.caller_step === 'string' ? state.caller_step : undefined;
-  if (stepName && STEP_LABELS[stepName]) {
-    return stepName;
-  }
-  return null;
-}
-
-function applyPrereqs(stepKey: StepKey, state: Record<string, unknown>, confirmed?: ConfirmedMap): PrereqResult[] {
-  return STEP_PREREQS[stepKey].map((resolver) => resolver(state, confirmed));
-}
-
-function summarizeSignal(value: string, status: 'ok' | 'pending'): string {
-  return value || (status === 'ok' ? 'Ready' : 'Pending');
-}
-
-export default function DebugPanel({ threadId, pollMs = 1500 }: DebugPanelProps) {
-  const [tracePayload, setTracePayload] = useState<TraceResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [disabled, setDisabled] = useState(false);
+export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView = false }: DebugPanelProps) {
   const [autoScroll, setAutoScroll] = useState(true);
   const [paused, setPaused] = useState(false);
-  const [granularity, setGranularity] = useState<Granularity>('logic');
-  const [laneFilters, setLaneFilters] = useState<Record<string, boolean>>(() => createFilterMap(LANES));
-  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
-  const mainScrollRef = useRef<HTMLDivElement | null>(null);
-
-  const activeKinds = useMemo(
-    () => Object.entries(laneFilters).filter(([, enabled]) => enabled).map(([lane]) => lane),
-    [laneFilters],
-  );
-
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set('granularity', granularity);
-    if (activeKinds.length && activeKinds.length < LANES.length) {
-      params.set('kinds', activeKinds.join(','));
+  const [granularity, setGranularity] = useState<GranularityLevel>(() => {
+    if (typeof window === 'undefined') {
+      return 'logic';
     }
-    const built = params.toString();
-    return built ? `?${built}` : '';
-  }, [granularity, activeKinds]);
+    const stored = window.localStorage.getItem('debugLevel');
+    if (stored === 'manager' || stored === 'logic' || stored === 'full') {
+      return stored as GranularityLevel;
+    }
+    return 'logic';
+  });
+  const [showManagerView, setShowManagerView] = useState(initialManagerView);
+  const [rawEvents, setRawEvents] = useState<RawTraceEvent[]>([]);
+  const [stateSnapshot, setStateSnapshot] = useState<Record<string, unknown>>({});
+  const [signals, setSignals] = useState<SignalSummary | undefined>();
+  const [summary, setSummary] = useState<TraceSummary | undefined>();
+  const [error, setError] = useState<string | null>(null);
+  const [disabled, setDisabled] = useState(false);
+  const [inspectRow, setInspectRow] = useState<TraceRowData | null>(null);
+  const [managerLines, setManagerLines] = useState<string[]>([]);
+
+  const tableScrollerRef = useRef<HTMLDivElement | null>(null);
+  const bufferRef = useRef<ReturnType<typeof createBufferFlusher<RawTraceEvent[]>> | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem('debugLevel', granularity);
+  }, [granularity]);
+
+  useEffect(() => {
+    bufferRef.current = createBufferFlusher<RawTraceEvent[]>({ onFlush: (items) => setRawEvents(items) });
+    return () => bufferRef.current?.dispose();
+  }, []);
+
+  useEffect(() => {
+    bufferRef.current?.setPaused(paused);
+  }, [paused]);
 
   useEffect(() => {
     if (!threadId) {
-      setTracePayload(null);
+      setRawEvents([]);
+      setStateSnapshot({});
       setError('Waiting for session to start…');
-      return;
-    }
-    if (paused) {
+      setDisabled(false);
       return;
     }
 
-    let isCancelled = false;
-    let timer: ReturnType<typeof setInterval> | undefined;
+    const controller = new AbortController();
 
     const fetchTrace = async () => {
       try {
-        const response = await fetch(`/api/debug/threads/${encodeURIComponent(threadId)}${queryString}`);
+        const query = new URLSearchParams();
+        query.set('granularity', determineFetchGranularity(granularity));
+        const response = await fetch(`/api/debug/threads/${encodeURIComponent(threadId)}?${query.toString()}`, {
+          signal: controller.signal,
+        });
         if (response.status === 404) {
           setDisabled(true);
           setError('Tracing disabled. Ensure DEBUG_TRACE is unset or set to 1, then restart the server.');
-          if (timer) {
-            clearInterval(timer);
-          }
           return;
         }
         if (!response.ok) {
           throw new Error(await response.text());
         }
         const payload = (await response.json()) as TraceResponse;
-        if (!isCancelled) {
-          setTracePayload(payload);
-          setError(null);
-        }
+        setStateSnapshot(payload.state || {});
+        setSignals(payload.confirmed);
+        setSummary(payload.summary);
+        bufferRef.current?.push(payload.trace ?? []);
+        setError(null);
+        setDisabled(false);
       } catch (err) {
-        if (isCancelled) {
+        if ((err as Error).name === 'AbortError') {
           return;
         }
         setError(err instanceof Error ? err.message : 'Failed to load trace');
@@ -266,419 +197,342 @@ export default function DebugPanel({ threadId, pollMs = 1500 }: DebugPanelProps)
     };
 
     fetchTrace();
-    timer = setInterval(fetchTrace, pollMs);
-
+    const timer = window.setInterval(fetchTrace, pollMs);
     return () => {
-      isCancelled = true;
-      if (timer) {
-        clearInterval(timer);
-      }
+      window.clearInterval(timer);
+      controller.abort();
     };
-  }, [threadId, pollMs, paused, queryString]);
+  }, [threadId, pollMs, granularity]);
 
-  const handleDownloadJson = useCallback(() => {
-    if (!threadId) {
-      return;
+  const stepProgress = useMemo(
+    () => computeStepProgress({ state: stateSnapshot, summary: signals }),
+    [stateSnapshot, signals],
+  );
+
+  const currentStepTitle = useMemo(() => {
+    const major = summary?.current_step_major;
+    if (major && major >= 1 && major <= STEP_KEYS.length) {
+      const key = STEP_KEYS[major - 1];
+      const recentEvent = [...rawEvents].reverse().find((event) => event.step_major === major);
+      const minor = typeof recentEvent?.step_minor === 'number' ? recentEvent.step_minor : null;
+      const subStep = minor ? ` · ${major}.${minor}` : '';
+      return `Step ${major} · ${STEP_TITLES[key]}${subStep}`;
     }
-    window.open(`/api/debug/threads/${encodeURIComponent(threadId)}/timeline/download${queryString}`, '_blank');
-  }, [threadId, queryString]);
+    return '—';
+  }, [rawEvents, summary?.current_step_major]);
 
-  const handleDownloadReadable = useCallback(() => {
-    if (!threadId) {
-      return;
-    }
-    window.open(`/api/debug/threads/${encodeURIComponent(threadId)}/timeline/text${queryString}`, '_blank');
-  }, [threadId, queryString]);
+  const hilOpen = Boolean((summary && summary.hil_open) ?? stateSnapshot.hil_open ?? false);
+  const waitStateRaw = summary?.wait_state ?? signals?.wait_state ?? stateSnapshot.thread_state ?? '—';
+  const waitStateLabel = waitStateRaw === 'Waiting on HIL' && !hilOpen ? 'Awaiting Client' : (waitStateRaw || '—');
 
-  const laneToggle = useCallback((lane: string) => {
-    setLaneFilters((prev) => {
-      const activeCount = Object.values(prev).filter(Boolean).length;
-      const currentlyEnabled = !!prev[lane];
-      if (currentlyEnabled && activeCount <= 1) {
-        return prev;
+  const filteredEvents = useMemo(
+    () => filterByGranularity(rawEvents, granularity),
+    [rawEvents, granularity],
+  );
+
+  const traceRows = useMemo(() => buildTraceRows(filteredEvents), [filteredEvents]);
+
+  const stepSnapshots: StepSnapshotMap = useMemo(() => collectStepSnapshots(rawEvents), [rawEvents]);
+
+  const groupedRows = useMemo(() => groupRowsByStep(traceRows), [traceRows]);
+
+  const sections: TraceSection[] = useMemo(() => {
+    const result: TraceSection[] = [];
+    STEP_KEYS.forEach((stepKey, index) => {
+      const major = index + 1;
+      const rowsForStep = groupedRows.get(major) ?? [];
+      const title = `Step ${major} · ${STEP_TITLES[stepKey]}`;
+      const snapshot = stepSnapshots.get(major);
+      let progress = stepProgress[stepKey];
+      const infoChips: string[] = [];
+      if (snapshot) {
+        if (major === 1) {
+          const intentDetected = Boolean(snapshot.flags.intentDetected);
+          const participants = Boolean(snapshot.flags.participants);
+          progress = {
+            completed: Number(intentDetected) + Number(participants),
+            total: 2,
+            breakdown: [
+              { label: 'Intent detected', met: intentDetected },
+              { label: 'Participants captured', met: participants },
+            ],
+          };
+          if (snapshot.flags.emailConfirmed) {
+            infoChips.push('Contact email');
+          }
+        } else if (major === 2) {
+          const dateCaptured = Boolean(snapshot.flags.dateCaptured);
+          const dateConfirmed = Boolean(snapshot.flags.dateConfirmed);
+          progress = {
+            completed: Number(dateCaptured) + Number(dateConfirmed),
+            total: 2,
+            breakdown: [
+              { label: 'Date captured', met: dateCaptured },
+              { label: 'Date confirmed', met: dateConfirmed },
+            ],
+          };
+        }
       }
-      return {
-        ...prev,
-        [lane]: !currentlyEnabled,
-      };
+      if (rowsForStep.length) {
+        result.push({
+          key: `step-${major}`,
+          stepMajor: major,
+          title,
+          rows: rowsForStep,
+          gateProgress: progress,
+          infoChips: infoChips.length ? infoChips : undefined,
+        });
+      }
     });
-  }, []);
-
-  const stateRecord = (tracePayload?.state || {}) as Record<string, unknown>;
-  const confirmed = tracePayload?.confirmed;
-
-  const rawRows = useMemo<TraceEventRow[]>(() => {
-    if (!tracePayload) {
-      return [];
+    const globalRows = groupedRows.get('global');
+    if (globalRows && globalRows.length) {
+      result.push({ key: 'global', stepMajor: null, title: 'Global Events', rows: globalRows });
     }
-    return tracePayload.trace.map((event, index) => {
-      const ownerStep = event.owner_step || event.step || null;
-      const ownerLabel = getStepLabel(ownerStep || undefined);
-      const lane = (event.lane || 'step').toString().toLowerCase();
-      const details = (event.details ?? event.data ?? {}) as Record<string, unknown>;
-      return {
-        index: index + 1,
-        thread_id: event.thread_id,
-        ts: event.ts,
-        formattedTime: formatTime(event.ts),
-        kind: event.kind,
-        lane,
-        ownerStep,
-        ownerLabel,
-        step: event.step,
-        detail: event.detail,
-        subject: event.subject ?? event.step ?? event.kind,
-        status: event.status ?? undefined,
-        summary: event.summary ?? (typeof details.summary === 'string' ? (details.summary as string) : undefined),
-        wait_state: event.wait_state ?? undefined,
-        loop: Boolean(event.loop),
-        detour_to_step: typeof event.detour_to_step === 'number' ? event.detour_to_step : null,
-        details,
-        gate: event.gate ?? undefined,
-        entity: event.entity ?? undefined,
-        db: event.db ?? undefined,
-        draft: event.draft ?? undefined,
-      };
-    });
-  }, [tracePayload]);
-
-  const limitedRows = useMemo(() => {
-    if (rawRows.length <= 500) {
-      return rawRows;
-    }
-    return rawRows.slice(-500);
-  }, [rawRows]);
-
-  const filteredRows = useMemo(() => {
-    return limitedRows.filter((row) => laneFilters[row.lane] !== false);
-  }, [limitedRows, laneFilters]);
+    return result;
+  }, [groupedRows, stepProgress, stepSnapshots]);
 
   useEffect(() => {
-    if (!autoScroll || !mainScrollRef.current) {
-      return;
-    }
-    mainScrollRef.current.scrollTop = mainScrollRef.current.scrollHeight;
-  }, [filteredRows.length, autoScroll]);
+    const lines = buildManagerTimeline(filteredEvents, stepProgress);
+    setManagerLines(lines);
+  }, [filteredEvents, stepProgress]);
 
-  const groupedRows = useMemo(() => {
-    const groups: Record<string, TraceEventRow[]> = {};
-    filteredRows.forEach((row) => {
-      const key = row.ownerStep || 'Global';
-      if (!groups[key]) {
-        groups[key] = [];
-      }
-      groups[key].push(row);
-    });
-    return groups;
-  }, [filteredRows]);
-
-  const globalRows = groupedRows.Global || [];
-
-  const entitySnapshots = useMemo(() => {
-    const captured = new Map<string, EntityInfo>();
-    const confirmedEntities = new Map<string, EntityInfo>();
-    filteredRows.forEach((row) => {
-      if (!row.entity || !row.entity.key) {
-        return;
-      }
-      const key = String(row.entity.key);
-      if (row.entity.lifecycle === 'confirmed') {
-        confirmedEntities.set(key, row.entity);
-      } else {
-        captured.set(key, row.entity);
-      }
+  const capturedEntities = useMemo(() => {
+    const captured = new Map<string, string>();
+    const confirmed = new Map<string, string>();
+    traceRows.forEach((row) => {
+      row.valueItems.forEach((item) => {
+        if (item.kind !== 'chip') {
+          return;
+        }
+        if (item.tone === 'confirmed') {
+          confirmed.set(item.label, item.label);
+          captured.delete(item.label);
+        } else if (item.tone === 'captured') {
+          if (!confirmed.has(item.label)) {
+            captured.set(item.label, item.label);
+          }
+        }
+      });
     });
     return {
       captured: Array.from(captured.values()),
-      confirmed: Array.from(confirmedEntities.values()),
+      confirmed: Array.from(confirmed.values()),
     };
-  }, [filteredRows]);
+  }, [traceRows]);
 
-  const currentStepKey = resolveCurrentStep(stateRecord);
-  const currentStepLabel = currentStepKey ? STEP_LABELS[currentStepKey] || currentStepKey : '—';
-  const callerStepKey = resolveCallerStep(stateRecord);
-  const callerStepLabel = callerStepKey ? STEP_LABELS[callerStepKey] || callerStepKey : '—';
-  const waitState = stateRecord.thread_state ? String(stateRecord.thread_state) : '—';
-
-  const signals = useMemo(() => {
-    const chosenDate = stateRecord.chosen_date ? String(stateRecord.chosen_date) : '—';
-    const dateSignal: PrereqResult = {
-      label: 'Date Confirmed',
-      value: chosenDate,
-      status: confirmed?.date ? 'ok' : 'pending',
-    };
-    const roomSignal: PrereqResult = {
-      label: 'Room Lock',
-      value: stateRecord.locked_room_id ? String(stateRecord.locked_room_id) : 'Open',
-      status: confirmed?.room_locked ? 'ok' : 'pending',
-    };
-    const hashSignal: PrereqResult = {
-      label: 'Hash Match',
-      value: confirmed?.requirements_hash_matches ? 'Match' : 'Mismatch',
-      status: confirmed?.requirements_hash_matches ? 'ok' : 'pending',
-    };
-    const offerSignal: PrereqResult = {
-      label: 'Offer',
-      value: stateRecord.current_offer_id ? String(stateRecord.current_offer_id) : 'Not sent',
-      status:
-        stateRecord.offer_status && String(stateRecord.offer_status).toLowerCase() === 'sent'
-          ? 'ok'
-          : stateRecord.current_offer_id
-          ? 'ok'
-          : 'pending',
-    };
-    return [dateSignal, roomSignal, hashSignal, offerSignal];
-  }, [stateRecord, confirmed]);
-
-  const toggleRow = useCallback((index: number) => {
-    setExpandedRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
-      } else {
-        next.add(index);
-      }
-      return next;
-    });
-  }, []);
-
-  const handleGranularityChange = useCallback((value: Granularity) => {
-    setGranularity(value);
-  }, []);
-
-  const missingFooterWarning = useMemo(() => {
-    for (let i = filteredRows.length - 1; i >= 0; i -= 1) {
-      const row = filteredRows[i];
-      if (row.lane === 'draft') {
-        const footer = row.draft?.footer;
-        return !(footer?.step && footer?.next && footer?.state);
-      }
+  useEffect(() => {
+    if (!autoScroll || paused) {
+      return;
     }
-    return false;
-  }, [filteredRows]);
+    if (tableScrollerRef.current) {
+      tableScrollerRef.current.scrollTop = tableScrollerRef.current.scrollHeight;
+    }
+  }, [traceRows.length, autoScroll, paused]);
 
-  const renderPrereqs = useCallback(
-    (stepKey: StepKey) => {
-      const prereqs = applyPrereqs(stepKey, stateRecord, confirmed);
-      return (
-        <div className="trace-prereqs">
-          {prereqs.map((item) => (
-            <span
-              key={item.label}
-              className={`trace-prereq-pill trace-prereq-pill--${item.status}`}
-              title={`${item.label}: ${item.value}`}
-            >
-              <span className="trace-prereq-pill__label">{item.label}</span>
-              <span className="trace-prereq-pill__value">{item.value}</span>
-            </span>
-          ))}
-        </div>
-      );
-    },
-    [stateRecord, confirmed],
-  );
+  const handleInspect = useCallback((row: TraceRowData) => {
+    setInspectRow(row);
+  }, []);
 
-  const timelineEmpty = filteredRows.length === 0;
+  const handleRegisterScroller = useCallback((node: HTMLDivElement | null) => {
+    tableScrollerRef.current = node;
+  }, []);
+
+  const handleCopyTimeline = useCallback(async (lines: string[]) => {
+    if (!lines.length) return;
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+    } catch (err) {
+      console.warn('Copy failed', err);
+    }
+  }, []);
+
+  const downloadFile = useCallback((filename: string, content: string) => {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const handleDownloadCsv = useCallback(() => {
+    const csv = createCsv(traceRows);
+    downloadFile('debug_timeline.csv', csv);
+  }, [downloadFile, traceRows]);
+
+  const downloadReadableLocal = useCallback(() => {
+    if (!managerLines.length) return;
+    downloadFile('debug_timeline.txt', managerLines.join('\n'));
+  }, [downloadFile, managerLines]);
+
+  const handleDownloadJson = useCallback(() => {
+    if (!threadId) return;
+    const params = new URLSearchParams();
+    params.set('granularity', determineFetchGranularity(granularity));
+    window.open(`/api/debug/threads/${encodeURIComponent(threadId)}/timeline/download?${params.toString()}`, '_blank');
+  }, [threadId, granularity]);
+
+  const downloadReadableServer = useCallback(() => {
+    if (!threadId) return;
+    const params = new URLSearchParams();
+    params.set('granularity', determineFetchGranularity(granularity));
+    window.open(`/api/debug/threads/${encodeURIComponent(threadId)}/timeline/text?${params.toString()}`, '_blank');
+  }, [threadId, granularity]);
+
+  const badgeData = useMemo(() => {
+    const dateConfirmed = Boolean(signals?.date?.confirmed);
+    const dateValue = signals?.date?.value;
+    const dateLabel = dateConfirmed
+      ? dateValue
+        ? `Confirmed (${dateValue})`
+        : 'Confirmed'
+      : 'Pending';
+    const roomRaw = (signals?.room_status || '').toString().toLowerCase();
+    let roomLabel = 'Not checked';
+    let roomTone: 'ok' | 'pending' | 'warn' = 'pending';
+    if (roomRaw.includes('available')) {
+      roomLabel = 'Available';
+      roomTone = 'ok';
+    } else if (roomRaw.includes('option') || roomRaw.includes('lock')) {
+      roomLabel = 'Option';
+      roomTone = 'ok';
+    } else if (roomRaw.includes('unavailable') || roomRaw.includes('closed')) {
+      roomLabel = 'Unavailable';
+      roomTone = 'warn';
+    }
+
+    const hashRaw = (summary?.hash_status || signals?.hash_status || 'Unknown').toString();
+    const hashLabel = hashRaw || 'Unknown';
+    const hashTone: 'ok' | 'pending' | 'warn' = hashLabel.toLowerCase() === 'match'
+      ? 'ok'
+      : hashLabel.toLowerCase() === 'mismatch'
+        ? 'warn'
+        : 'pending';
+
+    const offerRaw = (signals?.offer_status || stateSnapshot.offer_status || 'Draft').toString();
+    let normalizedOffer = offerRaw.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!normalizedOffer) {
+      normalizedOffer = 'Draft';
+    }
+    const offerLower = normalizedOffer.toLowerCase();
+    if (offerLower.includes('waiting on hil') && !hilOpen) {
+      normalizedOffer = 'Draft';
+    }
+    const displayedOffer = hilOpen && normalizedOffer.toLowerCase() !== 'sent' ? 'Waiting on HIL' : normalizedOffer;
+    let offerTone: 'ok' | 'pending' | 'warn' = 'pending';
+    if (displayedOffer.toLowerCase() === 'sent') {
+      offerTone = 'ok';
+    } else if (displayedOffer.toLowerCase() === 'waiting on hil') {
+      offerTone = 'warn';
+    }
+
+    return [
+      {
+        id: 'date',
+        label: 'Date Confirmation',
+        value: dateLabel,
+        tone: dateConfirmed ? 'ok' : 'pending',
+        description: 'Chosen date status for this thread.',
+      },
+      {
+        id: 'room',
+        label: 'Room Status',
+        value: roomLabel,
+        tone: roomTone,
+        description: 'Best evaluated status for selected requirements/date.',
+      },
+      {
+        id: 'hash',
+        label: 'Requirements Hash',
+        value: hashLabel,
+        tone: hashTone,
+        description: 'Compares current requirements to last evaluated room hash to decide if re-evaluation is needed.',
+      },
+      {
+        id: 'offer',
+        label: 'Offer Status',
+        value: displayedOffer,
+        tone: offerTone,
+        description: 'Offer composition and delivery state.',
+      },
+    ];
+  }, [signals, stateSnapshot.offer_status, summary?.hash_status, hilOpen]);
 
   return (
     <div className="debug-panel">
       <div className="debug-panel__header">
         <div className="debug-panel__thread">Thread: {threadId || '—'}</div>
         <div className="debug-panel__meta">
-          <span>Current Step: {currentStepLabel}</span>
-          <span>Wait State: {waitState}</span>
-          <span>Caller Step: {callerStepLabel}</span>
+          <span>Current Step: {currentStepTitle}</span>
+          <span>Wait State: {waitStateLabel}</span>
         </div>
       </div>
+
+      <TraceBadges badges={badgeData} />
+
+      <Toolbar
+        autoScroll={autoScroll}
+        paused={paused}
+        onToggleAutoScroll={() => setAutoScroll((prev) => !prev)}
+        onTogglePaused={() => setPaused((prev) => !prev)}
+        granularity={granularity}
+        onGranularityChange={(value) => setGranularity(value)}
+        onDownloadJson={handleDownloadJson}
+        onDownloadCsv={handleDownloadCsv}
+        onDownloadReadable={downloadReadableServer}
+        showManagerView={showManagerView}
+        onToggleManagerView={() => setShowManagerView((prev) => !prev)}
+      />
+
+      {disabled && error && <div className="trace-alert trace-alert--warning">{error}</div>}
+      {!disabled && error && <div className="trace-alert trace-alert--error">{error}</div>}
+
       <div className="debug-panel__content">
-        <div className="debug-panel__main" ref={mainScrollRef}>
-          {disabled && (
-            <div className="trace-alert trace-alert--warning">
-              {error || 'Debug trace disabled.'}
-            </div>
-          )}
-          {!disabled && error && <div className="trace-alert trace-alert--error">{error}</div>}
-          {!disabled && !error && !tracePayload && (
-            <div className="trace-alert trace-alert--info">Waiting for trace events…</div>
-          )}
-
-          {tracePayload && (
-            <>
-              <div className="trace-signal-ribbon">
-                {signals.map((signal) => (
-                  <span
-                    key={signal.label}
-                    className={`trace-signal trace-signal--${signal.status}`}
-                    title={`${signal.label}: ${signal.value}`}
-                  >
-                    <span className="trace-signal__label">{signal.label}</span>
-                    <span className="trace-signal__value">{summarizeSignal(signal.value, signal.status)}</span>
-                  </span>
-                ))}
-              </div>
-
-              <div className="trace-card">
-                <div className="trace-card__title">Thread State Snapshot</div>
-                {Object.keys(stateRecord).length === 0 ? (
-                  <div className="text-xs text-gray-500">No snapshot captured yet.</div>
-                ) : (
-                  <dl className="trace-state-grid">
-                    {Object.entries(stateRecord).map(([key, value]) => (
-                      <div key={key} className="trace-state-grid__item">
-                        <dt>{key}</dt>
-                        <dd>{String(value)}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
-                {missingFooterWarning && (
-                  <div className="trace-warning">⚠ Missing footer metadata on last draft</div>
-                )}
-              </div>
-
-              <TraceLegend />
-              <TimelineToolbar
-                autoScroll={autoScroll}
-                paused={paused}
-                onToggleAutoScroll={() => setAutoScroll((prev) => !prev)}
-                onTogglePaused={() => setPaused((prev) => !prev)}
-                selectedKinds={activeKinds}
-                onKindToggle={laneToggle}
-                granularity={granularity}
-                onGranularityChange={handleGranularityChange}
-                onDownloadJson={handleDownloadJson}
-                onDownloadText={handleDownloadReadable}
-              />
-
-              {rawRows.length > 500 && (
-                <div className="trace-note">Showing the latest 500 of {rawRows.length} events.</div>
-              )}
-
-              {STEP_ORDER.map((stepKey) => {
-                const groupRowsForStep = groupedRows[stepKey] || [];
-                if (groupRowsForStep.length === 0 && granularity === 'logic') {
-                  // Skip empty groups in logic mode for brevity.
-                  return null;
-                }
-                return (
-                  <section key={stepKey} className="trace-group">
-                    <header className="trace-group__header">
-                      <div className="trace-group__title">{STEP_LABELS[stepKey]}</div>
-                      {renderPrereqs(stepKey)}
-                    </header>
-                    <div className="trace-group__table">
-                      <table className="trace-table">
-                        <thead>
-                          <tr>
-                            <th className="w-10" aria-label="Expand" />
-                            <th className="w-28">Kind</th>
-                            <th className="w-32">Owner</th>
-                            <th className="w-36">Event</th>
-                            <th className="w-52">Summary</th>
-                            <th className="w-56">Gate</th>
-                            <th className="w-48">Entities</th>
-                            <th className="w-48">I/O</th>
-                            <th className="w-32">Wait</th>
-                            <th className="w-24">Time</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {groupRowsForStep.length === 0 ? (
-                            <tr>
-                              <td colSpan={10} className="trace-table__empty">
-                                No events recorded for this step.
-                              </td>
-                            </tr>
-                          ) : (
-                            groupRowsForStep.map((event) => (
-                              <TraceRow
-                                key={`${event.thread_id}-${event.index}-${event.ts}`}
-                                event={event}
-                                isExpanded={expandedRows.has(event.index)}
-                                onToggle={() => toggleRow(event.index)}
-                              />
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
-                );
-              })}
-
-              {globalRows.length > 0 && (
-                <section className="trace-group">
-                  <header className="trace-group__header">
-                    <div className="trace-group__title">Global Events</div>
-                  </header>
-                  <div className="trace-group__table">
-                    <table className="trace-table">
-                      <thead>
-                        <tr>
-                          <th className="w-10" aria-label="Expand" />
-                          <th className="w-28">Kind</th>
-                          <th className="w-32">Owner</th>
-                          <th className="w-36">Event</th>
-                          <th className="w-52">Summary</th>
-                          <th className="w-56">Gate</th>
-                          <th className="w-48">Entities</th>
-                          <th className="w-48">I/O</th>
-                          <th className="w-32">Wait</th>
-                          <th className="w-24">Time</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {globalRows.map((event) => (
-                          <TraceRow
-                            key={`${event.thread_id}-${event.index}-${event.ts}`}
-                            event={event}
-                            isExpanded={expandedRows.has(event.index)}
-                            onToggle={() => toggleRow(event.index)}
-                          />
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              )}
-
-              {timelineEmpty && <div className="trace-alert trace-alert--info">No trace events yet.</div>}
-            </>
+        <div className="debug-panel__timeline">
+          {traceRows.length === 0 ? (
+            <div className="trace-alert trace-alert--info">No trace events yet.</div>
+          ) : (
+            <TraceTable
+              sections={sections}
+              onInspect={handleInspect}
+              hilOpen={hilOpen}
+              granularity={granularity}
+              onRegisterScroller={handleRegisterScroller}
+            />
           )}
         </div>
-
-        <aside className="trace-sidebar">
+        <aside className="debug-panel__aside">
           <div className="trace-card">
-            <div className="trace-card__title">Tracked Entities</div>
+            <div className="trace-card__title">Tracked Client Information</div>
             <div className="trace-entities">
               <div>
                 <div className="trace-entities__label">Captured</div>
-                {entitySnapshots.captured.length === 0 ? (
-                  <div className="trace-entities__empty">None</div>
-                ) : (
-                  entitySnapshots.captured.map((entity, idx) => (
-                    <span key={`${entity.key}-${idx}`} className="entity-badge entity-badge--captured">
-                      {`${entity.key}=${String(entity.value ?? '—')}`}
-                    </span>
-                  ))
-                )}
+                {capturedEntities.captured.length === 0 ? <div className="trace-entities__empty">None</div> : capturedEntities.captured.map((caption, index) => (
+                  <span key={`captured-${index}`} className="entity-chip entity-chip--captured">{caption}</span>
+                ))}
               </div>
               <div>
                 <div className="trace-entities__label">Confirmed</div>
-                {entitySnapshots.confirmed.length === 0 ? (
-                  <div className="trace-entities__empty">None</div>
-                ) : (
-                  entitySnapshots.confirmed.map((entity, idx) => (
-                    <span key={`${entity.key}-${idx}`} className="entity-badge entity-badge--confirmed">
-                      {`${entity.key}=${String(entity.value ?? '—')}`}
-                    </span>
-                  ))
-                )}
+                {capturedEntities.confirmed.length === 0 ? <div className="trace-entities__empty">None</div> : capturedEntities.confirmed.map((caption, index) => (
+                  <span key={`confirmed-${index}`} className="entity-chip entity-chip--confirmed">{caption}</span>
+                ))}
               </div>
             </div>
           </div>
+          {showManagerView && (
+            <ManagerView
+              lines={managerLines}
+              onCopy={handleCopyTimeline}
+              onDownload={downloadReadableLocal}
+            />
+          )}
         </aside>
       </div>
+
+      {inspectRow && <InspectModal row={inspectRow} onClose={() => setInspectRow(null)} />}
     </div>
   );
 }

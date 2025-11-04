@@ -25,6 +25,7 @@ from backend.utils.profiler import profile_step
 from backend.workflow.state import stage_payload
 from backend.debug.lifecycle import close_if_ended
 from backend.debug.settings import is_trace_enabled
+from backend.debug.trace import set_hil_open
 from backend.workflow.guards import evaluate as evaluate_guards
 
 logger = logging.getLogger(__name__)
@@ -77,8 +78,15 @@ def _debug_state(stage: str, state: WorkflowState, extra: Optional[Dict[str, Any
     from backend.debug.hooks import trace_state  # pylint: disable=import-outside-toplevel
     from backend.debug.state_store import STATE_STORE  # pylint: disable=import-outside-toplevel
 
+    pending_hil = (event_entry or {}).get("pending_hil_requests") or []
+    snapshot["hil_open"] = bool(pending_hil)
     trace_state(thread_id, _snapshot_step_name(event_entry), snapshot)
-    STATE_STORE.update(thread_id, snapshot)
+    existing_state = STATE_STORE.get(thread_id)
+    merged_state = dict(existing_state)
+    merged_state.update(snapshot)
+    if "flags" in existing_state:
+        merged_state.setdefault("flags", existing_state.get("flags", {}))
+    STATE_STORE.update(thread_id, merged_state)
     close_if_ended(thread_id, snapshot)
 
 
@@ -195,6 +203,7 @@ def _hil_signature(draft: Dict[str, Any], event_entry: Dict[str, Any]) -> str:
 def _enqueue_hil_tasks(state: WorkflowState, event_entry: Dict[str, Any]) -> None:
     pending_records = event_entry.setdefault("pending_hil_requests", [])
     seen_signatures = {entry.get("signature") for entry in pending_records if entry.get("signature")}
+    thread_id = _thread_identifier(state)
 
     for draft in state.draft_messages:
         if draft.get("requires_approval") is False:
@@ -248,6 +257,8 @@ def _enqueue_hil_tasks(state: WorkflowState, event_entry: Dict[str, Any]) -> Non
         )
         seen_signatures.add(signature)
         state.extras["persist"] = True
+
+    set_hil_open(thread_id, bool(pending_records))
 
 
 @profile_step("workflow.router.process_msg")

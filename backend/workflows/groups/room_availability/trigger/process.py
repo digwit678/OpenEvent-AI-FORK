@@ -241,6 +241,7 @@ def process(state: WorkflowState) -> GroupResult:
             "status": outcome,
             "eval_hash": current_req_hash,
             "room_eval_hash": event_entry.get("room_eval_hash"),
+            "requirements_hash": event_entry.get("requirements_hash") or current_req_hash,
             "locked_room_id": event_entry.get("locked_room_id"),
         },
     )

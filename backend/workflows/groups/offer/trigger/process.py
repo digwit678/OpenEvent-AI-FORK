@@ -7,6 +7,7 @@ from backend.workflows.common.requirements import merge_client_profile, requirem
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.debug.hooks import trace_db_write, trace_detour, trace_gate, trace_state, trace_step
+from backend.debug.trace import set_hil_open
 from backend.utils.profiler import profile_step
 from backend.workflow.state import WorkflowStep, write_stage
 
@@ -120,6 +121,7 @@ def process(state: WorkflowState) -> GroupResult:
     state.current_step = 5
     state.caller_step = None
     state.set_thread_state("Awaiting Client")
+    set_hil_open(thread_id, False)
     state.extras["persist"] = True
 
     trace_state(
@@ -217,6 +219,7 @@ def _route_to_owner_step(
     state.current_step = target_step
     state.caller_step = caller_step.numeric
     state.set_thread_state(thread_state)
+    set_hil_open(thread_id, thread_state == "Waiting on HIL")
     state.extras["persist"] = True
 
     payload = {
