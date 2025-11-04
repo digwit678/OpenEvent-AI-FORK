@@ -2631,6 +2631,13 @@
           "from_step": 1,
           "to_step": 2,
           "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-04T21:01:35Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
         }
       ],
       "review_state": {
@@ -2660,7 +2667,8 @@
       },
       "msgs": [
         "d683999e-ff17-4208-b389-ed1e757a0872",
-        "f8351b91-65a3-4f55-bafb-ed6317557b87"
+        "f8351b91-65a3-4f55-bafb-ed6317557b87",
+        "497816e9-7cf2-4308-b791-d55595109bcc"
       ],
       "captured": {
         "date": "2025-06-12",
@@ -6605,6 +6613,41 @@
         {
           "msg_id": "f8351b91-65a3-4f55-bafb-ed6317557b87",
           "ts": "2025-11-04T12:08:43.026935Z",
+          "subject": "Subject: Training Workshop – 2-Day Booking Request in June",
+          "body_preview": "Subject: Training Workshop – 2-Day Booking Request in June\n\nBody:\n\nHello,\n\nWe’re planning a two-day internal training workshop for our support team and are look",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "June",
+            "participants": 25,
+            "room": null,
+            "layout": "U-shape",
+            "name": null,
+            "email": null,
+            "type": "workshop",
+            "catering": "Coffee service",
+            "phone": "+41798809122",
+            "company": null,
+            "language": null,
+            "notes": "projector, coffee service",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "june",
+            "vague_weekday": "thursday"
+          }
+        },
+        {
+          "msg_id": "497816e9-7cf2-4308-b791-d55595109bcc",
+          "ts": "2025-11-04T21:01:35.553876Z",
           "subject": "Subject: Training Workshop – 2-Day Booking Request in June",
           "body_preview": "Subject: Training Workshop – 2-Day Booking Request in June\n\nBody:\n\nHello,\n\nWe’re planning a two-day internal training workshop for our support team and are look",
           "intent": "event_request",
