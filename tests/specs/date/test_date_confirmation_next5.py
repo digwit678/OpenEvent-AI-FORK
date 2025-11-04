@@ -7,6 +7,13 @@ from ...utils.timezone import TZ, freeze_time
 FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "date_next5_cases.json"
 
 
+def _parse_candidate(value: str) -> datetime:
+    try:
+        return datetime.strptime(value, "%d.%m.%Y")
+    except ValueError:
+        return datetime.fromisoformat(value)
+
+
 def _classify(feasible_count: int) -> str:
     if feasible_count == 0:
         return "refresh"
@@ -52,20 +59,28 @@ def test_candidate_actions_and_table_shape():
     candidate_dates = many["candidates"]
 
     table_block = {
-        "type": "table",
-        "header": ["Option", "Date"],
-        "rows": [[str(idx + 1), value] for idx, value in enumerate(candidate_dates)],
+        "type": "dates",
+        "label": "Upcoming availability",
+        "rows": [
+            {
+                "iso_date": _parse_candidate(value).strftime("%Y-%m-%d"),
+                "display": _parse_candidate(value).strftime("%a %d %b %Y"),
+                "status": "Available",
+            }
+            for value in candidate_dates
+        ],
     }
     actions = [
         {
             "type": "select_date",
-            "label": f"Select {value}",
+            "label": _parse_candidate(value).strftime("Confirm %a %d %b %Y"),
             "date": value,
+            "iso_date": _parse_candidate(value).strftime("%Y-%m-%d"),
         }
         for value in candidate_dates
     ]
 
-    assert table_block["header"] == ["Option", "Date"]
-    assert all(len(row) == 2 for row in table_block["rows"])
+    assert table_block["type"] == "dates"
+    assert all({"iso_date", "display"} <= row.keys() for row in table_block["rows"])
     assert all(action["type"] == "select_date" for action in actions)
-    assert [row[1] for row in table_block["rows"]] == [action["date"] for action in actions]
+    assert [row["iso_date"] for row in table_block["rows"]] == [action["iso_date"] for action in actions]

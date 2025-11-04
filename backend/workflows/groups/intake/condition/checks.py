@@ -117,5 +117,12 @@ def suggest_dates(
     return suggestions
 
 
+def blackout_days() -> set[date]:
+    """Expose expanded blackout+buffer dates for reuse in downstream steps."""
+
+    config = _load_blackout_config()
+    return _expand_blackouts(config)
+
+
 room_status_on_date = _room_status_on_date
 room_status_on_date.__doc__ = """[Condition] Check existing events on a given date for the same room."""

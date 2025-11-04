@@ -78,6 +78,8 @@ def test_room_process_structured_payload(tmp_path, monkeypatch):
         "room_eval_hash": None,
         "locked_room_id": None,
         "thread_state": "Awaiting Client",
+        "date_confirmed": True,
+        "wish_products": ["Three-course dinner", "Wine pairing"],
     }
     state.event_entry = event_entry
 
@@ -92,8 +94,12 @@ def test_room_process_structured_payload(tmp_path, monkeypatch):
 
     assert result.action == "room_avail_result"
     assert draft["footer"].startswith("Step: 3 Room Availability")
-    assert draft["table_blocks"][0]["header"] == ["Room", "Status"]
+    first_block = draft["table_blocks"][0]
+    assert first_block["type"] == "room_menu"
+    assert first_block["rows"][0]["room"] == "Room A"
+    assert first_block["rows"][0]["menu"].endswith("fully covered")
     assert any(action["type"] == "select_room" for action in draft["actions"])
+    assert all("menu" in action for action in draft["actions"])
 
 
 def test_room_process_skips_when_hash_cached(tmp_path, monkeypatch):
@@ -108,6 +114,7 @@ def test_room_process_skips_when_hash_cached(tmp_path, monkeypatch):
         "room_eval_hash": req_hash,
         "locked_room_id": "Room A",
         "thread_state": "Awaiting Client",
+        "date_confirmed": True,
     }
 
     def fail_evaluate(*args, **kwargs):  # pragma: no cover - should not be called

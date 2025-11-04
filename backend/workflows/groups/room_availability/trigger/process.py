@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.room_rules import find_better_room_dates
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata
+from backend.debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate, trace_state, trace_step
 from backend.utils.profiler import profile_step
 
 from ..condition.decide import room_status_on_date
@@ -26,6 +28,7 @@ ROOM_SIZE_ORDER = {
 }
 
 
+@trace_step("Step3_Room")
 @profile_step("workflow.step3.room_availability")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Execute Group C — room availability assessment with entry guards and caching."""
@@ -42,7 +45,13 @@ def process(state: WorkflowState) -> GroupResult:
         }
         return GroupResult(action="room_eval_missing_event", payload=payload, halt=True)
 
+    thread_id = _thread_id(state)
     state.current_step = 3
+
+    date_confirmed_ok = bool(event_entry.get("date_confirmed"))
+    trace_gate(thread_id, "Step3_Room", "P1 date_confirmed", date_confirmed_ok, {"date_confirmed": date_confirmed_ok})
+    if not date_confirmed_ok:
+        return _detour_to_date(state, event_entry)
 
     requirements = event_entry.get("requirements") or {}
     current_req_hash = event_entry.get("requirements_hash")
@@ -52,11 +61,28 @@ def process(state: WorkflowState) -> GroupResult:
         current_req_hash = computed_hash
         state.extras["persist"] = True
 
+    participants = _extract_participants(requirements)
+
+    capacity_shortcut = False
     if state.user_info.get("shortcut_capacity_ok"):
         shortcuts = event_entry.setdefault("shortcuts", {})
         if not shortcuts.get("capacity_ok"):
             shortcuts["capacity_ok"] = True
             state.extras["persist"] = True
+        capacity_shortcut = True
+    if not capacity_shortcut:
+        capacity_shortcut = bool((event_entry.get("shortcuts") or {}).get("capacity_ok"))
+
+    capacity_ok = participants is not None or capacity_shortcut
+    trace_gate(
+        thread_id,
+        "Step3_Room",
+        "P3 capacity_present",
+        capacity_ok,
+        {"participants": participants, "capacity_shortcut": capacity_shortcut},
+    )
+    if not capacity_ok:
+        return _detour_for_capacity(state, event_entry)
 
     hil_step = state.user_info.get("hil_approve_step")
     if hil_step == 3:
@@ -75,10 +101,23 @@ def process(state: WorkflowState) -> GroupResult:
     explicit_room_change = bool(user_requested_room and user_requested_room != locked_room_id)
     missing_lock = locked_room_id is None
 
-    if not (missing_lock or explicit_room_change or requirements_changed):
+    eval_needed = missing_lock or explicit_room_change or requirements_changed
+    trace_gate(
+        thread_id,
+        "Step3_Room",
+        "room_eval_needed",
+        eval_needed,
+        {
+            "missing_lock": missing_lock,
+            "explicit_room_change": explicit_room_change,
+            "requirements_changed": requirements_changed,
+        },
+    )
+    if not eval_needed:
         return _skip_room_evaluation(state, event_entry)
 
     room_statuses = evaluate_room_statuses(state.db, chosen_date)
+    trace_db_read(thread_id, "db.rooms.search", {"date": chosen_date, "rooms": len(room_statuses)})
     summary = summarize_room_statuses(room_statuses)
     status_map = _flatten_statuses(room_statuses)
 
@@ -86,9 +125,9 @@ def process(state: WorkflowState) -> GroupResult:
     selected_room, selected_status = _select_room(preferred_room, status_map)
 
     outcome = selected_status or ROOM_OUTCOME_UNAVAILABLE
-    skip_capacity_prompt = bool(state.user_info.get("shortcut_capacity_ok"))
+    skip_capacity_prompt = bool(capacity_shortcut)
 
-    draft_text = _compose_outcome_message(
+    summary_text = _compose_outcome_message(
         outcome,
         selected_room,
         chosen_date,
@@ -96,11 +135,33 @@ def process(state: WorkflowState) -> GroupResult:
         skip_capacity_prompt=skip_capacity_prompt,
     )
 
+    wish_products = _collect_wish_products(event_entry)
+    table_rows, actions = _build_room_menu_rows(
+        chosen_date,
+        status_map,
+        selected_room,
+        wish_products,
+    )
+    actions = actions[:5]
+
     alt_dates: List[str] = []
     if _needs_better_room_alternatives(state.user_info, status_map, event_entry):
         alt_dates = find_better_room_dates(event_entry)
-        if alt_dates:
-            draft_text = _append_alt_dates(draft_text, alt_dates)
+    guidance_line = (
+        "I've summarised the best room/menu pairings below. Please choose one so I can queue it for approval."
+        if actions
+        else "I've listed the room status overview below. Let me know if you'd like me to look at other dates."
+    )
+    body_lines = [summary_text, guidance_line]
+    if alt_dates:
+        body_lines.append("If you'd like more space, these alternative dates keep larger rooms open.")
+    body_text = "\n\n".join(line for line in body_lines if line)
+    body_with_footer = append_footer(
+        body_text,
+        step=3,
+        next_step="Choose a room",
+        thread_state="Awaiting Client",
+    )
 
     outcome_topic = {
         ROOM_OUTCOME_AVAILABLE: "room_available",
@@ -108,44 +169,37 @@ def process(state: WorkflowState) -> GroupResult:
         ROOM_OUTCOME_UNAVAILABLE: "room_unavailable",
     }[outcome]
 
-    room_rows = [[room, status_map.get(room, "Unknown")] for room in sorted(status_map.keys())]
+    table_blocks: List[Dict[str, Any]] = []
+    if table_rows:
+        table_blocks.append(
+            {
+                "type": "room_menu",
+                "label": "Room & menu options",
+                "rows": table_rows,
+            }
+        )
+    if alt_dates:
+        table_blocks.append(
+            {
+                "type": "dates",
+                "label": "Alternative dates",
+                "rows": [{"date": value} for value in alt_dates],
+            }
+        )
+
     draft_message = {
-        "body_markdown": draft_text,
+        "body": body_with_footer,
         "step": 3,
         "next_step": "Choose a room",
         "thread_state": "Awaiting Client",
         "topic": outcome_topic,
         "room": selected_room,
         "status": outcome,
-        "table_blocks": [
-            {
-                "type": "table",
-                "header": ["Room", "Status"],
-                "rows": room_rows,
-            }
-        ],
-        "actions": (
-            [
-                {
-                    "type": "select_room",
-                    "label": f"Proceed with {selected_room}",
-                    "room": selected_room,
-                    "status": outcome,
-                }
-            ]
-            if selected_room
-            else []
-        ),
+        "table_blocks": table_blocks,
+        "actions": actions[:5],
     }
     if alt_dates:
         draft_message["alt_dates_for_better_room"] = alt_dates
-        draft_message.setdefault("table_blocks", []).append(
-            {
-                "type": "table",
-                "header": ["Alternative Dates"],
-                "rows": [[value] for value in alt_dates],
-            }
-        )
     state.add_draft_message(draft_message)
 
     event_entry["room_pending_decision"] = {
@@ -153,6 +207,8 @@ def process(state: WorkflowState) -> GroupResult:
         "selected_status": outcome,
         "requirements_hash": current_req_hash,
         "summary": summary,
+        "menu": table_rows[0]["menu"] if table_rows else None,
+        "wish_products": wish_products,
     }
 
     update_event_metadata(
@@ -160,11 +216,28 @@ def process(state: WorkflowState) -> GroupResult:
         thread_state="Awaiting Client",
         current_step=3,
     )
+    trace_db_write(
+        thread_id,
+        "db.events.update_room",
+        {"selected_room": selected_room, "status": outcome},
+    )
 
     state.set_thread_state("Awaiting Client")
     state.caller_step = event_entry.get("caller_step")
     state.current_step = 3
     state.extras["persist"] = True
+
+    trace_state(
+        thread_id,
+        "Step3_Room",
+        {
+            "selected_room": selected_room,
+            "status": outcome,
+            "eval_hash": current_req_hash,
+            "room_eval_hash": event_entry.get("room_eval_hash"),
+            "locked_room_id": event_entry.get("locked_room_id"),
+        },
+    )
 
     payload = {
         "client_id": state.client_id,
@@ -175,6 +248,9 @@ def process(state: WorkflowState) -> GroupResult:
         "summary": summary,
         "selected_room": selected_room,
         "selected_status": outcome,
+        "room_menu_rows": table_rows,
+        "wish_products": wish_products,
+        "actions": actions,
         "draft_messages": state.draft_messages,
         "thread_state": state.thread_state,
         "context": state.context_snapshot,
@@ -201,6 +277,13 @@ def evaluate_room_statuses(db: Dict[str, Any], target_date: str | None) -> List[
 def _detour_to_date(state: WorkflowState, event_entry: dict) -> GroupResult:
     """[Trigger] Redirect to Step 2 when no chosen date exists."""
 
+    trace_detour(
+        _thread_id(state),
+        "Step3_Room",
+        "Step2_Date",
+        "date_confirmed_missing",
+        {"date_confirmed": event_entry.get("date_confirmed")},
+    )
     if event_entry.get("caller_step") is None:
         update_event_metadata(event_entry, caller_step=3)
     update_event_metadata(
@@ -224,6 +307,40 @@ def _detour_to_date(state: WorkflowState, event_entry: dict) -> GroupResult:
         "persisted": True,
     }
     return GroupResult(action="room_detour_date", payload=payload, halt=False)
+
+
+def _detour_for_capacity(state: WorkflowState, event_entry: dict) -> GroupResult:
+    """[Trigger] Redirect to Step 1 when attendee count is missing."""
+
+    trace_detour(
+        _thread_id(state),
+        "Step3_Room",
+        "Step1_Intake",
+        "capacity_missing",
+        {},
+    )
+    if event_entry.get("caller_step") is None:
+        update_event_metadata(event_entry, caller_step=3)
+    update_event_metadata(
+        event_entry,
+        current_step=1,
+        thread_state="Awaiting Client",
+    )
+    append_audit_entry(event_entry, 3, 1, "room_requires_capacity")
+    state.current_step = 1
+    state.caller_step = 3
+    state.set_thread_state("Awaiting Client")
+    state.extras["persist"] = True
+    payload = {
+        "client_id": state.client_id,
+        "event_id": state.event_id,
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "reason": "capacity_missing",
+        "context": state.context_snapshot,
+        "persisted": True,
+    }
+    return GroupResult(action="room_detour_capacity", payload=payload, halt=False)
 
 
 def _skip_room_evaluation(state: WorkflowState, event_entry: dict) -> GroupResult:
@@ -340,6 +457,11 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
         room_eval_hash=requirements_hash,
         current_step=4,
         thread_state="Waiting on HIL",
+    )
+    trace_db_write(
+        _thread_id(state),
+        "db.events.lock_room",
+        {"locked_room_id": selected_room, "room_eval_hash": requirements_hash},
     )
     append_audit_entry(event_entry, 3, 4, "room_hil_approved")
     event_entry.pop("room_pending_decision", None)
@@ -460,3 +582,99 @@ def _compose_outcome_message(
         f"Thanks for your request. Unfortunately, no suitable room is available on {chosen_date}{capacity_clause}. "
         "Would one of these alternative dates work, or would you like to adjust the attendee count or layout?"
     ).strip()
+
+
+def _extract_participants(requirements: Dict[str, Any]) -> Optional[int]:
+    raw = requirements.get("number_of_participants")
+    if raw in (None, "", "Not specified", "none"):
+        raw = requirements.get("participants")
+    if raw in (None, "", "Not specified", "none"):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _collect_wish_products(event_entry: Dict[str, Any]) -> List[str]:
+    wish_products = event_entry.get("wish_products") or []
+    result: List[str] = []
+    for item in wish_products:
+        text = str(item or "").strip()
+        if text:
+            result.append(text)
+    return result
+
+
+def _build_room_menu_rows(
+    chosen_date: str,
+    status_map: Dict[str, str],
+    primary_room: Optional[str],
+    wish_products: List[str],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    rows: List[Dict[str, Any]] = []
+    for room, status in status_map.items():
+        normalized_status = status or "Unknown"
+        is_primary = bool(primary_room and room == primary_room)
+        row: Dict[str, Any] = {
+            "date": chosen_date,
+            "room": room,
+            "status": normalized_status,
+            "menu": _menu_label(wish_products, is_primary),
+            "match_score": _match_score(normalized_status, is_primary, wish_products),
+        }
+        if wish_products:
+            row["wish_products"] = wish_products
+            row["matches_all_wishes"] = is_primary
+        rows.append(row)
+
+    rows.sort(key=lambda entry: (-entry["match_score"], entry["room"]))
+
+    actions: List[Dict[str, Any]] = []
+    for row in rows:
+        if row["status"] in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}:
+            actions.append(
+                {
+                    "type": "select_room",
+                    "label": f"Proceed with {row['room']} ({row['menu']})",
+                    "room": row["room"],
+                    "date": chosen_date,
+                    "menu": row["menu"],
+                    "status": row["status"],
+                }
+            )
+    return rows, actions
+
+
+def _menu_label(wish_products: List[str], is_primary: bool) -> str:
+    if not wish_products:
+        return "Atelier seasonal menu"
+    base = ", ".join(wish_products)
+    suffix = " · fully covered" if is_primary else " · may require adjustments"
+    return f"{base}{suffix}"
+
+
+def _match_score(status: str, is_primary: bool, wish_products: List[str]) -> int:
+    status_weight = _status_weight(status)
+    preference_bonus = len(wish_products) if is_primary else max(len(wish_products) - 1, 0)
+    return status_weight * 10 + preference_bonus
+
+
+def _status_weight(status: str) -> int:
+    lookup = {
+        ROOM_OUTCOME_AVAILABLE: 3,
+        ROOM_OUTCOME_OPTION: 2,
+        ROOM_OUTCOME_UNAVAILABLE: 1,
+    }
+    return lookup.get(status, 0)
+
+
+def _thread_id(state: WorkflowState) -> str:
+    if state.thread_id:
+        return str(state.thread_id)
+    if state.client_id:
+        return str(state.client_id)
+    message = state.message
+    if message and message.msg_id:
+        return str(message.msg_id)
+    return "unknown-thread"

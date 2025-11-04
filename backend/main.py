@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import uuid
 import os
@@ -9,6 +10,7 @@ import subprocess
 import socket
 import time
 import webbrowser
+import threading
 from datetime import datetime
 from typing import Optional
 from backend.domain import ConversationState, EventInformation
@@ -32,8 +34,11 @@ from backend.workflow_email import (
     list_pending_tasks as wf_list_pending_tasks,
     update_task_status as wf_update_task_status,
 )
+from backend.api.debug import debug_get_trace, debug_get_timeline, resolve_timeline_path
 
 app = FastAPI(title="AI Event Manager")
+
+DEBUG_TRACE_ENABLED = os.getenv("DEBUG_TRACE") == "1"
 
 GUI_ADAPTER = ClientGUIAdapter()
 
@@ -68,7 +73,7 @@ def _launch_frontend() -> Optional[subprocess.Popen]:
     if not FRONTEND_DIR.exists():
         print(f"[Frontend][WARN] Directory {FRONTEND_DIR} not found; skipping auto-launch.")
         return None
-    cmd = ["npm", "run", "dev", "--", "-p", str(FRONTEND_PORT), "-H", "0.0.0.0"]
+    cmd = ["npm", "run", "dev", "--", "--hostname", "0.0.0.0", "--port", str(FRONTEND_PORT)]
     try:
         proc = subprocess.Popen(cmd, cwd=str(FRONTEND_DIR))
         print(f"[Frontend] npm dev server starting on http://localhost:{FRONTEND_PORT}")
@@ -84,16 +89,22 @@ def _open_browser_when_ready() -> None:
     if os.getenv("AUTO_OPEN_FRONTEND", "1") != "1":
         return
     target_url = f"http://localhost:{FRONTEND_PORT}"
-    for _ in range(20):
+    debug_url = f"{target_url}/debug"
+    for attempt in range(120):
         if _is_port_in_use(FRONTEND_PORT):
             try:
-                webbrowser.open_new_tab(target_url)
+                webbrowser.open_new(target_url)
+                if os.getenv("AUTO_OPEN_DEBUG_PANEL", "1") == "1":
+                    webbrowser.open_new_tab(debug_url)
             except Exception as exc:  # pragma: no cover - environment dependent
                 print(f"[Frontend][WARN] Unable to open browser automatically: {exc}")
             else:
                 print(f"[Frontend] Opened browser window at {target_url}")
+                if os.getenv("AUTO_OPEN_DEBUG_PANEL", "1") == "1":
+                    print(f"[Frontend] Opened debug panel at {debug_url}")
             return
         time.sleep(0.5)
+    print(f"[Frontend][WARN] Frontend not reachable on {target_url} after waiting 60s; skipping auto-open.")
 
 
 def load_events_database():
@@ -553,6 +564,40 @@ async def reject_task(task_id: str, request: TaskDecisionRequest):
     return {"task_id": task_id, "status": "rejected"}
 
 
+if DEBUG_TRACE_ENABLED:
+
+    @app.get("/api/debug/threads/{thread_id}")
+    async def get_debug_thread_trace(thread_id: str):
+        return debug_get_trace(thread_id)
+
+    @app.get("/api/debug/threads/{thread_id}/timeline")
+    async def get_debug_thread_timeline(thread_id: str):
+        return debug_get_timeline(thread_id)
+
+    @app.get("/api/debug/threads/{thread_id}/timeline/download")
+    async def download_debug_thread_timeline(thread_id: str):
+        path = resolve_timeline_path(thread_id)
+        if not path:
+            raise HTTPException(status_code=404, detail="Timeline not available")
+        safe_id = thread_id.replace("/", "_").replace("\\", "_")
+        filename = f"openevent_timeline_{safe_id}.jsonl"
+        return FileResponse(path, media_type="application/json", filename=filename)
+
+else:
+
+    @app.get("/api/debug/threads/{thread_id}")
+    async def get_debug_thread_trace_disabled(thread_id: str):
+        raise HTTPException(status_code=404, detail="Debug tracing disabled")
+
+    @app.get("/api/debug/threads/{thread_id}/timeline")
+    async def get_debug_thread_timeline_disabled(thread_id: str):
+        raise HTTPException(status_code=404, detail="Debug tracing disabled")
+
+    @app.get("/api/debug/threads/{thread_id}/timeline/download")
+    async def download_debug_thread_timeline_disabled(thread_id: str):
+        raise HTTPException(status_code=404, detail="Debug tracing disabled")
+
+
 @app.post("/api/conversation/{session_id}/confirm-date")
 async def confirm_date(session_id: str, request: ConfirmDateRequest):
     """Condition (purple): persist the confirmed date and pause before availability checks."""
@@ -708,7 +753,7 @@ atexit.register(_stop_frontend_process)
 if __name__ == "__main__":
     import uvicorn
     _frontend_process = _launch_frontend()
-    _open_browser_when_ready()
+    threading.Thread(target=_open_browser_when_ready, name="frontend-browser", daemon=True).start()
     try:
         uvicorn.run(app, host="0.0.0.0", port=8000)
     finally:

@@ -90,6 +90,7 @@ def test_hygiene_across_steps(tmp_path, monkeypatch):
         "room_eval_hash": None,
         "locked_room_id": None,
         "thread_state": "Awaiting Client",
+        "date_confirmed": True,
     }
     step3_state.user_info = {"shortcut_capacity_ok": True}
 
@@ -128,6 +129,9 @@ def test_hygiene_across_steps(tmp_path, monkeypatch):
         step = draft.get("step")
         if step == 2:
             assert all(action.get("type") == "select_date" for action in actions)
+        elif step == 3:
+            assert actions, "Room step should surface selectable options"
+            assert all(action.get("type") == "select_room" for action in actions)
         else:
             assert len(actions) <= 1, f"multiple primary CTAs detected: {actions}"
         if actions:
