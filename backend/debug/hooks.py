@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from functools import wraps
+import inspect
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .settings import is_trace_enabled
@@ -15,6 +16,38 @@ _CONFIRMED_VALUES: Dict[str, Dict[str, str]] = {}
 _IMMEDIATE_CONFIRM = {"email"}
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _PHONE_RE = re.compile(r"\+?\d[\d\s\-]{6,}")
+
+
+def _callsite_path(skip: int = 2) -> Optional[str]:
+    frame = inspect.currentframe()
+    try:
+        for _ in range(skip):
+            if frame is None:
+                return None
+            frame = frame.f_back
+        if frame is None:
+            return None
+        module = inspect.getmodule(frame)
+        module_name = module.__name__ if module else None
+        code = frame.f_code
+        qualname = getattr(code, "co_qualname", None)
+        if not qualname:
+            qualname = code.co_name
+            owner = frame.f_locals.get("self")
+            if owner is not None:
+                try:
+                    qualname = f"{owner.__class__.__name__}.{qualname}"
+                except Exception:
+                    pass
+            else:
+                cls = frame.f_locals.get("cls")
+                if isinstance(cls, type):
+                    qualname = f"{cls.__name__}.{qualname}"
+        if module_name and qualname:
+            return f"{module_name}.{qualname}"
+        return module_name or qualname
+    finally:
+        del frame
 
 
 def _format_chip(key: str, value: Any) -> str:
@@ -136,6 +169,10 @@ def trace_prompt_in(
 ) -> None:
     sanitized = _mask_prompt(prompt_text) or ""
     payload = {"prompt_text": sanitized}
+    callsite = _callsite_path()
+    detail_payload: Dict[str, Any] = {"fn": callsite or fn_name, "label": fn_name, "kind": "instruction"}
+    if callsite:
+        detail_payload["path"] = callsite
     emit(
         thread_id,
         "AGENT_PROMPT_IN",
@@ -147,8 +184,8 @@ def trace_prompt_in(
         entity_label="Agent",
         actor=actor,
         event_name="Instruction",
-        details_label=fn_name,
-        detail={"fn": fn_name, "kind": "instruction"},
+        details_label=callsite or fn_name,
+        detail=detail_payload,
         data=payload,
         prompt_preview=_prompt_preview(sanitized),
     )
@@ -168,6 +205,10 @@ def trace_prompt_out(
     payload: Dict[str, Any] = {"message_text": sanitized}
     if outputs:
         payload["outputs"] = outputs
+    callsite = _callsite_path()
+    detail_payload: Dict[str, Any] = {"fn": callsite or fn_name, "label": fn_name, "kind": "reply"}
+    if callsite:
+        detail_payload["path"] = callsite
     emit(
         thread_id,
         "AGENT_PROMPT_OUT",
@@ -179,8 +220,8 @@ def trace_prompt_out(
         entity_label="Agent",
         actor=actor,
         event_name="Reply",
-        details_label=fn_name,
-        detail={"fn": fn_name, "kind": "reply"},
+        details_label=callsite or fn_name,
+        detail=detail_payload,
         data=payload,
         prompt_preview=_prompt_preview(sanitized),
     )
@@ -212,6 +253,8 @@ def _thread_id_from_state(state: Any) -> str:
 
 def trace_step(step_name: str):
     def deco(fn: Callable):
+        fn_path = f"{fn.__module__}.{fn.__qualname__}"
+        detail_payload = {"fn": fn_path, "label": step_name}
         @wraps(fn)
         def inner(*args, **kwargs):
             state = kwargs.get("state")
@@ -232,7 +275,8 @@ def trace_step(step_name: str):
                 entity_label="Trigger",
                 actor="System",
                 event_name="Enter",
-                details_label=step_name,
+                detail=detail_payload,
+                details_label=fn_path,
             )
             try:
                 return fn(*args, **kwargs)
@@ -248,7 +292,8 @@ def trace_step(step_name: str):
                     entity_label="Trigger",
                     actor="System",
                     event_name="Exit",
-                    details_label=step_name,
+                    detail=detail_payload,
+                    details_label=fn_path,
                 )
 
         return inner

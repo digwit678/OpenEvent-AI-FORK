@@ -197,6 +197,10 @@ class TraceBus:
         with self._lock:
             return [asdict(ev) for ev in self._buf.get(thread_id, [])]
 
+    def list_threads(self) -> List[str]:
+        with self._lock:
+            return list(self._buf.keys())
+
 
 BUS = TraceBus()
 

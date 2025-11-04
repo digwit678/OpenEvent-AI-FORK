@@ -368,6 +368,7 @@
   gap: 0.35rem;
   font-size: 0.68rem;
   color: #475569;
+  max-width: 100%;
 }
 
 .trace-function__arg {
@@ -377,6 +378,8 @@
   padding: 0.1rem 0.45rem;
   border-radius: 9999px;
   background: rgba(148, 163, 184, 0.18);
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .trace-function__arg-key {
@@ -390,8 +393,23 @@
 }
 
 .trace-function__arg-value {
+  background: none;
+  border: none;
   color: #334155;
+  cursor: pointer;
+  font-size: 0.7rem;
   font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  max-width: 160px;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-function__arg-value:hover,
+.trace-function__arg-value:focus {
+  text-decoration: underline;
 }
 
 .trace-muted {
@@ -703,6 +721,17 @@
 .trace-toolbar button.active {
   background: #111827;
   color: #ffffff;
+}
+
+.trace-toolbar button.error {
+  background: #fee2e2;
+  border-color: #f87171;
+  color: #b91c1c;
+}
+
+.trace-toolbar button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .trace-toolbar__chips {
@@ -1436,6 +1465,38 @@
   background: #111827;
   color: #fff;
   border-color: #111827;
+}
+
+.prompt-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.prompt-modal__actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #f8fafc;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.prompt-modal__actions button.active {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #14532d;
+}
+
+.prompt-modal__actions button.error {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #991b1b;
 }
 
 .prompt-modal__content {
