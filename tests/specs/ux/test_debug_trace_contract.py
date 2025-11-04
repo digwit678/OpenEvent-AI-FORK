@@ -38,24 +38,47 @@ def test_trace_event_contract(monkeypatch):
         data={"value": 25},
         subject="participants",
         status="captured",
+        owner_step="Step1_Intake",
+        granularity="logic",
+        entity={"lifecycle": "captured", "key": "participants", "value": 25},
     )
     emit(
         THREAD_ID,
         "GATE_PASS",
         step="Step2_Date",
-        detail="date_confirmed",
+        detail="P1 date_confirmed",
         data={"date_confirmed": True},
         subject="date_confirmed",
         status="pass",
+        owner_step="Step2_Date",
+        granularity="logic",
+        gate={
+            "label": "P1 date_confirmed",
+            "inputs": {"date_confirmed": True},
+            "result": "PASS",
+            "prereq": "P1",
+        },
     )
     emit(
         THREAD_ID,
         "DB_WRITE",
-        step="db.events.update",
+        step="Step1_Intake",
         detail="WRITE",
         data={"event_id": "evt-1"},
         subject="db.events.update",
         status="changed",
+        owner_step="Step1_Intake",
+        granularity="logic",
+        db={"op": "db.events.update", "mode": "WRITE", "duration_ms": 12},
+    )
+    emit(
+        THREAD_ID,
+        "STATE_SNAPSHOT",
+        step="Step1_Intake",
+        subject="state",
+        owner_step="Step1_Intake",
+        granularity="verbose",
+        data={"thread_state": "Awaiting Client"},
     )
 
     client = TestClient(main.app)
@@ -71,30 +94,37 @@ def test_trace_event_contract(monkeypatch):
     }
 
     trace = payload["trace"]
-    assert len(trace) >= 3
+    assert len(trace) == 3
 
     first = trace[0]
+    assert first["owner_step"] == "Step1_Intake"
     assert first["subject"] == "participants"
     assert first["status"] == "captured"
-    assert first["summary"].startswith("participants=")
+    assert "participants" in first["summary"]
     assert first["lane"] == "entity"
+    assert first["granularity"] == "logic"
+    assert first["entity"]["lifecycle"] == "captured"
+    assert first["entity"]["value"] == 25
 
     gate = next(event for event in trace if event["kind"] == "GATE_PASS")
     assert gate["status"] == "pass"
     assert gate["lane"] == "gate"
-    assert gate["summary"].startswith("date_confirmed")
+    assert gate["owner_step"] == "Step2_Date"
+    assert gate["gate"]["inputs"]["date_confirmed"] is True
+    assert gate["gate"]["result"] == "PASS"
 
     db_event = trace[-1]
     assert db_event["lane"] == "db"
     assert db_event["status"] == "changed"
-    assert "WRITE" in db_event["summary"].upper()
+    assert db_event["db"]["op"] == "db.events.update"
+    assert db_event["db"]["mode"] == "WRITE"
 
     # arrow log export mirrors enriched payload
     text_response = client.get(f"/api/debug/threads/{THREAD_ID}/timeline/text")
     assert text_response.status_code == 200
     body = text_response.text
     assert "participants" in body
-    assert "Gate" in body
-    assert "DB" in body
+    assert "inputs" in body
+    assert "db.events.update" in body
 
     _reset_bus(THREAD_ID)

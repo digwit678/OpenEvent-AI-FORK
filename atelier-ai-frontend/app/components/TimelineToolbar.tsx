@@ -5,10 +5,10 @@ interface TimelineToolbarProps {
   paused: boolean;
   onToggleAutoScroll: () => void;
   onTogglePaused: () => void;
-  laneFilters: Record<string, boolean>;
-  onLaneToggle: (lane: string) => void;
-  statusFilters: Record<string, boolean>;
-  onStatusToggle: (status: string) => void;
+  selectedKinds: string[];
+  onKindToggle: (lane: string) => void;
+  granularity: 'logic' | 'verbose';
+  onGranularityChange: (value: 'logic' | 'verbose') => void;
   onDownloadJson: () => void;
   onDownloadText: () => void;
 }
@@ -23,24 +23,17 @@ const LANE_LABELS: Record<string, string> = {
   draft: 'Draft',
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  captured: 'Captured',
-  confirmed: 'Confirmed',
-  changed: 'Changed',
-  checked: 'Checked',
-  pass: 'Pass',
-  fail: 'Fail',
-};
+const GRANULARITY_OPTIONS: Array<'logic' | 'verbose'> = ['logic', 'verbose'];
 
 export function TimelineToolbar({
   autoScroll,
   paused,
   onToggleAutoScroll,
   onTogglePaused,
-  laneFilters,
-  onLaneToggle,
-  statusFilters,
-  onStatusToggle,
+  selectedKinds,
+  onKindToggle,
+  granularity,
+  onGranularityChange,
   onDownloadJson,
   onDownloadText,
 }: TimelineToolbarProps) {
@@ -56,29 +49,32 @@ export function TimelineToolbar({
       </div>
 
       <div className="trace-toolbar__group">
-        <div className="trace-toolbar__filters">
-          {Object.entries(laneFilters).map(([lane, enabled]) => (
-            <label key={lane}>
-              <input
-                type="checkbox"
-                checked={enabled}
-                onChange={() => onLaneToggle(lane)}
-              />
-              {LANE_LABELS[lane] ?? lane}
-            </label>
+        <div className="trace-toolbar__chips">
+          {GRANULARITY_OPTIONS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={`trace-chip ${granularity === option ? 'trace-chip--active' : ''}`}
+              onClick={() => onGranularityChange(option)}
+            >
+              {option === 'logic' ? 'Logic' : 'Verbose'}
+            </button>
           ))}
         </div>
-        <div className="trace-toolbar__filters">
-          {Object.entries(statusFilters).map(([status, enabled]) => (
-            <label key={status}>
-              <input
-                type="checkbox"
-                checked={enabled}
-                onChange={() => onStatusToggle(status)}
-              />
-              {STATUS_LABELS[status] ?? status}
-            </label>
-          ))}
+        <div className="trace-toolbar__chips">
+          {Object.keys(LANE_LABELS).map((lane) => {
+            const active = selectedKinds.includes(lane);
+            return (
+              <button
+                key={lane}
+                type="button"
+                className={`trace-chip trace-chip--lane lane-chip lane-chip--${lane}${active ? ' trace-chip--active' : ''}`}
+                onClick={() => onKindToggle(lane)}
+              >
+                {LANE_LABELS[lane]}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -87,7 +83,7 @@ export function TimelineToolbar({
           Download JSONL
         </button>
         <button type="button" onClick={onDownloadText}>
-          Download Arrow Log
+          Download Readable Timeline
         </button>
       </div>
     </div>

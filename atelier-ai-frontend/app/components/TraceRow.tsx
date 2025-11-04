@@ -1,5 +1,33 @@
 import React from 'react';
 
+export type GateInfo = {
+  label?: string;
+  result?: string;
+  prereq?: string;
+  inputs?: Record<string, unknown>;
+};
+
+export type EntityInfo = {
+  lifecycle?: string;
+  key?: string;
+  value?: unknown;
+  previous_value?: unknown;
+};
+
+export type DbInfo = {
+  op?: string;
+  mode?: string;
+  duration_ms?: number;
+};
+
+export type DraftInfo = {
+  footer?: {
+    step?: string | null;
+    next?: string | null;
+    state?: string | null;
+  };
+};
+
 export interface TraceEventRow {
   index: number;
   thread_id: string;
@@ -7,6 +35,8 @@ export interface TraceEventRow {
   formattedTime: string;
   kind: string;
   lane: string;
+  ownerStep?: string | null;
+  ownerLabel?: string;
   step?: string | null;
   detail?: string | null;
   subject?: string | null;
@@ -16,6 +46,10 @@ export interface TraceEventRow {
   loop?: boolean;
   detour_to_step?: number | null;
   details?: Record<string, unknown> | null;
+  gate?: GateInfo | null;
+  entity?: EntityInfo | null;
+  db?: DbInfo | null;
+  draft?: DraftInfo | null;
 }
 
 interface TraceRowProps {
@@ -62,35 +96,58 @@ const statusLabel: Record<string, string> = {
   fail: 'Fail',
 };
 
-function formatSummary(text?: string | null) {
-  if (!text) {
+function renderGateCell(gate?: GateInfo | null): string {
+  if (!gate) {
     return '—';
   }
-  return text;
+  const label = gate.label || gate.prereq || 'Gate';
+  const result = gate.result || 'Result';
+  const inputs = gate.inputs || {};
+  const inputPreview = Object.keys(inputs).length
+    ? ` (${Object.entries(inputs)
+        .slice(0, 3)
+        .map(([key, value]) => `${key}=${String(value)}`)
+        .join(', ')})`
+    : '';
+  return `${label}: ${result}${inputPreview}`;
 }
 
-function formatGateCell(event: TraceEventRow) {
-  if (event.lane !== 'gate') {
+function renderEntityCell(entity?: EntityInfo | null): React.ReactNode {
+  if (!entity || !entity.key) {
     return '—';
   }
-  const detail = event.detail || event.subject || 'Gate';
-  const status = statusLabel[event.status ?? ''] || (event.status ? event.status.toUpperCase() : '');
-  const loopMarker = event.loop ? ' ↺' : '';
-  return `${detail}: ${status}${loopMarker}`;
+  const lifecycle = entity.lifecycle || 'captured';
+  const className = `entity-badge entity-badge--${lifecycle}`;
+  const previous = entity.previous_value !== undefined && entity.previous_value !== null ? ` (prev: ${String(entity.previous_value)})` : '';
+  return <span className={className}>{`${entity.key}=${String(entity.value ?? '—')}${previous}`}</span>;
 }
 
-function formatDbCell(event: TraceEventRow) {
-  if (event.lane !== 'db') {
-    return '—';
+function renderIoCell(event: TraceEventRow): string {
+  if (event.db) {
+    const mode = event.db.mode || 'DB';
+    const op = event.db.op || event.summary || event.subject || 'operation';
+    const duration = event.db.duration_ms !== undefined ? ` (${event.db.duration_ms}ms)` : '';
+    return `${mode} ${op}${duration}`;
   }
-  return event.summary || event.detail || 'DB event';
+  if (event.draft?.footer) {
+    const footer = event.draft.footer;
+    const bits = [] as string[];
+    if (footer.next) {
+      bits.push(`Next: ${footer.next}`);
+    }
+    if (footer.state) {
+      bits.push(footer.state);
+    }
+    return bits.length ? bits.join(' · ') : 'Draft';
+  }
+  return '—';
 }
 
-function formatWaitState(event: TraceEventRow) {
+function renderWaitState(event: TraceEventRow): string {
   return event.wait_state || '—';
 }
 
-function formatStepCell(event: TraceEventRow) {
+function renderStepDetail(event: TraceEventRow): string {
   const parts: string[] = [];
   if (event.step) {
     parts.push(event.step);
@@ -101,14 +158,20 @@ function formatStepCell(event: TraceEventRow) {
   if (event.detour_to_step) {
     parts.push(`→ Step ${event.detour_to_step}`);
   }
-  return parts.join(' ');
+  return parts.join(' ') || '—';
 }
 
 const TraceRow: React.FC<TraceRowProps> = ({ event, isExpanded, onToggle }) => {
-  const laneChip = laneClass[event.lane] ?? 'lane-chip';
-  const statusChip = statusClass[event.status ?? ''] ?? '';
-  const statusText = statusLabel[event.status ?? ''] ?? event.status ?? '';
-  const summaryText = formatSummary(event.summary);
+  const laneChipClass = laneClass[event.lane] ?? 'lane-chip';
+  const laneChipLabel = laneLabel[event.lane] ?? event.lane;
+  const statusChipClass = event.status ? statusClass[event.status] : undefined;
+  const statusChipLabel = event.status ? statusLabel[event.status] ?? event.status : '';
+  const summary = event.summary || event.detail || event.subject || '—';
+  const gateCell = renderGateCell(event.gate);
+  const entityCell = renderEntityCell(event.entity);
+  const ioCell = renderIoCell(event);
+  const waitState = renderWaitState(event);
+  const stepDetail = renderStepDetail(event);
 
   return (
     <>
@@ -123,36 +186,36 @@ const TraceRow: React.FC<TraceRowProps> = ({ event, isExpanded, onToggle }) => {
             ▶
           </button>
         </td>
-        <td className="trace-row__subject" title={event.subject || undefined}>
-          <span className={laneChip}>{laneLabel[event.lane] ?? event.lane}</span>
-          <span>{event.subject || '—'}</span>
+        <td className="trace-row__kind">
+          <span className={laneChipClass}>{laneChipLabel}</span>
         </td>
-        <td>
-          <div className="flex flex-col gap-1">
-            <span className="font-semibold text-gray-800 text-xs">{event.kind}</span>
-            {statusChip && <span className={statusChip}>{statusText}</span>}
-          </div>
+        <td className="trace-row__owner" title={event.ownerLabel || undefined}>
+          {event.ownerLabel || '—'}
         </td>
-        <td className="trace-row__summary" title={formatStepCell(event)}>
-          {formatStepCell(event) || '—'}
+        <td className="trace-row__event">
+          <div className="trace-row__event-name">{event.kind}</div>
+          {statusChipClass && <span className={statusChipClass}>{statusChipLabel}</span>}
         </td>
-        <td className="trace-row__summary" title={summaryText}>
-          {summaryText}
+        <td className="trace-row__summary" title={summary}>
+          {summary}
         </td>
-        <td className="trace-row__gate" title={formatGateCell(event)}>
-          {formatGateCell(event)}
+        <td className="trace-row__gate" title={gateCell}>
+          {gateCell}
         </td>
-        <td className="trace-row__db" title={formatDbCell(event)}>
-          {formatDbCell(event)}
+        <td className="trace-row__entity" title={typeof entityCell === 'string' ? entityCell : undefined}>
+          {entityCell}
         </td>
-        <td className="trace-row__wait" title={formatWaitState(event)}>
-          {formatWaitState(event)}
+        <td className="trace-row__io" title={ioCell}>
+          {ioCell}
+        </td>
+        <td className="trace-row__wait" title={waitState}>
+          {waitState}
         </td>
         <td className="trace-row__time">{event.formattedTime}</td>
       </tr>
       {isExpanded && (
         <tr>
-          <td colSpan={9}>
+          <td colSpan={10}>
             <div className="trace-row__details">
               <pre>{JSON.stringify(event.details ?? {}, null, 2)}</pre>
             </div>
