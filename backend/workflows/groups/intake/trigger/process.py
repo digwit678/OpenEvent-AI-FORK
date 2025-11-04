@@ -7,7 +7,7 @@ from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import build_requirements, merge_client_profile, requirements_hash
 from backend.workflows.common.timeutils import format_ts_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.debug.hooks import trace_db_write, trace_entity, trace_state, trace_step
+from backend.debug.hooks import trace_db_write, trace_entity, trace_marker, trace_state, trace_step
 from backend.workflows.io.database import (
     append_history,
     append_audit_entry,
@@ -34,7 +34,15 @@ def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Entry point for Group A — intake and data capture."""
 
     message_payload = state.message.to_payload()
+    thread_id = _thread_id(state)
+    trace_marker(thread_id, "TRIGGER_Intake", detail=message_payload.get("subject"), data={"msg_id": state.message.msg_id})
     intent, confidence = classify_intent(message_payload)
+    trace_marker(
+        thread_id,
+        "AGENT_CLASSIFY",
+        detail=intent.value,
+        data={"confidence": round(confidence, 3)},
+    )
     state.intent = intent
     state.confidence = confidence
 
@@ -55,6 +63,12 @@ def process(state: WorkflowState) -> GroupResult:
     state.record_context(context)
 
     if not is_event_request(intent) or confidence < 0.85:
+        trace_marker(
+            thread_id,
+            "CONDITIONAL_HIL",
+            detail="manual_review_required",
+            data={"intent": intent.value, "confidence": round(confidence, 3)},
+        )
         linked_event = last_event_for_email(state.db, state.client_id)
         linked_event_id = linked_event.get("event_id") if linked_event else None
         task_payload: Dict[str, Any] = {

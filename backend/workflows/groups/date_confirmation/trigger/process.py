@@ -15,7 +15,14 @@ from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.groups.intake.condition.checks import blackout_days, suggest_dates
 from backend.workflows.groups.intake.condition.checks import room_status_on_date
-from backend.debug.hooks import trace_db_read, trace_db_write, trace_gate, trace_state, trace_step
+from backend.debug.hooks import (
+    trace_db_read,
+    trace_db_write,
+    trace_entity,
+    trace_gate,
+    trace_state,
+    trace_step,
+)
 from backend.workflows.io.database import append_audit_entry, link_event_to_client, tag_message, update_event_metadata
 from backend.utils.profiler import profile_step
 
@@ -487,6 +494,14 @@ def _finalize_confirmation(state: WorkflowState, event_entry: dict, confirmed_da
         thread_state="Waiting on HIL",
     )
     trace_db_write(thread_id, "db.events.update_date", {"event_id": state.event_id, "date": confirmed_date})
+    trace_entity(
+        thread_id,
+        "date",
+        "confirmation_step",
+        True,
+        {"value": confirmed_date},
+        status_override="confirmed",
+    )
 
     caller_step = event_entry.get("caller_step")
     next_step = caller_step if caller_step else 3

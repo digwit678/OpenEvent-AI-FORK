@@ -34,11 +34,12 @@ from backend.workflow_email import (
     list_pending_tasks as wf_list_pending_tasks,
     update_task_status as wf_update_task_status,
 )
-from backend.api.debug import debug_get_trace, debug_get_timeline, resolve_timeline_path
+from backend.api.debug import debug_get_trace, debug_get_timeline, resolve_timeline_path, render_arrow_log
+from backend.debug.settings import is_trace_enabled
 
 app = FastAPI(title="AI Event Manager")
 
-DEBUG_TRACE_ENABLED = os.getenv("DEBUG_TRACE") == "1"
+DEBUG_TRACE_ENABLED = is_trace_enabled()
 
 GUI_ADAPTER = ClientGUIAdapter()
 
@@ -275,6 +276,7 @@ async def start_conversation(request: StartConversationRequest):
     """Condition (purple): kick off workflow and branch on manual or ask-for-date pauses before legacy flow."""
     os.environ.setdefault("AGENT_MODE", "openai")
     subject_line = (request.email_body.splitlines()[0][:80] if request.email_body else "No subject")
+    session_id = str(uuid.uuid4())
     msg = {
         "msg_id": str(uuid.uuid4()),
         "from_name": "Not specified",
@@ -282,6 +284,8 @@ async def start_conversation(request: StartConversationRequest):
         "subject": subject_line,
         "ts": datetime.utcnow().isoformat() + "Z",
         "body": request.email_body or "",
+        "session_id": session_id,
+        "thread_id": session_id,
     }
     wf_res = None
     wf_action = None
@@ -303,7 +307,6 @@ async def start_conversation(request: StartConversationRequest):
             "event_info": None,
         }
     if wf_action == "ask_for_date_enqueued":
-        session_id = str(uuid.uuid4())
         event_info = EventInformation(
             date_email_received=datetime.now().strftime("%d.%m.%Y"),
             email=request.client_email,
@@ -392,9 +395,6 @@ async def start_conversation(request: StartConversationRequest):
             "is_complete": False,
             "event_info": None
         }
-    
-    # Create new conversation for new_event
-    session_id = str(uuid.uuid4())
     
     event_info = EventInformation(
         date_email_received=datetime.now().strftime("%d.%m.%Y"),
@@ -583,6 +583,10 @@ if DEBUG_TRACE_ENABLED:
         filename = f"openevent_timeline_{safe_id}.jsonl"
         return FileResponse(path, media_type="application/json", filename=filename)
 
+    @app.get("/api/debug/threads/{thread_id}/timeline/text")
+    async def download_debug_thread_timeline_text(thread_id: str):
+        return render_arrow_log(thread_id)
+
 else:
 
     @app.get("/api/debug/threads/{thread_id}")
@@ -595,6 +599,10 @@ else:
 
     @app.get("/api/debug/threads/{thread_id}/timeline/download")
     async def download_debug_thread_timeline_disabled(thread_id: str):
+        raise HTTPException(status_code=404, detail="Debug tracing disabled")
+
+    @app.get("/api/debug/threads/{thread_id}/timeline/text")
+    async def download_debug_thread_timeline_text_disabled(thread_id: str):
         raise HTTPException(status_code=404, detail="Debug tracing disabled")
 
 

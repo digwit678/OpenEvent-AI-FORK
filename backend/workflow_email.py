@@ -24,6 +24,7 @@ from backend.workflows.planner import maybe_run_smart_shortcuts
 from backend.utils.profiler import profile_step
 from backend.workflow.state import stage_payload
 from backend.debug.lifecycle import close_if_ended
+from backend.debug.settings import is_trace_enabled
 from backend.workflow.guards import evaluate as evaluate_guards
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"
 
 
 def _debug_state(stage: str, state: WorkflowState, extra: Optional[Dict[str, Any]] = None) -> None:
-    debug_trace_enabled = os.getenv("DEBUG_TRACE") == "1"
+    debug_trace_enabled = is_trace_enabled()
     if not WF_DEBUG and not debug_trace_enabled:
         return
 
