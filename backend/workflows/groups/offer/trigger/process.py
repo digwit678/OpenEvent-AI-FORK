@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from backend.workflows.common.requirements import merge_client_profile, requirements_hash
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
+from backend.debug.hooks import trace_db_write, trace_detour, trace_gate, trace_state, trace_step
 from backend.utils.profiler import profile_step
 from backend.workflow.state import WorkflowStep, write_stage
 
@@ -14,6 +15,7 @@ from ..llm.send_offer_llm import ComposeOffer
 __workflow_role__ = "trigger"
 
 
+@trace_step("Step4_Offer")
 @profile_step("workflow.step4.offer")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Run Step 4 — offer preparation and transmission."""
@@ -32,6 +34,7 @@ def process(state: WorkflowState) -> GroupResult:
 
     previous_step = event_entry.get("current_step") or 3
     state.current_step = 4
+    thread_id = _thread_id(state)
 
     if merge_client_profile(event_entry, state.user_info or {}):
         state.extras["persist"] = True
@@ -49,11 +52,11 @@ def process(state: WorkflowState) -> GroupResult:
     if products_changed:
         state.extras["persist"] = True
 
-    precondition = _evaluate_preconditions(event_entry, current_req_hash)
+    precondition = _evaluate_preconditions(event_entry, current_req_hash, thread_id)
     if precondition:
         code, target = precondition
         if target in (2, 3):
-            return _route_to_owner_step(state, event_entry, target, code)
+            return _route_to_owner_step(state, event_entry, target, code, thread_id)
         return _handle_products_pending(state, event_entry, code)
 
     write_stage(event_entry, current_step=WorkflowStep.STEP_4, caller_step=None)
@@ -63,7 +66,7 @@ def process(state: WorkflowState) -> GroupResult:
 
     pricing_inputs = _rebuild_pricing_inputs(event_entry, state.user_info)
 
-    offer_id, offer_version, total_amount = _record_offer(event_entry, pricing_inputs, state.user_info)
+    offer_id, offer_version, total_amount = _record_offer(event_entry, pricing_inputs, state.user_info, thread_id)
     summary_lines = _compose_offer_summary(event_entry, total_amount)
 
     draft_message = {
@@ -119,6 +122,17 @@ def process(state: WorkflowState) -> GroupResult:
     state.set_thread_state("Awaiting Client")
     state.extras["persist"] = True
 
+    trace_state(
+        thread_id,
+        "Step4_Offer",
+        {
+            "offer_id": offer_id,
+            "offer_version": offer_version,
+            "total_amount": total_amount,
+            "products_ready": _products_ready(event_entry),
+        },
+    )
+
     payload = {
         "client_id": state.client_id,
         "event_id": event_entry.get("event_id"),
@@ -139,24 +153,39 @@ def process(state: WorkflowState) -> GroupResult:
 def _evaluate_preconditions(
     event_entry: Dict[str, Any],
     current_requirements_hash: Optional[str],
+    thread_id: str,
 ) -> Optional[Tuple[str, Union[int, str]]]:
-    if not bool(event_entry.get("date_confirmed")):
+    date_ok = bool(event_entry.get("date_confirmed"))
+    trace_gate(thread_id, "Step4_Offer", "P1 date_confirmed", date_ok, {})
+    if not date_ok:
         return "P1", 2
 
     locked_room_id = event_entry.get("locked_room_id")
     room_eval_hash = event_entry.get("room_eval_hash")
-    if not (
+    p2_ok = (
         locked_room_id
         and current_requirements_hash
         and room_eval_hash
         and current_requirements_hash == room_eval_hash
-    ):
+    )
+    trace_gate(
+        thread_id,
+        "Step4_Offer",
+        "P2 room_locked",
+        bool(p2_ok),
+        {"locked_room_id": locked_room_id, "room_eval_hash": room_eval_hash, "requirements_hash": current_requirements_hash},
+    )
+    if not p2_ok:
         return "P2", 3
 
-    if not _has_capacity(event_entry):
+    capacity_ok = _has_capacity(event_entry)
+    trace_gate(thread_id, "Step4_Offer", "P3 capacity_confirmed", capacity_ok, {})
+    if not capacity_ok:
         return "P3", 3
 
-    if not _products_ready(event_entry):
+    products_ok = _products_ready(event_entry)
+    trace_gate(thread_id, "Step4_Offer", "P4 products_ready", products_ok, {})
+    if not products_ok:
         return "P4", "products"
 
     return None
@@ -167,6 +196,7 @@ def _route_to_owner_step(
     event_entry: Dict[str, Any],
     target_step: int,
     reason_code: str,
+    thread_id: str,
 ) -> GroupResult:
     caller_step = WorkflowStep.STEP_4
     target_enum = WorkflowStep(f"step_{target_step}")
@@ -175,6 +205,14 @@ def _route_to_owner_step(
     thread_state = "Awaiting Client" if target_step == 2 else "Waiting on HIL"
     update_event_metadata(event_entry, thread_state=thread_state)
     append_audit_entry(event_entry, 4, target_step, f"offer_gate_{reason_code.lower()}")
+
+    trace_detour(
+        thread_id,
+        "Step4_Offer",
+        _step_name(target_step),
+        f"offer_gate_{reason_code.lower()}",
+        {},
+    )
 
     state.current_step = target_step
     state.caller_step = caller_step.numeric
@@ -374,6 +412,7 @@ def _record_offer(
     event_entry: Dict[str, Any],
     pricing_inputs: Dict[str, Any],
     user_info: Dict[str, Any],
+    thread_id: str,
 ) -> Tuple[str, int, float]:
     compose = ComposeOffer()
     offer_payload = {
@@ -418,6 +457,12 @@ def _record_offer(
     event_entry["offer_status"] = "Draft"
     event_entry["transition_ready"] = False
 
+    trace_db_write(
+        thread_id,
+        "db.offers.create",
+        {"offer_id": offer_id, "version": offer_sequence, "total": total_amount},
+    )
+
     return offer_id, offer_sequence, total_amount
 
 
@@ -440,3 +485,27 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> 
         lines.append("No optional products selected yet.")
     lines.append("Please review and approve before sending to the client.")
     return lines
+
+
+def _step_name(step: int) -> str:
+    mapping = {
+        1: "Step1_Intake",
+        2: "Step2_Date",
+        3: "Step3_Room",
+        4: "Step4_Offer",
+        5: "Step5_Negotiation",
+        6: "Step6_Transition",
+        7: "Step7_Confirmation",
+    }
+    return mapping.get(step, f"Step{step}")
+
+
+def _thread_id(state: WorkflowState) -> str:
+    if state.thread_id:
+        return str(state.thread_id)
+    if state.client_id:
+        return str(state.client_id)
+    message = state.message
+    if message and message.msg_id:
+        return str(message.msg_id)
+    return "unknown-thread"

@@ -31,6 +31,7 @@ def test_no_redundant_capacity_prompt_with_shortcut(tmp_path, monkeypatch):
         "room_eval_hash": None,
         "locked_room_id": None,
         "thread_state": "Awaiting Client",
+        "date_confirmed": True,
     }
     state.user_info = {"shortcut_capacity_ok": True}
 
@@ -54,6 +55,7 @@ def test_hash_changes_trigger_dependent_steps_only(tmp_path, monkeypatch):
         "room_eval_hash": initial_hash,
         "locked_room_id": "Room A",
         "thread_state": "Awaiting Client",
+        "date_confirmed": True,
     }
 
     call_count = {"value": 0}
@@ -78,6 +80,7 @@ def test_hash_changes_trigger_dependent_steps_only(tmp_path, monkeypatch):
             "requirements_hash": new_hash,
             "room_eval_hash": initial_hash,
             "locked_room_id": None,
+            "date_confirmed": True,
         }
     )
     state.user_info = {}

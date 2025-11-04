@@ -22,7 +22,12 @@ from backend.workflows.common.room_rules import (
     sanitize_participants,
 )
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
-from backend.workflows.common.datetime_parse import parse_first_date, parse_time_range
+from backend.workflows.common.datetime_parse import (
+    parse_first_date,
+    parse_time_range,
+    month_name_to_number,
+    weekday_name_to_number,
+)
 
 adapter: AgentAdapter = get_agent_adapter()
 _LAST_CALL_METADATA: Dict[str, Any] = {}
@@ -53,6 +58,36 @@ _FEATURE_KEYWORDS = {
     "sound system": ["sound system", "speakers", "audio", "music"],
     "coffee service": ["coffee service", "coffee bar", "coffee", "barista", "espresso", "tea service"],
 }
+
+_TIME_OF_DAY_ALIASES = {
+    "morning": "morning",
+    "breakfast": "morning",
+    "afternoon": "afternoon",
+    "lunchtime": "afternoon",
+    "evening": "evening",
+    "dinner": "evening",
+    "night": "evening",
+}
+
+_VAGUE_WEEKDAY_TOKENS = [
+    "monday",
+    "mon",
+    "tuesday",
+    "tue",
+    "tues",
+    "wednesday",
+    "wed",
+    "thursday",
+    "thu",
+    "thur",
+    "thurs",
+    "friday",
+    "fri",
+    "saturday",
+    "sat",
+    "sunday",
+    "sun",
+]
 
 
 def _extract_requirement_hints(text: str) -> Dict[str, Any]:
@@ -347,7 +382,60 @@ def extract_user_information(message: Dict[str, Optional[str]]) -> Dict[str, Opt
                         existing.append(item)
                 sanitized["products_add"] = existing
 
+    vague_components = _extract_vague_date_components(body_text)
+    for key, value in vague_components.items():
+        if value and not sanitized.get(key):
+            sanitized[key] = value
+
+    products_add = sanitized.get("products_add")
+    if isinstance(products_add, list) and products_add:
+        sanitized["wish_products"] = [
+            item.get("name")
+            for item in products_add
+            if isinstance(item, dict) and item.get("name")
+        ]
+
     return sanitized
+
+
+def _extract_vague_date_components(text: str) -> Dict[str, Optional[str]]:
+    lowered = (text or "").lower()
+    result: Dict[str, Optional[str]] = {
+        "vague_month": None,
+        "vague_weekday": None,
+        "vague_time_of_day": None,
+    }
+
+    # Detect month token
+    detected_month: Optional[str] = None
+    for token in sorted(_MONTHS.keys(), key=len, reverse=True):
+        pattern = rf"\b{re.escape(token)}\b"
+        if re.search(pattern, lowered):
+            normalized = month_name_to_number(token)
+            if normalized:
+                detected_month = token
+                break
+    if detected_month:
+        result["vague_month"] = detected_month
+
+    # Detect weekday token
+    detected_weekday: Optional[str] = None
+    for token in sorted(_VAGUE_WEEKDAY_TOKENS, key=len, reverse=True):
+        pattern = rf"\b{re.escape(token)}\b"
+        if re.search(pattern, lowered):
+            if weekday_name_to_number(token) is not None:
+                detected_weekday = token
+                break
+    if detected_weekday:
+        result["vague_weekday"] = detected_weekday
+
+    # Detect time of day
+    for token, label in _TIME_OF_DAY_ALIASES.items():
+        if token in lowered:
+            result["vague_time_of_day"] = label
+            break
+
+    return result
 
 
 def sanitize_user_info(raw: Dict[str, Any]) -> Dict[str, Optional[Any]]:

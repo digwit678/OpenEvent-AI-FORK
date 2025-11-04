@@ -164,6 +164,7 @@ class WorkflowState:
     db: Dict[str, Any]
     client: Optional[Dict[str, Any]] = None
     client_id: Optional[str] = None
+    thread_id: Optional[str] = None
     intent: Optional[IntentLabel] = None
     confidence: Optional[float] = None
     user_info: Dict[str, Any] = field(default_factory=dict)
@@ -225,6 +226,20 @@ class WorkflowState:
         message.setdefault("created_at_step", step_value)
         self.draft_messages.append(message)
 
+        try:
+            from backend.debug.hooks import trace_draft  # pylint: disable=import-outside-toplevel
+        except Exception:
+            trace_draft = None  # type: ignore[assignment]
+
+        if trace_draft:
+            footer_payload = _decode_footer_payload(footer, next_step, thread_state)
+            trace_draft(
+                _thread_identifier(self),
+                _step_name(step_value),
+                footer_payload,
+                message.get("actions") or [],
+            )
+
     def set_thread_state(self, value: str) -> None:
         """[OpenEvent Database] Track whether the thread awaits a client reply."""
 
@@ -243,6 +258,9 @@ class WorkflowState:
         )
 
 
+
+
+
 @dataclass
 class GroupResult:
     """[Trigger] Encapsulates the outcome of a workflow group."""
@@ -257,3 +275,62 @@ class GroupResult:
         data = dict(self.payload)
         data.setdefault("action", self.action)
         return data
+
+
+_STEP_NAME_MAP = {
+    1: "Step1_Intake",
+    2: "Step2_Date",
+    3: "Step3_Room",
+    4: "Step4_Offer",
+    5: "Step5_Negotiation",
+    6: "Step6_Transition",
+    7: "Step7_Confirmation",
+}
+
+
+def _step_name(value: Any) -> str:
+    if isinstance(value, str):
+        try:
+            value_int = int(value)
+        except ValueError:
+            value_int = None
+    else:
+        value_int = value if isinstance(value, int) else None
+    if value_int in _STEP_NAME_MAP:
+        return _STEP_NAME_MAP[value_int]
+    return "intake"
+
+
+def _decode_footer_payload(footer: Optional[str], next_step: Any, thread_state: Any) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "text": footer or "",
+        "step": None,
+        "next": None,
+        "wait_state": None,
+    }
+    if footer:
+        segments = [segment.strip() for segment in footer.split("·")]
+        for segment in segments:
+            lowered = segment.lower()
+            if lowered.startswith("step:"):
+                payload["step"] = segment.split(":", 1)[1].strip()
+            elif lowered.startswith("next:"):
+                payload["next"] = segment.split(":", 1)[1].strip()
+            elif lowered.startswith("state:"):
+                payload["wait_state"] = segment.split(":", 1)[1].strip()
+    if payload["next"] is None and next_step is not None:
+        payload["next"] = str(next_step)
+    if payload["wait_state"] is None and thread_state is not None:
+        payload["wait_state"] = str(thread_state)
+    return payload
+
+
+def _thread_identifier(state: WorkflowState) -> str:
+    if state.thread_id:
+        return str(state.thread_id)
+    if state.client_id:
+        return str(state.client_id)
+    msg_id = state.message.msg_id
+    if msg_id:
+        return str(msg_id)
+    return "unknown-thread"

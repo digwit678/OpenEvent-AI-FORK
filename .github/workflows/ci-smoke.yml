@@ -23,11 +23,7 @@ jobs:
       - name: Install dev deps
         run: |
           python -m pip install -U pip wheel setuptools
-          if [ -f requirements-dev.txt ]; then
-            python -m pip install -r requirements-dev.txt
-          else
-            python -m pip install pytest freezegun pytz python-dateutil faker hypothesis
-          fi
+          if [ -f requirements-dev.txt ]; then python -m pip install -r requirements-dev.txt; else python -m pip install pytest freezegun pytz python-dateutil faker hypothesis; fi
       - name: Run essential v4 tests (fast)
         run: |
           ./scripts/test-smoke.sh

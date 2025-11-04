@@ -5,7 +5,8 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+import logging
 
 from backend.domain import TaskStatus, TaskType
 
@@ -22,7 +23,95 @@ from backend.workflows.llm import adapter as llm_adapter
 from backend.workflows.planner import maybe_run_smart_shortcuts
 from backend.utils.profiler import profile_step
 from backend.workflow.state import stage_payload
+from backend.debug.lifecycle import close_if_ended
 from backend.workflow.guards import evaluate as evaluate_guards
+
+logger = logging.getLogger(__name__)
+WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"
+
+
+def _debug_state(stage: str, state: WorkflowState, extra: Optional[Dict[str, Any]] = None) -> None:
+    debug_trace_enabled = os.getenv("DEBUG_TRACE") == "1"
+    if not WF_DEBUG and not debug_trace_enabled:
+        return
+
+    event_entry = state.event_entry or {}
+    requirements = event_entry.get("requirements") or {}
+    shortcuts = event_entry.get("shortcuts") or {}
+    info = {
+        "stage": stage,
+        "step": event_entry.get("current_step"),
+        "caller": event_entry.get("caller_step"),
+        "thread": event_entry.get("thread_state"),
+        "date_confirmed": event_entry.get("date_confirmed"),
+        "chosen_date": event_entry.get("chosen_date"),
+        "participants": requirements.get("number_of_participants") or requirements.get("participants"),
+        "capacity_shortcut": shortcuts.get("capacity_ok"),
+        "vague_month": event_entry.get("vague_month"),
+        "vague_weekday": event_entry.get("vague_weekday"),
+        "vague_time": event_entry.get("vague_time_of_day"),
+    }
+    if extra:
+        info.update(extra)
+    if WF_DEBUG:
+        serialized = " ".join(f"{key}={value}" for key, value in info.items())
+        print(f"[WF DEBUG][state] {serialized}")
+
+    if not debug_trace_enabled:
+        return
+
+    thread_id = _thread_identifier(state)
+    snapshot = dict(info)
+    snapshot.update(
+        {
+            "requirements_hash": event_entry.get("requirements_hash"),
+            "room_eval_hash": event_entry.get("room_eval_hash"),
+            "offer_id": event_entry.get("offer_id"),
+            "locked_room_id": event_entry.get("locked_room_id"),
+            "wish_products": event_entry.get("wish_products"),
+            "thread_state": state.thread_state,
+            "caller_step": event_entry.get("caller_step"),
+        }
+    )
+    from backend.debug.hooks import trace_state  # pylint: disable=import-outside-toplevel
+    from backend.debug.state_store import STATE_STORE  # pylint: disable=import-outside-toplevel
+
+    trace_state(thread_id, _snapshot_step_name(event_entry), snapshot)
+    STATE_STORE.update(thread_id, snapshot)
+    close_if_ended(thread_id, snapshot)
+
+
+_TRACE_STEP_NAMES = {
+    1: "Step1_Intake",
+    2: "Step2_Date",
+    3: "Step3_Room",
+    4: "Step4_Offer",
+    5: "Step5_Negotiation",
+    6: "Step6_Transition",
+    7: "Step7_Confirmation",
+}
+
+
+def _snapshot_step_name(event_entry: Optional[Dict[str, Any]]) -> str:
+    if not event_entry:
+        return "intake"
+    raw = event_entry.get("current_step")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return "intake"
+    return _TRACE_STEP_NAMES.get(value, "intake")
+
+
+def _thread_identifier(state: WorkflowState) -> str:
+    if state.thread_id:
+        return str(state.thread_id)
+    if state.client_id:
+        return str(state.client_id)
+    message = state.message
+    if message and message.msg_id:
+        return str(message.msg_id)
+    return "unknown-thread"
 
 
 DB_PATH = Path(__file__).with_name("events_database.json")
@@ -170,10 +259,21 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
 
     message = IncomingMessage.from_dict(msg)
     state = WorkflowState(message=message, db_path=path, db=db)
-
+    raw_thread_id = (
+        msg.get("thread_id")
+        or msg.get("thread")
+        or msg.get("session_id")
+        or msg.get("msg_id")
+        or msg.get("from_email")
+        or "unknown-thread"
+    )
+    state.thread_id = str(raw_thread_id)
+    _debug_state("init", state)
     last_result = intake.process(state)
+    _debug_state("post_intake", state, extra={"intent": state.intent.value if state.intent else None})
     _persist_if_needed(state, path, lock_path)
     if last_result.halt:
+        _debug_state("halt_post_intake", state)
         return _flush_and_finalize(last_result, state, path, lock_path)
 
     guard_snapshot = evaluate_guards(state)
@@ -182,6 +282,11 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
 
     shortcut_result = maybe_run_smart_shortcuts(state)
     if shortcut_result is not None:
+        _debug_state(
+            "smart_shortcut",
+            state,
+            extra={"shortcut_action": shortcut_result.action},
+        )
         _persist_if_needed(state, path, lock_path)
         return _flush_and_finalize(shortcut_result, state, path, lock_path)
 
@@ -192,42 +297,52 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         step = event_entry.get("current_step")
         if step == 2:
             last_result = date_confirmation.process(state)
+            _debug_state("post_step2", state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
+                _debug_state("halt_step2", state)
                 return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 3:
             last_result = room_availability.process(state)
+            _debug_state("post_step3", state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
+                _debug_state("halt_step3", state)
                 return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 4:
             last_result = process_offer(state)
+            _debug_state("post_step4", state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
+                _debug_state("halt_step4", state)
                 return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 5:
             last_result = process_negotiation(state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
+                _debug_state("halt_step5", state)
                 return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 6:
             last_result = process_transition(state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
+                _debug_state("halt_step6", state)
                 return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 7:
             last_result = process_confirmation(state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
+                _debug_state("halt_step7", state)
                 return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         break
 
+    _debug_state("final", state)
     return _flush_and_finalize(last_result, state, path, lock_path)
 
 

@@ -2616,6 +2616,314 @@
         "step7": false
       },
       "decision": "pending"
+    },
+    {
+      "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+      "created_at": "2025-11-04T00:20:48.949901",
+      "status": "Lead",
+      "current_step": 2,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": null,
+      "date_confirmed": false,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 30,
+        "seating_layout": null,
+        "event_duration": {},
+        "special_requirements": "sound system",
+        "preferred_room": null
+      },
+      "requirements_hash": "5ab1666b9bc9cbb12fac571bff9d126ea61ee86be164e4f36dc9a426b5246be3",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2025-11-04T00:20:48Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-04T00:25:20Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-04T00:28:58Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-04T00:35:01Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "04.11.2025",
+        "Status": "Lead",
+        "Event Date": "Not specified",
+        "Name": "Not specified",
+        "Email": "laura.meier@bluewin.ch",
+        "Phone": "+41782224455",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "01:20",
+        "End Time": "Not specified",
+        "Preferred Room": "Not specified",
+        "Number of Participants": "30",
+        "Type of Event": "Not specified",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "sound system"
+      },
+      "msgs": [
+        "c0aa2774-8174-43d4-a36a-ea75adb31925",
+        "cd6fb54f-dae1-4e6f-9445-c91077a5095a",
+        "b8d25292-a876-432c-ad00-3f120d57a654",
+        "86b1839d-c8ba-4ab7-98d8-23052f6ad8da"
+      ],
+      "captured": {},
+      "verified": {},
+      "captured_sources": [],
+      "deferred_intents": [],
+      "current_step_stage": "step_1",
+      "caller_step_stage": null,
+      "subflow_group": "intake",
+      "requested_window": {},
+      "offer_hash": null,
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "vague_month": "february",
+      "vague_weekday": "saturday",
+      "vague_time_of_day": "evening",
+      "candidate_dates": [
+        "07.02.2026",
+        "14.02.2026",
+        "21.02.2026",
+        "28.02.2026"
+      ],
+      "pending_hil_requests": [
+        {
+          "task_id": "a35530ee-f460-4b9f-8897-6d60013ed0f9",
+          "signature": "9b27665f88e8ab721e9c21fe72eac2fbf46e371bd2688ecf5a9c0a8f3834a81f",
+          "step": 2,
+          "draft": {
+            "body": "You mentioned a Saturday evening in February.\nHere are the upcoming options that are still free:\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client",
+            "step": 2,
+            "next_step": "Confirm date",
+            "thread_state": "Awaiting Client",
+            "topic": "vague_date_candidates",
+            "candidate_dates": [
+              "07.02.2026",
+              "14.02.2026",
+              "21.02.2026",
+              "28.02.2026"
+            ],
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Saturdays in February",
+                "rows": [
+                  {
+                    "iso_date": "2026-02-07",
+                    "display": "Sat 07 Feb 2026",
+                    "status": "Available",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-02-14",
+                    "display": "Sat 14 Feb 2026",
+                    "status": "Available",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-02-21",
+                    "display": "Sat 21 Feb 2026",
+                    "status": "Available",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-02-28",
+                    "display": "Sat 28 Feb 2026",
+                    "status": "Available",
+                    "time_of_day": "Evening"
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "Confirm Sat 07 Feb 2026 · Evening",
+                "date": "07.02.2026",
+                "iso_date": "2026-02-07"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Sat 14 Feb 2026 · Evening",
+                "date": "14.02.2026",
+                "iso_date": "2026-02-14"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Sat 21 Feb 2026 · Evening",
+                "date": "21.02.2026",
+                "iso_date": "2026-02-21"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Sat 28 Feb 2026 · Evening",
+                "date": "28.02.2026",
+                "iso_date": "2026-02-28"
+              }
+            ],
+            "body_markdown": "You mentioned a Saturday evening in February.\nHere are the upcoming options that are still free:",
+            "footer": "Step: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client",
+            "requires_approval": true,
+            "created_at_step": 2
+          }
+        },
+        {
+          "task_id": "14debcda-86cf-4b62-aa4b-feb84c196901",
+          "signature": "bee38afea4da7576ce3d758336efea8df04fd809adf0869e6b31f6e0bdc19410",
+          "step": 2,
+          "draft": {
+            "body": "You mentioned a Saturday evening in February.\nHere are the upcoming options that are still free:\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client",
+            "step": 2,
+            "next_step": "Confirm date",
+            "thread_state": "Awaiting Client",
+            "topic": "vague_date_candidates",
+            "candidate_dates": [
+              "07.02.2026",
+              "14.02.2026",
+              "21.02.2026",
+              "28.02.2026"
+            ],
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Saturdays in February",
+                "rows": [
+                  {
+                    "iso_date": "2026-02-07",
+                    "display": "Sat 07 Feb 2026",
+                    "status": "Available",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-02-14",
+                    "display": "Sat 14 Feb 2026",
+                    "status": "Available",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-02-21",
+                    "display": "Sat 21 Feb 2026",
+                    "status": "Available",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-02-28",
+                    "display": "Sat 28 Feb 2026",
+                    "status": "Available",
+                    "time_of_day": "Evening"
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "Confirm Sat 07 Feb 2026 · Evening",
+                "date": "07.02.2026",
+                "iso_date": "2026-02-07"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Sat 14 Feb 2026 · Evening",
+                "date": "14.02.2026",
+                "iso_date": "2026-02-14"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Sat 21 Feb 2026 · Evening",
+                "date": "21.02.2026",
+                "iso_date": "2026-02-21"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Sat 28 Feb 2026 · Evening",
+                "date": "28.02.2026",
+                "iso_date": "2026-02-28"
+              }
+            ],
+            "body_markdown": "You mentioned a Saturday evening in February.\nHere are the upcoming options that are still free:",
+            "footer": "Step: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client",
+            "requires_approval": true,
+            "created_at_step": 2
+          }
+        }
+      ]
     }
   ],
   "clients": {
@@ -6027,6 +6335,160 @@
         }
       ],
       "event_ids": []
+    },
+    "laura.meier@bluewin.ch": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "c0aa2774-8174-43d4-a36a-ea75adb31925",
+          "ts": "2025-11-04T00:20:48.943118Z",
+          "subject": "Hello,",
+          "body_preview": "Hello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.\n\nWe’re flexible but are thinking sometime in February, preferabl",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening"
+          }
+        },
+        {
+          "msg_id": "cd6fb54f-dae1-4e6f-9445-c91077a5095a",
+          "ts": "2025-11-04T00:25:20.215322Z",
+          "subject": "Hello,",
+          "body_preview": "Hello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.\n\nWe’re flexible but are thinking sometime in February, preferabl",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": "01:20",
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+4178222445501",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening"
+          }
+        },
+        {
+          "msg_id": "b8d25292-a876-432c-ad00-3f120d57a654",
+          "ts": "2025-11-04T00:28:58.475086Z",
+          "subject": "Hello,",
+          "body_preview": "Hello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.\n\nWe’re flexible but are thinking sometime in February, preferabl",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": "01:20",
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+4178222445501",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening"
+          }
+        },
+        {
+          "msg_id": "86b1839d-c8ba-4ab7-98d8-23052f6ad8da",
+          "ts": "2025-11-04T00:35:01.254696Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\nBody:\nHello,\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.\nWe",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February\nBody",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening"
+          }
+        }
+      ],
+      "event_ids": []
     }
   },
   "tasks": [
@@ -6399,6 +6861,44 @@
           "body": "Subject: Training Workshop – 2-Day Booking Request in June\nBody:\nHello,\nWe’re planning a two-day internal training workshop for our support team and are looking for a venue in Zurich or nearby.\nPreferred dates: June 12–13 2025 (Thursday & Friday).\nParticipants: about 25 people.\nRequirements:\n– Classroom or U-shape setup\n– Projector + whiteboard\n– Lunch and two coffee breaks per day\n– On-site parking if available\nCould you please let us know if you have availability for those dates and what package options you recommend?\nThank you,\nNadine Keller\nTraining Coordinator, Solvion Tech AG\nnadine.keller@solviontech.ch\n+41 79 880 91 22\n07:50",
           "ts": "2025-10-31T06:59:23.043996Z"
         }
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "a35530ee-f460-4b9f-8897-6d60013ed0f9",
+      "created_at": "2025-11-04T00:20:48.951420",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "laura.meier@bluewin.ch",
+      "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+      "payload": {
+        "step_id": 2,
+        "intent": "event_request",
+        "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+        "draft_msg": "You mentioned a Saturday evening in February.\nHere are the upcoming options that are still free:\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "5ab1666b9bc9cbb12fac571bff9d126ea61ee86be164e4f36dc9a426b5246be3",
+        "room_eval_hash": null
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "14debcda-86cf-4b62-aa4b-feb84c196901",
+      "created_at": "2025-11-04T00:25:20.224656",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "laura.meier@bluewin.ch",
+      "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+      "payload": {
+        "step_id": 2,
+        "intent": "event_request",
+        "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+        "draft_msg": "You mentioned a Saturday evening in February.\nHere are the upcoming options that are still free:\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "1f45645a3e5039f5f57a069b14ce67b0de62b592516029f0dfdc347c445b9443",
+        "room_eval_hash": null
       },
       "notes": ""
     }

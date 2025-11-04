@@ -7,6 +7,7 @@ from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import build_requirements, merge_client_profile, requirements_hash
 from backend.workflows.common.timeutils import format_ts_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
+from backend.debug.hooks import trace_db_write, trace_entity, trace_state, trace_step
 from backend.workflows.io.database import (
     append_history,
     append_audit_entry,
@@ -28,6 +29,7 @@ from ..llm.analysis import classify_intent, extract_user_information
 __workflow_role__ = "trigger"
 
 
+@trace_step("Step1_Intake")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Entry point for Group A — intake and data capture."""
 
@@ -38,6 +40,7 @@ def process(state: WorkflowState) -> GroupResult:
 
     user_info = extract_user_information(message_payload)
     state.user_info = user_info
+    _trace_user_entities(state, message_payload, user_info)
 
     client = upsert_client(
         state.db,
@@ -123,6 +126,29 @@ def process(state: WorkflowState) -> GroupResult:
         requirements=requirements,
         requirements_hash=new_req_hash,
     )
+
+    wish_products = []
+    products_add = user_info.get("products_add") or []
+    if isinstance(products_add, list):
+        wish_products = [
+            item.get("name")
+            for item in products_add
+            if isinstance(item, dict) and item.get("name")
+        ]
+    vague_month = user_info.get("vague_month")
+    vague_weekday = user_info.get("vague_weekday")
+    vague_time = user_info.get("vague_time_of_day")
+    metadata_updates: Dict[str, Any] = {}
+    if wish_products:
+        metadata_updates["wish_products"] = wish_products
+    if vague_month:
+        metadata_updates["vague_month"] = vague_month
+    if vague_weekday:
+        metadata_updates["vague_weekday"] = vague_weekday
+    if vague_time:
+        metadata_updates["vague_time_of_day"] = vague_time
+    if metadata_updates:
+        update_event_metadata(event_entry, **metadata_updates)
 
     new_preferred_room = requirements.get("preferred_room")
 
@@ -211,6 +237,16 @@ def process(state: WorkflowState) -> GroupResult:
         "thread_state": event_entry.get("thread_state"),
         "draft_messages": state.draft_messages,
     }
+    trace_state(
+        _thread_id(state),
+        "Step1_Intake",
+        {
+            "requirements_hash": event_entry.get("requirements_hash"),
+            "current_step": event_entry.get("current_step"),
+            "caller_step": event_entry.get("caller_step"),
+            "thread_state": event_entry.get("thread_state"),
+        },
+    )
     return GroupResult(action="intake_complete", payload=payload)
 
 
@@ -228,15 +264,47 @@ def _ensure_event_record(
     if not last_event:
         create_event_entry(state.db, event_data)
         event_entry = state.db["events"][-1]
+        trace_db_write(_thread_id(state), "db.events.create", {"event_id": event_entry.get("event_id")})
         return event_entry
 
     idx = find_event_idx_by_id(state.db, last_event["event_id"])
     if idx is None:
         create_event_entry(state.db, event_data)
         event_entry = state.db["events"][-1]
+        trace_db_write(_thread_id(state), "db.events.create", {"event_id": event_entry.get("event_id")})
         return event_entry
 
     state.updated_fields = update_event_entry(state.db, idx, event_data)
     event_entry = state.db["events"][idx]
+    trace_db_write(_thread_id(state), "db.events.update", {"event_id": event_entry.get("event_id"), "updated": list(state.updated_fields)})
     update_event_metadata(event_entry, status=event_entry.get("status", "Lead"))
     return event_entry
+
+
+def _trace_user_entities(state: WorkflowState, message_payload: Dict[str, Any], user_info: Dict[str, Any]) -> None:
+    thread_id = _thread_id(state)
+    if not thread_id:
+        return
+
+    email = message_payload.get("from_email")
+    if email:
+        trace_entity(thread_id, "email", "message_header", True, {"value": email})
+
+    event_date = user_info.get("event_date") or user_info.get("date")
+    if event_date:
+        trace_entity(thread_id, "event_date", "llm", True, {"value": event_date})
+
+    participants = user_info.get("participants") or user_info.get("number_of_participants")
+    if participants:
+        trace_entity(thread_id, "participants", "llm", True, {"value": participants})
+
+
+def _thread_id(state: WorkflowState) -> str:
+    if state.thread_id:
+        return str(state.thread_id)
+    if state.client_id:
+        return str(state.client_id)
+    msg_id = state.message.msg_id if state.message else None
+    if msg_id:
+        return str(msg_id)
+    return "unknown-thread"
