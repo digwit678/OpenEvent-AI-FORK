@@ -2468,18 +2468,20 @@
       "event_id": "caf6384d-a94f-40b7-96b0-30b81f3477d6",
       "created_at": "2025-10-31T14:17:25.568052",
       "status": "Lead",
-      "current_step": 1,
+      "current_step": 2,
       "caller_step": null,
-      "thread_state": "In Progress",
+      "thread_state": "Awaiting Client",
       "chosen_date": null,
       "date_confirmed": false,
       "locked_room_id": null,
       "requirements": {
         "number_of_participants": 25,
         "seating_layout": "U-shape",
-        "special_requirements": "projector, coffee service"
+        "event_duration": {},
+        "special_requirements": "projector, coffee service",
+        "preferred_room": null
       },
-      "requirements_hash": "ee48222a854306473a9c5792b23433622cc0bf99bd15df2a2b136097363b5f43",
+      "requirements_hash": "a5f3cf8d4de4e919ae1b8758b4cdc1cc95233d6413852439faba2a2aae6ba9f3",
       "room_eval_hash": null,
       "offer_id": null,
       "audit": [
@@ -2492,6 +2494,13 @@
           "fields": [
             "Name"
           ]
+        },
+        {
+          "ts": "2025-11-04T12:08:43Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 2,
+          "reason": "date_missing"
         }
       ],
       "review_state": {
@@ -2500,9 +2509,9 @@
         "message": null
       },
       "event_data": {
-        "Date Email Received": "31.10.2025",
+        "Date Email Received": "04.11.2025",
         "Status": "Lead",
-        "Event Date": "12.06.2025",
+        "Event Date": "Not specified",
         "Name": "Nadine Keller",
         "Email": "nadine.keller@solviontech.ch",
         "Phone": "+41798809122",
@@ -2512,15 +2521,16 @@
         "End Time": "Not specified",
         "Preferred Room": "Not specified",
         "Number of Participants": "25",
-        "Type of Event": "Training Workshop",
-        "Catering Preference": "Lunch and two coffee breaks per day",
+        "Type of Event": "workshop",
+        "Catering Preference": "Coffee service",
         "Billing Amount": "none",
         "Deposit": "none",
         "Language": "Not specified",
         "Additional Info": "projector, coffee service"
       },
       "msgs": [
-        "d683999e-ff17-4208-b389-ed1e757a0872"
+        "d683999e-ff17-4208-b389-ed1e757a0872",
+        "f8351b91-65a3-4f55-bafb-ed6317557b87"
       ],
       "captured": {
         "date": "2025-06-12",
@@ -2615,7 +2625,93 @@
         "step4": false,
         "step7": false
       },
-      "decision": "pending"
+      "decision": "pending",
+      "vague_month": "june",
+      "vague_weekday": "thursday",
+      "candidate_dates": [
+        "04.06.2026",
+        "11.06.2026",
+        "18.06.2026",
+        "25.06.2026"
+      ],
+      "pending_hil_requests": [
+        {
+          "task_id": "0254337c-5369-4bd3-8a36-562bf0407074",
+          "signature": "327a4803b357e7f4bfcf2da249647f27caa930e3c116881b080927b4ac1c00bb",
+          "step": 2,
+          "draft": {
+            "body": "You mentioned a Thursday in June.\nHere are the upcoming options that are still free:\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client",
+            "step": 2,
+            "next_step": "Confirm date",
+            "thread_state": "Awaiting Client",
+            "topic": "vague_date_candidates",
+            "candidate_dates": [
+              "04.06.2026",
+              "11.06.2026",
+              "18.06.2026",
+              "25.06.2026"
+            ],
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Thursdays in June",
+                "rows": [
+                  {
+                    "iso_date": "2026-06-04",
+                    "display": "Thu 04 Jun 2026",
+                    "status": "Available"
+                  },
+                  {
+                    "iso_date": "2026-06-11",
+                    "display": "Thu 11 Jun 2026",
+                    "status": "Available"
+                  },
+                  {
+                    "iso_date": "2026-06-18",
+                    "display": "Thu 18 Jun 2026",
+                    "status": "Available"
+                  },
+                  {
+                    "iso_date": "2026-06-25",
+                    "display": "Thu 25 Jun 2026",
+                    "status": "Available"
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "Confirm Thu 04 Jun 2026",
+                "date": "04.06.2026",
+                "iso_date": "2026-06-04"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Thu 11 Jun 2026",
+                "date": "11.06.2026",
+                "iso_date": "2026-06-11"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Thu 18 Jun 2026",
+                "date": "18.06.2026",
+                "iso_date": "2026-06-18"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Thu 25 Jun 2026",
+                "date": "25.06.2026",
+                "iso_date": "2026-06-25"
+              }
+            ],
+            "body_markdown": "You mentioned a Thursday in June.\nHere are the upcoming options that are still free:",
+            "footer": "Step: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client",
+            "requires_approval": true,
+            "created_at_step": 2
+          }
+        }
+      ]
     },
     {
       "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
@@ -6332,6 +6428,41 @@
             "room_feedback": null,
             "event_date": "12.06.2025"
           }
+        },
+        {
+          "msg_id": "f8351b91-65a3-4f55-bafb-ed6317557b87",
+          "ts": "2025-11-04T12:08:43.026935Z",
+          "subject": "Subject: Training Workshop – 2-Day Booking Request in June",
+          "body_preview": "Subject: Training Workshop – 2-Day Booking Request in June\n\nBody:\n\nHello,\n\nWe’re planning a two-day internal training workshop for our support team and are look",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "June",
+            "participants": 25,
+            "room": null,
+            "layout": "U-shape",
+            "name": null,
+            "email": null,
+            "type": "workshop",
+            "catering": "Coffee service",
+            "phone": "+41798809122",
+            "company": null,
+            "language": null,
+            "notes": "projector, coffee service",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "june",
+            "vague_weekday": "thursday"
+          }
         }
       ],
       "event_ids": []
@@ -6898,6 +7029,25 @@
         "language": null,
         "caller_step": null,
         "requirements_hash": "1f45645a3e5039f5f57a069b14ce67b0de62b592516029f0dfdc347c445b9443",
+        "room_eval_hash": null
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "0254337c-5369-4bd3-8a36-562bf0407074",
+      "created_at": "2025-11-04T12:08:43.038771",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "nadine.keller@solviontech.ch",
+      "event_id": "caf6384d-a94f-40b7-96b0-30b81f3477d6",
+      "payload": {
+        "step_id": 2,
+        "intent": "event_request",
+        "event_id": "caf6384d-a94f-40b7-96b0-30b81f3477d6",
+        "draft_msg": "You mentioned a Thursday in June.\nHere are the upcoming options that are still free:\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "a5f3cf8d4de4e919ae1b8758b4cdc1cc95233d6413852439faba2a2aae6ba9f3",
         "room_eval_hash": null
       },
       "notes": ""
