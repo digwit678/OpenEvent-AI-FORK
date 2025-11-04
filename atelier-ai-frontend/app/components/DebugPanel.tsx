@@ -88,6 +88,10 @@ function createCsv(rows: TraceRowData[]): string {
       ? `${row.io.direction ? row.io.direction.toUpperCase() : ''} ${row.io.op || ''}`.trim() + (row.io.result ? ` → ${row.io.result}` : '')
       : '';
     const value = row.valueItems.map((item) => item.label).join(' | ');
+    const functionDetail = row.functionPath || row.functionName || '';
+    const argsSummary = row.functionArgs?.length
+      ? ` (${row.functionArgs.map((item) => `${item.key}=${item.value}`).join('; ')})`
+      : '';
     const promptPieces = [] as string[];
     if (row.prompt?.instruction) {
       promptPieces.push(`Instruction: ${row.prompt.instruction}`);
@@ -101,7 +105,7 @@ function createCsv(rows: TraceRowData[]): string {
       row.entity,
       row.actor,
       row.event,
-      row.functionName,
+      `${functionDetail}${argsSummary}`.trim(),
       value,
       gate,
       io,

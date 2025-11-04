@@ -350,6 +350,50 @@
   font-variant-numeric: tabular-nums;
 }
 
+.trace-function {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.trace-function__path {
+  font-weight: 600;
+  color: #111827;
+  word-break: break-all;
+}
+
+.trace-function__args {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  color: #475569;
+}
+
+.trace-function__arg {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.trace-function__arg-key {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.trace-function__arg-sep {
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.trace-function__arg-value {
+  color: #334155;
+  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
 .trace-muted {
   color: #94a3b8;
 }
