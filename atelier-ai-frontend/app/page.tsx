@@ -803,8 +803,12 @@ export default function EmailThreadUI() {
         )}
         </div>
         {debugEnabled && (
-          <div className="hidden lg:block w-[360px] sticky top-8">
-            <DebugPanel threadId={sessionId ?? ''} pollMs={1500} />
+          <div className="hidden lg:block w-[420px] sticky top-4">
+            <DebugPanel
+              threadId={sessionId}
+              pollMs={1500}
+              initialManagerView={searchParams.get('manager') === '1'}
+            />
           </div>
         )}
       </div>
@@ -839,9 +843,6 @@ export default function EmailThreadUI() {
             <div className="mt-2 p-2 bg-white rounded">
               <strong>Should show buttons?</strong> {isComplete ? '✅ YES' : '❌ NO'}
             </div>
-          </div>
-          <div className="w-[360px] sticky top-8 hidden lg:block">
-            <DebugPanel threadId={sessionId ?? ''} pollMs={1500} />
           </div>
         </>
       )}

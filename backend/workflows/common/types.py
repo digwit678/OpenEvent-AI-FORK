@@ -238,6 +238,7 @@ class WorkflowState:
                 _step_name(step_value),
                 footer_payload,
                 message.get("actions") or [],
+                message.get("body_markdown"),
             )
 
     def set_thread_state(self, value: str) -> None:

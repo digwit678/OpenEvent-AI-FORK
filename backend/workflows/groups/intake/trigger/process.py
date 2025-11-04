@@ -7,7 +7,17 @@ from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import build_requirements, merge_client_profile, requirements_hash
 from backend.workflows.common.timeutils import format_ts_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.debug.hooks import trace_db_write, trace_entity, trace_marker, trace_state, trace_step
+import json
+
+from backend.debug.hooks import (
+    trace_db_write,
+    trace_entity,
+    trace_marker,
+    trace_prompt_in,
+    trace_prompt_out,
+    trace_state,
+    trace_step,
+)
 from backend.workflows.io.database import (
     append_history,
     append_audit_entry,
@@ -43,7 +53,19 @@ def process(state: WorkflowState) -> GroupResult:
         data={"msg_id": state.message.msg_id},
         owner_step=owner_step,
     )
+    prompt_payload = (
+        f"Subject: {message_payload.get('subject') or ''}\n"
+        f"Body:\n{message_payload.get('body') or ''}"
+    )
+    trace_prompt_in(thread_id, owner_step, "classify_intent", prompt_payload)
     intent, confidence = classify_intent(message_payload)
+    trace_prompt_out(
+        thread_id,
+        owner_step,
+        "classify_intent",
+        json.dumps({"intent": intent.value, "confidence": round(confidence, 3)}, ensure_ascii=False),
+        outputs={"intent": intent.value, "confidence": round(confidence, 3)},
+    )
     trace_marker(
         thread_id,
         "AGENT_CLASSIFY",
@@ -54,7 +76,15 @@ def process(state: WorkflowState) -> GroupResult:
     state.intent = intent
     state.confidence = confidence
 
+    trace_prompt_in(thread_id, owner_step, "extract_user_information", prompt_payload)
     user_info = extract_user_information(message_payload)
+    trace_prompt_out(
+        thread_id,
+        owner_step,
+        "extract_user_information",
+        json.dumps(user_info, ensure_ascii=False),
+        outputs=user_info,
+    )
     state.user_info = user_info
     _trace_user_entities(state, message_payload, user_info)
 
