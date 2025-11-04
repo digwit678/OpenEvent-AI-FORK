@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from backend.debug.trace import BUS, get_trace_summary
-from backend.workflow.state import get_thread_state
+from backend.debug.reporting import collect_trace_payload, filter_trace_events, generate_report
+from backend.debug.trace import BUS
 from backend.debug import timeline
 from fastapi.responses import PlainTextResponse
 
@@ -15,24 +15,7 @@ def debug_get_trace(
     granularity: str = "logic",
     kinds: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    raw_events = BUS.get(thread_id)
-    state_snapshot = get_thread_state(thread_id) or {}
-    if not state_snapshot:
-        for event in reversed(raw_events):
-            if event.get("kind") == "STATE_SNAPSHOT":
-                state_snapshot = dict(event.get("data") or {})
-                break
-    confirmed = _confirmed_map(state_snapshot)
-    filtered_events = _apply_filters(raw_events, granularity, kinds)
-    summary = get_trace_summary(thread_id)
-    return {
-        "thread_id": thread_id,
-        "state": state_snapshot,
-        "confirmed": confirmed,
-        "trace": filtered_events,
-        "timeline": timeline.snapshot(thread_id),
-        "summary": summary,
-    }
+    return collect_trace_payload(thread_id, granularity=granularity, kinds=kinds)
 
 
 def debug_get_timeline(
@@ -41,14 +24,13 @@ def debug_get_timeline(
     granularity: str = "logic",
     kinds: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    confirmed = _confirmed_map(get_thread_state(thread_id) or {})
-    summary = get_trace_summary(thread_id)
+    payload = collect_trace_payload(thread_id, granularity=granularity, kinds=kinds)
     return {
         "thread_id": thread_id,
-        "confirmed": confirmed,
-        "trace": _apply_filters(BUS.get(thread_id), granularity, kinds),
-        "timeline": timeline.snapshot(thread_id),
-        "summary": summary,
+        "confirmed": payload["confirmed"],
+        "trace": payload["trace"],
+        "timeline": payload["timeline"],
+        "summary": payload["summary"],
     }
 
 
@@ -63,12 +45,23 @@ def render_arrow_log(
     granularity: str = "logic",
     kinds: Optional[List[str]] = None,
 ) -> PlainTextResponse:
-    events = _apply_filters(BUS.get(thread_id), granularity, kinds)
+    events = filter_trace_events(BUS.get(thread_id), granularity, kinds)
     lines = _format_arrow_log(events)
     body = "\n".join(lines) if lines else "No trace events recorded."
     safe_id = thread_id.replace("/", "_").replace("\\", "_")
     filename = f"openevent_timeline_{safe_id}.txt"
     return PlainTextResponse(content=body, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+def debug_generate_report(
+    thread_id: str,
+    *,
+    granularity: str = "logic",
+    kinds: Optional[List[str]] = None,
+    persist: bool = False,
+) -> Tuple[str, Optional[str]]:
+    body, saved_path = generate_report(thread_id, granularity=granularity, kinds=kinds, persist=persist)
+    return body, str(saved_path) if saved_path else None
 
 
 def _format_arrow_log(events: Iterable[Dict[str, Any]]) -> List[str]:
@@ -152,63 +145,6 @@ def _format_ts(ts: Any) -> str:
         return "--:--:--"
 
 
-def _confirmed_map(snapshot: Dict[str, Any]) -> Dict[str, bool]:
-    chosen_date = snapshot.get("chosen_date") or snapshot.get("event_date") or snapshot.get("date")
-    date_confirmed = bool(snapshot.get("date_confirmed"))
-    room_status = _room_status(snapshot)
-    req_hash = snapshot.get("requirements_hash") or snapshot.get("req_hash")
-    room_hash = snapshot.get("room_eval_hash") or snapshot.get("eval_hash")
-    hash_status = "Match" if req_hash and room_hash and req_hash == room_hash else None
-    if hash_status is None and req_hash and room_hash:
-        hash_status = "Mismatch"
-    offer_status = snapshot.get("offer_status")
-    if isinstance(offer_status, str):
-        offer_status = offer_status.title()
-    wait_state = snapshot.get("thread_state") or snapshot.get("threadState")
-    return {
-        "date": {"confirmed": date_confirmed, "value": chosen_date},
-        "room_status": room_status,
-        "hash_status": hash_status,
-        "offer_status": offer_status,
-        "wait_state": wait_state,
-    }
-
-
-def _room_status(snapshot: Dict[str, Any]) -> Optional[str]:
-    status = snapshot.get("selected_status") or snapshot.get("room_status") or snapshot.get("status")
-    if isinstance(status, str):
-        lowered = status.lower()
-        if "option" in lowered or "lock" in lowered:
-            return "Option"
-        if lowered in {"available", "ok", "open"}:
-            return "Available"
-        if lowered in {"unavailable", "full", "closed"}:
-            return "Unavailable"
-    if snapshot.get("locked_room_id"):
-        return "Option"
-    return None
-
-
-def _apply_filters(
-    events: List[Dict[str, Any]],
-    granularity: str,
-    kinds: Optional[List[str]],
-) -> List[Dict[str, Any]]:
-    granularity_normalized = (granularity or "logic").lower()
-    filtered = events
-    if granularity_normalized == "logic":
-        filtered = [ev for ev in events if (ev.get("granularity") or "verbose") == "logic"]
-    elif granularity_normalized == "verbose":
-        filtered = events
-    else:
-        filtered = [ev for ev in events if (ev.get("granularity") or "verbose") == granularity_normalized]
-
-    if kinds:
-        allowed = {kind.lower() for kind in kinds}
-        filtered = [ev for ev in filtered if (ev.get("lane") or "").lower() in allowed]
-    return filtered
-
-
 def _stringify(value: Any) -> str:
     text = str(value)
     if len(text) > 60:
@@ -221,4 +157,5 @@ __all__ = [
     "debug_get_timeline",
     "resolve_timeline_path",
     "render_arrow_log",
+    "debug_generate_report",
 ]

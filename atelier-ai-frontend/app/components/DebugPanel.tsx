@@ -90,7 +90,7 @@ function createCsv(rows: TraceRowData[]): string {
     const value = row.valueItems.map((item) => item.label).join(' | ');
     const functionDetail = row.functionPath || row.functionName || '';
     const argsSummary = row.functionArgs?.length
-      ? ` (${row.functionArgs.map((item) => `${item.key}=${item.value}`).join('; ')})`
+      ? ` (${row.functionArgs.map((item) => `${item.key}=${item.fullValue}`).join('; ')})`
       : '';
     const promptPieces = [] as string[];
     if (row.prompt?.instruction) {
@@ -139,6 +139,7 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
   const [disabled, setDisabled] = useState(false);
   const [inspectRow, setInspectRow] = useState<TraceRowData | null>(null);
   const [managerLines, setManagerLines] = useState<string[]>([]);
+  const [reportCopyState, setReportCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
 
   const tableScrollerRef = useRef<HTMLDivElement | null>(null);
   const bufferRef = useRef<ReturnType<typeof createBufferFlusher<RawTraceEvent[]>> | null>(null);
@@ -300,6 +301,18 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
     setManagerLines(lines);
   }, [filteredEvents, stepProgress]);
 
+  useEffect(() => {
+    setReportCopyState('idle');
+  }, [threadId]);
+
+  useEffect(() => {
+    if (reportCopyState === 'idle') {
+      return;
+    }
+    const timer = window.setTimeout(() => setReportCopyState('idle'), 2000);
+    return () => window.clearTimeout(timer);
+  }, [reportCopyState]);
+
   const capturedEntities = useMemo(() => {
     const captured = new Map<string, string>();
     const confirmed = new Map<string, string>();
@@ -371,6 +384,27 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
     if (!managerLines.length) return;
     downloadFile('debug_timeline.txt', managerLines.join('\n'));
   }, [downloadFile, managerLines]);
+
+  const handleCopyReport = useCallback(async () => {
+    if (!threadId) {
+      return;
+    }
+    try {
+      const params = new URLSearchParams();
+      params.set('granularity', determineFetchGranularity(granularity));
+      params.set('persist', '1');
+      const response = await fetch(`/api/debug/threads/${encodeURIComponent(threadId)}/report?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error(`Report request failed with status ${response.status}`);
+      }
+      const text = await response.text();
+      await navigator.clipboard.writeText(text);
+      setReportCopyState('copied');
+    } catch (err) {
+      console.warn('Copy report failed', err);
+      setReportCopyState('error');
+    }
+  }, [threadId, granularity]);
 
   const handleDownloadJson = useCallback(() => {
     if (!threadId) return;
@@ -487,6 +521,9 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
         onDownloadJson={handleDownloadJson}
         onDownloadCsv={handleDownloadCsv}
         onDownloadReadable={downloadReadableServer}
+        onCopyReport={threadId ? handleCopyReport : null}
+        copyReportDisabled={!threadId}
+        copyReportState={reportCopyState}
         showManagerView={showManagerView}
         onToggleManagerView={() => setShowManagerView((prev) => !prev)}
       />

@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 import uuid
 import os
@@ -34,8 +34,15 @@ from backend.workflow_email import (
     list_pending_tasks as wf_list_pending_tasks,
     update_task_status as wf_update_task_status,
 )
-from backend.api.debug import debug_get_trace, debug_get_timeline, resolve_timeline_path, render_arrow_log
+from backend.api.debug import (
+    debug_get_trace,
+    debug_get_timeline,
+    debug_generate_report,
+    resolve_timeline_path,
+    render_arrow_log,
+)
 from backend.debug.settings import is_trace_enabled
+from backend.debug.trace import BUS
 
 app = FastAPI(title="AI Event Manager")
 
@@ -605,6 +612,24 @@ if DEBUG_TRACE_ENABLED:
     ):
         return render_arrow_log(thread_id, granularity=granularity, kinds=_parse_kind_filter(kinds))
 
+    @app.get("/api/debug/threads/{thread_id}/report")
+    async def download_debug_thread_report(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+        persist: bool = Query(False),
+    ):
+        body, saved_path = debug_generate_report(
+            thread_id,
+            granularity=granularity,
+            kinds=_parse_kind_filter(kinds),
+            persist=persist,
+        )
+        headers = {}
+        if saved_path:
+            headers["X-Debug-Report-Path"] = saved_path
+        return PlainTextResponse(content=body, headers=headers)
+
 else:
 
     @app.get("/api/debug/threads/{thread_id}")
@@ -632,6 +657,15 @@ else:
         thread_id: str,
         granularity: str = Query("logic"),
         kinds: Optional[str] = Query(None),
+    ):
+        raise HTTPException(status_code=404, detail="Debug tracing disabled")
+
+    @app.get("/api/debug/threads/{thread_id}/report")
+    async def download_debug_thread_report_disabled(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+        persist: bool = Query(False),
     ):
         raise HTTPException(status_code=404, detail="Debug tracing disabled")
 
@@ -786,6 +820,22 @@ def _stop_frontend_process() -> None:
         _frontend_process = None
 
 
+def _persist_debug_reports() -> None:
+    if not DEBUG_TRACE_ENABLED:
+        return
+    try:
+        thread_ids = BUS.list_threads()
+    except Exception as exc:  # pragma: no cover - defensive guard
+        print(f"[Debug][WARN] Unable to enumerate trace threads: {exc}")
+        return
+    for thread_id in thread_ids:
+        try:
+            debug_generate_report(thread_id, persist=True)
+        except Exception as exc:
+            print(f"[Debug][WARN] Failed to persist debug report for {thread_id}: {exc}")
+
+
+atexit.register(_persist_debug_reports)
 atexit.register(_stop_frontend_process)
 
 if __name__ == "__main__":
