@@ -117,7 +117,12 @@ def process(state: WorkflowState) -> GroupResult:
         return _skip_room_evaluation(state, event_entry)
 
     room_statuses = evaluate_room_statuses(state.db, chosen_date)
-    trace_db_read(thread_id, "db.rooms.search", {"date": chosen_date, "rooms": len(room_statuses)})
+    trace_db_read(
+        thread_id,
+        "Step3_Room",
+        "db.rooms.search",
+        {"date": chosen_date, "rooms": len(room_statuses)},
+    )
     summary = summarize_room_statuses(room_statuses)
     status_map = _flatten_statuses(room_statuses)
 
@@ -218,6 +223,7 @@ def process(state: WorkflowState) -> GroupResult:
     )
     trace_db_write(
         thread_id,
+        "Step3_Room",
         "db.events.update_room",
         {"selected_room": selected_room, "status": outcome},
     )
@@ -460,6 +466,7 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
     )
     trace_db_write(
         _thread_id(state),
+        "Step3_Room",
         "db.events.lock_room",
         {"locked_room_id": selected_room, "room_eval_hash": requirements_hash},
     )

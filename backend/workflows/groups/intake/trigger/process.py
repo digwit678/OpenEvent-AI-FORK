@@ -35,13 +35,21 @@ def process(state: WorkflowState) -> GroupResult:
 
     message_payload = state.message.to_payload()
     thread_id = _thread_id(state)
-    trace_marker(thread_id, "TRIGGER_Intake", detail=message_payload.get("subject"), data={"msg_id": state.message.msg_id})
+    owner_step = "Step1_Intake"
+    trace_marker(
+        thread_id,
+        "TRIGGER_Intake",
+        detail=message_payload.get("subject"),
+        data={"msg_id": state.message.msg_id},
+        owner_step=owner_step,
+    )
     intent, confidence = classify_intent(message_payload)
     trace_marker(
         thread_id,
         "AGENT_CLASSIFY",
         detail=intent.value,
         data={"confidence": round(confidence, 3)},
+        owner_step=owner_step,
     )
     state.intent = intent
     state.confidence = confidence
@@ -68,6 +76,7 @@ def process(state: WorkflowState) -> GroupResult:
             "CONDITIONAL_HIL",
             detail="manual_review_required",
             data={"intent": intent.value, "confidence": round(confidence, 3)},
+            owner_step=owner_step,
         )
         linked_event = last_event_for_email(state.db, state.client_id)
         linked_event_id = linked_event.get("event_id") if linked_event else None
@@ -278,19 +287,24 @@ def _ensure_event_record(
     if not last_event:
         create_event_entry(state.db, event_data)
         event_entry = state.db["events"][-1]
-        trace_db_write(_thread_id(state), "db.events.create", {"event_id": event_entry.get("event_id")})
+        trace_db_write(_thread_id(state), "Step1_Intake", "db.events.create", {"event_id": event_entry.get("event_id")})
         return event_entry
 
     idx = find_event_idx_by_id(state.db, last_event["event_id"])
     if idx is None:
         create_event_entry(state.db, event_data)
         event_entry = state.db["events"][-1]
-        trace_db_write(_thread_id(state), "db.events.create", {"event_id": event_entry.get("event_id")})
+        trace_db_write(_thread_id(state), "Step1_Intake", "db.events.create", {"event_id": event_entry.get("event_id")})
         return event_entry
 
     state.updated_fields = update_event_entry(state.db, idx, event_data)
     event_entry = state.db["events"][idx]
-    trace_db_write(_thread_id(state), "db.events.update", {"event_id": event_entry.get("event_id"), "updated": list(state.updated_fields)})
+    trace_db_write(
+        _thread_id(state),
+        "Step1_Intake",
+        "db.events.update",
+        {"event_id": event_entry.get("event_id"), "updated": list(state.updated_fields)},
+    )
     update_event_metadata(event_entry, status=event_entry.get("status", "Lead"))
     return event_entry
 
@@ -301,16 +315,17 @@ def _trace_user_entities(state: WorkflowState, message_payload: Dict[str, Any], 
         return
 
     email = message_payload.get("from_email")
+    owner_step = "Step1_Intake"
     if email:
-        trace_entity(thread_id, "email", "message_header", True, {"value": email})
+        trace_entity(thread_id, owner_step, "email", "message_header", True, {"value": email})
 
     event_date = user_info.get("event_date") or user_info.get("date")
     if event_date:
-        trace_entity(thread_id, "event_date", "llm", True, {"value": event_date})
+        trace_entity(thread_id, owner_step, "event_date", "llm", True, {"value": event_date})
 
     participants = user_info.get("participants") or user_info.get("number_of_participants")
     if participants:
-        trace_entity(thread_id, "participants", "llm", True, {"value": participants})
+        trace_entity(thread_id, owner_step, "participants", "llm", True, {"value": participants})
 
 
 def _thread_id(state: WorkflowState) -> str:

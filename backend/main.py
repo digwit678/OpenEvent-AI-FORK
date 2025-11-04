@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -12,7 +12,7 @@ import time
 import webbrowser
 import threading
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from backend.domain import ConversationState, EventInformation
 from backend.conversation_manager import (
     classify_email, generate_response, create_summary,
@@ -106,6 +106,12 @@ def _open_browser_when_ready() -> None:
             return
         time.sleep(0.5)
     print(f"[Frontend][WARN] Frontend not reachable on {target_url} after waiting 60s; skipping auto-open.")
+
+
+def _parse_kind_filter(raw: Optional[str]) -> Optional[List[str]]:
+    if not raw:
+        return None
+    return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 def load_events_database():
@@ -567,12 +573,20 @@ async def reject_task(task_id: str, request: TaskDecisionRequest):
 if DEBUG_TRACE_ENABLED:
 
     @app.get("/api/debug/threads/{thread_id}")
-    async def get_debug_thread_trace(thread_id: str):
-        return debug_get_trace(thread_id)
+    async def get_debug_thread_trace(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+    ):
+        return debug_get_trace(thread_id, granularity=granularity, kinds=_parse_kind_filter(kinds))
 
     @app.get("/api/debug/threads/{thread_id}/timeline")
-    async def get_debug_thread_timeline(thread_id: str):
-        return debug_get_timeline(thread_id)
+    async def get_debug_thread_timeline(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+    ):
+        return debug_get_timeline(thread_id, granularity=granularity, kinds=_parse_kind_filter(kinds))
 
     @app.get("/api/debug/threads/{thread_id}/timeline/download")
     async def download_debug_thread_timeline(thread_id: str):
@@ -584,17 +598,29 @@ if DEBUG_TRACE_ENABLED:
         return FileResponse(path, media_type="application/json", filename=filename)
 
     @app.get("/api/debug/threads/{thread_id}/timeline/text")
-    async def download_debug_thread_timeline_text(thread_id: str):
-        return render_arrow_log(thread_id)
+    async def download_debug_thread_timeline_text(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+    ):
+        return render_arrow_log(thread_id, granularity=granularity, kinds=_parse_kind_filter(kinds))
 
 else:
 
     @app.get("/api/debug/threads/{thread_id}")
-    async def get_debug_thread_trace_disabled(thread_id: str):
+    async def get_debug_thread_trace_disabled(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+    ):
         raise HTTPException(status_code=404, detail="Debug tracing disabled")
 
     @app.get("/api/debug/threads/{thread_id}/timeline")
-    async def get_debug_thread_timeline_disabled(thread_id: str):
+    async def get_debug_thread_timeline_disabled(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+    ):
         raise HTTPException(status_code=404, detail="Debug tracing disabled")
 
     @app.get("/api/debug/threads/{thread_id}/timeline/download")
@@ -602,7 +628,11 @@ else:
         raise HTTPException(status_code=404, detail="Debug tracing disabled")
 
     @app.get("/api/debug/threads/{thread_id}/timeline/text")
-    async def download_debug_thread_timeline_text_disabled(thread_id: str):
+    async def download_debug_thread_timeline_text_disabled(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+    ):
         raise HTTPException(status_code=404, detail="Debug tracing disabled")
 
 

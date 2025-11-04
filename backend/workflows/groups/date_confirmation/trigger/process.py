@@ -285,7 +285,12 @@ def _build_vague_proposal(
             days_ahead=90,
             max_results=5,
         )
-        trace_db_read(thread_id, "db.dates.next5", {"preferred_room": preferred_room, "count": len(fallback_dd)})
+        trace_db_read(
+            thread_id,
+            "Step2_Date",
+            "db.dates.next5",
+            {"preferred_room": preferred_room, "count": len(fallback_dd)},
+        )
         fallback_rows: List[dict] = []
         for value in fallback_dd:
             parsed = _safe_parse_ddmmyyyy(value)
@@ -336,7 +341,12 @@ def _build_generic_proposal(
         days_ahead=45,
         max_results=5,
     )
-    trace_db_read(thread_id, "db.dates.next5", {"preferred_room": preferred_room, "count": len(candidate_dates)})
+    trace_db_read(
+        thread_id,
+        "Step2_Date",
+        "db.dates.next5",
+        {"preferred_room": preferred_room, "count": len(candidate_dates)},
+    )
 
     body_lines: List[str] = ["Here are the next dates we can offer you:"]
     table_rows: List[dict] = []
@@ -493,9 +503,15 @@ def _finalize_confirmation(state: WorkflowState, event_entry: dict, confirmed_da
         date_confirmed=True,
         thread_state="Waiting on HIL",
     )
-    trace_db_write(thread_id, "db.events.update_date", {"event_id": state.event_id, "date": confirmed_date})
+    trace_db_write(
+        thread_id,
+        "Step2_Date",
+        "db.events.update_date",
+        {"event_id": state.event_id, "date": confirmed_date},
+    )
     trace_entity(
         thread_id,
+        "Step2_Date",
         "date",
         "confirmation_step",
         True,

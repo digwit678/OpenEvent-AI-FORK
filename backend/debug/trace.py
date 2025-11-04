@@ -58,6 +58,13 @@ class TraceEvent:
     loop: bool = False
     detour_to_step: Optional[int] = None
     wait_state: Optional[str] = None
+    owner_step: Optional[str] = None
+    granularity: str = "verbose"
+    gate: Optional[Dict[str, Any]] = None
+    entity: Optional[Dict[str, Any]] = None
+    db: Optional[Dict[str, Any]] = None
+    detour: Optional[Dict[str, Any]] = None
+    draft: Optional[Dict[str, Any]] = None
 
 
 class TraceBus:
@@ -95,12 +102,31 @@ def emit(
     loop: bool = False,
     detour_to_step: Optional[int] = None,
     wait_state: Optional[str] = None,
+    owner_step: Optional[str] = None,
+    granularity: str = "verbose",
+    gate: Optional[Dict[str, Any]] = None,
+    entity: Optional[Dict[str, Any]] = None,
+    db: Optional[Dict[str, Any]] = None,
+    detour: Optional[Dict[str, Any]] = None,
+    draft: Optional[Dict[str, Any]] = None,
 ) -> None:
     if not is_trace_enabled():
         return
     lane_value = lane or LANE_BY_KIND[kind]
     details = dict(data or {})
-    summary_text = summary or _derive_summary(kind, step, detail, subject, status, details)
+    summary_text = summary or _derive_summary(
+        kind,
+        step,
+        detail,
+        subject,
+        status,
+        details,
+        gate=gate,
+        entity=entity,
+        db=db,
+        detour=detour,
+        draft=draft,
+    )
     event = TraceEvent(
         thread_id=thread_id,
         ts=time.time(),
@@ -116,6 +142,13 @@ def emit(
         loop=loop,
         detour_to_step=detour_to_step,
         wait_state=wait_state,
+        owner_step=owner_step,
+        granularity=granularity,
+        gate=gate,
+        entity=entity,
+        db=db,
+        detour=detour,
+        draft=draft,
     )
     BUS.emit(event)
     try:
@@ -133,8 +166,56 @@ def _derive_summary(
     subject: Optional[str],
     status: Optional[str],
     payload: Dict[str, Any],
+    *,
+    gate: Optional[Dict[str, Any]] = None,
+    entity: Optional[Dict[str, Any]] = None,
+    db: Optional[Dict[str, Any]] = None,
+    detour: Optional[Dict[str, Any]] = None,
+    draft: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
     """Generate a compact summary line for the timeline table."""
+
+    if gate:
+        label = gate.get("label") or detail or subject or step or "gate"
+        result = gate.get("result") or status or ("PASS" if kind == "GATE_PASS" else "FAIL")
+        inputs = gate.get("inputs") or payload
+        input_preview = ""
+        if inputs:
+            formatted = ", ".join(f"{k}={_stringify(v)}" for k, v in list(inputs.items())[:3])
+            input_preview = f" ({formatted})"
+        return f"{label}: {result}{input_preview}"
+
+    if entity:
+        lifecycle = entity.get("lifecycle") or status or "captured"
+        key = entity.get("key") or subject or detail or "entity"
+        value = entity.get("value")
+        return f"{lifecycle} {key}={_stringify(value)}"
+
+    if db:
+        op = db.get("op") or detail or subject or step or "db"
+        mode = db.get("mode") or ("READ" if kind == "DB_READ" else "WRITE")
+        duration = db.get("duration_ms")
+        suffix = f" ({duration}ms)" if duration is not None else ""
+        return f"{mode} {op}{suffix}"
+
+    if detour:
+        from_step = detour.get("from_step") or step or subject or "detour"
+        to_step = detour.get("to_step")
+        reason = detour.get("reason") or detail or ""
+        arrow = f" → {to_step}" if to_step else ""
+        return f"{from_step}{arrow} {reason}".strip()
+
+    if draft:
+        footer = draft.get("footer") or {}
+        step_label = footer.get("step") or step or "Draft"
+        next_step = footer.get("next")
+        wait_state = footer.get("state")
+        pieces = [step_label]
+        if next_step:
+            pieces.append(f"→ {next_step}")
+        if wait_state:
+            pieces.append(wait_state)
+        return " · ".join(pieces)
 
     if subject:
         value = payload.get("value")

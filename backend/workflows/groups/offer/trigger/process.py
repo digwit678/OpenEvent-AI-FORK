@@ -459,6 +459,7 @@ def _record_offer(
 
     trace_db_write(
         thread_id,
+        "Step4_Offer",
         "db.offers.create",
         {"offer_id": offer_id, "version": offer_sequence, "total": total_amount},
     )
