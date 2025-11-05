@@ -59,6 +59,14 @@
   font-weight: 700;
 }
 
+.debug-panel__header-right {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .debug-panel__meta {
   display: flex;
   gap: 1rem;
@@ -203,6 +211,18 @@
   border-color: rgba(249, 115, 22, 0.55);
   background: rgba(249, 115, 22, 0.12);
 }
+.trace-badge--info {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.12);
+}
+.trace-badge--success {
+  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(34, 197, 94, 0.12);
+}
+.trace-badge--muted {
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(148, 163, 184, 0.12);
+}
 
 .trace-badge__label {
   font-weight: 600;
@@ -328,6 +348,10 @@
 
 .trace-table__row:last-of-type {
   border-bottom: none;
+}
+
+.trace-table__row--subloop:not(.trace-table__row--active) .trace-cell {
+  background: #f8fafc;
 }
 
 .trace-cell {
@@ -541,6 +565,7 @@
 }
 
 .trace-entity {
+  position: relative;
   display: inline-flex;
   align-items: center;
   padding: 0.15rem 0.65rem;
@@ -548,6 +573,27 @@
   font-size: 0.7rem;
   font-weight: 600;
   border: 1px solid transparent;
+}
+
+.trace-entity__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.trace-entity__subloop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 9999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.08);
 }
 
 .trace-entity--TRIGGER {
@@ -608,6 +654,50 @@
   background: rgba(148, 163, 184, 0.12);
   color: #475569;
   border-color: rgba(148, 163, 184, 0.3);
+}
+
+.subloop-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.72rem;
+  color: #374151;
+}
+
+.subloop-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.subloop-legend__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.15);
+}
+
+.subloop-legend__label {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.debug-panel__aside {
+  min-height: 520px;
+}
+
+.manager-view__toast {
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.manager-view__toast--ok {
+  color: #047857;
+}
+
+.manager-view__toast--error {
+  color: #b91c1c;
 }
 
 .trace-text {

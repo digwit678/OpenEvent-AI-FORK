@@ -218,6 +218,9 @@ class WorkflowState:
         message.setdefault("actions", [])
         message["thread_state"] = thread_state
         message.setdefault("next_step", next_step)
+        subloop = message.get("subloop") or self.extras.get("subloop")
+        if subloop:
+            message["subloop"] = subloop
 
         combined_body = f"{body_markdown}{FOOTER_SEPARATOR}{footer}" if body_markdown else footer
         message["body"] = combined_body
@@ -239,6 +242,7 @@ class WorkflowState:
                 footer_payload,
                 message.get("actions") or [],
                 message.get("body_markdown"),
+                message.get("subloop"),
             )
 
     def set_thread_state(self, value: str) -> None:

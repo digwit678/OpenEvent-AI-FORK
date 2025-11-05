@@ -3135,7 +3135,8 @@
         "a2199fc0-5a43-44e1-b1ed-9113546606e9",
         "246ec739-bb86-4598-9a55-81b73fc740ae",
         "8e21ac1d-b881-4cba-bf69-2ce36f8db749",
-        "8e79a4ee-66d3-45cf-9ffb-cd03bff53cad"
+        "8e79a4ee-66d3-45cf-9ffb-cd03bff53cad",
+        "64911f6c-1b25-4d09-8b24-5bde67f5ca73"
       ],
       "captured": {},
       "verified": {},
@@ -7899,6 +7900,48 @@
         {
           "msg_id": "8e79a4ee-66d3-45cf-9ffb-cd03bff53cad",
           "ts": "2025-11-05T21:00:52.321078Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available",
+              "keywords": [
+                "sound system"
+              ]
+            }
+          }
+        },
+        {
+          "msg_id": "64911f6c-1b25-4d09-8b24-5bde67f5ca73",
+          "ts": "2025-11-05T22:45:55.748958Z",
           "subject": "Subject: Private Dinner Event – Date Options in February",
           "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
           "intent": "event_request",

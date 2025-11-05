@@ -50,9 +50,10 @@ _STEP_MINOR_STATE: Dict[str, Tuple[Optional[int], int]] = {}
 _TRACE_SUMMARY: Dict[str, Dict[str, Any]] = {}
 _SUMMARY_LOCK = threading.Lock()
 _HIL_LOCK = threading.Lock()
-_HASH_HELP_TEXT = "Only recompute room evaluation when the event requirements change; prevents redundant DB work."
 _LAST_ENTITY_LABEL: Dict[str, Optional[str]] = {}
 _HIL_OPEN: Dict[str, bool] = {}
+_SUBLOOP_CONTEXT: Dict[str, Optional[str]] = {}
+REQUIREMENTS_MATCH_HELP = "Deterministic digest of date, pax, and constraints. 'Match' means inputs didn’t change since the last evaluation."
 
 
 @dataclass
@@ -92,6 +93,7 @@ class TraceEvent:
     db: Optional[Dict[str, Any]] = None
     detour: Optional[Dict[str, Any]] = None
     draft: Optional[Dict[str, Any]] = None
+    subloop: Optional[str] = None
 
 
 def _next_sequence(thread_id: str) -> int:
@@ -140,7 +142,7 @@ def _record_summary(
             summary["current_step_major"] = step_major
         if wait_state is not None:
             summary["wait_state"] = wait_state
-        summary.setdefault("hash_help", _HASH_HELP_TEXT)
+        summary.setdefault("hash_help", REQUIREMENTS_MATCH_HELP)
         if hash_status is not None:
             summary["hash_status"] = hash_status
         summary["hil_open"] = has_open_hil(thread_id)
@@ -178,6 +180,21 @@ def set_hil_open(thread_id: str, is_open: bool) -> None:
 def has_open_hil(thread_id: str) -> bool:
     with _HIL_LOCK:
         return _HIL_OPEN.get(thread_id, False)
+
+
+def set_subloop_context(thread_id: str, subloop: Optional[str]) -> None:
+    if subloop:
+        _SUBLOOP_CONTEXT[thread_id] = subloop
+    else:
+        _SUBLOOP_CONTEXT.pop(thread_id, None)
+
+
+def clear_subloop_context(thread_id: str) -> None:
+    _SUBLOOP_CONTEXT.pop(thread_id, None)
+
+
+def get_subloop_context(thread_id: str) -> Optional[str]:
+    return _SUBLOOP_CONTEXT.get(thread_id)
 
 
 class TraceBus:
@@ -288,6 +305,10 @@ def emit(
     elif effective_entity is None:
         effective_entity = _LAST_ENTITY_LABEL.get(thread_id)
 
+    current_subloop = get_subloop_context(thread_id)
+    if current_subloop and isinstance(payload, dict):
+        payload.setdefault("subloop", current_subloop)
+
     event = TraceEvent(
         thread_id=thread_id,
         ts=ts,
@@ -319,11 +340,12 @@ def emit(
         io=effective_io,
         prompt_preview=prompt_preview,
         hash_status=hash_status,
-        hash_help=hash_help or (_HASH_HELP_TEXT if hash_status else None),
+        hash_help=hash_help or (REQUIREMENTS_MATCH_HELP if hash_status else None),
         entity_context=entity,
         db=effective_io,
         detour=detour,
         draft=draft,
+        subloop=current_subloop,
     )
     if event.entity and event.entity != "Waiting":
         _LAST_ENTITY_LABEL[thread_id] = event.entity
@@ -471,4 +493,8 @@ __all__ = [
     "get_trace_summary",
     "set_hil_open",
     "has_open_hil",
+    "set_subloop_context",
+    "clear_subloop_context",
+    "get_subloop_context",
+    "REQUIREMENTS_MATCH_HELP",
 ]
