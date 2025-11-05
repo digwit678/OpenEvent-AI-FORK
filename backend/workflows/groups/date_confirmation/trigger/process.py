@@ -4,17 +4,10 @@ import datetime as dt
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from backend.workflows.common.datetime_parse import (
-    TZ_ZURICH,
-    enumerate_month_weekday,
-    month_name_to_number,
-    weekday_name_to_number,
-)
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.groups.intake.condition.checks import blackout_days, suggest_dates
-from backend.workflows.groups.intake.condition.checks import room_status_on_date
+from backend.workflows.io.dates import next5
 from backend.debug.hooks import (
     trace_db_read,
     trace_db_write,
@@ -86,28 +79,16 @@ def process(state: WorkflowState) -> GroupResult:
 def _present_candidate_dates(state: WorkflowState, event_entry: dict) -> GroupResult:
     """[Trigger] Provide five deterministic candidate dates to the client."""
 
-    requirements = event_entry.get("requirements") or {}
-    preferred_room = requirements.get("preferred_room") or "Not specified"
     vague_month, vague_weekday, vague_time = _resolve_vague_components(state, event_entry)
     thread_id = _thread_id(state)
 
-    if vague_month and vague_weekday:
-        proposal = _build_vague_proposal(
-            state,
-            event_entry,
-            preferred_room,
-            vague_month,
-            vague_weekday,
-            vague_time,
-            thread_id,
-        )
-    else:
-        proposal = _build_generic_proposal(
-            state,
-            event_entry,
-            preferred_room,
-            thread_id,
-        )
+    proposal = _build_date_proposal(
+        state,
+        vague_month=vague_month,
+        vague_weekday=vague_weekday,
+        vague_time=vague_time,
+        thread_id=thread_id,
+    )
 
     body_with_footer = append_footer(
         "\n".join(proposal.body_lines),
@@ -181,215 +162,85 @@ def _resolve_vague_components(
     return _normalize(month_token), _normalize(weekday_token), _normalize(time_token)
 
 
-def _build_vague_proposal(
+def _build_date_proposal(
     state: WorkflowState,
-    event_entry: dict,
-    preferred_room: str,
-    vague_month: str,
-    vague_weekday: str,
+    vague_month: Optional[str],
+    vague_weekday: Optional[str],
     vague_time: Optional[str],
     thread_id: str,
 ) -> DateProposal:
-    """Enumerate Saturdays within the requested month and expose availability."""
+    """Produce a deterministic set of candidate dates and the accompanying draft content."""
 
-    month_number = month_name_to_number(vague_month)
-    weekday_number = weekday_name_to_number(vague_weekday)
-    if not month_number or weekday_number is None:
-        return _build_generic_proposal(state, event_entry, preferred_room)
-
-    today = dt.datetime.now(TZ_ZURICH).date()
-    blocked = blackout_days()
-    descriptor_month = vague_month.capitalize()
-    descriptor_weekday = vague_weekday.capitalize()
+    base_ts = state.message.ts if state.message else None
     time_label = _format_time_label(vague_time)
+    timezone_name = "Europe/Zurich"
+    rules: dict = {"timezone": timezone_name}
 
-    collected: List[dict] = []
-    for year in (today.year, today.year + 1):
-        occurrences = [
-            candidate
-            for candidate in enumerate_month_weekday(year, month_number, weekday_number)
-            if candidate >= today
+    if vague_weekday:
+        rules["weekday"] = vague_weekday
+    if vague_month:
+        rules["month"] = vague_month
+
+    primary_dates = next5(base_ts, rules)
+    fallback_dates: List[dt.date] = []
+    if len(primary_dates) < 5:
+        fallback_rules = {"timezone": timezone_name}
+        fallback_dates = [candidate for candidate in next5(base_ts, fallback_rules) if candidate not in primary_dates]
+
+    all_dates = (primary_dates + fallback_dates)[:5]
+    trace_db_read(
+        thread_id,
+        "Step2_Date",
+        "db.dates.next5",
+        {"dates": [value.isoformat() for value in all_dates]},
+    )
+
+    candidate_dates: List[str] = []
+    table_rows: List[dict] = []
+    actions: List[dict] = []
+    for date_value in all_dates:
+        ddmmyyyy = date_value.strftime("%d.%m.%Y")
+        candidate_dates.append(ddmmyyyy)
+        table_rows.append(_build_table_row(date_value, "Available", True, time_label))
+        actions.append(_build_select_date_action(date_value, ddmmyyyy, time_label))
+
+    descriptor_month = (vague_month or "").strip().capitalize()
+    descriptor_weekday = (vague_weekday or "").strip().capitalize()
+    topic = "generic_date_candidates"
+
+    if vague_month and vague_weekday:
+        first_line = f"You mentioned a {descriptor_weekday}"
+        if time_label:
+            first_line += f" {time_label.lower()}"
+        first_line += f" in {descriptor_month}."
+        body_lines = [
+            first_line,
+            "Here are the upcoming options that are still free:",
         ]
-        if not occurrences:
-            continue
-        for candidate in occurrences:
-            ddmmyyyy = candidate.strftime("%d.%m.%Y")
-            status = room_status_on_date(state.db, ddmmyyyy, preferred_room)
-            blocked_flag = candidate in blocked
-            available = status == "Available" and not blocked_flag
-            collected.append(
-                {
-                    "date": candidate,
-                    "ddmmyyyy": ddmmyyyy,
-                    "status": status or "Unavailable",
-                    "available": available,
-                    "blocked": blocked_flag,
-                }
-            )
-        if collected:
-            break
-
-    if not collected:
-        return _build_generic_proposal(state, event_entry, preferred_room)
-
-    available_rows = [entry for entry in collected if entry["available"]]
-    primary_rows = available_rows if available_rows else collected
-    primary_rows = primary_rows[:5]
-
-    body_lines = [
-        f"You mentioned a {descriptor_weekday} in {descriptor_month}.",
-    ]
-    if time_label:
-        body_lines[0] = (
-            f"You mentioned a {descriptor_weekday} {time_label.lower()} in {descriptor_month}."
-        )
-    if available_rows:
-        body_lines.append("Here are the upcoming options that are still free:")
+        topic = "vague_date_candidates"
+        table_label = f"{descriptor_weekday}s in {descriptor_month}"
     else:
-        body_lines.append(
-            f"The {descriptor_weekday}s in {descriptor_month} are booked, "
-            "but here is the list in case one is flexible for you."
-        )
+        body_lines = [
+            "Here are the next dates we can offer you:",
+        ]
+        table_label = "Upcoming availability"
 
-    table_rows = [
-        _build_table_row(
-            row["date"],
-            row["status"],
-            row["available"],
-            time_label,
-            "Blackout window" if row["blocked"] else None,
-        )
-        for row in primary_rows
-    ]
+    body_lines.append("If none of these dates work, let me know another date and I'll recheck availability.")
 
-    actions = [
-        _build_select_date_action(row["date"], row["ddmmyyyy"], time_label)
-        for row in available_rows[:5]
-    ]
-    candidate_dates = [row["ddmmyyyy"] for row in available_rows[:5]]
-
-    # Offer next available dates outside the month when no Saturday is possible.
     table_blocks = [
         {
             "type": "dates",
-            "label": f"{descriptor_weekday}s in {descriptor_month}",
+            "label": table_label,
             "rows": table_rows,
         }
     ]
-
-    if not available_rows:
-        fallback_dd = suggest_dates(
-            state.db,
-            preferred_room=preferred_room,
-            start_from_iso=state.message.ts,
-            days_ahead=90,
-            max_results=5,
-        )
-        trace_db_read(
-            thread_id,
-            "Step2_Date",
-            "db.dates.next5",
-            {"preferred_room": preferred_room, "count": len(fallback_dd)},
-        )
-        fallback_rows: List[dict] = []
-        for value in fallback_dd:
-            parsed = _safe_parse_ddmmyyyy(value)
-            if not parsed:
-                continue
-            fallback_rows.append(
-                _build_table_row(
-                    parsed,
-                    "Available",
-                    True,
-                    time_label,
-                    "Nearest availability",
-                )
-            )
-            actions.append(_build_select_date_action(parsed, value, time_label))
-            candidate_dates.append(value)
-        if fallback_rows:
-            body_lines.append("I’ve also listed the closest open dates we can host you on.")
-            table_blocks.append(
-                {
-                    "type": "dates",
-                    "label": "Next available dates",
-                    "rows": fallback_rows[:5],
-                }
-            )
 
     return DateProposal(
         body_lines=body_lines,
         candidate_dates=candidate_dates,
         table_blocks=table_blocks,
         actions=actions,
-        topic="vague_date_candidates",
-    )
-
-
-def _build_generic_proposal(
-    state: WorkflowState,
-    event_entry: dict,
-    preferred_room: str,
-    thread_id: str,
-) -> DateProposal:
-    """Fallback path when we cannot rely on vague-month signals."""
-
-    candidate_dates = suggest_dates(
-        state.db,
-        preferred_room=preferred_room,
-        start_from_iso=state.message.ts,
-        days_ahead=45,
-        max_results=5,
-    )
-    trace_db_read(
-        thread_id,
-        "Step2_Date",
-        "db.dates.next5",
-        {"preferred_room": preferred_room, "count": len(candidate_dates)},
-    )
-
-    body_lines: List[str] = ["Here are the next dates we can offer you:"]
-    table_rows: List[dict] = []
-    actions: List[dict] = []
-    normalized_candidates: List[str] = []
-
-    for value in candidate_dates:
-        parsed = _safe_parse_ddmmyyyy(value)
-        if not parsed:
-            continue
-        normalized_candidates.append(value)
-        table_rows.append(
-            _build_table_row(
-                parsed,
-                "Available",
-                True,
-                None,
-            )
-        )
-        actions.append(_build_select_date_action(parsed, value, None))
-
-    if normalized_candidates:
-        body_lines.append("Let me know which one works best and I’ll lock it in.")
-    else:
-        body_lines.append(
-            "Nothing is open in the next 45 days. Share a preferred timeframe and I’ll search wider."
-        )
-
-    table_blocks = []
-    if table_rows:
-        table_blocks.append(
-            {
-                "type": "dates",
-                "label": "Upcoming availability",
-                "rows": table_rows,
-            }
-        )
-
-    return DateProposal(
-        body_lines=body_lines,
-        candidate_dates=normalized_candidates,
-        table_blocks=table_blocks,
-        actions=actions,
+        topic=topic,
     )
 
 
@@ -439,13 +290,6 @@ def _format_time_label(raw: Optional[str]) -> Optional[str]:
 
 def _format_display(date_value: dt.date) -> str:
     return date_value.strftime("%a %d %b %Y")
-
-
-def _safe_parse_ddmmyyyy(value: str) -> Optional[dt.date]:
-    try:
-        return dt.datetime.strptime(value, "%d.%m.%Y").date()
-    except ValueError:
-        return None
 
 
 def _trace_candidate_gate(thread_id: str, candidates: List[str]) -> None:
