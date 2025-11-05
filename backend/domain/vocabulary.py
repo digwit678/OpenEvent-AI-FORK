@@ -40,6 +40,9 @@ class TaskType(str, Enum):
     ROUTE_SITE_VISIT = "route_site_visit"
     SITE_VISIT_HIL_REVIEW = "site_visit_hil_review"
     MESSAGE_MANAGER = "message_manager"
+    DATE_CONFIRMATION_MESSAGE = "date_confirmation_message"
+    ROOM_AVAILABILITY_MESSAGE = "room_availability_message"
+    OFFER_MESSAGE = "offer_message"
 
 
 class TaskStatus(str, Enum):

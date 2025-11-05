@@ -1,6 +1,6 @@
 """Public API for the room availability workflow group."""
 
-from .trigger.process import evaluate_room_statuses, process
+from .trigger.process import handle_select_room_action, evaluate_room_statuses, process
 from .condition.decide import room_status_on_date
 from .llm.analysis import summarize_room_statuses
 from .db_pers.advanced import (
@@ -71,4 +71,5 @@ __all__ = [
     "compose_reply",
     "run_availability_workflow",
     "evaluate_room_statuses",
+    "handle_select_room_action",
 ]

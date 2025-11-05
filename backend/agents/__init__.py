@@ -10,11 +10,19 @@ tool execution into agent-managed calls without duplicating business logic.
 from __future__ import annotations
 
 from .openevent_agent import OpenEventAgent  # noqa: F401
-from .chatkit_runner import build_agent, run_streamed, validate_tool_call, StepToolPolicy, ToolExecutionError  # noqa: F401
+from .chatkit_runner import (  # noqa: F401
+    build_agent,
+    execute_tool_call,
+    run_streamed,
+    validate_tool_call,
+    StepToolPolicy,
+    ToolExecutionError,
+)
 
 __all__ = [
     "OpenEventAgent",
     "build_agent",
+    "execute_tool_call",
     "run_streamed",
     "validate_tool_call",
     "StepToolPolicy",

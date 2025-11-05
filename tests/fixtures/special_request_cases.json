@@ -1,0 +1,4 @@
+{
+  "approve_all": {"items": ["Barista", "Stage"], "decision": "approved"},
+  "deny_partial": {"items": ["Barista"], "decision": "denied"}
+}

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.domain import IntentLabel
+from backend.workflows.common.prompts import compose_footer, FOOTER_SEPARATOR
 
 
 @dataclass
@@ -163,6 +164,7 @@ class WorkflowState:
     db: Dict[str, Any]
     client: Optional[Dict[str, Any]] = None
     client_id: Optional[str] = None
+    thread_id: Optional[str] = None
     intent: Optional[IntentLabel] = None
     confidence: Optional[float] = None
     user_info: Dict[str, Any] = field(default_factory=dict)
@@ -187,9 +189,61 @@ class WorkflowState:
     def add_draft_message(self, message: Dict[str, Any]) -> None:
         """[HIL] Register a draft message awaiting approval before sending."""
 
+        step_value = message.get("step") or self.current_step or 0
+        next_step = message.get("next_step", step_value)
+        thread_state = message.get("thread_state") or self.thread_state or "Awaiting Client"
+
+        body_markdown = message.pop("body_markdown", None)
+        raw_body = message.get("body")
+        footer = message.get("footer")
+
+        if body_markdown is None and isinstance(raw_body, str) and raw_body:
+            if FOOTER_SEPARATOR in raw_body:
+                before, _, after = raw_body.partition(FOOTER_SEPARATOR)
+                body_markdown = before.strip()
+                if not footer:
+                    footer = after.strip()
+            else:
+                body_markdown = raw_body.strip()
+
+        if body_markdown is None:
+            body_markdown = ""
+
+        if not footer:
+            footer = compose_footer(step_value or 0, next_step, thread_state)
+
+        message["body_markdown"] = body_markdown
+        message["footer"] = footer
+        message.setdefault("table_blocks", [])
+        message.setdefault("actions", [])
+        message["thread_state"] = thread_state
+        message.setdefault("next_step", next_step)
+        subloop = message.get("subloop") or self.extras.get("subloop")
+        if subloop:
+            message["subloop"] = subloop
+
+        combined_body = f"{body_markdown}{FOOTER_SEPARATOR}{footer}" if body_markdown else footer
+        message["body"] = combined_body
+
         message.setdefault("requires_approval", True)
-        message.setdefault("created_at_step", self.current_step)
+        message.setdefault("created_at_step", step_value)
         self.draft_messages.append(message)
+
+        try:
+            from backend.debug.hooks import trace_draft  # pylint: disable=import-outside-toplevel
+        except Exception:
+            trace_draft = None  # type: ignore[assignment]
+
+        if trace_draft:
+            footer_payload = _decode_footer_payload(footer, next_step, thread_state)
+            trace_draft(
+                _thread_identifier(self),
+                _step_name(step_value),
+                footer_payload,
+                message.get("actions") or [],
+                message.get("body_markdown"),
+                message.get("subloop"),
+            )
 
     def set_thread_state(self, value: str) -> None:
         """[OpenEvent Database] Track whether the thread awaits a client reply."""
@@ -209,6 +263,9 @@ class WorkflowState:
         )
 
 
+
+
+
 @dataclass
 class GroupResult:
     """[Trigger] Encapsulates the outcome of a workflow group."""
@@ -223,3 +280,62 @@ class GroupResult:
         data = dict(self.payload)
         data.setdefault("action", self.action)
         return data
+
+
+_STEP_NAME_MAP = {
+    1: "Step1_Intake",
+    2: "Step2_Date",
+    3: "Step3_Room",
+    4: "Step4_Offer",
+    5: "Step5_Negotiation",
+    6: "Step6_Transition",
+    7: "Step7_Confirmation",
+}
+
+
+def _step_name(value: Any) -> str:
+    if isinstance(value, str):
+        try:
+            value_int = int(value)
+        except ValueError:
+            value_int = None
+    else:
+        value_int = value if isinstance(value, int) else None
+    if value_int in _STEP_NAME_MAP:
+        return _STEP_NAME_MAP[value_int]
+    return "intake"
+
+
+def _decode_footer_payload(footer: Optional[str], next_step: Any, thread_state: Any) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "text": footer or "",
+        "step": None,
+        "next": None,
+        "wait_state": None,
+    }
+    if footer:
+        segments = [segment.strip() for segment in footer.split("·")]
+        for segment in segments:
+            lowered = segment.lower()
+            if lowered.startswith("step:"):
+                payload["step"] = segment.split(":", 1)[1].strip()
+            elif lowered.startswith("next:"):
+                payload["next"] = segment.split(":", 1)[1].strip()
+            elif lowered.startswith("state:"):
+                payload["wait_state"] = segment.split(":", 1)[1].strip()
+    if payload["next"] is None and next_step is not None:
+        payload["next"] = str(next_step)
+    if payload["wait_state"] is None and thread_state is not None:
+        payload["wait_state"] = str(thread_state)
+    return payload
+
+
+def _thread_identifier(state: WorkflowState) -> str:
+    if state.thread_id:
+        return str(state.thread_id)
+    if state.client_id:
+        return str(state.client_id)
+    msg_id = state.message.msg_id
+    if msg_id:
+        return str(msg_id)
+    return "unknown-thread"

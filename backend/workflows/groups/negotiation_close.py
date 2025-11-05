@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from backend.domain import TaskType
+from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
@@ -19,78 +20,6 @@ ACCEPT_KEYWORDS = ("accept", "confirmed", "confirm", "looks good", "we agree", "
 DECLINE_KEYWORDS = ("decline", "reject", "cancel", "not move forward", "no longer", "pass")
 COUNTER_KEYWORDS = ("discount", "lower", "reduce", "better price", "could you do", "counter", "budget")
 
-_ACCEPT_PHRASES = (
-    "confirm",
-    "confirmed",
-    "approve",
-    "approved",
-    "accept",
-    "accepted",
-    "we ll take",
-    "we will take",
-    "go ahead",
-    "proceed",
-    "lock it in",
-    "lock it",
-    "lock in",
-    "book it",
-    "looks good",
-    "sounds good",
-    "bestätigen",
-    "bestätigt",
-    "passt",
-    "nehmen wir",
-    "wir nehmen",
-    "buchen",
-    "buchen wir",
-    "einverstanden",
-    "genehmigt",
-    "freigeben",
-)
-
-_NEGATING_PREFIXES = (
-    "can you",
-    "could you",
-    "would you",
-    "please",
-    "kannst du",
-    "würdest du",
-    "kannst ihr",
-    "könnt ihr",
-    "we can",
-    "we could",
-    "can we",
-    "could we",
-)
-
-_CONDITIONAL_TOKENS = ("if", "when", "unless", "falls", "wenn")
-
-_DETAIL_KEYWORDS = (
-    "billing",
-    "invoice",
-    "company",
-    "address",
-    "contact",
-    "email",
-    "phone",
-    "vat",
-    "tax number",
-    "steuer",
-    "rechnung",
-)
-
-_DETAIL_ACTION_VERBS = (
-    "update",
-    "use",
-    "set",
-    "change",
-    "correct",
-    "apply",
-    "replace",
-    "revise",
-    "note",
-    "adjust",
-)
 
 @profile_step("workflow.step5.negotiation")
 def process(state: WorkflowState) -> GroupResult:
@@ -112,29 +41,14 @@ def process(state: WorkflowState) -> GroupResult:
     negotiation_state = event_entry.setdefault(
         "negotiation_state", {"counter_count": 0, "manual_review_task_id": None}
     )
-    pending_acceptance = bool(negotiation_state.get("pending_acceptance"))
 
     if merge_client_profile(event_entry, state.user_info or {}):
         state.extras["persist"] = True
 
     message_text = (state.message.body or "").strip()
+    classification = _classify_message(message_text)
     structural = _detect_structural_change(state.user_info, event_entry)
-    if not structural:
-        structural = _detect_profile_update(message_text)
-    if structural:
-        classification = "counter"
-    else:
-        pending_ready = pending_acceptance and not _acceptance_invariants(event_entry)
-        if pending_ready:
-            classification = "accept"
-        elif _detect_accept(message_text):
-            classification = "accept"
-        elif _detect_decline(message_text):
-            classification = "decline"
-        elif _detect_counter(message_text):
-            classification = "counter"
-        else:
-            classification = "clarification"
+
     if structural:
         target_step, reason = structural
         update_event_metadata(event_entry, caller_step=5, current_step=target_step)
@@ -160,56 +74,14 @@ def process(state: WorkflowState) -> GroupResult:
         return GroupResult(action="negotiation_detour", payload=payload, halt=False)
 
     if classification == "accept":
-        missing = _acceptance_invariants(event_entry)
-        if missing:
-            draft = _build_acceptance_missing_draft(missing)
-            state.add_draft_message(draft)
-            state.telemetry.missing_fields = list(missing)
-            state.telemetry.final_action = "needs_details"
-            update_event_metadata(event_entry, current_step=6, thread_state="Awaiting Client Response")
-            state.current_step = 6
-            state.set_thread_state("Awaiting Client Response")
-            state.extras["persist"] = True
-            negotiation_state["pending_acceptance"] = True
-            payload = {
-                "client_id": state.client_id,
-                "event_id": event_entry.get("event_id"),
-                "intent": state.intent.value if state.intent else None,
-                "confidence": round(state.confidence or 0.0, 3),
-                "draft_messages": state.draft_messages,
-                "thread_state": state.thread_state,
-                "context": state.context_snapshot,
-                "persisted": True,
-            }
-            return GroupResult(action="transition_blocked", payload=payload, halt=True)
-
         response = _handle_accept(event_entry)
         state.add_draft_message(response["draft"])
-        event_entry["offer_gate_ready"] = False
         append_audit_entry(event_entry, 5, 6, "offer_accepted")
         negotiation_state["counter_count"] = 0
-        negotiation_state["pending_acceptance"] = False
         update_event_metadata(event_entry, current_step=6, thread_state="In Progress")
         state.current_step = 6
         state.set_thread_state("In Progress")
-        state.telemetry.final_action = "accepted"
-        state.telemetry.buttons_rendered = True
-        state.telemetry.buttons_enabled = True
         state.extras["persist"] = True
-        task_payload = {
-            "reason": "offer_accepted",
-            "offer_id": response["offer_id"],
-            "total_amount": response.get("total_amount"),
-            "room": event_entry.get("locked_room_id"),
-            "date": event_entry.get("chosen_date"),
-        }
-        task_id = enqueue_task(
-            state.db,
-            TaskType.ROUTE_POST_OFFER,
-            state.client_id or "",
-            event_entry.get("event_id"),
-            task_payload,
-        )
         payload = {
             "client_id": state.client_id,
             "event_id": event_entry.get("event_id"),
@@ -220,17 +92,12 @@ def process(state: WorkflowState) -> GroupResult:
             "thread_state": state.thread_state,
             "context": state.context_snapshot,
             "persisted": True,
-            "send_offer_task_id": task_id,
-            "buttons_rendered": True,
-            "buttons_enabled": True,
         }
         return GroupResult(action="negotiation_accept", payload=payload, halt=False)
 
     if classification == "decline":
         response = _handle_decline(event_entry)
         state.add_draft_message(response)
-        state.telemetry.buttons_rendered = True
-        state.telemetry.buttons_enabled = False
         append_audit_entry(event_entry, 5, 7, "offer_declined")
         negotiation_state["counter_count"] = 0
         update_event_metadata(event_entry, current_step=7, thread_state="In Progress")
@@ -246,8 +113,6 @@ def process(state: WorkflowState) -> GroupResult:
             "thread_state": state.thread_state,
             "context": state.context_snapshot,
             "persisted": True,
-            "buttons_rendered": True,
-            "buttons_enabled": False,
         }
         return GroupResult(action="negotiation_decline", payload=payload, halt=False)
 
@@ -269,9 +134,12 @@ def process(state: WorkflowState) -> GroupResult:
                 )
                 negotiation_state["manual_review_task_id"] = manual_id
             draft = {
-                "body": (
+                "body": append_footer(
                     "Thanks for the suggestions — I’ve escalated this to our manager to review pricing. "
-                    "We’ll get back to you shortly."
+                    "We’ll get back to you shortly.",
+                    step=5,
+                    next_step=5,
+                    thread_state="Awaiting Client Response",
                 ),
                 "step": 5,
                 "topic": "negotiation_manual_review",
@@ -313,8 +181,11 @@ def process(state: WorkflowState) -> GroupResult:
 
     # Clarification by default.
     clarification = {
-        "body": (
-            "Happy to clarify any part of the proposal — let me know which detail you’d like more information on."
+        "body": append_footer(
+            "Happy to clarify any part of the proposal — let me know which detail you’d like more information on.",
+            step=5,
+            next_step=5,
+            thread_state="Awaiting Client Response",
         ),
         "step": 5,
         "topic": "negotiation_clarification",
@@ -335,6 +206,22 @@ def process(state: WorkflowState) -> GroupResult:
         "persisted": True,
     }
     return GroupResult(action="negotiation_clarification", payload=payload, halt=True)
+
+
+def _classify_message(message_text: str) -> str:
+    lowered = message_text.lower()
+    if any(keyword in lowered for keyword in ACCEPT_KEYWORDS):
+        return "accept"
+    if any(keyword in lowered for keyword in DECLINE_KEYWORDS):
+        return "decline"
+    if any(keyword in lowered for keyword in COUNTER_KEYWORDS):
+        return "counter"
+    if re.search(r"\bchf\s*\d", lowered) or re.search(r"\d+\s*(?:franc|price|total)", lowered):
+        return "counter"
+    if "?" in lowered:
+        return "clarification"
+    return "clarification"
+
 
 def _detect_structural_change(user_info: Dict[str, Any], event_entry: Dict[str, Any]) -> Optional[tuple[int, str]]:
     new_iso_date = user_info.get("date")
@@ -361,57 +248,27 @@ def _detect_structural_change(user_info: Dict[str, Any], event_entry: Dict[str, 
     return None
 
 
-def _acceptance_invariants(event_entry: Dict[str, Any]) -> List[str]:
-    missing: List[str] = []
-    if not (event_entry.get("chosen_date")):
-        missing.append("date")
-    if not event_entry.get("date_confirmed"):
-        missing.append("date_confirmation")
-    if not event_entry.get("locked_room_id"):
-        missing.append("room")
-    return missing
-
-
-def _build_acceptance_missing_draft(missing: List[str]) -> Dict[str, Any]:
-    lines: List[str] = []
-    if "date" in missing or "date_confirmation" in missing:
-        lines.append("We still need a confirmed event date before I can finalise everything.")
-    if "room" in missing:
-        lines.append("Let me know which room you'd like me to lock so I can complete the paperwork.")
-    if not lines:
-        lines.append("Share the remaining details and I'll finalise the offer right away.")
-    info = "INFO:\n" + "\n".join(f"- {entry}" for entry in lines)
-    next_step = "NEXT STEP:\n- Share the missing details so I can finalise the offer."
-    body = f"{info}\n\n{next_step}"
-    return {
-        "body": body,
-        "step": 5,
-        "topic": "negotiation_missing_details",
-        "requires_approval": True,
-    }
-
-
 def _handle_accept(event_entry: Dict[str, Any]) -> Dict[str, Any]:
     offers = event_entry.get("offers") or []
     offer_id = event_entry.get("current_offer_id")
     timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    total_amount = None
     for offer in offers:
         if offer.get("offer_id") == offer_id:
             offer["status"] = "Accepted"
             offer["accepted_at"] = timestamp
-            total_amount = offer.get("total_amount")
     event_entry["offer_status"] = "Accepted"
     draft = {
-        "body": (
-            "Thank you for confirming — I'll finalise the paperwork now."
-            "\n\nNEXT STEP:\n- We’ll prepare the final offer for approval and sending."
+        "body": append_footer(
+            "Fantastic — I’ve noted your acceptance. I’ll lock everything in now and send the final confirmation shortly.",
+            step=5,
+            next_step=6,
+            thread_state="In Progress",
         ),
         "step": 5,
         "topic": "negotiation_accept",
         "requires_approval": True,
     }
-    return {"offer_id": offer_id, "draft": draft, "total_amount": total_amount}
+    return {"offer_id": offer_id, "draft": draft}
 
 
 def _handle_decline(event_entry: Dict[str, Any]) -> Dict[str, Any]:
@@ -424,7 +281,12 @@ def _handle_decline(event_entry: Dict[str, Any]) -> Dict[str, Any]:
             offer["declined_at"] = timestamp
     event_entry["offer_status"] = "Declined"
     return {
-        "body": "Thank you for letting me know. I’ve noted the cancellation — we’d be happy to help with future events anytime.",
+        "body": append_footer(
+            "Thank you for letting me know. I’ve noted the cancellation — we’d be happy to help with future events anytime.",
+            step=5,
+            next_step=7,
+            thread_state="In Progress",
+        ),
         "step": 5,
         "topic": "negotiation_decline",
         "requires_approval": True,
@@ -439,108 +301,3 @@ def _iso_to_ddmmyyyy(raw: Optional[str]) -> Optional[str]:
         return None
     year, month, day = match.groups()
     return f"{day}.{month}.{year}"
-
-def _normalize_text(text: str) -> str:
-    if not text:
-        return ""
-    lowered = text.lower()
-    cleaned = re.sub(r"[^\w\s]", " ", lowered, flags=re.UNICODE)
-    return re.sub(r"\s+", " ", cleaned).strip()
-
-
-def _has_negating_prefix(norm_text: str, start_idx: int) -> bool:
-    prefix = norm_text[:start_idx].strip()
-    if not prefix:
-        return False
-    tokens = prefix.split()
-    if tokens and tokens[-1] in _CONDITIONAL_TOKENS:
-        return True
-    if len(tokens) >= 2 and " ".join(tokens[-2:]) in {"if we", "if you", "wenn wir", "wenn du"}:
-        return True
-    last_two = " ".join(tokens[-2:]) if len(tokens) >= 2 else ""
-    last_three = " ".join(tokens[-3:]) if len(tokens) >= 3 else ""
-    if last_two in _NEGATING_PREFIXES or last_three in _NEGATING_PREFIXES:
-        return True
-    last_one = tokens[-1]
-    return last_one in _NEGATING_PREFIXES
-
-
-def _has_conditional_suffix(norm_text: str, end_idx: int) -> bool:
-    remainder = norm_text[end_idx:].strip()
-    if not remainder:
-        return False
-    words = remainder.split()
-    if not words:
-        return False
-    first_two = " ".join(words[:2])
-    if words[0] in _CONDITIONAL_TOKENS or first_two in {"if we", "if you", "wenn wir", "wenn du"}:
-        return True
-    for token in _CONDITIONAL_TOKENS:
-        if f" {token} " in remainder:
-            return True
-    return False
-
-
-def _has_word_boundaries(norm_text: str, start_idx: int, end_idx: int) -> bool:
-    before_ok = start_idx == 0 or norm_text[start_idx - 1] == " "
-    after_ok = end_idx == len(norm_text) or norm_text[end_idx] == " "
-    return before_ok and after_ok
-
-
-def _detect_profile_update(message_text: str) -> Optional[tuple[int, str]]:
-    raw = message_text or ""
-    norm = _normalize_text(raw)
-    if not norm:
-        return None
-    if any(keyword in norm for keyword in _DETAIL_KEYWORDS):
-        if any(verb in norm for verb in _DETAIL_ACTION_VERBS):
-            has_numeric = any(ch.isdigit() for ch in raw)
-            has_email = "@" in raw
-            if has_numeric or has_email:
-                return 4, "negotiation_updated_details"
-    return None
-
-
-def _detect_accept(message_text: str) -> bool:
-    norm = _normalize_text(message_text)
-    if not norm:
-        return False
-    for phrase in _ACCEPT_PHRASES:
-        idx = norm.find(phrase)
-        while idx != -1:
-            end_idx = idx + len(phrase)
-            if (
-                _has_word_boundaries(norm, idx, end_idx)
-                and not _has_negating_prefix(norm, idx)
-                and not _has_conditional_suffix(norm, end_idx)
-            ):
-                return True
-            idx = norm.find(phrase, end_idx)
-    return False
-
-
-def _detect_decline(message_text: str) -> bool:
-    norm = _normalize_text(message_text)
-    if not norm:
-        return False
-    for keyword in DECLINE_KEYWORDS:
-        if keyword in norm:
-            return True
-    return False
-
-
-def _detect_counter(message_text: str) -> bool:
-    norm = _normalize_text(message_text)
-    if not norm:
-        return False
-    for keyword in COUNTER_KEYWORDS:
-        if keyword in norm:
-            return True
-    if re.search(r"\b\d+\s*(?:percent|%|personen|gäste)\b", norm):
-        return True
-    lowered = message_text.lower()
-    if re.search(r"\bchf\s*\d", lowered):
-        return True
-    if re.search(r"\d+\s*(?:franc|price|total)", lowered):
-        return True
-    return False

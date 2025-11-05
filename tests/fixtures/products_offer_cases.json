@@ -1,0 +1,6 @@
+{
+  "lte5_rank_by_wish": {"wish_products": ["Projector", "Apéro"], "rooms": ["A", "B", "C", "D", "E"]},
+  "gt5_needs_narrow": {"wish_products": ["Projector"], "rooms": ["A", "B", "C", "D", "E", "F", "G"]},
+  "missing_items_approved": {"missing": ["Barista"], "hil": "approved"},
+  "missing_items_denied": {"missing": ["Barista"], "hil": "denied"}
+}
