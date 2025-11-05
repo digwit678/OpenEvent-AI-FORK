@@ -2,7 +2,7 @@
 
 import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, Eye } from 'lucide-react';
+import { Copy, Eye, Clock } from 'lucide-react';
 
 import { TraceFunctionArg, TraceRowData, TraceValueItem } from './TraceTypes';
 import PromptCell from './PromptCell';
@@ -12,6 +12,7 @@ export interface TraceColumnContext {
   hilOpen: boolean;
   granularity: GranularityLevel;
   onInspect: (row: TraceRowData) => void;
+  onTimeTravel: (row: TraceRowData) => void;
 }
 
 export interface TraceColumnDef {
@@ -201,18 +202,28 @@ export const TRACE_COLUMNS: TraceColumnDef[] = [
   {
     id: 'step',
     label: 'Step',
-    width: 100,
+    width: 120,
     sticky: true,
     render: (row, context) => (
       <div className="trace-step" title={row.stepTitle}>
-        <button
-          type="button"
-          className="trace-step__inspect"
-          onClick={() => context.onInspect(row)}
-          aria-label="View raw event"
-        >
-          <Eye size={14} />
-        </button>
+        <div className="trace-step__actions">
+          <button
+            type="button"
+            className="trace-step__inspect"
+            onClick={() => context.onInspect(row)}
+            aria-label="View raw event"
+          >
+            <Eye size={14} />
+          </button>
+          <button
+            type="button"
+            className="trace-step__time-travel"
+            onClick={() => context.onTimeTravel(row)}
+            aria-label="View state at this event"
+          >
+            <Clock size={14} />
+          </button>
+        </div>
         <span className="trace-step__label">{row.stepLabel}</span>
       </div>
     ),

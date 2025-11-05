@@ -47,6 +47,8 @@ def _normalize_thread_state(state: str) -> str:
         return "Waiting on HIL"
     if "await" in lookup and "client" in lookup:
         return "Awaiting Client"
+    if "check" in lookup:
+        return "Checking"
     return "Awaiting Client"
 
 

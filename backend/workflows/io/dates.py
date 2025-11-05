@@ -73,6 +73,75 @@ def next5(
     return ordered[:5]
 
 
+def dates_in_month_weekday(
+    month_hint: Optional[Any],
+    weekday_hint: Optional[Any],
+    *,
+    limit: int = 5,
+    timezone: str = DEFAULT_TIMEZONE,
+) -> List[str]:
+    """Return up to `limit` future ISO dates matching the given month/weekday."""
+
+    rules: Dict[str, Any] = {"timezone": timezone}
+    if month_hint:
+        rules["month"] = month_hint
+    if weekday_hint:
+        rules["weekday"] = weekday_hint
+    candidates = next5(None, rules)
+    return [value.strftime("%Y-%m-%d") for value in candidates[:limit]]
+
+
+def closest_alternatives(
+    anchor_iso: str,
+    weekday_hint: Optional[Any],
+    month_hint: Optional[Any],
+    *,
+    limit: int = 3,
+) -> List[str]:
+    """
+    Return the closest ISO dates to the anchor, favouring the same weekday/month hints.
+    The list prioritises future dates while still surfacing near past dates when helpful.
+    """
+
+    if not anchor_iso:
+        return []
+    anchor_dt = _parse_to_datetime(anchor_iso)
+    if anchor_dt is None:
+        return []
+    anchor_date = anchor_dt.date()
+
+    weekday_normalized = _normalize_weekday(weekday_hint)
+    month_normalized = _normalize_month(month_hint)
+
+    blocked = set(blackout_days())
+    results: List[str] = []
+    seen = set()
+
+    def _consider(candidate: date) -> None:
+        if len(results) >= limit:
+            return
+        if candidate in blocked:
+            return
+        if weekday_normalized is not None and candidate.weekday() != weekday_normalized:
+            return
+        if month_normalized is not None and candidate.month != month_normalized:
+            return
+        iso_value = candidate.strftime("%Y-%m-%d")
+        if iso_value in seen or iso_value == anchor_iso:
+            return
+        seen.add(iso_value)
+        results.append(iso_value)
+
+    offset = 1
+    max_search_days = 90
+    while len(results) < limit and offset <= max_search_days:
+        _consider(anchor_date + timedelta(days=offset))
+        _consider(anchor_date - timedelta(days=offset))
+        offset += 1
+
+    return results[:limit]
+
+
 def _resolve_start_date(base_or_today: Optional[Any], rules: Optional[Dict[str, Any]]) -> date:
     tz_name = (rules or {}).get("timezone") or DEFAULT_TIMEZONE
     tz = ZoneInfo(tz_name) if ZoneInfo else None

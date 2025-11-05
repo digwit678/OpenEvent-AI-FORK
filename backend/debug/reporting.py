@@ -213,18 +213,19 @@ def filter_trace_events(
 
 
 def _room_status(snapshot: Dict[str, Any]) -> Optional[str]:
-    status = snapshot.get("selected_status") or snapshot.get("room_status") or snapshot.get("status")
+    locked_room = snapshot.get("locked_room_id")
+    if not locked_room:
+        return None
+    status = snapshot.get("locked_room_status") or snapshot.get("selected_status") or snapshot.get("room_status")
     if isinstance(status, str):
         lowered = status.lower()
-        if "option" in lowered or "lock" in lowered:
-            return "Option"
-        if lowered in {"available", "ok", "open"}:
+        if "available" in lowered:
             return "Available"
+        if "option" in lowered:
+            return "Option"
         if lowered in {"unavailable", "full", "closed"}:
             return "Unavailable"
-    if snapshot.get("locked_room_id"):
-        return "Option"
-    return None
+    return "Option"
 
 
 def confirmed_map(snapshot: Dict[str, Any]) -> Dict[str, Any]:
@@ -249,22 +250,113 @@ def confirmed_map(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+_MISSING = object()
+
+
+def _state_snapshot_as_of(events: Sequence[Dict[str, Any]], as_of_ts: Optional[float]) -> Dict[str, Any]:
+    if as_of_ts is None:
+        return {}
+    snapshot: Dict[str, Any] = {}
+    for event in events:
+        if event.get("kind") != "STATE_SNAPSHOT":
+            continue
+        ts = event.get("ts")
+        if ts is not None and ts > as_of_ts:
+            break
+        snapshot = dict(event.get("data") or {})
+    return snapshot
+
+
+def _merge_state_with_unknowns(latest: Any, historical: Any = _MISSING) -> Any:
+    if isinstance(latest, dict):
+        historical_dict = historical if isinstance(historical, dict) else {}
+        result: Dict[str, Any] = {}
+        for key, value in latest.items():
+            if isinstance(historical_dict, dict) and key in historical_dict:
+                result[key] = _merge_state_with_unknowns(value, historical_dict[key])
+            else:
+                if isinstance(value, dict):
+                    result[key] = _merge_state_with_unknowns(value, {})
+                elif isinstance(value, list):
+                    result[key] = [_merge_state_with_unknowns(item) for item in value]
+                else:
+                    result[key] = {"__unknown__": True, "__value__": value}
+        if isinstance(historical_dict, dict):
+            for key, hist_value in historical_dict.items():
+                if key not in result:
+                    result[key] = hist_value
+        return result
+    if isinstance(latest, list):
+        historical_list = historical if isinstance(historical, list) else []
+        merged: List[Any] = []
+        for index, item in enumerate(latest):
+            if isinstance(historical_list, list) and index < len(historical_list):
+                merged.append(_merge_state_with_unknowns(item, historical_list[index]))
+            else:
+                if isinstance(item, dict):
+                    merged.append(_merge_state_with_unknowns(item, {}))
+                elif isinstance(item, list):
+                    merged.append([_merge_state_with_unknowns(child) for child in item])
+                else:
+                    merged.append({"__unknown__": True, "__value__": item})
+        return merged
+    if historical is _MISSING:
+        return {"__unknown__": True, "__value__": latest}
+    return historical
+
+
+def _summary_as_of(
+    historical_state: Dict[str, Any],
+    fallback_summary: Dict[str, Any],
+    as_of_ts: float,
+) -> Dict[str, Any]:
+    summary = dict(fallback_summary or {})
+    current_step = historical_state.get("current_step") or historical_state.get("step")
+    try:
+        summary["current_step_major"] = int(current_step)
+    except (TypeError, ValueError):
+        if "current_step_major" not in summary:
+            summary["current_step_major"] = None
+    summary["wait_state"] = historical_state.get("thread_state") or historical_state.get("threadState")
+    summary["hil_open"] = bool(historical_state.get("hil_open"))
+    hash_status = historical_state.get("hash_status")
+    if hash_status:
+        summary["hash_status"] = hash_status
+    summary["time_travel"] = {"as_of_ts": as_of_ts}
+    return summary
+
+
 def collect_trace_payload(
     thread_id: str,
     *,
     granularity: str = "logic",
     kinds: Optional[Sequence[str]] = None,
+    as_of_ts: Optional[float] = None,
 ) -> Dict[str, Any]:
     raw_events = BUS.get(thread_id)
-    state_snapshot = get_thread_state(thread_id) or {}
-    if not state_snapshot:
+    live_state = get_thread_state(thread_id) or {}
+    if not live_state:
         for event in reversed(raw_events):
             if event.get("kind") == "STATE_SNAPSHOT":
-                state_snapshot = dict(event.get("data") or {})
+                live_state = dict(event.get("data") or {})
                 break
-    confirmed = confirmed_map(state_snapshot)
+
+    historical_state = _state_snapshot_as_of(raw_events, as_of_ts) if as_of_ts is not None else None
+    if as_of_ts is not None:
+        state_snapshot = _merge_state_with_unknowns(live_state, historical_state or {})
+        state_snapshot = dict(state_snapshot)
+        state_snapshot["__time_travel"] = {"as_of_ts": as_of_ts}
+        confirmed = confirmed_map(historical_state or {})
+        fallback_summary = get_trace_summary(thread_id)
+        summary = _summary_as_of(historical_state or {}, fallback_summary, as_of_ts)
+        time_travel_meta = {"enabled": True, "as_of_ts": as_of_ts}
+    else:
+        state_snapshot = live_state
+        confirmed = confirmed_map(state_snapshot)
+        summary = get_trace_summary(thread_id)
+        time_travel_meta = {"enabled": False}
+
     filtered_events = filter_trace_events(raw_events, granularity, kinds)
-    summary = get_trace_summary(thread_id)
     return {
         "thread_id": thread_id,
         "state": state_snapshot,
@@ -272,6 +364,7 @@ def collect_trace_payload(
         "trace": filtered_events,
         "timeline": timeline.snapshot(thread_id),
         "summary": summary,
+        "time_travel": time_travel_meta,
     }
 
 

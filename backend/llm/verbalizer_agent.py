@@ -39,6 +39,14 @@ def verbalize_gui_reply(
     automatically falls back to the plain deterministic text.
     """
 
+    # Passthrough when workflow already provided structured Markdown.
+    for draft in drafts:
+        if not isinstance(draft, dict):
+            continue
+        pre = draft.get("body_markdown") or draft.get("body_md")
+        if isinstance(pre, str) and pre.strip():
+            return pre
+
     fallback_text = (fallback_text or "").strip()
     if not fallback_text:
         return fallback_text

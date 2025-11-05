@@ -49,10 +49,15 @@ def test_general_room_qna_path(monkeypatch, tmp_path):
     draft = state.draft_messages[-1]
     assert draft["topic"] == "general_room_qna"
     assert draft["candidate_dates"] == free_dates
-    assert "ROOM AVAILABILITY SNAPSHOT" in draft["body"]
-    assert "NEXT STEP" in draft["body"]
+    assert draft["range_results"], "Hybrid queries should include concrete availability rows"
+    assert draft["body"].startswith("I checked availability")
+    assert "Pick a date below to confirm" in draft["body"]
     assert draft["footer"].endswith("State: Awaiting Client")
 
     events = BUS.get(state.thread_id)  # type: ignore[attr-defined]
-    assert any(event.get("io", {}).get("op") == "db.dates.general_qna" for event in events if event.get("kind") == "DB_READ")
+    assert any(
+        event.get("io", {}).get("op") == "db.rooms.search_range"
+        for event in events
+        if event.get("kind") == "DB_READ"
+    )
     assert any(event.get("subject") == "QNA_CLASSIFY" for event in events)

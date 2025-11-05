@@ -298,6 +298,11 @@
   padding-bottom: 1rem;
 }
 
+.trace-section--future .trace-section__header,
+.trace-section--future .trace-cell {
+  opacity: 0.45;
+}
+
 .trace-table__header-row {
   display: grid;
   background: #f1f5f9;
@@ -314,6 +319,11 @@
   align-items: center;
   min-height: 54px;
   border-bottom: 1px solid #f1f5f9;
+}
+
+.trace-table__row--active .trace-cell {
+  background: #eef2ff;
+  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.35);
 }
 
 .trace-table__row:last-of-type {
@@ -485,6 +495,12 @@
   gap: 0.4rem;
 }
 
+.trace-step__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .trace-step__inspect {
   border: 1px solid rgba(148, 163, 184, 0.35);
   background: #ffffff;
@@ -500,6 +516,23 @@
 
 .trace-step__inspect:hover {
   background: #e2e8f0;
+}
+
+.trace-step__time-travel {
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  background: #ffffff;
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #4338ca;
+  transition: background 0.15s ease;
+}
+
+.trace-step__time-travel:hover {
+  background: rgba(99, 102, 241, 0.12);
 }
 
 .trace-step__label {
@@ -732,6 +765,114 @@
 .trace-toolbar button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.state-viewer__banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  background: #e2e8f0;
+  color: #1f2937;
+}
+
+.state-viewer__banner--live {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.state-viewer__banner--historic {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.state-viewer__hint {
+  font-size: 0.7rem;
+  color: #64748b;
+  margin-top: 0.1rem;
+}
+
+.state-viewer__exit {
+  font-size: 0.7rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid rgba(79, 70, 229, 0.35);
+  background: #ffffff;
+  color: #4338ca;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.state-viewer__exit:hover {
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.state-viewer__status {
+  margin-top: 0.75rem;
+  font-size: 0.75rem;
+  color: #475569;
+}
+
+.state-viewer__status--error {
+  color: #b91c1c;
+}
+
+.state-viewer__status--empty {
+  color: #64748b;
+}
+
+.state-viewer__body {
+  margin-top: 0.75rem;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.state-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.state-tree__list {
+  list-style: none;
+  margin: 0.35rem 0 0.35rem 1rem;
+  padding: 0;
+}
+
+.state-tree__item {
+  margin-bottom: 0.3rem;
+}
+
+.state-tree__key {
+  font-weight: 600;
+  margin-right: 0.45rem;
+  color: #0f172a;
+}
+
+.state-tree__key--index {
+  color: #475569;
+}
+
+.state-tree__value {
+  color: #1f2937;
+}
+
+.state-tree__value--unknown {
+  color: #475569;
+  font-style: italic;
+}
+
+.state-tree__value--empty {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.state-tree__hint {
+  color: #94a3b8;
 }
 
 .trace-toolbar__chips {

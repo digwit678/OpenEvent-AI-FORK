@@ -12,15 +12,23 @@ import time
 import webbrowser
 import threading
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from backend.domain import ConversationState, EventInformation
 from backend.conversation_manager import (
-    classify_email, generate_response, create_summary,
-    active_conversations, extract_information_incremental,
+    classify_email,
+    generate_response,
+    create_summary,
+    active_conversations,
+    extract_information_incremental,
+    render_step3_reply,
+    pop_step3_payload,
 )
 from pathlib import Path
 from backend.adapters.calendar_adapter import get_calendar_adapter
 from backend.adapters.client_gui_adapter import ClientGUIAdapter
+from backend.workflows.common.payloads import PayloadValidationError, validate_confirm_date_payload
+from backend.workflows.groups.date_confirmation import compose_date_confirmation_reply
+from backend.workflows.common.prompts import append_footer
 from backend.workflows.groups.room_availability import run_availability_workflow
 from backend.utils import json_io
 
@@ -201,6 +209,23 @@ def _to_iso_date(date_str: Optional[str]) -> Optional[str]:
     return None
 
 
+def _format_participants_label(raw: Optional[str]) -> str:
+    if not raw:
+        return "your group"
+    text = str(raw).strip()
+    if not text or text.lower() in {"not specified", "none"}:
+        return "your group"
+    match = re.search(r"\d{1,4}", text)
+    if match:
+        try:
+            number = int(match.group(0))
+            if number > 0:
+                return "1 guest" if number == 1 else f"{number} guests"
+        except ValueError:
+            pass
+    return text
+
+
 def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> None:
     if not event_id:
         print("[WF] Skipping room availability trigger - missing event_id.")
@@ -251,7 +276,7 @@ def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> Non
         print(f"[WF][ERROR] Availability workflow failed: {exc}")
 
 
-def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: str) -> str:
+def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: str) -> Dict[str, Any]:
     conversation_state.event_info.event_date = chosen_date
     conversation_state.event_info.status = "Date Confirmed"
 
@@ -277,12 +302,47 @@ def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: 
     event_id = wf_res.get("event_id") or conversation_state.event_id
     conversation_state.event_id = event_id
 
+    iso_confirmed = _to_iso_date(chosen_date)
+    if event_id and iso_confirmed:
+        try:
+            validate_confirm_date_payload({
+                "action": "confirm_date",
+                "event_id": event_id,
+                "date": iso_confirmed,
+            })
+        except PayloadValidationError as exc:
+            print(f"[WF][WARN] confirm_date payload validation failed: {exc}")
+
     try:
         _trigger_room_availability(event_id, chosen_date)
     except Exception as exc:
         print(f"[WF][ERROR] trigger availability failed: {exc}")
 
-    return "Date confirmed. I'm checking room availability now and will share options in a moment."
+    rendered = render_step3_reply(conversation_state, wf_res.get("draft_messages"))
+    actions: List[Dict[str, Any]] = []
+    subject: Optional[str] = None
+    assistant_reply = wf_res.get("assistant_message")
+
+    if rendered:
+        subject = rendered.get("subject")
+        actions = rendered.get("actions") or []
+        assistant_reply = rendered.get("body_markdown") or rendered.get("body") or assistant_reply
+
+    if not assistant_reply:
+        pax_label = _format_participants_label(conversation_state.event_info.number_of_participants)
+        assistant_reply = compose_date_confirmation_reply(chosen_date, pax_label)
+        assistant_reply = append_footer(
+            assistant_reply,
+            step=3,
+            next_step="Availability result",
+            thread_state="Checking",
+        )
+
+    return {
+        "body": assistant_reply,
+        "actions": actions,
+        "subject": subject,
+    }
 
 @app.post("/api/start-conversation")
 async def start_conversation(request: StartConversationRequest):
@@ -356,6 +416,7 @@ async def start_conversation(request: StartConversationRequest):
                 {"role": "assistant", "content": assistant_reply},
             ],
             workflow_type="new_event",
+            event_id=(wf_res or {}).get("event_id"),
         )
         active_conversations[session_id] = conversation_state
         print(f"[WF] start pause ask_for_date session={session_id} task={wf_res.get('task_id')}")
@@ -413,16 +474,27 @@ async def start_conversation(request: StartConversationRequest):
         date_email_received=datetime.now().strftime("%d.%m.%Y"),
         email=request.client_email
     )
-    
+    event_id = (wf_res or {}).get("event_id")
+
     conversation_state = ConversationState(
         session_id=session_id,
         event_info=event_info,
         conversation_history=[],
-        workflow_type=workflow_type
+        workflow_type=workflow_type,
+        event_id=event_id,
     )
     
     # Generate first response
     response_text = generate_response(conversation_state, request.email_body)
+    step3_payload = pop_step3_payload(session_id)
+    pending_actions = None
+    if step3_payload:
+        actions = step3_payload.get("actions") or []
+        if actions:
+            pending_actions = {"type": "workflow_actions", "actions": actions}
+        body_pref = step3_payload.get("body_markdown") or step3_payload.get("body")
+        if body_pref:
+            response_text = body_pref
     
     # Store in memory
     active_conversations[session_id] = conversation_state
@@ -432,7 +504,8 @@ async def start_conversation(request: StartConversationRequest):
         "workflow_type": workflow_type,
         "response": response_text,
         "is_complete": conversation_state.is_complete,
-        "event_info": conversation_state.event_info.model_dump()
+        "event_info": conversation_state.event_info.model_dump(),
+        "pending_actions": pending_actions,
     }
 
 @app.post("/api/send-message")
@@ -466,13 +539,15 @@ async def send_message(request: SendMessageRequest):
             f"Thanks - I've noted {chosen_date}. Please confirm this is your preferred date."
         )
         conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+        iso_payload = _to_iso_date(chosen_date)
+        pop_step3_payload(request.session_id)
         return {
             "session_id": request.session_id,
             "workflow_type": conversation_state.workflow_type,
             "response": assistant_reply,
             "is_complete": conversation_state.is_complete,
             "event_info": conversation_state.event_info.dict(),
-            "pending_actions": {"type": "confirm_date", "date": chosen_date},
+            "pending_actions": {"type": "confirm_date", "date": iso_payload or chosen_date},
         }
 
     user_message_clean = request.message.strip().lower()
@@ -490,15 +565,18 @@ async def send_message(request: SendMessageRequest):
                 except ValueError:
                     pass
         conversation_state.conversation_history.append({"role": "user", "content": request.message})
-        assistant_reply = _persist_confirmed_date(conversation_state, stored_date)
+        assistant_payload = _persist_confirmed_date(conversation_state, stored_date)
+        assistant_reply = assistant_payload.get("body") or ""
+        actions = assistant_payload.get("actions") or []
         conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+        pending_actions = {"type": "workflow_actions", "actions": actions} if actions else None
         return {
             "session_id": request.session_id,
             "workflow_type": conversation_state.workflow_type,
             "response": assistant_reply,
             "is_complete": conversation_state.is_complete,
             "event_info": conversation_state.event_info.dict(),
-            "pending_actions": None,
+            "pending_actions": pending_actions,
         }
 
     response_text = generate_response(conversation_state, request.message)
@@ -509,13 +587,23 @@ async def send_message(request: SendMessageRequest):
     print(f"Event info complete: {conversation_state.event_info.is_complete()}")
     print(f"==================\n")
 
+    step3_payload = pop_step3_payload(request.session_id)
+    pending_actions = None
+    if step3_payload:
+        actions = step3_payload.get("actions") or []
+        if actions:
+            pending_actions = {"type": "workflow_actions", "actions": actions}
+        body_pref = step3_payload.get("body_markdown") or step3_payload.get("body")
+        if body_pref:
+            response_text = body_pref
+
     return {
         "session_id": request.session_id,
         "workflow_type": conversation_state.workflow_type,
         "response": response_text,
         "is_complete": conversation_state.is_complete,
         "event_info": conversation_state.event_info.dict(),
-        "pending_actions": None,
+        "pending_actions": pending_actions,
     }
 
 
@@ -584,16 +672,28 @@ if DEBUG_TRACE_ENABLED:
         thread_id: str,
         granularity: str = Query("logic"),
         kinds: Optional[str] = Query(None),
+        as_of_ts: Optional[float] = Query(None),
     ):
-        return debug_get_trace(thread_id, granularity=granularity, kinds=_parse_kind_filter(kinds))
+        return debug_get_trace(
+            thread_id,
+            granularity=granularity,
+            kinds=_parse_kind_filter(kinds),
+            as_of_ts=as_of_ts,
+        )
 
     @app.get("/api/debug/threads/{thread_id}/timeline")
     async def get_debug_thread_timeline(
         thread_id: str,
         granularity: str = Query("logic"),
         kinds: Optional[str] = Query(None),
+        as_of_ts: Optional[float] = Query(None),
     ):
-        return debug_get_timeline(thread_id, granularity=granularity, kinds=_parse_kind_filter(kinds))
+        return debug_get_timeline(
+            thread_id,
+            granularity=granularity,
+            kinds=_parse_kind_filter(kinds),
+            as_of_ts=as_of_ts,
+        )
 
     @app.get("/api/debug/threads/{thread_id}/timeline/download")
     async def download_debug_thread_timeline(thread_id: str):
@@ -637,6 +737,7 @@ else:
         thread_id: str,
         granularity: str = Query("logic"),
         kinds: Optional[str] = Query(None),
+        as_of_ts: Optional[float] = Query(None),
     ):
         raise HTTPException(status_code=404, detail="Debug tracing disabled")
 
@@ -645,6 +746,7 @@ else:
         thread_id: str,
         granularity: str = Query("logic"),
         kinds: Optional[str] = Query(None),
+        as_of_ts: Optional[float] = Query(None),
     ):
         raise HTTPException(status_code=404, detail="Debug tracing disabled")
 
@@ -677,12 +779,20 @@ async def confirm_date(session_id: str, request: ConfirmDateRequest):
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     conversation_state = active_conversations[session_id]
-    chosen_date = (request.date or conversation_state.event_info.event_date or "").strip()
-    if not chosen_date or not DATE_PATTERN.fullmatch(chosen_date):
-        raise HTTPException(status_code=400, detail="Invalid or missing date. Use DD.MM.YYYY.")
+    raw_date = (request.date or conversation_state.event_info.event_date or "").strip()
+    iso_candidate = _to_iso_date(raw_date)
+    if not iso_candidate:
+        raise HTTPException(status_code=400, detail="Invalid or missing date. Use YYYY-MM-DD.")
+    try:
+        chosen_date = datetime.strptime(iso_candidate, "%Y-%m-%d").strftime("%d.%m.%Y")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid or missing date. Use YYYY-MM-DD.") from exc
 
-    assistant_reply = _persist_confirmed_date(conversation_state, chosen_date)
+    assistant_payload = _persist_confirmed_date(conversation_state, chosen_date)
+    assistant_reply = assistant_payload.get("body") or ""
+    actions = assistant_payload.get("actions") or []
     conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+    pending_actions = {"type": "workflow_actions", "actions": actions} if actions else None
 
     return {
         "session_id": session_id,
@@ -690,7 +800,7 @@ async def confirm_date(session_id: str, request: ConfirmDateRequest):
         "response": assistant_reply,
         "is_complete": conversation_state.is_complete,
         "event_info": conversation_state.event_info.dict(),
-        "pending_actions": None,
+        "pending_actions": pending_actions,
     }
 
 @app.post("/api/accept-booking/{session_id}")
