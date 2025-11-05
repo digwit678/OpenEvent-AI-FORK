@@ -13,6 +13,7 @@ from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.dates import next5
 from backend.workflows.nlu import detect_general_room_query
 from backend.debug.hooks import (
+    set_subloop,
     trace_db_read,
     trace_db_write,
     trace_entity,
@@ -758,6 +759,10 @@ def _present_general_room_qna(
 ) -> GroupResult:
     requirements = event_entry.get("requirements") or {}
     preferred_room = requirements.get("preferred_room") or "Room A"
+    subloop_label = "general_q_a"
+    state.extras["subloop"] = subloop_label
+    if thread_id:
+        set_subloop(thread_id, subloop_label)
     candidate_dates = list_free_dates(
         count=5,
         db=state.db,
@@ -858,6 +863,16 @@ def _present_general_room_qna(
     )
 
     state.set_thread_state("Awaiting Client")
+    if thread_id:
+        trace_state(
+            thread_id,
+            "Step2_Date",
+            {
+                "thread_state": state.thread_state,
+                "candidate_dates": candidate_dates,
+                "subloop": subloop_label,
+            },
+        )
     state.extras["persist"] = True
 
     payload = {

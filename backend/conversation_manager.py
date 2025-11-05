@@ -5,6 +5,7 @@
 
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -41,11 +42,18 @@ def _normalise_step3_draft(session_id: Optional[str], drafts: Optional[List[Dict
     cache_key = _step3_cache_key(session_id)
     for draft in drafts:
         step_raw = draft.get("step")
-        try:
-            step_val = int(step_raw)
-        except (TypeError, ValueError):
-            continue
-        if step_val != 3:
+        is_step_three = False
+        if isinstance(step_raw, int):
+            is_step_three = step_raw == 3
+        else:
+            step_str = str(step_raw or "").strip()
+            if step_str.lower().startswith("step3"):
+                is_step_three = True
+            else:
+                match = re.match(r"^(\d+)", step_str)
+                if match:
+                    is_step_three = int(match.group(1)) == 3
+        if not is_step_three:
             continue
         body_md = draft.get("body_markdown") or draft.get("body_md") or draft.get("body")
         if not isinstance(body_md, str) or not body_md.strip():

@@ -1,4 +1,5 @@
 import { RawTraceEvent, STEP_KEYS, STEP_TITLES, StepKey, formatTimeLabel, GateProgress } from '../debug/utils';
+import { SUBLOOP_COLORS, SUBLOOP_LABELS, SubloopKey } from '../debug/constants';
 
 export type TraceEntity =
   | 'TRIGGER'
@@ -73,6 +74,9 @@ export interface TraceRowData {
   prompt?: TracePromptInfo;
   lane?: string | null;
   raw: RawTraceEvent;
+  subloop?: SubloopKey | null;
+  subloopLabel?: string | null;
+  subloopColor?: string | null;
 }
 
 export interface StepSnapshotFlags {
@@ -476,7 +480,9 @@ export function buildTraceRows(events: RawTraceEvent[]): TraceRowData[] {
     const stepKey = deriveStepKey(stepMajor);
     const stepTitle = stepKey === 'Global' ? 'Global Events' : `Step ${stepMajor} · ${STEP_TITLES[stepKey]}`;
     const stepLabel = stepMajor && stepMinor ? `${stepMajor}.${stepMinor}` : stepMajor ? `${stepMajor}.—` : '—';
-    const id = event.row_id || `${event.thread_id}-${index}`;
+    const timeStamp = event.ts || 0;
+    const sequence = typeof event.seq === 'number' ? event.seq : index;
+    const id = event.row_id || `${event.thread_id || 'thread'}-${timeStamp}-${sequence}`;
     const entity = normalizeEntity(event.entity || null);
     const functionInfo = deriveFunctionInfo(event);
     const valueItems = buildValueItems(event);
@@ -484,6 +490,9 @@ export function buildTraceRows(events: RawTraceEvent[]): TraceRowData[] {
     const io = extractIo(event);
     const prompt = extractPrompt(event);
     const timeLabel = formatTimeLabel(event.ts || 0);
+    const subloopRaw = typeof event.subloop === 'string' ? event.subloop.trim() : '';
+    const hasSubloop = subloopRaw && Object.prototype.hasOwnProperty.call(SUBLOOP_COLORS, subloopRaw);
+    const subloop = hasSubloop ? (subloopRaw as SubloopKey) : null;
 
     return {
       id,
@@ -508,6 +517,9 @@ export function buildTraceRows(events: RawTraceEvent[]): TraceRowData[] {
       prompt,
       lane: event.lane,
       raw: event,
+      subloop,
+      subloopLabel: subloop ? SUBLOOP_LABELS[subloop] : null,
+      subloopColor: subloop ? SUBLOOP_COLORS[subloop] : null,
     };
   });
 }

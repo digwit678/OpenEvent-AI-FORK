@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, useCallback, useEffect, useState } from 'react';
+import React, { ReactNode, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Copy, Eye, Clock } from 'lucide-react';
 
@@ -234,7 +234,18 @@ export const TRACE_COLUMNS: TraceColumnDef[] = [
     width: 140,
     sticky: true,
     render: (row) => (
-      <span className={`trace-entity trace-entity--${row.entity}`}>{row.entity}</span>
+      <span className={`trace-entity trace-entity--${row.entity}`}>
+        <span className="trace-entity__label">{row.entity}</span>
+        {row.subloop && row.subloopLabel ? (
+          <span
+            className="trace-entity__subloop"
+            style={{ backgroundColor: row.subloopColor }}
+            title={row.subloopLabel}
+          >
+            {row.subloopLabel}
+          </span>
+        ) : null}
+      </span>
     ),
   },
   {
