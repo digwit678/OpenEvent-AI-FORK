@@ -1,26 +1,36 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 import uuid
 import os
 import re
 import atexit
-import logging
 import subprocess
+import socket
 import time
+import webbrowser
+import threading
 from datetime import datetime
-from typing import Any, Dict, Optional, List, Tuple
-from backend.domain import ConversationState, EventInformation, TaskType
+from typing import Any, Dict, List, Optional
+from backend.domain import ConversationState, EventInformation
 from backend.conversation_manager import (
+    classify_email,
+    generate_response,
     create_summary,
     active_conversations,
+    extract_information_incremental,
+    render_step3_reply,
+    pop_step3_payload,
 )
 from pathlib import Path
 from backend.adapters.calendar_adapter import get_calendar_adapter
 from backend.adapters.client_gui_adapter import ClientGUIAdapter
+from backend.workflows.common.payloads import PayloadValidationError, validate_confirm_date_payload
+from backend.workflows.groups.date_confirmation import compose_date_confirmation_reply
+from backend.workflows.common.prompts import append_footer
 from backend.workflows.groups.room_availability import run_availability_workflow
 from backend.utils import json_io
-from backend.workflows.io.database import ensure_event_defaults
 
 os.environ.setdefault("AGENT_MODE", os.environ.get("AGENT_MODE_DEFAULT", "openai"))
 
@@ -31,25 +41,22 @@ from backend.workflow_email import (
     save_db as wf_save_db,
     list_pending_tasks as wf_list_pending_tasks,
     update_task_status as wf_update_task_status,
-    enqueue_task as wf_enqueue_task,
 )
-from backend.api.agent_router import router as agent_router
-from backend.llm.verbalizer_agent import verbalize_gui_reply, _split_required_sections
-from backend.workflows.advance import advance_after_review
-from backend.llm.intent_classifier import classify_intent as classify_turn_intent
-from backend.workflows.io.database import find_event_idx_by_id, last_event_for_email
-from backend.workflows.qna.router import route_general_qna
-from backend.workflows.qna.templates import build_qna_info_and_next_step
-from scripts.ports import is_port_in_use, first_free_port, kill_port_process
+from backend.api.debug import (
+    debug_get_trace,
+    debug_get_timeline,
+    debug_generate_report,
+    resolve_timeline_path,
+    render_arrow_log,
+)
+from backend.debug.settings import is_trace_enabled
+from backend.debug.trace import BUS
 
 app = FastAPI(title="AI Event Manager")
-app.include_router(agent_router)
+
+DEBUG_TRACE_ENABLED = is_trace_enabled()
 
 GUI_ADAPTER = ClientGUIAdapter()
-DEV_LOGGER = logging.getLogger("openevent.dev")
-FRONTEND_PROCESS: Optional[subprocess.Popen] = None
-FRONTEND_CANDIDATE_PORTS = [3000, 3001, 3002]
-FRONTEND_PIDFILE = Path(__file__).resolve().parents[1] / ".dev" / "frontend.pid"
 
 # CORS for frontend
 app.add_middleware(
@@ -62,6 +69,65 @@ app.add_middleware(
 
 # CENTRALIZED EVENTS DATABASE
 EVENTS_FILE = "events_database.json"
+FRONTEND_DIR = Path(__file__).resolve().parents[1] / "atelier-ai-frontend"
+FRONTEND_PORT = int(os.getenv("FRONTEND_PORT", "3000"))
+_frontend_process: Optional[subprocess.Popen] = None
+
+
+def _is_port_in_use(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _launch_frontend() -> Optional[subprocess.Popen]:
+    if os.getenv("AUTO_LAUNCH_FRONTEND", "1") != "1":
+        return None
+    if _is_port_in_use(FRONTEND_PORT):
+        print(f"[Frontend] Port {FRONTEND_PORT} already in use – assuming frontend is running.")
+        return None
+    if not FRONTEND_DIR.exists():
+        print(f"[Frontend][WARN] Directory {FRONTEND_DIR} not found; skipping auto-launch.")
+        return None
+    cmd = ["npm", "run", "dev", "--", "--hostname", "0.0.0.0", "--port", str(FRONTEND_PORT)]
+    try:
+        proc = subprocess.Popen(cmd, cwd=str(FRONTEND_DIR))
+        print(f"[Frontend] npm dev server starting on http://localhost:{FRONTEND_PORT}")
+        return proc
+    except FileNotFoundError:
+        print("[Frontend][WARN] npm not found on PATH; skipping auto-launch.")
+    except Exception as exc:
+        print(f"[Frontend][ERROR] Failed to launch npm dev server: {exc}")
+    return None
+
+
+def _open_browser_when_ready() -> None:
+    if os.getenv("AUTO_OPEN_FRONTEND", "1") != "1":
+        return
+    target_url = f"http://localhost:{FRONTEND_PORT}"
+    debug_url = f"{target_url}/debug"
+    for attempt in range(120):
+        if _is_port_in_use(FRONTEND_PORT):
+            try:
+                webbrowser.open_new(target_url)
+                if os.getenv("AUTO_OPEN_DEBUG_PANEL", "1") == "1":
+                    webbrowser.open_new_tab(debug_url)
+            except Exception as exc:  # pragma: no cover - environment dependent
+                print(f"[Frontend][WARN] Unable to open browser automatically: {exc}")
+            else:
+                print(f"[Frontend] Opened browser window at {target_url}")
+                if os.getenv("AUTO_OPEN_DEBUG_PANEL", "1") == "1":
+                    print(f"[Frontend] Opened debug panel at {debug_url}")
+            return
+        time.sleep(0.5)
+    print(f"[Frontend][WARN] Frontend not reachable on {target_url} after waiting 60s; skipping auto-open.")
+
+
+def _parse_kind_filter(raw: Optional[str]) -> Optional[List[str]]:
+    if not raw:
+        return None
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
 
 def load_events_database():
     """Load all events from the database file"""
@@ -143,6 +209,23 @@ def _to_iso_date(date_str: Optional[str]) -> Optional[str]:
     return None
 
 
+def _format_participants_label(raw: Optional[str]) -> str:
+    if not raw:
+        return "your group"
+    text = str(raw).strip()
+    if not text or text.lower() in {"not specified", "none"}:
+        return "your group"
+    match = re.search(r"\d{1,4}", text)
+    if match:
+        try:
+            number = int(match.group(0))
+            if number > 0:
+                return "1 guest" if number == 1 else f"{number} guests"
+        except ValueError:
+            pass
+    return text
+
+
 def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> None:
     if not event_id:
         print("[WF] Skipping room availability trigger - missing event_id.")
@@ -193,7 +276,7 @@ def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> Non
         print(f"[WF][ERROR] Availability workflow failed: {exc}")
 
 
-def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: str) -> str:
+def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: str) -> Dict[str, Any]:
     conversation_state.event_info.event_date = chosen_date
     conversation_state.event_info.status = "Date Confirmed"
 
@@ -219,415 +302,46 @@ def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: 
     event_id = wf_res.get("event_id") or conversation_state.event_id
     conversation_state.event_id = event_id
 
+    iso_confirmed = _to_iso_date(chosen_date)
+    if event_id and iso_confirmed:
+        try:
+            validate_confirm_date_payload({
+                "action": "confirm_date",
+                "event_id": event_id,
+                "date": iso_confirmed,
+            })
+        except PayloadValidationError as exc:
+            print(f"[WF][WARN] confirm_date payload validation failed: {exc}")
+
     try:
         _trigger_room_availability(event_id, chosen_date)
     except Exception as exc:
         print(f"[WF][ERROR] trigger availability failed: {exc}")
 
-    return "Date confirmed. I'm checking room availability now and will share options in a moment."
+    rendered = render_step3_reply(conversation_state, wf_res.get("draft_messages"))
+    actions: List[Dict[str, Any]] = []
+    subject: Optional[str] = None
+    assistant_reply = wf_res.get("assistant_message")
 
+    if rendered:
+        subject = rendered.get("subject")
+        actions = rendered.get("actions") or []
+        assistant_reply = rendered.get("body_markdown") or rendered.get("body") or assistant_reply
 
-def _wf_compose_reply(wf_res: Dict[str, Any]) -> str:
-    drafts = wf_res.get("draft_messages") or []
-    bodies = [str(d.get("body", "")) for d in drafts if d.get("body")]
-    if bodies:
-        return "\n\n".join(bodies)
-    if wf_res.get("summary"):
-        return str(wf_res.get("summary"))
-    if wf_res.get("reason"):
-        return str(wf_res.get("reason"))
-    return "\u200b"
-
-
-def _dev_prepare_env() -> None:
-    if not logging.getLogger().handlers:
-        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    os.environ.setdefault("AGENT_MODE", "openai")
-    os.environ.setdefault("VERBALIZER_TONE", "empathetic")
-    if not os.getenv("OPENAI_API_KEY"):
-        try:
-            result = subprocess.run(
-                [
-                    "security",
-                    "find-generic-password",
-                    "-a",
-                    os.getenv("USER", ""),
-                    "-s",
-                    "openevent-api-test-key",
-                    "-w",
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                os.environ["OPENAI_API_KEY"] = result.stdout.strip()
-        except FileNotFoundError:
-            DEV_LOGGER.debug("Keychain lookup unavailable; skipping")
-
-
-def _dev_free_port(port: int) -> None:
-    if not is_port_in_use(port):
-        return
-    DEV_LOGGER.info("dev: freeing port %s", port)
-    kill_port_process(port)
-    deadline = time.time() + 5
-    while is_port_in_use(port) and time.time() < deadline:
-        time.sleep(0.1)
-    if is_port_in_use(port):
-        DEV_LOGGER.warning("dev: port %s still in use after kill attempt", port)
-
-
-def _pid_running(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
-
-
-def _read_pidfile() -> Optional[int]:
-    if FRONTEND_PIDFILE.exists():
-        try:
-            pid = int(FRONTEND_PIDFILE.read_text().strip())
-            if _pid_running(pid):
-                return pid
-        except Exception:
-            pass
-        try:
-            FRONTEND_PIDFILE.unlink()
-        except OSError:
-            pass
-    return None
-
-
-def _write_pidfile(pid: int) -> None:
-    FRONTEND_PIDFILE.parent.mkdir(parents=True, exist_ok=True)
-    FRONTEND_PIDFILE.write_text(str(pid))
-
-
-def _ensure_frontend() -> Tuple[Optional[int], bool]:
-    existing_pid = _read_pidfile()
-    existing_port = next((p for p in FRONTEND_CANDIDATE_PORTS if is_port_in_use(p)), None)
-    if existing_port and not existing_pid:
-        DEV_LOGGER.info(
-            "dev: frontend detected on port %s", existing_port,
-            extra={"frontend_port": existing_port, "autostart": False},
+    if not assistant_reply:
+        pax_label = _format_participants_label(conversation_state.event_info.number_of_participants)
+        assistant_reply = compose_date_confirmation_reply(chosen_date, pax_label)
+        assistant_reply = append_footer(
+            assistant_reply,
+            step=3,
+            next_step="Availability result",
+            thread_state="Checking",
         )
-        return existing_port, False
 
-    if existing_pid and existing_port:
-        DEV_LOGGER.info(
-            "dev: frontend already running",
-            extra={"frontend_port": existing_port, "autostart": False},
-        )
-        return existing_port, False
-
-    frontend_dir = Path(__file__).resolve().parents[1] / "atelier-ai-frontend"
-    if not frontend_dir.exists():
-        DEV_LOGGER.warning("dev: frontend directory missing; skipping auto-start")
-        return None, False
-
-    port = first_free_port(FRONTEND_CANDIDATE_PORTS)
-    if port is None:
-        DEV_LOGGER.warning("dev: no free frontend port available")
-        return None, False
-
-    env = os.environ.copy()
-    env.setdefault("NEXT_PUBLIC_BACKEND_BASE", "http://localhost:8000")
-    env.setdefault("NEXT_PUBLIC_VERBALIZER_TONE", os.getenv("VERBALIZER_TONE", "empathetic"))
-    env["PORT"] = str(port)
-    command = ["npm", "run", "dev"]
-    process = subprocess.Popen(command, cwd=str(frontend_dir), env=env)
-
-    global FRONTEND_PROCESS
-    FRONTEND_PROCESS = process
-    _write_pidfile(process.pid)
-    DEV_LOGGER.info(
-        "dev: frontend started",
-        extra={"frontend_port": port, "autostart": True},
-    )
-    atexit.register(_shutdown_frontend)
-    return port, True
-
-
-def _shutdown_frontend() -> None:
-    global FRONTEND_PROCESS
-    if FRONTEND_PROCESS and FRONTEND_PROCESS.poll() is None:
-        try:
-            FRONTEND_PROCESS.terminate()
-            FRONTEND_PROCESS.wait(timeout=5)
-        except Exception:
-            pass
-        FRONTEND_PROCESS = None
-    if FRONTEND_PIDFILE.exists():
-        try:
-            FRONTEND_PIDFILE.unlink()
-        except OSError:
-            pass
-
-
-def _name_from_email(email: Optional[str]) -> Optional[str]:
-    if not email:
-        return None
-    local = (email.split("@", 1)[0] or "").strip()
-    if not local:
-        return None
-    # Split on common separators and take first token
-    for sep in (".", "_", "-"):
-        if sep in local:
-            local = local.split(sep, 1)[0]
-            break
-    if not local:
-        return None
-    return local.capitalize()
-
-
-def _expect_resume(conversation_state: ConversationState) -> bool:
-    for entry in reversed(conversation_state.conversation_history):
-        if entry.get("role") != "assistant":
-            continue
-        content = str(entry.get("content") or "")
-        if "Proceed with" in content:
-            return True
-        break
-    return False
-
-
-def _locate_event_entry(db: Dict[str, Any], event_id: Optional[str], client_email: Optional[str]) -> Optional[Dict[str, Any]]:
-    entry: Optional[Dict[str, Any]] = None
-    if event_id:
-        idx = find_event_idx_by_id(db, event_id)
-        if idx is not None:
-            entry = db["events"][idx]
-            ensure_event_defaults(entry)
-    if not entry and client_email:
-        entry = last_event_for_email(db, client_email.lower())
-        if entry:
-            ensure_event_defaults(entry)
-    return entry
-
-
-def _current_step_from_event(event_entry: Optional[Dict[str, Any]]) -> int:
-    if event_entry and isinstance(event_entry.get("current_step"), int):
-        return int(event_entry["current_step"])
-    return 2
-
-
-def _missing_fields_for_step(step: int, event_entry: Optional[Dict[str, Any]]) -> List[str]:
-    missing: List[str] = []
-    if not event_entry:
-        if step == 2:
-            missing.extend(["date", "time"])
-        return missing
-    if step == 2:
-        window = event_entry.get("requested_window") or {}
-        if not window.get("date_iso"):
-            missing.append("date")
-        if not (window.get("start_time") and window.get("end_time")):
-            missing.append("time")
-    elif step == 3:
-        if not event_entry.get("locked_room_id"):
-            missing.append("room")
-        requirements = (event_entry.get("requirements") or {}) if isinstance(event_entry.get("requirements"), dict) else {}
-        if not requirements.get("number_of_participants"):
-            missing.append("attendees")
-        if not requirements.get("seating_layout"):
-            missing.append("layout")
-    elif step == 4:
-        products = event_entry.get("products") or []
-        selected = event_entry.get("selected_products") or []
-        if not products and not selected:
-            missing.append("products")
-        event_data = event_entry.get("event_data") or {}
-        catering_pref = str(event_data.get("Catering Preference") or "").strip()
-        if not catering_pref or catering_pref.lower() == "not specified":
-            missing.append("catering")
-    return missing
-
-
-_STEP_INTENTS = {
-    "date_confirmation",
-    "room_availability",
-    "offer_review",
-    "site_visit",
-    "follow_up",
-}
-
-
-def _load_workflow_db() -> Dict[str, Any]:
-    try:
-        return wf_load_db()
-    except Exception:
-        return {"events": [], "clients": {}, "tasks": []}
-
-
-def _should_run_workflow(classification: Dict[str, Any], *, force: bool = False) -> bool:
-    if classification.get("wants_resume"):
-        return True
-    primary = classification.get("primary")
-    if primary == "message_manager":
-        return False
-    if force:
-        return True
-    return primary in _STEP_INTENTS
-
-
-def _prepare_qna_body(body: str, include_resume_prompt: bool) -> Optional[str]:
-    """Normalize Q&A payload text and optionally remove the NEXT STEP affordance."""
-
-    text = (body or "").strip()
-    if not text:
-        return None
-    if include_resume_prompt:
-        return text
-
-    split_marker = "\n\nNEXT STEP:"
-    if split_marker in text:
-        text = text.split(split_marker, 1)[0].rstrip()
-    else:
-        inline_marker = "\nNEXT STEP:"
-        if inline_marker in text:
-            text = text.split(inline_marker, 1)[0].rstrip()
-    return text or None
-
-
-def _compose_turn_drafts(
-    step_drafts: List[Dict[str, Any]],
-    qna_payload: Dict[str, Any],
-    wf_res: Optional[Dict[str, Any]],
-) -> Tuple[List[Dict[str, Any]], str]:
-    drafts: List[Dict[str, Any]] = []
-    sections: List[str] = []
-    include_resume_prompt = not bool(step_drafts)
-
-    for draft in step_drafts or []:
-        body = str(draft.get("body") or "").strip()
-        if body:
-            sections.append(body)
-        drafts.append(draft)
-
-    for block in qna_payload.get("pre_step") or []:
-        prepared_body = _prepare_qna_body(str(block.get("body") or ""), include_resume_prompt)
-        if not prepared_body:
-            continue
-        block_payload = dict(block)
-        block_payload["body"] = prepared_body
-        sections.append(prepared_body)
-        drafts.append(block_payload)
-
-    for block in qna_payload.get("post_step") or []:
-        prepared_body = _prepare_qna_body(str(block.get("body") or ""), include_resume_prompt)
-        if not prepared_body:
-            continue
-        block_payload = dict(block)
-        block_payload["body"] = prepared_body
-        sections.append(prepared_body)
-        drafts.append(block_payload)
-
-    fallback_text = "\n\n".join(section for section in sections if section)
-    if not fallback_text and wf_res:
-        fallback_text = _wf_compose_reply(wf_res)
-    if not fallback_text and step_drafts:
-        fallback_text = _wf_compose_reply({"draft_messages": step_drafts})
-    return drafts, fallback_text or "\u200b"
-
-
-def _execute_turn(
-    conversation_state: ConversationState,
-    msg: Dict[str, Any],
-    classification: Dict[str, Any],
-    *,
-    wf_res: Optional[Dict[str, Any]] = None,
-    db_before: Optional[Dict[str, Any]] = None,
-    event_entry_before: Optional[Dict[str, Any]] = None,
-) -> Tuple[str, int, Optional[str]]:
-    db_snapshot = db_before or _load_workflow_db()
-    entry_before = event_entry_before or _locate_event_entry(
-        db_snapshot,
-        conversation_state.event_id,
-        conversation_state.event_info.email,
-    )
-
-    force_run = wf_res is None and conversation_state.event_id is None and classification.get("primary") != "message_manager"
-    run_workflow = _should_run_workflow(classification, force=force_run) and wf_res is None
-
-    step_drafts: List[Dict[str, Any]] = []
-    db_after = db_snapshot
-    event_entry_after = entry_before
-    result = wf_res
-
-    if run_workflow:
-        result = wf_process_msg(msg)
-        event_id = result.get("event_id")
-        if event_id:
-            conversation_state.event_id = event_id
-        db_after = _load_workflow_db()
-        event_entry_after = _locate_event_entry(db_after, conversation_state.event_id, conversation_state.event_info.email)
-        step_drafts = result.get("draft_messages") or []
-    elif result is not None:
-        event_id = result.get("event_id")
-        if event_id:
-            conversation_state.event_id = event_id
-        db_after = _load_workflow_db()
-        event_entry_after = _locate_event_entry(db_after, conversation_state.event_id, conversation_state.event_info.email)
-        step_drafts = result.get("draft_messages") or []
-
-    primary_intent = classification.get("primary")
-    if primary_intent not in _STEP_INTENTS and primary_intent != "resume" and not classification.get("wants_resume"):
-        step_drafts = []
-
-    qna_payload = route_general_qna(msg, entry_before, event_entry_after, db_after, classification)
-    drafts, fallback_text = _compose_turn_drafts(step_drafts, qna_payload, result)
-    assistant_reply = verbalize_gui_reply(drafts, fallback_text, client_email=conversation_state.event_info.email)
-
-    step_value = _current_step_from_event(event_entry_after)
-    status_value = (event_entry_after or {}).get("status")
-    return assistant_reply, step_value, status_value
-
-
-def _verbalize_from_payload(payload: Dict[str, Any], client_email: Optional[str]) -> str:
-    drafts = payload.get("draft_messages") or []
-    fallback = ""
-    if drafts:
-        fallback = str(drafts[0].get("body") or "")
-    elif payload.get("assistant_text"):
-        fallback = str(payload["assistant_text"])
-    return verbalize_gui_reply(drafts, fallback, client_email=client_email)
-
-
-def _handle_message_manager(
-    msg: Dict[str, Any],
-    conversation_state: ConversationState,
-    event_entry: Optional[Dict[str, Any]],
-    db: Dict[str, Any],
-) -> Dict[str, Any]:
-    current_step = _current_step_from_event(event_entry)
-    missing = _missing_fields_for_step(current_step, event_entry)
-    info_lines = ["I've shared your note with our venue manager and will follow up soon."]
-    body = build_qna_info_and_next_step(info_lines, current_step, missing)
-    draft = {
-        "body": body,
-        "step": current_step,
-        "topic": "manager_message_forwarded",
-        "requires_approval": False,
-    }
-    client_id = (conversation_state.event_info.email or "").lower()
-    event_id = (event_entry or {}).get("event_id") or conversation_state.event_id
-    payload = {
-        "note": msg.get("body"),
-        "from_name": msg.get("from_name"),
-        "msg_id": msg.get("msg_id"),
-    }
-    try:
-        wf_enqueue_task(db, TaskType.MESSAGE_MANAGER, client_id, event_id, payload)
-        wf_save_db(db)
-    except Exception as exc:
-        logging.getLogger("openevent.dev").warning("Failed to enqueue manager message: %s", exc)
     return {
-        "draft_messages": [draft],
-        "step": current_step,
-        "status": (event_entry or {}).get("status"),
+        "body": assistant_reply,
+        "actions": actions,
+        "subject": subject,
     }
 
 @app.post("/api/start-conversation")
@@ -635,6 +349,7 @@ async def start_conversation(request: StartConversationRequest):
     """Condition (purple): kick off workflow and branch on manual or ask-for-date pauses before legacy flow."""
     os.environ.setdefault("AGENT_MODE", "openai")
     subject_line = (request.email_body.splitlines()[0][:80] if request.email_body else "No subject")
+    session_id = str(uuid.uuid4())
     msg = {
         "msg_id": str(uuid.uuid4()),
         "from_name": "Not specified",
@@ -642,11 +357,9 @@ async def start_conversation(request: StartConversationRequest):
         "subject": subject_line,
         "ts": datetime.utcnow().isoformat() + "Z",
         "body": request.email_body or "",
+        "session_id": session_id,
+        "thread_id": session_id,
     }
-    db_before = _load_workflow_db()
-    event_entry_before = _locate_event_entry(db_before, None, request.client_email)
-    current_step_before = _current_step_from_event(event_entry_before)
-    classification = classify_turn_intent(request.email_body or "", current_step=current_step_before)
     wf_res = None
     wf_action = None
     try:
@@ -656,36 +369,17 @@ async def start_conversation(request: StartConversationRequest):
     except Exception as e:
         print(f"[WF][ERROR] {e}")
     if wf_action == "manual_review_enqueued":
-        event_id = wf_res.get("event_id")
-        # Create a session even when manual review is enqueued so the client can continue messaging.
-        session_id = str(uuid.uuid4())
-        event_info = EventInformation(
-            date_email_received=datetime.now().strftime("%d.%m.%Y"),
-            email=request.client_email,
+        response_text = (
+            "Thanks for your message. We routed it for manual review and will get back to you shortly."
         )
-        assistant_reply = "Thanks for reaching out — I'll review the details and follow up shortly."
-        conversation_state = ConversationState(
-            session_id=session_id,
-            event_info=event_info,
-            conversation_history=[
-                {"role": "user", "content": request.email_body or ""},
-                {"role": "assistant", "content": assistant_reply},
-            ],
-            workflow_type="new_event",
-        )
-        if event_id:
-            conversation_state.event_id = event_id
-        active_conversations[session_id] = conversation_state
         return {
-            "session_id": session_id,
-            "workflow_type": "new_event",
-            "response": assistant_reply,
-            "is_complete": conversation_state.is_complete,
-            "event_info": conversation_state.event_info.model_dump(),
-            "event_id": event_id,
+            "session_id": None,
+            "workflow_type": "other",
+            "response": response_text,
+            "is_complete": False,
+            "event_info": None,
         }
     if wf_action == "ask_for_date_enqueued":
-        session_id = str(uuid.uuid4())
         event_info = EventInformation(
             date_email_received=datetime.now().strftime("%d.%m.%Y"),
             email=request.client_email,
@@ -722,6 +416,7 @@ async def start_conversation(request: StartConversationRequest):
                 {"role": "assistant", "content": assistant_reply},
             ],
             workflow_type="new_event",
+            event_id=(wf_res or {}).get("event_id"),
         )
         active_conversations[session_id] = conversation_state
         print(f"[WF] start pause ask_for_date session={session_id} task={wf_res.get('task_id')}")
@@ -734,68 +429,84 @@ async def start_conversation(request: StartConversationRequest):
             "pending_actions": None,
         }
 
-    # Default: create a session and reply using Workflow v3 drafts (strict Step2->3->4)
-    session_id = str(uuid.uuid4())
+    # Classify the email
+    workflow_type = classify_email(request.email_body)
+    
+    # Handle different workflow types
+    if workflow_type == "update":
+        return {
+            "session_id": None,
+            "workflow_type": workflow_type,
+            "response": "This appears to be a request to update an existing booking. This feature is coming soon! For now, please contact us directly at info@theatelier.ch to modify your booking.",
+            "is_complete": False,
+            "event_info": None
+        }
+    
+    elif workflow_type == "follow_up":
+        return {
+            "session_id": None,
+            "workflow_type": workflow_type,
+            "response": "Thank you for your follow-up message! This feature is under development. For immediate assistance, please email us at info@theatelier.ch",
+            "is_complete": False,
+            "event_info": None
+        }
+    
+    elif workflow_type == "other":
+        return {
+            "session_id": None,
+            "workflow_type": workflow_type,
+            "response": "Thank you for your message. However, this doesn't appear to be a new event booking request. I specialize in processing new venue bookings. For other inquiries, please contact our team at info@theatelier.ch",
+            "is_complete": False,
+            "event_info": None
+        }
+    
+    # Only proceed if it's a new event
+    if workflow_type != "new_event":
+        return {
+            "session_id": None,
+            "workflow_type": workflow_type,
+            "response": "I apologize, but I can only process new event booking requests at this time. For other matters, please reach out to info@theatelier.ch",
+            "is_complete": False,
+            "event_info": None
+        }
+    
     event_info = EventInformation(
         date_email_received=datetime.now().strftime("%d.%m.%Y"),
-        email=request.client_email,
+        email=request.client_email
     )
+    event_id = (wf_res or {}).get("event_id")
+
     conversation_state = ConversationState(
         session_id=session_id,
         event_info=event_info,
-        conversation_history=[{"role": "user", "content": request.email_body or ""}],
-        workflow_type="new_event",
+        conversation_history=[],
+        workflow_type=workflow_type,
+        event_id=event_id,
     )
+    
+    # Generate first response
+    response_text = generate_response(conversation_state, request.email_body)
+    step3_payload = pop_step3_payload(session_id)
+    pending_actions = None
+    if step3_payload:
+        actions = step3_payload.get("actions") or []
+        if actions:
+            pending_actions = {"type": "workflow_actions", "actions": actions}
+        body_pref = step3_payload.get("body_markdown") or step3_payload.get("body")
+        if body_pref:
+            response_text = body_pref
+    
+    # Store in memory
     active_conversations[session_id] = conversation_state
-    event_id = wf_res.get("event_id") if wf_res else None
-    if event_id:
-        conversation_state.event_id = event_id
-
-    db_after = _load_workflow_db()
-    event_entry_after = _locate_event_entry(db_after, conversation_state.event_id, request.client_email)
-
-    if classification.get("primary") == "message_manager":
-        manager_payload = _handle_message_manager(msg, conversation_state, event_entry_after, db_after)
-        assistant_reply = _verbalize_from_payload(manager_payload, request.client_email)
-        conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
-        response_payload = {
-            "session_id": session_id,
-            "workflow_type": "new_event",
-            "response": assistant_reply,
-            "is_complete": conversation_state.is_complete,
-            "event_info": conversation_state.event_info.model_dump(),
-            "step": manager_payload.get("step"),
-            "status": manager_payload.get("status"),
-        }
-        if conversation_state.event_id:
-            response_payload["event_id"] = conversation_state.event_id
-        return response_payload
-
-    assistant_reply, step_value, status_value = _execute_turn(
-        conversation_state,
-        msg,
-        classification,
-        wf_res=wf_res,
-        db_before=db_before,
-        event_entry_before=event_entry_before,
-    )
-    conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
-
-    response_payload = {
+    
+    return {
         "session_id": session_id,
-        "workflow_type": "new_event",
-        "response": assistant_reply,
+        "workflow_type": workflow_type,
+        "response": response_text,
         "is_complete": conversation_state.is_complete,
         "event_info": conversation_state.event_info.model_dump(),
-        "pending_actions": None,
+        "pending_actions": pending_actions,
     }
-    if conversation_state.event_id:
-        response_payload["event_id"] = conversation_state.event_id
-    if step_value:
-        response_payload["step"] = step_value
-    if status_value:
-        response_payload["status"] = status_value
-    return response_payload
 
 @app.post("/api/send-message")
 async def send_message(request: SendMessageRequest):
@@ -805,68 +516,95 @@ async def send_message(request: SendMessageRequest):
 
     conversation_state = active_conversations[request.session_id]
 
-    msg = {
-        "msg_id": str(uuid.uuid4()),
-        "from_name": "Client (GUI)",
-        "from_email": conversation_state.event_info.email or "unknown@example.com",
-        "subject": "Client message",
-        "ts": datetime.utcnow().isoformat() + "Z",
-        "body": request.message or "",
-    }
-    expect_resume = _expect_resume(conversation_state)
-    db_before = _load_workflow_db()
-    event_entry_before = _locate_event_entry(db_before, conversation_state.event_id, conversation_state.event_info.email)
-    current_step_before = _current_step_from_event(event_entry_before)
-    classification = classify_turn_intent(request.message or "", current_step=current_step_before, expect_resume=expect_resume)
+    previous_date = conversation_state.event_info.event_date
+    try:
+        conversation_state.event_info = extract_information_incremental(
+            request.message,
+            conversation_state.event_info,
+        )
+    except Exception as exc:
+        print(f"[WF][WARN] incremental extraction failed: {exc}")
 
-    conversation_state.conversation_history.append({"role": "user", "content": request.message})
+    current_date = conversation_state.event_info.event_date or ""
+    has_new_date = (
+        current_date
+        and DATE_PATTERN.fullmatch(current_date.strip())
+        and current_date.strip() != (previous_date or "").strip()
+    )
 
-    wf_res = wf_process_msg(msg)
-    event_id = wf_res.get("event_id")
-    if event_id:
-        conversation_state.event_id = event_id
-
-    db_after = _load_workflow_db()
-    event_entry_after = _locate_event_entry(db_after, conversation_state.event_id, conversation_state.event_info.email)
-
-    if classification.get("primary") == "message_manager":
-        manager_payload = _handle_message_manager(msg, conversation_state, event_entry_after, db_after)
-        assistant_reply = _verbalize_from_payload(manager_payload, conversation_state.event_info.email)
+    if has_new_date:
+        chosen_date = current_date.strip()
+        conversation_state.conversation_history.append({"role": "user", "content": request.message})
+        assistant_reply = (
+            f"Thanks - I've noted {chosen_date}. Please confirm this is your preferred date."
+        )
         conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+        iso_payload = _to_iso_date(chosen_date)
+        pop_step3_payload(request.session_id)
         return {
             "session_id": request.session_id,
             "workflow_type": conversation_state.workflow_type,
             "response": assistant_reply,
             "is_complete": conversation_state.is_complete,
             "event_info": conversation_state.event_info.dict(),
-            "step": manager_payload.get("step"),
-            "status": manager_payload.get("status"),
-            "pending_actions": None,
+            "pending_actions": {"type": "confirm_date", "date": iso_payload or chosen_date},
         }
 
-    assistant_reply, step_value, status_value = _execute_turn(
-        conversation_state,
-        msg,
-        classification,
-        wf_res=wf_res,
-        db_before=db_before,
-        event_entry_before=event_entry_before,
-    )
-    conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+    user_message_clean = request.message.strip().lower()
+    stored_date = (conversation_state.event_info.event_date or "").strip()
+    if (
+        stored_date
+        and stored_date not in {"Not specified", "none"}
+        and user_message_clean in CONFIRM_PHRASES
+    ):
+        if not DATE_PATTERN.fullmatch(stored_date):
+            iso_candidate = _to_iso_date(stored_date)
+            if iso_candidate:
+                try:
+                    stored_date = datetime.strptime(iso_candidate, "%Y-%m-%d").strftime("%d.%m.%Y")
+                except ValueError:
+                    pass
+        conversation_state.conversation_history.append({"role": "user", "content": request.message})
+        assistant_payload = _persist_confirmed_date(conversation_state, stored_date)
+        assistant_reply = assistant_payload.get("body") or ""
+        actions = assistant_payload.get("actions") or []
+        conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+        pending_actions = {"type": "workflow_actions", "actions": actions} if actions else None
+        return {
+            "session_id": request.session_id,
+            "workflow_type": conversation_state.workflow_type,
+            "response": assistant_reply,
+            "is_complete": conversation_state.is_complete,
+            "event_info": conversation_state.event_info.dict(),
+            "pending_actions": pending_actions,
+        }
 
-    response_payload = {
+    response_text = generate_response(conversation_state, request.message)
+
+    print(f"\n=== DEBUG INFO ===")
+    print(f"User message: {request.message}")
+    print(f"Is complete: {conversation_state.is_complete}")
+    print(f"Event info complete: {conversation_state.event_info.is_complete()}")
+    print(f"==================\n")
+
+    step3_payload = pop_step3_payload(request.session_id)
+    pending_actions = None
+    if step3_payload:
+        actions = step3_payload.get("actions") or []
+        if actions:
+            pending_actions = {"type": "workflow_actions", "actions": actions}
+        body_pref = step3_payload.get("body_markdown") or step3_payload.get("body")
+        if body_pref:
+            response_text = body_pref
+
+    return {
         "session_id": request.session_id,
         "workflow_type": conversation_state.workflow_type,
-        "response": assistant_reply,
+        "response": response_text,
         "is_complete": conversation_state.is_complete,
         "event_info": conversation_state.event_info.dict(),
-        "pending_actions": None,
+        "pending_actions": pending_actions,
     }
-    if step_value:
-        response_payload["step"] = step_value
-    if status_value:
-        response_payload["status"] = status_value
-    return response_payload
 
 
 @app.get("/api/tasks/pending")
@@ -897,151 +635,19 @@ async def get_pending_tasks():
     return {"tasks": payload}
 
 
-def _find_task(db: Dict[str, Any], task_id: str) -> Optional[Dict[str, Any]]:
-    for task in db.get("tasks", []):
-        if task.get("task_id") == task_id:
-            return task
-    return None
-
-
-def _append_conversation_message(event_id: Optional[str], client_email: Optional[str], content: str) -> None:
-    target = None
-    if event_id:
-        target = next((state for state in active_conversations.values() if state.event_id == event_id), None)
-    if not target and client_email:
-        target = next(
-            (
-                state
-                for state in active_conversations.values()
-                if (state.event_info.email or "").lower() == client_email.lower()
-            ),
-            None,
-        )
-    if target is not None:
-        target.conversation_history.append({"role": "assistant", "content": content})
-
-
 @app.post("/api/tasks/{task_id}/approve")
 async def approve_task(task_id: str, request: TaskDecisionRequest):
-    """OpenEvent Action (light-blue): mark a task as approved from the GUI and advance workflow."""
-
+    """OpenEvent Action (light-blue): mark a task as approved from the GUI."""
     try:
         db = wf_load_db()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to load tasks: {exc}") from exc
-
-    task = _find_task(db, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    event_id = task.get("event_id")
-    client_email = (task.get("client_id") or "").lower() or None
-    message_payload = (task.get("payload") or {}).get("message")
-    step_before = None
-
-    if event_id:
-        for event in db.get("events", []):
-            if event.get("event_id") == event_id:
-                ensure_event_defaults(event)
-                step_before = event.get("current_step")
-                review_state = event.setdefault(
-                    "review_state",
-                    {"state": "none", "reviewed_at": None, "message": None},
-                )
-                if review_state.get("message"):
-                    message_payload = review_state.get("message")
-                review_state["state"] = "approved"
-                review_state["reviewed_at"] = datetime.utcnow().isoformat() + "Z"
-                review_state["message"] = None
-                break
-
-    try:
         wf_update_task_status(db, task_id, "approved", request.notes)
         wf_save_db(db)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to approve task: {exc}") from exc
-
-    assistant_payload: Dict[str, Any] = {"assistant_text": "", "draft_messages": [], "action": "manual_review_approved", "payload": {}}
-
-    if message_payload and event_id:
-        result = advance_after_review(message_payload)
-        draft_messages = result.get("draft_messages") or []
-        fallback_text = _wf_compose_reply(result or {})
-        verbalized = verbalize_gui_reply(draft_messages, fallback_text, client_email=message_payload.get("from_email"))
-        combined = verbalized or fallback_text or ""
-        assistant_payload = {
-            "assistant_text": combined,
-            "draft_messages": draft_messages,
-            "action": result.get("action"),
-            "payload": result,
-            "step": result.get("step") or (draft_messages[0].get("step") if draft_messages else None),
-            "status": result.get("status"),
-        }
-
-        db_after = wf_load_db()
-        step_after = None
-        status_after = None
-        if event_id:
-            for event in db_after.get("events", []):
-                if event.get("event_id") == event_id:
-                    ensure_event_defaults(event)
-                    step_after = event.get("current_step")
-                    status_after = event.get("status")
-                    break
-
-        tone_mode = os.getenv("VERBALIZER_TONE", "empathetic").lower()
-        sections_count = len(_split_required_sections(fallback_text))
-        tone_fallback_used = tone_mode == "empathetic" and verbalized.strip() == fallback_text.strip()
-        DEV_LOGGER.info(
-            "workflow.review.advance",
-            extra={
-                "event_id": event_id,
-                "step_before": step_before,
-                "step_after": step_after,
-                "review_state": "approved",
-                "tone_mode": tone_mode,
-                "sections_count": sections_count,
-                "tone_fallback_used": tone_fallback_used,
-            },
-        )
-
-        _append_conversation_message(event_id, client_email, combined)
-    else:
-        step_after = step_before
-        status_after = None
-        _append_conversation_message(event_id, client_email, assistant_payload["assistant_text"])
-
-    thread_id = next(
-        (
-            sid
-            for sid, state in active_conversations.items()
-            if state.event_id == event_id
-        ),
-        None,
-    )
-    if not thread_id and client_email:
-        thread_id = next(
-            (
-                sid
-                for sid, state in active_conversations.items()
-                if (state.event_info.email or "").lower() == client_email
-            ),
-            None,
-        )
-
-    return {
-        "task_status": "approved",
-        "review_state": "approved",
-        "task_id": task_id,
-        "thread_id": thread_id,
-        "event_id": event_id,
-        "step": assistant_payload.get("step") or step_after,
-        "status": assistant_payload.get("status") or status_after,
-        "draft_messages": assistant_payload.get("draft_messages"),
-        "assistant_reply": assistant_payload.get("assistant_text"),
-    }
+    print(f"[WF] task approved id={task_id}")
+    return {"task_id": task_id, "status": "approved"}
 
 
 @app.post("/api/tasks/{task_id}/reject")
@@ -1049,64 +655,121 @@ async def reject_task(task_id: str, request: TaskDecisionRequest):
     """OpenEvent Action (light-blue): mark a task as rejected from the GUI."""
     try:
         db = wf_load_db()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to load tasks: {exc}") from exc
-
-    task = _find_task(db, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    event_id = task.get("event_id")
-    client_email = (task.get("client_id") or "").lower() or None
-
-    if event_id:
-        for event in db.get("events", []):
-            if event.get("event_id") == event_id:
-                ensure_event_defaults(event)
-                review_state = event.setdefault(
-                    "review_state",
-                    {"state": "none", "reviewed_at": None, "message": None},
-                )
-                review_state["state"] = "rejected"
-                review_state["reviewed_at"] = datetime.utcnow().isoformat() + "Z"
-                review_state["message"] = None
-                break
-
-    try:
         wf_update_task_status(db, task_id, "rejected", request.notes)
         wf_save_db(db)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to reject task: {exc}") from exc
-    DEV_LOGGER.info("workflow.review.rejected", extra={"event_id": event_id})
-    message = "Thanks for the update — could you share a bit more detail so I can keep things moving?"
-    _append_conversation_message(event_id, client_email, message)
-    thread_id = next(
-        (
-            sid
-            for sid, state in active_conversations.items()
-            if state.event_id == event_id
-        ),
-        None,
-    )
-    if not thread_id and client_email:
-        thread_id = next(
-            (
-                sid
-                for sid, state in active_conversations.items()
-                if (state.event_info.email or "").lower() == client_email
-            ),
-            None,
+    print(f"[WF] task rejected id={task_id}")
+    return {"task_id": task_id, "status": "rejected"}
+
+
+if DEBUG_TRACE_ENABLED:
+
+    @app.get("/api/debug/threads/{thread_id}")
+    async def get_debug_thread_trace(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+        as_of_ts: Optional[float] = Query(None),
+    ):
+        return debug_get_trace(
+            thread_id,
+            granularity=granularity,
+            kinds=_parse_kind_filter(kinds),
+            as_of_ts=as_of_ts,
         )
-    return {
-        "task_status": "rejected",
-        "review_state": "rejected",
-        "task_id": task_id,
-        "thread_id": thread_id,
-        "event_id": event_id,
-        "assistant_reply": message,
-    }
+
+    @app.get("/api/debug/threads/{thread_id}/timeline")
+    async def get_debug_thread_timeline(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+        as_of_ts: Optional[float] = Query(None),
+    ):
+        return debug_get_timeline(
+            thread_id,
+            granularity=granularity,
+            kinds=_parse_kind_filter(kinds),
+            as_of_ts=as_of_ts,
+        )
+
+    @app.get("/api/debug/threads/{thread_id}/timeline/download")
+    async def download_debug_thread_timeline(thread_id: str):
+        path = resolve_timeline_path(thread_id)
+        if not path:
+            raise HTTPException(status_code=404, detail="Timeline not available")
+        safe_id = thread_id.replace("/", "_").replace("\\", "_")
+        filename = f"openevent_timeline_{safe_id}.jsonl"
+        return FileResponse(path, media_type="application/json", filename=filename)
+
+    @app.get("/api/debug/threads/{thread_id}/timeline/text")
+    async def download_debug_thread_timeline_text(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+    ):
+        return render_arrow_log(thread_id, granularity=granularity, kinds=_parse_kind_filter(kinds))
+
+    @app.get("/api/debug/threads/{thread_id}/report")
+    async def download_debug_thread_report(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+        persist: bool = Query(False),
+    ):
+        body, saved_path = debug_generate_report(
+            thread_id,
+            granularity=granularity,
+            kinds=_parse_kind_filter(kinds),
+            persist=persist,
+        )
+        headers = {}
+        if saved_path:
+            headers["X-Debug-Report-Path"] = saved_path
+        return PlainTextResponse(content=body, headers=headers)
+
+else:
+
+    @app.get("/api/debug/threads/{thread_id}")
+    async def get_debug_thread_trace_disabled(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+        as_of_ts: Optional[float] = Query(None),
+    ):
+        raise HTTPException(status_code=404, detail="Debug tracing disabled")
+
+    @app.get("/api/debug/threads/{thread_id}/timeline")
+    async def get_debug_thread_timeline_disabled(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+        as_of_ts: Optional[float] = Query(None),
+    ):
+        raise HTTPException(status_code=404, detail="Debug tracing disabled")
+
+    @app.get("/api/debug/threads/{thread_id}/timeline/download")
+    async def download_debug_thread_timeline_disabled(thread_id: str):
+        raise HTTPException(status_code=404, detail="Debug tracing disabled")
+
+    @app.get("/api/debug/threads/{thread_id}/timeline/text")
+    async def download_debug_thread_timeline_text_disabled(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+    ):
+        raise HTTPException(status_code=404, detail="Debug tracing disabled")
+
+    @app.get("/api/debug/threads/{thread_id}/report")
+    async def download_debug_thread_report_disabled(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+        persist: bool = Query(False),
+    ):
+        raise HTTPException(status_code=404, detail="Debug tracing disabled")
 
 
 @app.post("/api/conversation/{session_id}/confirm-date")
@@ -1116,12 +779,20 @@ async def confirm_date(session_id: str, request: ConfirmDateRequest):
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     conversation_state = active_conversations[session_id]
-    chosen_date = (request.date or conversation_state.event_info.event_date or "").strip()
-    if not chosen_date or not DATE_PATTERN.fullmatch(chosen_date):
-        raise HTTPException(status_code=400, detail="Invalid or missing date. Use DD.MM.YYYY.")
+    raw_date = (request.date or conversation_state.event_info.event_date or "").strip()
+    iso_candidate = _to_iso_date(raw_date)
+    if not iso_candidate:
+        raise HTTPException(status_code=400, detail="Invalid or missing date. Use YYYY-MM-DD.")
+    try:
+        chosen_date = datetime.strptime(iso_candidate, "%Y-%m-%d").strftime("%d.%m.%Y")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid or missing date. Use YYYY-MM-DD.") from exc
 
-    assistant_reply = _persist_confirmed_date(conversation_state, chosen_date)
+    assistant_payload = _persist_confirmed_date(conversation_state, chosen_date)
+    assistant_reply = assistant_payload.get("body") or ""
+    actions = assistant_payload.get("actions") or []
     conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+    pending_actions = {"type": "workflow_actions", "actions": actions} if actions else None
 
     return {
         "session_id": session_id,
@@ -1129,7 +800,7 @@ async def confirm_date(session_id: str, request: ConfirmDateRequest):
         "response": assistant_reply,
         "is_complete": conversation_state.is_complete,
         "event_info": conversation_state.event_info.dict(),
-        "pending_actions": None,
+        "pending_actions": pending_actions,
     }
 
 @app.post("/api/accept-booking/{session_id}")
@@ -1240,20 +911,48 @@ async def root():
         "total_saved_events": len(database["events"])
     }
 
+
+def _stop_frontend_process() -> None:
+    global _frontend_process
+    proc = _frontend_process
+    if not proc:
+        return
+    try:
+        if proc.poll() is None:
+            proc.terminate()
+            proc.wait(timeout=5)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    finally:
+        _frontend_process = None
+
+
+def _persist_debug_reports() -> None:
+    if not DEBUG_TRACE_ENABLED:
+        return
+    try:
+        thread_ids = BUS.list_threads()
+    except Exception as exc:  # pragma: no cover - defensive guard
+        print(f"[Debug][WARN] Unable to enumerate trace threads: {exc}")
+        return
+    for thread_id in thread_ids:
+        try:
+            debug_generate_report(thread_id, persist=True)
+        except Exception as exc:
+            print(f"[Debug][WARN] Failed to persist debug report for {thread_id}: {exc}")
+
+
+atexit.register(_persist_debug_reports)
+atexit.register(_stop_frontend_process)
+
 if __name__ == "__main__":
     import uvicorn
-
-    _dev_prepare_env()
-    _dev_free_port(8000)
-    frontend_port, autostart = _ensure_frontend()
-    DEV_LOGGER.info(
-        "dev: backend starting",
-        extra={
-            "frontend_port": frontend_port,
-            "frontend_autostart": autostart,
-        },
-    )
+    _frontend_process = _launch_frontend()
+    threading.Thread(target=_open_browser_when_ready, name="frontend-browser", daemon=True).start()
     try:
         uvicorn.run(app, host="0.0.0.0", port=8000)
     finally:
-        _shutdown_frontend()
+        _stop_frontend_process()

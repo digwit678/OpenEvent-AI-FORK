@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Send, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import DebugPanel from './components/DebugPanel';
 
 const BACKEND_BASE =
   (process.env.NEXT_PUBLIC_BACKEND_BASE || 'http://localhost:8000').replace(/\/$/, '');
@@ -149,6 +151,7 @@ export default function EmailThreadUI() {
   const isMountedRef = useRef(true);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  const searchParams = useSearchParams();
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [workflowType, setWorkflowType] = useState<string | null>(null);
@@ -165,8 +168,51 @@ export default function EmailThreadUI() {
   const [isUserNearBottom, setIsUserNearBottom] = useState(true);
   const [backendHealthy, setBackendHealthy] = useState<boolean | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null);
+  const [debugEnabled, setDebugEnabled] = useState(false);
 
   const inputDebounce = useMemo(() => debounce((value: string) => setInputText(value), 80), []);
+
+  useEffect(() => {
+    const param = searchParams.get('debug');
+    if (param && ['1', 'true'].includes(param.toLowerCase())) {
+      try {
+        localStorage.setItem('debug', '1');
+      } catch (error) {
+        // no-op
+      }
+      setDebugEnabled(true);
+      return;
+    }
+    if (param && ['0', 'false'].includes(param.toLowerCase())) {
+      try {
+        localStorage.removeItem('debug');
+      } catch (error) {
+        // no-op
+      }
+      setDebugEnabled(false);
+      return;
+    }
+    try {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('debug') : null;
+      setDebugEnabled(stored === '1');
+    } catch (error) {
+      setDebugEnabled(false);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+    try {
+      localStorage.setItem('lastThreadId', sessionId);
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: 'lastThreadId', newValue: sessionId })
+      );
+    } catch (error) {
+      // ignore storage issues
+    }
+  }, [sessionId]);
 
   const appendMessage = useCallback((message: Omit<Message, 'id'>) => {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -581,24 +627,25 @@ export default function EmailThreadUI() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-t-2xl shadow-lg p-6 border-b">
-          <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
-            🎭 OpenEvent - AI Event Manager
-          </h1>
-          <p className="text-gray-600 mt-2">
-            {!hasStarted
-              ? 'Paste a client email below to start the conversation'
-              : 'Conversation in progress with Shami, Event Manager'}
-          </p>
-          {workflowType && (
-            <div className="mt-2 inline-block">
-              <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                Workflow: {workflowType}
-              </span>
-            </div>
-          )}
-        </div>
+      <div className={debugEnabled ? 'mx-auto max-w-[1200px] flex gap-6 items-start' : 'mx-auto max-w-4xl'}>
+        <div className={debugEnabled ? 'flex-1' : 'w-full'}>
+          <div className="bg-white rounded-t-2xl shadow-lg p-6 border-b">
+            <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
+              🎭 OpenEvent - AI Event Manager
+            </h1>
+            <p className="text-gray-600 mt-2">
+              {!hasStarted
+                ? 'Paste a client email below to start the conversation'
+                : 'Conversation in progress with Shami, Event Manager'}
+            </p>
+            {workflowType && (
+              <div className="mt-2 inline-block">
+                <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                  Workflow: {workflowType}
+                </span>
+              </div>
+            )}
+          </div>
 
         {backendHealthy === false && (
           <div className="mt-2 p-3 bg-red-50 border border-red-300 text-red-700 rounded">
@@ -754,39 +801,53 @@ export default function EmailThreadUI() {
             </div>
           </div>
         )}
+        </div>
+        {debugEnabled && (
+          <div className="hidden lg:block w-[420px] sticky top-4">
+            <DebugPanel
+              threadId={sessionId}
+              pollMs={1500}
+              initialManagerView={searchParams.get('manager') === '1'}
+            />
+          </div>
+        )}
       </div>
 
-      <div className="max-w-4xl mx-auto mt-4 p-4 bg-yellow-50 border-2 border-yellow-400 rounded-lg">
-        <h3 className="font-bold text-lg mb-2">🐛 DEBUG INFO</h3>
-        <div className="grid grid-cols-2 gap-2 text-sm font-mono">
-          <div>
-            sessionId: <span className="font-bold">{sessionId || 'null'}</span>
+      {debugEnabled && (
+        <>
+          <div className="mt-4 p-4 bg-yellow-50 border-2 border-yellow-400 rounded-lg w-full">
+            <h3 className="font-bold text-lg mb-2">🐛 DEBUG INFO</h3>
+            <div className="grid grid-cols-2 gap-2 text-sm font-mono">
+              <div>
+                sessionId: <span className="font-bold">{sessionId || 'null'}</span>
+              </div>
+              <div>
+                isComplete: <span className="font-bold text-red-600">{isComplete ? 'TRUE' : 'FALSE'}</span>
+              </div>
+              <div>
+                isLoading: <span className="font-bold">{isLoading ? 'TRUE' : 'FALSE'}</span>
+              </div>
+              <div>
+                hasStarted: <span className="font-bold">{hasStarted ? 'TRUE' : 'FALSE'}</span>
+              </div>
+              <div>
+                workflowType: <span className="font-bold">{workflowType || 'null'}</span>
+              </div>
+              <div>
+                messages: <span className="font-bold">{messages.length}</span>
+              </div>
+              <div>
+                debouncedInputLength: <span className="font-bold">{inputText.trim().length}</span>
+              </div>
+            </div>
+            <div className="mt-2 p-2 bg-white rounded">
+              <strong>Should show buttons?</strong> {isComplete ? '✅ YES' : '❌ NO'}
+            </div>
           </div>
-          <div>
-            isComplete: <span className="font-bold text-red-600">{isComplete ? 'TRUE' : 'FALSE'}</span>
-          </div>
-          <div>
-            isLoading: <span className="font-bold">{isLoading ? 'TRUE' : 'FALSE'}</span>
-          </div>
-          <div>
-            hasStarted: <span className="font-bold">{hasStarted ? 'TRUE' : 'FALSE'}</span>
-          </div>
-          <div>
-            workflowType: <span className="font-bold">{workflowType || 'null'}</span>
-          </div>
-          <div>
-            messages: <span className="font-bold">{messages.length}</span>
-          </div>
-          <div>
-            debouncedInputLength: <span className="font-bold">{inputText.trim().length}</span>
-          </div>
-        </div>
-        <div className="mt-2 p-2 bg-white rounded">
-          <strong>Should show buttons?</strong> {isComplete ? '✅ YES' : '❌ NO'}
-        </div>
-      </div>
+        </>
+      )}
 
-      <div className="max-w-4xl mx-auto mt-2">
+      <div className="mt-2 w-full">
         <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
           <h3 className="font-bold text-base mb-2">📝 Tasks</h3>
           {tasks.length === 0 ? (

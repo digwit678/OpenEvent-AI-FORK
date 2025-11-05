@@ -13,6 +13,7 @@ from backend.workflows.common.catalog import (
     list_rooms_by_feature,
 )
 from backend.workflows.qna.templates import build_info_block, build_next_step_line
+from backend.debug.hooks import trace_qa_enter, trace_qa_exit
 
 _ROOM_NAMES = ("Room A", "Room B", "Room C", "Punkt.Null")
 _FEATURE_KEYWORDS = {
@@ -484,6 +485,10 @@ def route_general_qna(
     blocks_pre: List[Dict[str, Any]] = []
     blocks_post: List[Dict[str, Any]] = []
 
+    thread_id = _thread_id(msg, active_entry)
+    if thread_id:
+        trace_qa_enter(thread_id, ",".join(qna_types) if qna_types else "general")
+
     for qna_type in qna_types:
         if qna_type == "general":
             info_lines = _general_response(active_entry)
@@ -546,7 +551,7 @@ def route_general_qna(
 
         destination.append(block_payload)
 
-    return {
+    result = {
         "pre_step": blocks_pre,
         "post_step": blocks_post,
         "resume_step": anchor_name or resume_step_idx,
@@ -554,6 +559,19 @@ def route_general_qna(
         "status": (active_entry or {}).get("status"),
         "thread_state": (active_entry or {}).get("thread_state"),
     }
+    if thread_id:
+        trace_qa_exit(thread_id, "general_qna")
+    return result
+
+
+def _thread_id(msg: Dict[str, Any], event_entry: Optional[Dict[str, Any]]) -> Optional[str]:
+    if msg.get("thread_id"):
+        return str(msg["thread_id"])
+    if event_entry and event_entry.get("event_id"):
+        return str(event_entry["event_id"])
+    if msg.get("msg_id"):
+        return str(msg["msg_id"])
+    return None
 
 
 __all__ = ["route_general_qna"]

@@ -46,6 +46,7 @@ USER_INFO_KEYS = [
     "products_add",
     "products_remove",
     "room_feedback",
+    "shortcut_capacity_ok",
 ]
 
 
