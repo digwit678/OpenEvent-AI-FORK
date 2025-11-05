@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from backend.workflow_email import process_msg as workflow_process_msg
 from backend.agents.guardrails import safe_envelope
+from backend.workflows.common.prompts import FOOTER_SEPARATOR
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,7 @@ class OpenEventAgent:
         self._client = None
         self._agent_id: Optional[str] = None
         self._sessions: Dict[str, Dict[str, Any]] = {}
+        self._tool_cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
         self._initialise_sdk()
 
     def _initialise_sdk(self) -> None:
@@ -100,6 +103,38 @@ class OpenEventAgent:
 
         return self._ensure_session(thread_id)
 
+    def execute_tool(
+        self,
+        session: Dict[str, Any],
+        *,
+        tool_name: str,
+        tool_call_id: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        db: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Execute a tool deterministically with idempotent caching."""
+
+        thread_id = session.get("thread_id") or "unknown-thread"
+        cache = self._tool_cache.setdefault(thread_id, {})
+        if tool_call_id in cache:
+            cached = cache[tool_call_id]
+            return dict(cached)
+
+        # Import locally to avoid circular import during module initialisation.
+        from backend.agents import chatkit_runner as _runner  # pylint: disable=import-outside-toplevel
+
+        state_snapshot = session.get("state", {}) or {}
+        result = _runner.execute_tool_call(tool_name, tool_call_id, arguments, state_snapshot, db)
+        message = {
+            "role": "tool",
+            "tool_call_id": tool_call_id,
+            "name": tool_name,
+            "content": json.dumps(result.get("content", {}), ensure_ascii=False),
+        }
+        cache[tool_call_id] = message
+        self._persist_thread_delta(session, result.get("content"))
+        return dict(message)
+
     def run(self, session: Dict[str, Any], message: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute a turn via the Agents SDK when possible, otherwise fall back to
@@ -153,11 +188,57 @@ class OpenEventAgent:
     @staticmethod
     def _compose_reply(workflow_result: Dict[str, Any]) -> str:
         drafts = workflow_result.get("draft_messages") or []
-        bodies = [d.get("body") for d in drafts if d.get("body")]
+        bodies: List[str] = []
+        for draft in drafts:
+            chosen_field = (
+                "body_markdown"
+                if draft.get("body_markdown")
+                else "body_md"
+                if draft.get("body_md")
+                else "body"
+                if draft.get("body")
+                else "prompt"
+                if draft.get("prompt")
+                else "" 
+            )
+            source_value = (
+                draft.get("body_markdown")
+                or draft.get("body_md")
+                or draft.get("body")
+                or draft.get("prompt")
+                or ""
+            )
+            print(
+                "[WF][DEBUG][EmailCompose] body_chosen=",
+                chosen_field or "none",
+                "| len=",
+                len(source_value),
+            )
+            body_markdown = draft.get("body_markdown") or draft.get("body_md")
+            footer = draft.get("footer") or ""
+            body_text = None
+            if body_markdown:
+                body_text = body_markdown
+                if footer:
+                    body_text = f"{body_markdown}{FOOTER_SEPARATOR}{footer}".strip()
+            if not body_text:
+                body_text = draft.get("body") or draft.get("prompt")
+                if body_text and footer and footer not in body_text:
+                    body_text = f"{body_text}{FOOTER_SEPARATOR}{footer}".strip()
+            if body_text:
+                bodies.append(str(body_text))
         if bodies:
-            return "\n\n".join(str(body) for body in bodies)
+            return "\n\n".join(bodies)
         if workflow_result.get("summary"):
             return str(workflow_result["summary"])
         if workflow_result.get("reason"):
             return str(workflow_result["reason"])
         return "Thanks for the update — I'll keep you posted."
+
+    def _persist_thread_delta(self, session: Dict[str, Any], content: Any) -> None:
+        if not isinstance(content, dict):
+            return
+        state = session.setdefault("state", {})
+        for key in ("caller_step", "requirements_hash", "room_eval_hash"):
+            if key in content and content[key] is not None:
+                state[key] = content[key]

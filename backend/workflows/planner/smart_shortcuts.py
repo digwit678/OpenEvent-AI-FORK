@@ -10,6 +10,7 @@ import json
 import re
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Tuple
+import logging
 
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
@@ -23,6 +24,8 @@ date_process_module = importlib.import_module("backend.workflows.groups.date_con
 ConfirmationWindow = getattr(date_process_module, "ConfirmationWindow")
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.services.products import normalise_product_payload
+
+logger = logging.getLogger(__name__)
 
 # Feature flags ----------------------------------------------------------------
 
@@ -277,6 +280,10 @@ def maybe_run_smart_shortcuts(state: WorkflowState) -> Optional[GroupResult]:
     event_entry = state.event_entry
     if not event_entry:
         return None
+    if not _shortcuts_allowed(event_entry):
+        _debug_shortcut_gate("blocked", event_entry, state.user_info)
+        return None
+    _debug_shortcut_gate("allowed", event_entry, state.user_info)
 
     planner = _ShortcutPlanner(state, policy)
     result = planner.handle_lightweight_turn()
@@ -297,6 +304,60 @@ def maybe_run_smart_shortcuts(state: WorkflowState) -> Optional[GroupResult]:
     )
     state.extras["persist"] = True
     return GroupResult(action="smart_shortcut_processed", payload=result.merged())
+
+
+def _shortcuts_allowed(event_entry: Dict[str, Any]) -> bool:
+    """Gate smart shortcuts on confirmed date + capacity readiness."""
+
+    current_step = event_entry.get("current_step") or 0
+    if current_step and isinstance(current_step, str):
+        try:
+            current_step = int(current_step)
+        except ValueError:
+            current_step = 0
+    if current_step < 3:
+        return False
+
+    if event_entry.get("date_confirmed") is not True:
+        return False
+
+    if _coerce_participants(event_entry) is not None:
+        return True
+
+    shortcuts = event_entry.get("shortcuts") or {}
+    return bool(shortcuts.get("capacity_ok"))
+
+
+def _coerce_participants(event_entry: Dict[str, Any]) -> Optional[int]:
+    requirements = event_entry.get("requirements") or {}
+    raw = requirements.get("number_of_participants")
+    if raw in (None, "", "Not specified", "none"):
+        raw = requirements.get("participants")
+    if raw in (None, "", "Not specified", "none"):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        try:
+            return int(str(raw).strip())
+        except (TypeError, ValueError):
+            return None
+
+
+def _debug_shortcut_gate(state: str, event_entry: Dict[str, Any], user_info: Dict[str, Any]) -> None:
+    if os.getenv("WF_DEBUG_STATE") != "1":
+        return
+    info = {
+        "state": state,
+        "step": event_entry.get("current_step"),
+        "date_confirmed": event_entry.get("date_confirmed"),
+        "participants": (event_entry.get("requirements") or {}).get("number_of_participants"),
+        "capacity_shortcut": (event_entry.get("shortcuts") or {}).get("capacity_ok"),
+        "wish_products": (event_entry.get("wish_products") or []),
+        "user_shortcut": (user_info or {}).get("shortcut_capacity_ok"),
+    }
+    formatted = " ".join(f"{key}={value}" for key, value in info.items())
+    print(f"[WF DEBUG][shortcuts] {formatted}")
 
 
 class _ShortcutPlanner:

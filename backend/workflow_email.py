@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+import logging
 
-from backend.domain import TaskStatus
+from backend.domain import TaskStatus, TaskType
 
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 from backend.workflows.common.types import GroupResult
@@ -20,6 +23,115 @@ from backend.workflows.llm import adapter as llm_adapter
 from backend.workflows.planner import maybe_run_smart_shortcuts
 from backend.utils.profiler import profile_step
 from backend.workflow.state import stage_payload
+from backend.debug.lifecycle import close_if_ended
+from backend.debug.settings import is_trace_enabled
+from backend.debug.trace import set_hil_open
+from backend.workflow.guards import evaluate as evaluate_guards
+
+logger = logging.getLogger(__name__)
+WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"
+
+
+def _debug_state(stage: str, state: WorkflowState, extra: Optional[Dict[str, Any]] = None) -> None:
+    debug_trace_enabled = is_trace_enabled()
+    if not WF_DEBUG and not debug_trace_enabled:
+        return
+
+    event_entry = state.event_entry or {}
+    requirements = event_entry.get("requirements") or {}
+    shortcuts = event_entry.get("shortcuts") or {}
+    info = {
+        "stage": stage,
+        "step": event_entry.get("current_step"),
+        "caller": event_entry.get("caller_step"),
+        "thread": event_entry.get("thread_state"),
+        "date_confirmed": event_entry.get("date_confirmed"),
+        "chosen_date": event_entry.get("chosen_date"),
+        "participants": requirements.get("number_of_participants") or requirements.get("participants"),
+        "capacity_shortcut": shortcuts.get("capacity_ok"),
+        "vague_month": event_entry.get("vague_month"),
+        "vague_weekday": event_entry.get("vague_weekday"),
+        "vague_time": event_entry.get("vague_time_of_day"),
+    }
+    if extra:
+        info.update(extra)
+    if WF_DEBUG:
+        serialized = " ".join(f"{key}={value}" for key, value in info.items())
+        print(f"[WF DEBUG][state] {serialized}")
+
+    if not debug_trace_enabled:
+        return
+
+    thread_id = _thread_identifier(state)
+    snapshot = dict(info)
+    snapshot.update(
+        {
+            "requirements_hash": event_entry.get("requirements_hash"),
+            "room_eval_hash": event_entry.get("room_eval_hash"),
+            "offer_id": event_entry.get("offer_id"),
+            "locked_room_id": event_entry.get("locked_room_id"),
+             "locked_room_status": event_entry.get("selected_status") or (event_entry.get("room_pending_decision") or {}).get("selected_status"),
+            "wish_products": event_entry.get("wish_products"),
+            "thread_state": state.thread_state,
+            "caller_step": event_entry.get("caller_step"),
+            "offer_status": event_entry.get("offer_status"),
+            "event_data": event_entry.get("event_data"),
+            "billing_details": event_entry.get("billing_details"),
+        }
+    )
+    subloop = state.extras.pop("subloop", None)
+    if subloop:
+        snapshot["subloop"] = subloop
+    from backend.debug.hooks import trace_state, set_subloop, clear_subloop  # pylint: disable=import-outside-toplevel
+    from backend.debug.state_store import STATE_STORE  # pylint: disable=import-outside-toplevel
+
+    pending_hil = (event_entry or {}).get("pending_hil_requests") or []
+    snapshot["hil_open"] = bool(pending_hil)
+    if subloop:
+        set_subloop(thread_id, subloop)
+    trace_state(thread_id, _snapshot_step_name(event_entry), snapshot)
+    if subloop:
+        clear_subloop(thread_id)
+    existing_state = STATE_STORE.get(thread_id)
+    merged_state = dict(existing_state)
+    merged_state.update(snapshot)
+    if "flags" in existing_state:
+        merged_state.setdefault("flags", existing_state.get("flags", {}))
+    STATE_STORE.update(thread_id, merged_state)
+    close_if_ended(thread_id, snapshot)
+
+
+_TRACE_STEP_NAMES = {
+    1: "Step1_Intake",
+    2: "Step2_Date",
+    3: "Step3_Room",
+    4: "Step4_Offer",
+    5: "Step5_Negotiation",
+    6: "Step6_Transition",
+    7: "Step7_Confirmation",
+}
+
+
+def _snapshot_step_name(event_entry: Optional[Dict[str, Any]]) -> str:
+    if not event_entry:
+        return "intake"
+    raw = event_entry.get("current_step")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return "intake"
+    return _TRACE_STEP_NAMES.get(value, "intake")
+
+
+def _thread_identifier(state: WorkflowState) -> str:
+    if state.thread_id:
+        return str(state.thread_id)
+    if state.client_id:
+        return str(state.client_id)
+    message = state.message
+    if message and message.msg_id:
+        return str(message.msg_id)
+    return "unknown-thread"
 
 
 DB_PATH = Path(__file__).with_name("events_database.json")
@@ -81,8 +193,83 @@ def _flush_pending_save(state: WorkflowState, path: Path, lock_path: Path) -> No
 def _flush_and_finalize(result: GroupResult, state: WorkflowState, path: Path, lock_path: Path) -> Dict[str, Any]:
     """Persist pending state and normalise the outgoing payload."""
 
+    output = _finalize_output(result, state)
     _flush_pending_save(state, path, lock_path)
-    return _finalize_output(result, state)
+    return output
+
+
+def _hil_signature(draft: Dict[str, Any], event_entry: Dict[str, Any]) -> str:
+    base = {
+        "step": draft.get("step"),
+        "topic": draft.get("topic"),
+        "caller": event_entry.get("caller_step"),
+        "requirements_hash": event_entry.get("requirements_hash"),
+        "room_eval_hash": event_entry.get("room_eval_hash"),
+        "body": draft.get("body"),
+    }
+    payload = json.dumps(base, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _enqueue_hil_tasks(state: WorkflowState, event_entry: Dict[str, Any]) -> None:
+    pending_records = event_entry.setdefault("pending_hil_requests", [])
+    seen_signatures = {entry.get("signature") for entry in pending_records if entry.get("signature")}
+    thread_id = _thread_identifier(state)
+
+    for draft in state.draft_messages:
+        if draft.get("requires_approval") is False:
+            continue
+        signature = _hil_signature(draft, event_entry)
+        if signature in seen_signatures:
+            continue
+
+        step_id = draft.get("step")
+        try:
+            step_num = int(step_id)
+        except (TypeError, ValueError):
+            continue
+        if step_num not in {2, 3, 4}:
+            continue
+        if step_num == 4:
+            task_type = TaskType.OFFER_MESSAGE
+        elif step_num == 3:
+            task_type = TaskType.ROOM_AVAILABILITY_MESSAGE
+        elif step_num == 2:
+            task_type = TaskType.DATE_CONFIRMATION_MESSAGE
+        else:
+            task_type = TaskType.MANUAL_REVIEW
+
+        task_payload = {
+            "step_id": step_num,
+            "intent": state.intent.value if state.intent else None,
+            "event_id": event_entry.get("event_id"),
+            "draft_msg": draft.get("body"),
+            "language": (state.user_info or {}).get("language"),
+            "caller_step": event_entry.get("caller_step"),
+            "requirements_hash": event_entry.get("requirements_hash"),
+            "room_eval_hash": event_entry.get("room_eval_hash"),
+        }
+
+        client_id = state.client_id or (state.message.from_email or "unknown@example.com").lower()
+        task_id = enqueue_task(
+            state.db,
+            task_type,
+            client_id,
+            event_entry.get("event_id"),
+            task_payload,
+        )
+        pending_records.append(
+            {
+                "task_id": task_id,
+                "signature": signature,
+                "step": step_num,
+                "draft": dict(draft),
+            }
+        )
+        seen_signatures.add(signature)
+        state.extras["persist"] = True
+
+    set_hil_open(thread_id, bool(pending_records))
 
 
 @profile_step("workflow.router.process_msg")
@@ -95,14 +282,34 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
 
     message = IncomingMessage.from_dict(msg)
     state = WorkflowState(message=message, db_path=path, db=db)
-
+    raw_thread_id = (
+        msg.get("thread_id")
+        or msg.get("thread")
+        or msg.get("session_id")
+        or msg.get("msg_id")
+        or msg.get("from_email")
+        or "unknown-thread"
+    )
+    state.thread_id = str(raw_thread_id)
+    _debug_state("init", state)
     last_result = intake.process(state)
+    _debug_state("post_intake", state, extra={"intent": state.intent.value if state.intent else None})
     _persist_if_needed(state, path, lock_path)
     if last_result.halt:
+        _debug_state("halt_post_intake", state)
         return _flush_and_finalize(last_result, state, path, lock_path)
+
+    guard_snapshot = evaluate_guards(state)
+    if guard_snapshot.step2_required and guard_snapshot.candidate_dates:
+        state.extras["guard_candidate_dates"] = list(guard_snapshot.candidate_dates)
 
     shortcut_result = maybe_run_smart_shortcuts(state)
     if shortcut_result is not None:
+        _debug_state(
+            "smart_shortcut",
+            state,
+            extra={"shortcut_action": shortcut_result.action},
+        )
         _persist_if_needed(state, path, lock_path)
         return _flush_and_finalize(shortcut_result, state, path, lock_path)
 
@@ -113,42 +320,52 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         step = event_entry.get("current_step")
         if step == 2:
             last_result = date_confirmation.process(state)
+            _debug_state("post_step2", state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
+                _debug_state("halt_step2", state)
                 return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 3:
             last_result = room_availability.process(state)
+            _debug_state("post_step3", state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
+                _debug_state("halt_step3", state)
                 return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 4:
             last_result = process_offer(state)
+            _debug_state("post_step4", state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
+                _debug_state("halt_step4", state)
                 return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 5:
             last_result = process_negotiation(state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
+                _debug_state("halt_step5", state)
                 return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 6:
             last_result = process_transition(state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
+                _debug_state("halt_step6", state)
                 return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         if step == 7:
             last_result = process_confirmation(state)
             _persist_if_needed(state, path, lock_path)
             if last_result.halt:
+                _debug_state("halt_step7", state)
                 return _flush_and_finalize(last_result, state, path, lock_path)
             continue
         break
 
+    _debug_state("final", state)
     return _flush_and_finalize(last_result, state, path, lock_path)
 
 
@@ -271,6 +488,8 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
         payload["thread_state"] = state.thread_state
     if state.draft_messages:
         payload["draft_messages"] = state.draft_messages
+        if event_entry:
+            _enqueue_hil_tasks(state, event_entry)
     else:
         payload.setdefault("draft_messages", [])
     if state.telemetry:

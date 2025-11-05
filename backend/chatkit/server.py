@@ -73,6 +73,7 @@ async def respond(request) -> StreamingResponse:
         "ts": datetime.utcnow().isoformat() + "Z",
         "body": body_text,
         "attachments": request.attachments or [],
+        "thread_id": thread_id,
     }
     state = {
         "thread_id": thread_id,

@@ -20,3 +20,30 @@ atelier-ai-frontend/.ui-url
 backend-uvicorn.log
 
 
+
+# test artifacts
+coverage.xml
+junit.xml
+htmlcov/
+.pytest_cache/
+
+coverage.xml
+junit.xml
+.pytest_cache/
+htmlcov/
+
+coverage.xml
+junit.xml
+.pytest_cache/
+htmlcov/
+
+# test artifacts
+coverage.xml
+junit.xml
+.pytest_cache/
+htmlcov/
+# repo tmp
+tmp/
+**/.DS_Store
+tmp-debug-sessions/
+tmp-debug-reports/
