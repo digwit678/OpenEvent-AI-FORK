@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import json
+import logging
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.adapters.agent_adapter import AgentAdapter, get_agent_adapter, reset_agent_adapter
+from backend.adapters.agent_adapter import AgentAdapter, StubAgentAdapter, get_agent_adapter, reset_agent_adapter
 from backend.domain import IntentLabel
+from backend.llm.provider_registry import get_provider, reset_provider_for_tests
 
 from backend.services.products import list_product_records, normalise_product_payload
 from backend.workflows.common.room_rules import (
@@ -18,10 +22,21 @@ from backend.workflows.common.room_rules import (
     sanitize_participants,
 )
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
-from backend.workflows.common.datetime_parse import parse_first_date, parse_time_range
+from backend.workflows.common.datetime_parse import (
+    parse_first_date,
+    parse_time_range,
+    month_name_to_number,
+    weekday_name_to_number,
+)
 
 adapter: AgentAdapter = get_agent_adapter()
 _LAST_CALL_METADATA: Dict[str, Any] = {}
+_ANALYSIS_CACHE: Dict[str, Dict[str, Any]] = {}
+
+logger = logging.getLogger(__name__)
+
+_FALLBACK_ADAPTER = StubAgentAdapter()
+_MAX_RETRIES = 2
 
 _MONTHS = {name.lower(): idx for idx, name in enumerate(
     ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
@@ -43,6 +58,36 @@ _FEATURE_KEYWORDS = {
     "sound system": ["sound system", "speakers", "audio", "music"],
     "coffee service": ["coffee service", "coffee bar", "coffee", "barista", "espresso", "tea service"],
 }
+
+_TIME_OF_DAY_ALIASES = {
+    "morning": "morning",
+    "breakfast": "morning",
+    "afternoon": "afternoon",
+    "lunchtime": "afternoon",
+    "evening": "evening",
+    "dinner": "evening",
+    "night": "evening",
+}
+
+_VAGUE_WEEKDAY_TOKENS = [
+    "monday",
+    "mon",
+    "tuesday",
+    "tue",
+    "tues",
+    "wednesday",
+    "wed",
+    "thursday",
+    "thu",
+    "thur",
+    "thurs",
+    "friday",
+    "fri",
+    "saturday",
+    "sat",
+    "sunday",
+    "sun",
+]
 
 
 def _extract_requirement_hints(text: str) -> Dict[str, Any]:
@@ -69,7 +114,10 @@ def _match_catalog_products(text: str) -> List[Dict[str, Any]]:
     if not text:
         return []
     catalog_names = [record.name for record in list_product_records()]
-    raw_matches = _agent().match_catalog_items(text, catalog_names)
+    agent_instance = _agent()
+    if not hasattr(agent_instance, "match_catalog_items"):
+        return []
+    raw_matches = agent_instance.match_catalog_items(text, catalog_names)
     matches: List[Dict[str, Any]] = []
     if not raw_matches:
         return matches
@@ -167,6 +215,91 @@ def _prepare_payload(message: Dict[str, Optional[str]]) -> Dict[str, str]:
     return payload
 
 
+def _analysis_cache_key(payload: Dict[str, str]) -> str:
+    msg_id = payload.get("msg_id") or ""
+    subject = payload.get("subject") or ""
+    body = payload.get("body") or ""
+    fingerprint = f"{msg_id}::{subject}::{body}"
+    return hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
+
+
+def _validated_analysis(result: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(result, dict):
+        return None
+    intent = result.get("intent")
+    if not isinstance(intent, str) or not intent.strip():
+        return None
+    fields = result.get("fields") if isinstance(result.get("fields"), dict) else {}
+    confidence_raw = result.get("confidence")
+    try:
+        confidence = float(confidence_raw)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+    return {
+        "intent": intent,
+        "confidence": confidence,
+        "fields": dict(fields),
+    }
+
+
+def _invoke_provider_with_retry(payload: Dict[str, str], phase: str) -> Optional[Dict[str, Any]]:
+    provider = get_provider()
+    text = json.dumps(payload, ensure_ascii=False)
+    last_error: Optional[Exception] = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            result = provider.classify_extract(text)
+            validated = _validated_analysis(result)
+            if validated is not None:
+                try:
+                    _record_last_call(_agent(), phase=phase)
+                except Exception:  # pragma: no cover - defensive guard
+                    pass
+                return validated
+            logger.warning("Provider returned invalid analysis payload on attempt %s", attempt + 1)
+        except NotImplementedError as exc:
+            last_error = exc
+            break
+        except Exception as exc:  # pragma: no cover - defensive guard
+            last_error = exc
+            logger.warning("Provider analysis failed (attempt %s): %s", attempt + 1, exc)
+    if last_error:
+        logger.info("Falling back to heuristics after provider failure: %s", last_error)
+    return None
+
+
+def _fallback_analysis(payload: Dict[str, str]) -> Dict[str, Any]:
+    global _LAST_CALL_METADATA
+    try:
+        result = _FALLBACK_ADAPTER.analyze_message(payload)
+        validated = _validated_analysis(result)
+        if validated is not None:
+            _LAST_CALL_METADATA = {"phase": "analysis", "adapter": "stub"}
+            return validated
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.debug("Stub fallback failed: %s", exc)
+    _LAST_CALL_METADATA = {"phase": "analysis", "adapter": "fallback"}
+    return {
+        "intent": IntentLabel.NON_EVENT.value,
+        "confidence": 0.0,
+        "fields": {},
+    }
+
+
+def _analyze_payload(payload: Dict[str, str]) -> Dict[str, Any]:
+    cache_key = _analysis_cache_key(payload)
+    cached = _ANALYSIS_CACHE.get(cache_key)
+    if cached is not None:
+        return dict(cached)
+
+    analysis = _invoke_provider_with_retry(payload, phase="analysis")
+    if analysis is None:
+        analysis = _fallback_analysis(payload)
+    _ANALYSIS_CACHE[cache_key] = analysis
+    return dict(analysis)
+
+
 def classify_intent(message: Dict[str, Optional[str]]) -> Tuple[IntentLabel, float]:
     """[LLM] Delegate intent classification to the agent adapter and normalize output."""
 
@@ -174,10 +307,9 @@ def classify_intent(message: Dict[str, Optional[str]]) -> Tuple[IntentLabel, flo
     if os.getenv("INTENT_FORCE_EVENT_REQUEST") == "1":
         print("[DEV] intent override -> event_request")
         return IntentLabel.EVENT_REQUEST, 0.99
-    agent = _agent()
-    intent, confidence = agent.route_intent(payload)
-    _record_last_call(agent, phase="intent")
-    normalized = IntentLabel.normalize(intent)
+    analysis = _analyze_payload(payload)
+    normalized = IntentLabel.normalize(analysis.get("intent"))
+    confidence = float(analysis.get("confidence", 0.0))
     override = _heuristic_intent_override(payload, normalized)
     if override is not None:
         normalized = override
@@ -189,13 +321,9 @@ def extract_user_information(message: Dict[str, Optional[str]]) -> Dict[str, Opt
     """[LLM] Extract structured event details from free-form text."""
 
     payload = _prepare_payload(message)
-    agent = _agent()
-    if hasattr(agent, "extract_user_information"):
-        raw = agent.extract_user_information(payload) or {}
-    else:
-        raw = agent.extract_entities(payload) or {}
-    _record_last_call(agent, phase="entities")
-    sanitized = sanitize_user_info(raw)
+    analysis = _analyze_payload(payload)
+    raw_fields = analysis.get("fields") if isinstance(analysis.get("fields"), dict) else {}
+    sanitized = sanitize_user_info(raw_fields)
     if not sanitized.get("date") and (
         os.getenv("AGENT_MODE", "").lower() == "stub" or os.getenv("INTENT_FORCE_EVENT_REQUEST") == "1"
     ):
@@ -254,7 +382,60 @@ def extract_user_information(message: Dict[str, Optional[str]]) -> Dict[str, Opt
                         existing.append(item)
                 sanitized["products_add"] = existing
 
+    vague_components = _extract_vague_date_components(body_text)
+    for key, value in vague_components.items():
+        if value and not sanitized.get(key):
+            sanitized[key] = value
+
+    products_add = sanitized.get("products_add")
+    if isinstance(products_add, list) and products_add:
+        sanitized["wish_products"] = [
+            item.get("name")
+            for item in products_add
+            if isinstance(item, dict) and item.get("name")
+        ]
+
     return sanitized
+
+
+def _extract_vague_date_components(text: str) -> Dict[str, Optional[str]]:
+    lowered = (text or "").lower()
+    result: Dict[str, Optional[str]] = {
+        "vague_month": None,
+        "vague_weekday": None,
+        "vague_time_of_day": None,
+    }
+
+    # Detect month token
+    detected_month: Optional[str] = None
+    for token in sorted(_MONTHS.keys(), key=len, reverse=True):
+        pattern = rf"\b{re.escape(token)}\b"
+        if re.search(pattern, lowered):
+            normalized = month_name_to_number(token)
+            if normalized:
+                detected_month = token
+                break
+    if detected_month:
+        result["vague_month"] = detected_month
+
+    # Detect weekday token
+    detected_weekday: Optional[str] = None
+    for token in sorted(_VAGUE_WEEKDAY_TOKENS, key=len, reverse=True):
+        pattern = rf"\b{re.escape(token)}\b"
+        if re.search(pattern, lowered):
+            if weekday_name_to_number(token) is not None:
+                detected_weekday = token
+                break
+    if detected_weekday:
+        result["vague_weekday"] = detected_weekday
+
+    # Detect time of day
+    for token, label in _TIME_OF_DAY_ALIASES.items():
+        if token in lowered:
+            result["vague_time_of_day"] = label
+            break
+
+    return result
 
 
 def sanitize_user_info(raw: Dict[str, Any]) -> Dict[str, Optional[Any]]:
@@ -298,9 +479,12 @@ def reset_llm_adapter() -> None:
 
     global adapter
     global _LAST_CALL_METADATA
+    global _ANALYSIS_CACHE
     reset_agent_adapter()
     adapter = get_agent_adapter()
     _LAST_CALL_METADATA = {}
+    _ANALYSIS_CACHE = {}
+    reset_provider_for_tests()
 
 
 _CONFIRM_TOKENS = (

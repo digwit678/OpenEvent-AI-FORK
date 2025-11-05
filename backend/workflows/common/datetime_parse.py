@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, time, timedelta
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from zoneinfo import ZoneInfo
 
@@ -35,6 +35,26 @@ _MONTHS = {
     "november": 11,
     "dec": 12,
     "december": 12,
+}
+
+_WEEKDAY_ALIASES = {
+    "monday": 0,
+    "mon": 0,
+    "tuesday": 1,
+    "tue": 1,
+    "tues": 1,
+    "wednesday": 2,
+    "wed": 2,
+    "thursday": 3,
+    "thu": 3,
+    "thur": 3,
+    "thurs": 3,
+    "friday": 4,
+    "fri": 4,
+    "saturday": 5,
+    "sat": 5,
+    "sunday": 6,
+    "sun": 6,
 }
 
 _DATE_NUMERIC = re.compile(
@@ -222,6 +242,44 @@ def _adjust_end_if_needed(start: time, end: time) -> time:
     return end_dt.time()
 
 
+def month_name_to_number(token: str) -> Optional[int]:
+    """Normalize textual month tokens into month numbers."""
+
+    if not token:
+        return None
+    lowered = token.strip().lower()
+    return _MONTHS.get(lowered)
+
+
+def weekday_name_to_number(token: str) -> Optional[int]:
+    """Normalize textual weekday tokens into weekday numbers (Monday=0)."""
+
+    if not token:
+        return None
+    lowered = token.strip().lower()
+    return _WEEKDAY_ALIASES.get(lowered)
+
+
+def enumerate_month_weekday(year: int, month: int, weekday: int) -> List[date]:
+    """
+    Enumerate every occurrence of ``weekday`` within the specified month.
+
+    Weekday uses Python's convention (Monday = 0). Results are naive ``date`` objects.
+    """
+
+    try:
+        pivot = date(year, month, 1)
+    except ValueError:
+        return []
+    offset = (weekday - pivot.weekday()) % 7
+    current = pivot + timedelta(days=offset)
+    results: List[date] = []
+    while current.month == month:
+        results.append(current)
+        current += timedelta(days=7)
+    return results
+
+
 __all__ = [
     "TZ_ZURICH",
     "parse_first_date",
@@ -229,4 +287,7 @@ __all__ = [
     "to_iso_date",
     "parse_time_range",
     "build_window_iso",
+    "month_name_to_number",
+    "weekday_name_to_number",
+    "enumerate_month_weekday",
 ]

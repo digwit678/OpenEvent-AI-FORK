@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .. import LLMNode, OpenEventAction
 
-__all__ = ["ComposeOffer", "EmailOffer", "ChatFollowUp"]
+__all__ = ["ComposeOffer", "EmailOffer", "ChatFollowUp", "send_offer_email"]
 
 
 class ComposeOffer(LLMNode):
@@ -100,3 +100,15 @@ class ChatFollowUp(LLMNode):
             "chat_posted": True,
             "message": message,
         }
+
+
+def send_offer_email(event_entry: Dict[str, Any], offer_id: str, to_email: str, cc: Optional[str] = None) -> Dict[str, Any]:
+    """Thin wrapper used by tools for deterministic offer delivery."""
+
+    action = EmailOffer()
+    payload = {
+        "offer_id": offer_id,
+        "client_contact": {"email": to_email, "cc": cc},
+        "event_entry": event_entry,
+    }
+    return action.run(payload)

@@ -429,6 +429,127 @@ def tag_message(event_entry: Dict[str, Any], msg_id: Optional[str]) -> None:
         msgs_list.append(msg_id)
 
 
+def update_event_date(
+    db: Dict[str, Any],
+    event_id: str,
+    date_iso: str,
+) -> Dict[str, Any]:
+    """[OpenEvent Database] Persist the confirmed event date for an event."""
+
+    idx = find_event_idx_by_id(db, event_id)
+    if idx is None:
+        raise ValueError(f"Event {event_id} not found.")
+    event_entry = db["events"][idx]
+    ensure_event_defaults(event_entry)
+
+    display_date: Optional[str]
+    try:
+        display_date = datetime.strptime(date_iso, "%Y-%m-%d").strftime("%d.%m.%Y")
+    except ValueError:
+        display_date = None
+
+    event_data = event_entry.setdefault("event_data", {})
+    if display_date:
+        event_data["Event Date"] = display_date
+    else:
+        event_data["Event Date"] = date_iso
+
+    update_event_metadata(
+        event_entry,
+        chosen_date=display_date or date_iso,
+        date_confirmed=True,
+        last_confirmed_iso=date_iso,
+    )
+    return event_entry
+
+
+def update_event_billing(
+    db: Dict[str, Any],
+    event_id: str,
+    billing_details: Dict[str, Any],
+) -> Dict[str, Any]:
+    """[OpenEvent Database] Persist structured billing details for an event."""
+
+    idx = find_event_idx_by_id(db, event_id)
+    if idx is None:
+        raise ValueError(f"Event {event_id} not found.")
+    event_entry = db["events"][idx]
+    ensure_event_defaults(event_entry)
+
+    event_data = event_entry.setdefault("event_data", {})
+    raw_address = billing_details.get("raw")
+    if raw_address:
+        event_data["Billing Address"] = raw_address
+
+    current = event_entry.get("billing_details") or {}
+    merged = dict(current)
+    for key, value in billing_details.items():
+        if value:
+            merged[key] = value
+    event_entry["billing_details"] = merged
+    return event_entry
+
+
+def update_event_room(
+    db: Dict[str, Any],
+    event_id: str,
+    *,
+    selected_room: str,
+    status: str,
+) -> Dict[str, Any]:
+    """[OpenEvent Database] Persist the room selection captured via select_room."""
+
+    idx = find_event_idx_by_id(db, event_id)
+    if idx is None:
+        raise ValueError(f"Event {event_id} not found.")
+
+    event_entry = db["events"][idx]
+    ensure_event_defaults(event_entry)
+
+    update_event_metadata(
+        event_entry,
+        selected_room=selected_room,
+        selected_room_status=status,
+    )
+    flags = event_entry.setdefault("flags", {})
+    flags["room_selected"] = True
+
+    pending = event_entry.setdefault("room_pending_decision", {})
+    pending["selected_room"] = selected_room
+    pending["selected_status"] = status
+
+    return event_entry
+
+
+def record_room_search_start(
+    db: Dict[str, Any],
+    event_id: str,
+    *,
+    date_iso: str,
+    participants: Optional[int],
+) -> Dict[str, Any]:
+    """[OpenEvent Database] Register the start of a room availability evaluation."""
+
+    idx = find_event_idx_by_id(db, event_id)
+    if idx is None:
+        raise ValueError(f"Event {event_id} not found.")
+    event_entry = db["events"][idx]
+    ensure_event_defaults(event_entry)
+    logs = event_entry.setdefault("logs", [])
+    logs.append(
+        {
+            "ts": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+            "actor": "workflow",
+            "action": "room_search_started",
+            "details": {
+                "date_iso": date_iso,
+                "participants": participants,
+            },
+        }
+    )
+    return event_entry
+
+
 def default_event_record(user_info: Dict[str, Any], msg: Dict[str, Any], received_date: str) -> Dict[str, Any]:
     """[OpenEvent Database] Translate sanitized user info into the event DB schema."""
 

@@ -137,3 +137,9 @@ def stage_payload(event_entry: Dict[str, Any]) -> Dict[str, Any]:
         payload["caller_step_numeric"] = stage.caller_step.numeric
         payload["caller_step_label"] = f"Step {stage.caller_step.numeric} — {stage.caller_step.label}"
     return payload
+
+
+def get_thread_state(thread_id: str) -> Dict[str, Any]:
+    from backend.debug.state_store import STATE_STORE
+
+    return STATE_STORE.get(thread_id)

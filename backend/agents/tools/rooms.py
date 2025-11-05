@@ -8,7 +8,6 @@ from backend.workflows.groups.room_availability.condition.decide import room_sta
 from backend.workflows.groups.room_availability.trigger.process import (
     evaluate_room_statuses,
     _flatten_statuses,  # type: ignore
-    _compose_outcome_message,  # type: ignore
     ROOM_OUTCOME_AVAILABLE,
     ROOM_OUTCOME_OPTION,
 )

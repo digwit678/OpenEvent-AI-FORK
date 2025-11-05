@@ -1,0 +1,5 @@
+{
+  "shortcut_capacity_ok": {"text": "We expect 60 people.", "capacity": 60},
+  "shortcut_capacity_invalid": {"text": "around fiftyish", "capacity": null},
+  "shortcut_wish_products": {"text": "We’ll need a projector and Apéro."}
+}
