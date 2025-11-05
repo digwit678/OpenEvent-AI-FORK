@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
+from backend.workflows.common.catalog import list_free_dates
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.dates import next5
+from backend.workflows.nlu import detect_general_room_query
 from backend.debug.hooks import (
     trace_db_read,
     trace_db_write,
     trace_entity,
+    trace_marker,
     trace_gate,
     trace_state,
     trace_step,
@@ -65,6 +68,30 @@ def process(state: WorkflowState) -> GroupResult:
         return GroupResult(action="date_invalid", payload=payload, halt=True)
 
     state.current_step = 2
+
+    message_text = _message_text(state)
+    classification = detect_general_room_query(message_text, state)
+    thread_id = _thread_id(state)
+    if thread_id:
+        trace_marker(
+            thread_id,
+            "QNA_CLASSIFY",
+            detail="general_room_query" if classification["is_general"] else "not_general",
+            data={
+                "heuristics": classification.get("heuristics"),
+                "parsed": classification.get("parsed"),
+                "constraints": classification.get("constraints"),
+                "llm_called": classification.get("llm_called"),
+                "llm_result": classification.get("llm_result"),
+                "cached": classification.get("cached"),
+            },
+            owner_step="Step2_Date",
+            granularity="logic",
+        )
+
+    if classification["is_general"] and not bool(event_entry.get("date_confirmed")):
+        return _present_general_room_qna(state, event_entry, classification, thread_id)
+
     chosen_date = event_entry.get("chosen_date")
     if not chosen_date:
         return _present_candidate_dates(state, event_entry)
@@ -417,3 +444,95 @@ def _preferred_room(event_entry: dict) -> str | None:
 
     requirements = event_entry.get("requirements") or {}
     return requirements.get("preferred_room")
+
+
+def _message_text(state: WorkflowState) -> str:
+    message = state.message
+    if not message:
+        return ""
+    subject = message.subject or ""
+    body = message.body or ""
+    if subject and body:
+        return f"{subject}\n{body}"
+    return subject or body
+
+
+def _present_general_room_qna(
+    state: WorkflowState,
+    event_entry: dict,
+    classification: Dict[str, Any],
+    thread_id: Optional[str],
+) -> GroupResult:
+    requirements = event_entry.get("requirements") or {}
+    preferred_room = requirements.get("preferred_room") or "Room A"
+    candidate_dates = list_free_dates(
+        count=5,
+        db=state.db,
+        preferred_room=preferred_room,
+    )
+
+    if thread_id:
+        trace_db_read(
+            thread_id,
+            "Step2_Date",
+            "db.dates.general_qna",
+            {
+                "count": len(candidate_dates),
+                "preferred_room": preferred_room,
+                "constraints": classification.get("constraints"),
+            },
+        )
+
+    info_lines = [
+        "ROOM AVAILABILITY SNAPSHOT:",
+    ]
+    if candidate_dates:
+        for value in candidate_dates:
+            info_lines.append(f"- {value} · {preferred_room} currently shows as available.")
+    else:
+        info_lines.append("- Share a preferred month or weekday and I'll recheck availability immediately.")
+    info_lines.append("")
+    info_lines.append("NEXT STEP:")
+    info_lines.append("- Tell me which date works best and I'll lock the room right away.")
+    body = "\n".join(info_lines)
+    body_with_footer = append_footer(
+        body,
+        step=2,
+        next_step="Confirm date",
+        thread_state="Awaiting Client",
+    )
+
+    draft_message = {
+        "body": body_with_footer,
+        "step": 2,
+        "next_step": "Confirm date",
+        "thread_state": "Awaiting Client",
+        "topic": "general_room_qna",
+        "candidate_dates": candidate_dates,
+        "actions": [],
+    }
+    state.add_draft_message(draft_message)
+
+    update_event_metadata(
+        event_entry,
+        thread_state="Awaiting Client",
+        current_step=2,
+        candidate_dates=candidate_dates,
+    )
+
+    state.set_thread_state("Awaiting Client")
+    state.extras["persist"] = True
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "candidate_dates": candidate_dates,
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+        "general_room_constraints": classification.get("constraints"),
+    }
+    return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
