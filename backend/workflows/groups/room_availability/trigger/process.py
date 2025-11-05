@@ -10,7 +10,7 @@ from backend.workflows.common.room_rules import find_better_room_dates
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
-from backend.debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate, trace_state, trace_step
+from backend.debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate, trace_state, trace_step, set_subloop
 from backend.utils.profiler import profile_step
 
 from ..condition.decide import room_status_on_date
@@ -52,7 +52,7 @@ def process(state: WorkflowState) -> GroupResult:
     state.current_step = 3
 
     date_confirmed_ok = bool(event_entry.get("date_confirmed"))
-    trace_gate(thread_id, "Step3_Room", "P1 date_confirmed", date_confirmed_ok, {"date_confirmed": date_confirmed_ok})
+    trace_gate(thread_id, "Step3_Room", "date_confirmed", date_confirmed_ok, {"date_confirmed": date_confirmed_ok})
     if not date_confirmed_ok:
         return _detour_to_date(state, event_entry)
 
@@ -77,15 +77,12 @@ def process(state: WorkflowState) -> GroupResult:
         capacity_shortcut = bool((event_entry.get("shortcuts") or {}).get("capacity_ok"))
 
     capacity_ok = participants is not None or capacity_shortcut
-    trace_gate(
-        thread_id,
-        "Step3_Room",
-        "P3 capacity_present",
-        capacity_ok,
-        {"participants": participants, "capacity_shortcut": capacity_shortcut},
-    )
     if not capacity_ok:
         return _detour_for_capacity(state, event_entry)
+    if capacity_shortcut:
+        state.extras["subloop"] = "shortcut"
+        if thread_id:
+            set_subloop(thread_id, "shortcut")
 
     hil_step = state.user_info.get("hil_approve_step")
     if hil_step == 3:
@@ -100,22 +97,34 @@ def process(state: WorkflowState) -> GroupResult:
     locked_room_id = event_entry.get("locked_room_id")
     room_eval_hash = event_entry.get("room_eval_hash")
 
-    requirements_changed = current_req_hash != room_eval_hash
-    explicit_room_change = bool(user_requested_room and user_requested_room != locked_room_id)
-    missing_lock = locked_room_id is None
-
-    eval_needed = missing_lock or explicit_room_change or requirements_changed
+    room_selected_flag = bool(locked_room_id)
     trace_gate(
         thread_id,
         "Step3_Room",
-        "room_eval_needed",
-        eval_needed,
-        {
-            "missing_lock": missing_lock,
-            "explicit_room_change": explicit_room_change,
-            "requirements_changed": requirements_changed,
-        },
+        "room_selected",
+        room_selected_flag,
+        {"locked_room_id": locked_room_id},
     )
+
+    requirements_match_flag = bool(
+        room_selected_flag
+        and current_req_hash
+        and room_eval_hash
+        and str(current_req_hash) == str(room_eval_hash)
+    )
+    trace_gate(
+        thread_id,
+        "Step3_Room",
+        "requirements_match",
+        requirements_match_flag,
+        {"requirements_hash": current_req_hash, "room_eval_hash": room_eval_hash},
+    )
+
+    requirements_changed = not requirements_match_flag
+    explicit_room_change = bool(user_requested_room and user_requested_room != locked_room_id)
+    missing_lock = not room_selected_flag
+
+    eval_needed = missing_lock or explicit_room_change or requirements_changed
     if not eval_needed:
         return _skip_room_evaluation(state, event_entry)
 
@@ -338,6 +347,7 @@ def process(state: WorkflowState) -> GroupResult:
             "locked_room_id": event_entry.get("locked_room_id"),
             "room_hint": pending_hint,
             "available_dates": available_dates_map,
+            "subloop": state.extras.get("subloop"),
         },
     )
 
@@ -381,7 +391,7 @@ def _detour_to_date(state: WorkflowState, event_entry: dict) -> GroupResult:
     """[Trigger] Redirect to Step 2 when no chosen date exists."""
 
     trace_detour(
-        _thread_id(state),
+        thread_id,
         "Step3_Room",
         "Step2_Date",
         "date_confirmed_missing",
@@ -416,7 +426,7 @@ def _detour_for_capacity(state: WorkflowState, event_entry: dict) -> GroupResult
     """[Trigger] Redirect to Step 1 when attendee count is missing."""
 
     trace_detour(
-        _thread_id(state),
+        thread_id,
         "Step3_Room",
         "Step1_Intake",
         "capacity_missing",
@@ -495,6 +505,7 @@ def _flatten_statuses(statuses: List[Dict[str, str]]) -> Dict[str, str]:
 def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decision: str) -> GroupResult:
     """Handle HIL approval or rejection for the latest room evaluation."""
 
+    thread_id = _thread_id(state)
     pending = event_entry.get("room_pending_decision")
     if not pending:
         payload = {
@@ -542,8 +553,22 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
         current_step=4,
         thread_state="Waiting on HIL",
     )
+    trace_gate(
+        thread_id,
+        "Step3_Room",
+        "room_selected",
+        True,
+        {"locked_room_id": selected_room},
+    )
+    trace_gate(
+        thread_id,
+        "Step3_Room",
+        "requirements_match",
+        bool(requirements_hash),
+        {"requirements_hash": requirements_hash, "room_eval_hash": requirements_hash},
+    )
     trace_db_write(
-        _thread_id(state),
+        thread_id,
         "Step3_Room",
         "db.events.lock_room",
         {"locked_room_id": selected_room, "room_eval_hash": requirements_hash},
@@ -874,6 +899,7 @@ def handle_select_room_action(
 ) -> GroupResult:
     """[OpenEvent Action] Persist the client's room choice and prompt for products."""
 
+    thread_id = _thread_id(state)
     event_entry = state.event_entry
     if not event_entry or not event_entry.get("event_id"):
         payload = {
@@ -968,14 +994,14 @@ def handle_select_room_action(
     state.extras["persist"] = True
 
     trace_db_write(
-        _thread_id(state),
+        thread_id,
         "Step3_Room",
         "db.events.update_room",
         {"selected_room": room, "status": status},
     )
 
     trace_state(
-        _thread_id(state),
+        thread_id,
         "Step3_Room",
         {
             "selected_room": room,

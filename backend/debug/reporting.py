@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from backend.debug import timeline
-from backend.debug.trace import BUS, get_trace_summary
+from backend.debug.trace import BUS, REQUIREMENTS_MATCH_HELP, get_trace_summary
 from backend.workflow.state import get_thread_state
 
 REPORT_ROOT = Path(__file__).resolve().parents[2] / "tmp-debug-reports"
@@ -215,7 +215,7 @@ def filter_trace_events(
 def _room_status(snapshot: Dict[str, Any]) -> Optional[str]:
     locked_room = snapshot.get("locked_room_id")
     if not locked_room:
-        return None
+        return "Unselected"
     status = snapshot.get("locked_room_status") or snapshot.get("selected_status") or snapshot.get("room_status")
     if isinstance(status, str):
         lowered = status.lower()
@@ -225,7 +225,8 @@ def _room_status(snapshot: Dict[str, Any]) -> Optional[str]:
             return "Option"
         if lowered in {"unavailable", "full", "closed"}:
             return "Unavailable"
-    return "Option"
+        return status.strip() or "Available"
+    return "Available"
 
 
 def confirmed_map(snapshot: Dict[str, Any]) -> Dict[str, Any]:
@@ -234,18 +235,47 @@ def confirmed_map(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     room_status = _room_status(snapshot)
     req_hash = snapshot.get("requirements_hash") or snapshot.get("req_hash")
     room_hash = snapshot.get("room_eval_hash") or snapshot.get("eval_hash")
-    hash_status = "Match" if req_hash and room_hash and req_hash == room_hash else None
-    if hash_status is None and req_hash and room_hash:
-        hash_status = "Mismatch"
+    requirements_match = snapshot.get("requirements_match")
+    if requirements_match is None:
+        requirements_match = bool(
+            room_status != "Unselected"
+            and req_hash
+            and room_hash
+            and str(req_hash) == str(room_hash)
+        )
+    requirements_match = bool(requirements_match)
+    hash_status = None
+    if req_hash and room_hash:
+        hash_status = "Match" if requirements_match else "Mismatch"
+    offer_status_display = snapshot.get("offer_status_display")
     offer_status = snapshot.get("offer_status")
+    hil_open = bool(snapshot.get("hil_open"))
+    if not offer_status_display:
+        if isinstance(offer_status, str):
+            lowered = offer_status.lower()
+            if lowered == "accepted":
+                offer_status_display = "Confirmed by HIL"
+            elif hil_open:
+                offer_status_display = "Waiting on HIL"
+            elif lowered == "declined":
+                offer_status_display = "Declined"
+            elif lowered in {"draft", "drafting", "in creation"}:
+                offer_status_display = "In creation"
+            else:
+                offer_status_display = offer_status.strip() or "—"
+        else:
+            offer_status_display = "—"
     if isinstance(offer_status, str):
         offer_status = offer_status.title()
     wait_state = snapshot.get("thread_state") or snapshot.get("threadState")
     return {
         "date": {"confirmed": date_confirmed, "value": chosen_date},
         "room_status": room_status,
+        "requirements_match": requirements_match,
+        "requirements_match_tooltip": REQUIREMENTS_MATCH_HELP,
         "hash_status": hash_status,
         "offer_status": offer_status,
+        "offer_status_display": offer_status_display,
         "wait_state": wait_state,
     }
 
