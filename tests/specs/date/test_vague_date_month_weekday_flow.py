@@ -1,17 +1,13 @@
 from __future__ import annotations
 
+import importlib
 from datetime import date
 from pathlib import Path
 
-from backend.workflows.common.datetime_parse import (
-    enumerate_month_weekday,
-    month_name_to_number,
-    weekday_name_to_number,
-)
+from backend.debug.trace import BUS
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 from backend.workflows.groups.date_confirmation.trigger.process import _present_candidate_dates
 
-from ...utils.timezone import freeze_time
 
 
 def _state(tmp_path: Path) -> WorkflowState:
@@ -28,8 +24,27 @@ def _state(tmp_path: Path) -> WorkflowState:
     return state
 
 
-def test_vague_month_weekday_enumeration(tmp_path):
+def test_vague_month_weekday_enumeration(monkeypatch, tmp_path):
+    monkeypatch.setenv("DEBUG_TRACE", "1")
+    BUS._buf.clear()  # type: ignore[attr-defined]
+
+    deterministic = [
+        date(2026, 2, 7),
+        date(2026, 2, 14),
+        date(2026, 2, 21),
+        date(2026, 2, 28),
+        date(2026, 3, 7),
+    ]
+
+    def _fake_next5(*_args, **_kwargs):
+        return list(deterministic)
+
+    monkeypatch.setattr("backend.workflows.io.dates.next5", _fake_next5)
+    step2_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
+    monkeypatch.setattr(step2_module, "next5", _fake_next5)
+
     state = _state(tmp_path)
+    state.thread_id = "vague-thread"
     event_entry = {
         "event_id": "EVT-VAGUE",
         "requirements": {"preferred_room": "Room A"},
@@ -46,8 +61,7 @@ def test_vague_month_weekday_enumeration(tmp_path):
         "vague_time_of_day": "evening",
     }
 
-    with freeze_time("2024-12-15 09:00:00"):
-        _present_candidate_dates(state, event_entry)
+    _present_candidate_dates(state, event_entry)
 
     draft = state.draft_messages[-1]
     block = draft["table_blocks"][0]
@@ -56,29 +70,23 @@ def test_vague_month_weekday_enumeration(tmp_path):
 
     assert block["type"] == "dates"
     assert "Saturdays in February" in block.get("label", "")
-    assert len(rows) == len(actions)
+    assert len(rows) == len(actions) == 5
     assert all(action["type"] == "select_date" for action in actions)
 
-    today = date.today()
-    month_number = month_name_to_number("February")
-    weekday_number = weekday_name_to_number("Saturday")
-    expected_iso: list[str] = []
-    if month_number is not None and weekday_number is not None:
-        for year in (today.year, today.year + 1):
-            candidates = [
-                candidate
-                for candidate in enumerate_month_weekday(year, month_number, weekday_number)
-                if candidate >= today
-            ]
-            if candidates:
-                expected_iso = [candidate.isoformat() for candidate in candidates]
-                break
-    expected_iso = expected_iso[: len(rows)]
+    expected_iso = [value.isoformat() for value in deterministic]
     produced_iso = [row["iso_date"] for row in rows]
+    assert produced_iso == expected_iso
 
-    assert produced_iso[: len(expected_iso)] == expected_iso
     assert all(row.get("time_of_day") == "Evening" for row in rows)
     assert all("Evening" in action["label"] for action in actions)
 
     stored_candidates = event_entry.get("candidate_dates") or []
     assert stored_candidates == [action["date"] for action in actions]
+
+    footer = draft.get("footer", "")
+    assert footer == "Step: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client"
+    assert "Room" not in draft.get("body_markdown", "")
+
+    trace_events = BUS.get(state.thread_id)  # type: ignore[attr-defined]
+    db_events = [event for event in trace_events if event.get("kind") == "DB_READ"]
+    assert any(event.get("io", {}).get("op") == "db.dates.next5" for event in db_events)
