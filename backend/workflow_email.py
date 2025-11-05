@@ -70,17 +70,28 @@ def _debug_state(stage: str, state: WorkflowState, extra: Optional[Dict[str, Any
             "room_eval_hash": event_entry.get("room_eval_hash"),
             "offer_id": event_entry.get("offer_id"),
             "locked_room_id": event_entry.get("locked_room_id"),
+             "locked_room_status": event_entry.get("selected_status") or (event_entry.get("room_pending_decision") or {}).get("selected_status"),
             "wish_products": event_entry.get("wish_products"),
             "thread_state": state.thread_state,
             "caller_step": event_entry.get("caller_step"),
+            "offer_status": event_entry.get("offer_status"),
+            "event_data": event_entry.get("event_data"),
+            "billing_details": event_entry.get("billing_details"),
         }
     )
-    from backend.debug.hooks import trace_state  # pylint: disable=import-outside-toplevel
+    subloop = state.extras.pop("subloop", None)
+    if subloop:
+        snapshot["subloop"] = subloop
+    from backend.debug.hooks import trace_state, set_subloop, clear_subloop  # pylint: disable=import-outside-toplevel
     from backend.debug.state_store import STATE_STORE  # pylint: disable=import-outside-toplevel
 
     pending_hil = (event_entry or {}).get("pending_hil_requests") or []
     snapshot["hil_open"] = bool(pending_hil)
+    if subloop:
+        set_subloop(thread_id, subloop)
     trace_state(thread_id, _snapshot_step_name(event_entry), snapshot)
+    if subloop:
+        clear_subloop(thread_id)
     existing_state = STATE_STORE.get(thread_id)
     merged_state = dict(existing_state)
     merged_state.update(snapshot)

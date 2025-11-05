@@ -11,7 +11,15 @@ except Exception:  # pragma: no cover - fallback when workflows package unavaila
     compute_step_counters = None  # type: ignore[assignment]
 
 from .settings import is_trace_enabled
-from .trace import emit, set_hil_open, has_open_hil
+from .trace import (
+    REQUIREMENTS_MATCH_HELP,
+    clear_subloop_context,
+    emit,
+    get_subloop_context,
+    has_open_hil,
+    set_hil_open,
+    set_subloop_context,
+)
 
 _LAST_STEP: Dict[str, str] = {}
 _LAST_GATE: Dict[str, Tuple[str, bool]] = {}
@@ -118,6 +126,75 @@ def _io_result_from_payload(payload: Optional[Dict[str, Any]]) -> Optional[str]:
     if "event_id" in payload:
         return "ok"
     return None
+
+
+def _normalised_str(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _room_status_display(snapshot: Dict[str, Any]) -> Optional[str]:
+    locked_room = snapshot.get("locked_room_id") or snapshot.get("selected_room")
+    if not locked_room:
+        return "Unselected"
+    status = (
+        snapshot.get("locked_room_status")
+        or snapshot.get("selected_status")
+        or snapshot.get("room_status")
+    )
+    status_text = _normalised_str(status)
+    if status_text:
+        lowered = status_text.lower()
+        if "available" in lowered:
+            return "Available"
+        if "option" in lowered:
+            return "Option"
+        if "unavailable" in lowered:
+            return "Unavailable"
+        return status_text
+    return "Available"
+
+
+def _offer_status_display(status: Optional[str], hil_open: bool) -> str:
+    status_text = _normalised_str(status)
+    if not status_text:
+        return "—"
+    lowered = status_text.lower()
+    if lowered == "accepted":
+        return "Confirmed by HIL"
+    if hil_open:
+        return "Waiting on HIL"
+    if lowered == "declined":
+        return "Declined"
+    if lowered in {"draft", "drafting", "in creation"}:
+        return "In creation"
+    return status_text
+
+
+def _tracked_info(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    info: Dict[str, Any] = {}
+    event_data = snapshot.get("event_data") or {}
+    billing_details = snapshot.get("billing_details") or {}
+    if not isinstance(billing_details, dict):
+        billing_details = {}
+    billing_raw = None
+    if isinstance(event_data, dict):
+        billing_raw = event_data.get("Billing Address") or event_data.get("billing_address")
+    if isinstance(billing_details, dict):
+        structured = {
+            key: value
+            for key, value in billing_details.items()
+            if key != "raw" and _normalised_str(value)
+        }
+        if structured:
+            info["billing_address_saved"] = True
+            return info
+    raw_text = _normalised_str(billing_raw)
+    if raw_text:
+        info["billing_address_captured_raw"] = raw_text
+    return info
 
 
 def _mask_prompt(text: Optional[str]) -> Optional[str]:
@@ -518,10 +595,17 @@ def trace_draft(
     footer: Dict[str, Any],
     actions: Any,
     prompt: Optional[str] = None,
+    subloop: Optional[str] = None,
 ) -> None:
+    if subloop:
+        set_subloop_context(thread_id, subloop)
+    current_subloop = subloop or get_subloop_context(thread_id)
+
     data = {"footer": footer, "actions": list(actions or [])}
     if prompt is not None:
         data["prompt"] = prompt
+    if current_subloop:
+        data["subloop"] = current_subloop
     if is_trace_enabled():
         from backend.debug.state_store import STATE_STORE  # pylint: disable=import-outside-toplevel
 
@@ -601,10 +685,41 @@ def trace_state(thread_id: str, step: str, snapshot: Dict[str, Any]) -> None:
         hil_flag = False
 
     payload = dict(snapshot)
+    provided_subloop = _normalised_str(payload.get("subloop"))
+    if provided_subloop:
+        set_subloop_context(thread_id, provided_subloop)
+    current_subloop = get_subloop_context(thread_id)
+    if current_subloop:
+        payload["subloop"] = current_subloop
+
     if flags:
         payload["flags"] = flags
     payload.setdefault("hil_open", bool(hil_flag))
     set_hil_open(thread_id, bool(payload.get("hil_open")))
+
+    locked_room = payload.get("locked_room_id") or payload.get("selected_room")
+    room_selected = bool(_normalised_str(locked_room))
+    payload.setdefault("room_selected", room_selected)
+
+    req_hash = payload.get("requirements_hash") or payload.get("req_hash")
+    eval_hash = payload.get("room_eval_hash") or payload.get("eval_hash")
+    req_hash_normalized = _normalised_str(req_hash)
+    eval_hash_normalized = _normalised_str(eval_hash)
+    requirements_match = bool(room_selected and req_hash_normalized and eval_hash_normalized and req_hash_normalized == eval_hash_normalized)
+    payload["requirements_match"] = requirements_match
+    payload["requirements_match_tooltip"] = REQUIREMENTS_MATCH_HELP
+
+    room_status_display = _room_status_display(payload)
+    if room_status_display:
+        payload["room_status_display"] = room_status_display
+        payload["room_status"] = room_status_display
+
+    hil_open_flag = bool(payload.get("hil_open"))
+    payload["offer_status_display"] = _offer_status_display(payload.get("offer_status"), hil_open_flag)
+
+    tracked = _tracked_info(payload)
+    if tracked:
+        payload["tracked_info"] = tracked
 
     counters: Optional[Dict[str, Any]] = None
 
@@ -642,14 +757,9 @@ def trace_state(thread_id: str, step: str, snapshot: Dict[str, Any]) -> None:
     summary_hint = _state_summary(snapshot)
     if summary_hint:
         payload["summary"] = summary_hint
-    requirements_hash = snapshot.get("requirements_hash")
-    room_hash = snapshot.get("room_eval_hash")
     hash_status = None
-    if requirements_hash or room_hash:
-        if requirements_hash and room_hash and requirements_hash == room_hash:
-            hash_status = "Match"
-        elif requirements_hash and room_hash:
-            hash_status = "Mismatch"
+    if req_hash_normalized and eval_hash_normalized:
+        hash_status = "Match" if requirements_match else "Mismatch"
     emit(
         thread_id,
         "STATE_SNAPSHOT",
@@ -665,6 +775,7 @@ def trace_state(thread_id: str, step: str, snapshot: Dict[str, Any]) -> None:
         event_name="State Snapshot",
         details_label="state.update",
         hash_status=hash_status,
+        hash_help=REQUIREMENTS_MATCH_HELP if hash_status else None,
     )
 
 
@@ -737,6 +848,18 @@ def trace_marker(
     )
 
 
+def set_subloop(thread_id: str, subloop: Optional[str]) -> None:
+    set_subloop_context(thread_id, subloop)
+
+
+def clear_subloop(thread_id: str) -> None:
+    clear_subloop_context(thread_id)
+
+
+def current_subloop(thread_id: str) -> Optional[str]:
+    return get_subloop_context(thread_id)
+
+
 __all__ = [
     "trace_step",
     "trace_gate",
@@ -751,6 +874,9 @@ __all__ = [
     "trace_qa_enter",
     "trace_qa_exit",
     "trace_marker",
+    "set_subloop",
+    "clear_subloop",
+    "current_subloop",
 ]
 
 

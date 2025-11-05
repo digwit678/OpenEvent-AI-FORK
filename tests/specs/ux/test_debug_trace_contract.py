@@ -43,7 +43,7 @@ def test_trace_event_contract(monkeypatch):
     payload = response.json()
     assert payload["thread_id"] == THREAD_ID
     assert payload["confirmed"]["date"]["confirmed"] is False
-    assert payload["confirmed"]["room_status"] is None
+    assert payload["confirmed"]["room_status"] == 'Unselected'
     assert payload["confirmed"]["hash_status"] is None
     assert payload["summary"]["hash_help"]
 

@@ -1,10 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import Toolbar from './debug/Toolbar';
 import ManagerView from './debug/ManagerView';
 import StateViewer from './debug/StateViewer';
+import SubloopLegend from './debug/SubloopLegend';
+import { copyTextWithFallback } from './debug/copy';
 import {
   buildManagerTimeline,
   computeStepProgress,
@@ -26,13 +28,20 @@ import {
   TraceSection,
   StepSnapshotMap,
 } from './trace/TraceTypes';
+import { resolveOfferStatusChip } from './status/Chips';
 
 interface SignalSummary {
   date?: { confirmed?: boolean; value?: string | null };
   room_status?: string | null;
+  room_status_display?: string | null;
+  room_selected?: boolean;
   hash_status?: string | null;
+  requirements_match?: boolean;
+  requirements_match_tooltip?: string | null;
   offer_status?: string | null;
+  offer_status_display?: string | null;
   wait_state?: string | null;
+  tracked_info?: Record<string, unknown> | null;
 }
 
 interface TraceSummary {
@@ -40,6 +49,11 @@ interface TraceSummary {
   wait_state?: string | null;
   hash_status?: string | null;
   hash_help?: string | null;
+  requirements_match?: boolean;
+  requirements_match_tooltip?: string | null;
+  offer_status_display?: string | null;
+  room_selected?: boolean;
+  tracked_info?: Record<string, unknown> | null;
 }
 
 interface TraceResponse {
@@ -140,9 +154,14 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
   const [timeTravelMeta, setTimeTravelMeta] = useState<{ ts: number; label?: string; event?: string } | null>(null);
   const [timeTravelLoading, setTimeTravelLoading] = useState(false);
   const [timeTravelError, setTimeTravelError] = useState<string | null>(null);
+  const [managerToast, setManagerToast] = useState<{ tone: 'ok' | 'error'; message: string } | null>(null);
 
   const tableScrollerRef = useRef<HTMLDivElement | null>(null);
   const bufferRef = useRef<ReturnType<typeof createBufferFlusher<RawTraceEvent[]>> | null>(null);
+  const timeTravelFrameRef = useRef<number | null>(null);
+  const scrollMemoryRef = useRef<{ top: number; rowCount: number }>({ top: 0, rowCount: 0 });
+  const scrollListenerRef = useRef<((event: Event) => void) | null>(null);
+  const traceRowCountRef = useRef<number>(0);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -165,6 +184,20 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
     bufferRef.current = createBufferFlusher<RawTraceEvent[]>({ onFlush: (items) => setRawEvents(items) });
     return () => bufferRef.current?.dispose();
   }, []);
+
+  useEffect(
+    () => () => {
+      if (timeTravelFrameRef.current !== null) {
+        cancelAnimationFrame(timeTravelFrameRef.current);
+      }
+      const node = tableScrollerRef.current;
+      if (node && scrollListenerRef.current) {
+        node.removeEventListener('scroll', scrollListenerRef.current);
+        scrollListenerRef.current = null;
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     bufferRef.current?.setPaused(paused);
@@ -328,6 +361,10 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
 
   const traceRows = useMemo(() => buildTraceRows(filteredEvents), [filteredEvents]);
 
+  useEffect(() => {
+    traceRowCountRef.current = traceRows.length;
+  }, [traceRows.length]);
+
   const stepSnapshots: StepSnapshotMap = useMemo(() => collectStepSnapshots(rawEvents), [rawEvents]);
 
   const groupedRows = useMemo(() => groupRowsByStep(traceRows), [traceRows]);
@@ -406,6 +443,14 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
     return () => window.clearTimeout(timer);
   }, [reportCopyState]);
 
+  useEffect(() => {
+    if (!managerToast) {
+      return;
+    }
+    const timer = window.setTimeout(() => setManagerToast(null), 2000);
+    return () => window.clearTimeout(timer);
+  }, [managerToast]);
+
   const capturedEntities = useMemo(() => {
     const captured = new Map<string, string>();
     const confirmed = new Map<string, string>();
@@ -424,11 +469,32 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
         }
       });
     });
+    const trackedInfo =
+      (signals?.tracked_info ??
+        summary?.tracked_info ??
+        (stateSnapshot && typeof stateSnapshot === 'object' ? (stateSnapshot as Record<string, unknown>)['tracked_info'] : null)) as
+        | Record<string, unknown>
+        | null
+        | undefined;
+
+    if (trackedInfo && typeof trackedInfo === 'object') {
+      const capturedRaw = trackedInfo['billing_address_captured_raw'];
+      const savedFlag = trackedInfo['billing_address_saved'];
+      const billingCaptured = typeof capturedRaw === 'string' && capturedRaw.trim().length > 0;
+      const billingSaved = savedFlag === true;
+      if (billingCaptured) {
+        captured.set('billing (captured)', 'billing (captured)');
+      }
+      if (billingSaved) {
+        confirmed.set('Billing saved', 'Billing saved');
+        captured.delete('billing (captured)');
+      }
+    }
     return {
       captured: Array.from(captured.values()),
       confirmed: Array.from(confirmed.values()),
     };
-  }, [traceRows]);
+  }, [traceRows, signals, summary, stateSnapshot]);
 
   useEffect(() => {
     if (!autoScroll || paused) {
@@ -439,6 +505,17 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
     }
   }, [traceRows.length, autoScroll, paused]);
 
+  useLayoutEffect(() => {
+    const node = tableScrollerRef.current;
+    if (!node) {
+      return;
+    }
+    const memory = scrollMemoryRef.current;
+    if (memory.rowCount === traceRows.length) {
+      node.scrollTop = memory.top;
+    }
+  }, [traceRows.length, paused]);
+
   const handleInspect = useCallback((row: TraceRowData) => {
     setInspectRow(row);
   }, []);
@@ -447,16 +524,25 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
     if (!row) {
       return;
     }
-    const rawEvent = typeof row.raw.event === 'string' ? row.raw.event : undefined;
-    const rawSubject = typeof row.raw.subject === 'string' ? row.raw.subject : undefined;
-    const rawDetails = typeof row.raw.details === 'string' ? row.raw.details : undefined;
-    setTimeTravelMeta({
-      ts: row.timestamp,
-      label: row.timeLabel,
-      event: row.event || rawEvent || rawSubject || rawDetails || undefined,
+    const schedule = () => {
+      const rawEvent = typeof row.raw.event === 'string' ? row.raw.event : undefined;
+      const rawSubject = typeof row.raw.subject === 'string' ? row.raw.subject : undefined;
+      const rawDetails = typeof row.raw.details === 'string' ? row.raw.details : undefined;
+      setTimeTravelMeta({
+        ts: row.timestamp,
+        label: row.timeLabel,
+        event: row.event || rawEvent || rawSubject || rawDetails || undefined,
+      });
+      setTimeTravelTs(row.timestamp);
+      setPaused(true);
+    };
+    if (timeTravelFrameRef.current !== null) {
+      cancelAnimationFrame(timeTravelFrameRef.current);
+    }
+    timeTravelFrameRef.current = requestAnimationFrame(() => {
+      schedule();
+      timeTravelFrameRef.current = null;
     });
-    setTimeTravelTs(row.timestamp);
-    setPaused(true);
   }, []);
 
   const handleExitTimeTravel = useCallback(() => {
@@ -466,15 +552,41 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
   }, []);
 
   const handleRegisterScroller = useCallback((node: HTMLDivElement | null) => {
+    const previous = tableScrollerRef.current;
+    if (previous && scrollListenerRef.current) {
+      previous.removeEventListener('scroll', scrollListenerRef.current);
+      scrollListenerRef.current = null;
+    }
     tableScrollerRef.current = node;
+    if (node) {
+      const handler = () => {
+        scrollMemoryRef.current = {
+          top: node.scrollTop,
+          rowCount: traceRowCountRef.current,
+        };
+      };
+      node.addEventListener('scroll', handler);
+      scrollListenerRef.current = handler;
+      scrollMemoryRef.current = {
+        top: node.scrollTop,
+        rowCount: traceRowCountRef.current,
+      };
+    }
   }, []);
 
   const handleCopyTimeline = useCallback(async (lines: string[]) => {
-    if (!lines.length) return;
+    if (!lines.length) {
+      return;
+    }
+    const text = lines.join('\n');
+
     try {
-      await navigator.clipboard.writeText(lines.join('\n'));
+      await copyTextWithFallback(text);
+      setManagerToast({ tone: 'ok', message: 'Copied' });
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Copy failed';
       console.warn('Copy failed', err);
+      setManagerToast({ tone: 'error', message });
     }
   }, []);
 
@@ -543,44 +655,67 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
         ? `Confirmed (${dateValue})`
         : 'Confirmed'
       : 'Pending';
-    const roomRaw = (signals?.room_status || '').toString().toLowerCase();
-    let roomLabel = 'Not checked';
-    let roomTone: 'ok' | 'pending' | 'warn' = 'pending';
-    if (roomRaw.includes('available')) {
-      roomLabel = 'Available';
+
+    const roomStatusDisplay = (signals?.room_status_display
+      ?? summary?.room_status_display
+      ?? signals?.room_status
+      ?? 'Unselected').toString().trim();
+    const roomLabel = roomStatusDisplay || 'Unselected';
+    const roomRaw = roomLabel.toLowerCase();
+    let roomTone: 'ok' | 'pending' | 'warn' | 'info' | 'success' | 'muted' = 'pending';
+    if (roomRaw.includes('available') || roomRaw.includes('option') || roomRaw.includes('locked')) {
       roomTone = 'ok';
-    } else if (roomRaw.includes('option') || roomRaw.includes('lock')) {
-      roomLabel = 'Option';
-      roomTone = 'ok';
-    } else if (roomRaw.includes('unavailable') || roomRaw.includes('closed')) {
-      roomLabel = 'Unavailable';
+    } else if (roomRaw.includes('unavailable') || roomRaw.includes('hold') || roomRaw.includes('closed')) {
       roomTone = 'warn';
+    } else if (roomRaw.includes('waiting')) {
+      roomTone = 'info';
+    } else if (roomRaw.includes('unselected') || roomRaw.length === 0) {
+      roomTone = 'pending';
     }
 
-    const hashRaw = (summary?.hash_status || signals?.hash_status || 'Unknown').toString();
-    const hashLabel = hashRaw || 'Unknown';
-    const hashTone: 'ok' | 'pending' | 'warn' = hashLabel.toLowerCase() === 'match'
+    let requirementsStatus: boolean | null = null;
+    if (typeof signals?.requirements_match === 'boolean') {
+      requirementsStatus = signals.requirements_match;
+    } else if (typeof summary?.requirements_match === 'boolean') {
+      requirementsStatus = summary.requirements_match ?? null;
+    } else {
+      const hashText = (summary?.hash_status || signals?.hash_status || '').toString().toLowerCase();
+      if (hashText === 'match') {
+        requirementsStatus = true;
+      } else if (hashText === 'mismatch') {
+        requirementsStatus = false;
+      }
+    }
+    const requirementsLabel = requirementsStatus === true
+      ? 'Match'
+      : requirementsStatus === false
+        ? 'Mismatch'
+        : 'Unknown';
+    const requirementsTone: 'ok' | 'pending' | 'warn' = requirementsStatus === true
       ? 'ok'
-      : hashLabel.toLowerCase() === 'mismatch'
+      : requirementsStatus === false
         ? 'warn'
         : 'pending';
+    const requirementsDescription = signals?.requirements_match_tooltip
+      || summary?.requirements_match_tooltip
+      || summary?.hash_help
+      || 'Deterministic digest of date, pax, and constraints. "Match" means inputs didn’t change since the last evaluation.';
 
-    const offerRaw = (signals?.offer_status || stateSnapshot.offer_status || 'Draft').toString();
-    let normalizedOffer = offerRaw.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!normalizedOffer) {
-      normalizedOffer = 'Draft';
-    }
-    const offerLower = normalizedOffer.toLowerCase();
-    if (offerLower.includes('waiting on hil') && !hilOpen) {
-      normalizedOffer = 'Draft';
-    }
-    const displayedOffer = hilOpen && normalizedOffer.toLowerCase() !== 'sent' ? 'Waiting on HIL' : normalizedOffer;
-    let offerTone: 'ok' | 'pending' | 'warn' = 'pending';
-    if (displayedOffer.toLowerCase() === 'sent') {
-      offerTone = 'ok';
-    } else if (displayedOffer.toLowerCase() === 'waiting on hil') {
-      offerTone = 'warn';
-    }
+    const snapshotInfo = stateSnapshot && typeof stateSnapshot === 'object'
+      ? (stateSnapshot as Record<string, unknown>)
+      : undefined;
+    const snapshotOfferDisplay = snapshotInfo?.['offer_status_display'];
+    const snapshotOfferStatus = snapshotInfo?.['offer_status'];
+
+    const offerChip = resolveOfferStatusChip(
+      signals?.offer_status_display
+      ?? summary?.offer_status_display
+      ?? signals?.offer_status
+      ?? (typeof snapshotOfferDisplay === 'string' ? snapshotOfferDisplay : undefined)
+      ?? (typeof snapshotOfferStatus === 'string' ? snapshotOfferStatus : undefined)
+      ?? '—',
+    );
+    const offerTone = offerChip.tone;
 
     return [
       {
@@ -598,29 +733,36 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
         description: 'Best evaluated status for selected requirements/date.',
       },
       {
-        id: 'hash',
-        label: 'Requirements Hash',
-        value: hashLabel,
-        tone: hashTone,
-        description: 'Compares current requirements to last evaluated room hash to decide if re-evaluation is needed.',
+        id: 'requirements',
+        label: 'Requirements match',
+        value: requirementsLabel,
+        tone: requirementsTone,
+        description: requirementsDescription,
       },
       {
         id: 'offer',
         label: 'Offer Status',
-        value: displayedOffer,
+        value: offerChip.label,
         tone: offerTone,
         description: 'Offer composition and delivery state.',
       },
     ];
-  }, [signals, stateSnapshot.offer_status, summary?.hash_status, hilOpen]);
+  }, [
+    signals,
+    summary,
+    stateSnapshot,
+  ]);
 
   return (
     <div className="debug-panel">
       <div className="debug-panel__header">
         <div className="debug-panel__thread">Thread: {threadId || '—'}</div>
-        <div className="debug-panel__meta">
-          <span>Current Step: {currentStepTitle}</span>
-          <span>Wait State: {waitStateLabel}</span>
+        <div className="debug-panel__header-right">
+          <div className="debug-panel__meta">
+            <span>Current Step: {currentStepTitle}</span>
+            <span>Wait State: {waitStateLabel}</span>
+          </div>
+          <SubloopLegend />
         </div>
       </div>
 
@@ -694,6 +836,7 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
               lines={managerLines}
               onCopy={handleCopyTimeline}
               onDownload={downloadReadableLocal}
+              toast={managerToast}
             />
           )}
         </aside>
