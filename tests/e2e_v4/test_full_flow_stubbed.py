@@ -81,7 +81,10 @@ def test_stubbed_flow_progression(tmp_path, monkeypatch, room_status):
             "chosen_date": chosen_date,
             "current_step": 3,
             "date_confirmed": True,
-            "wish_products": ["Three-course dinner", "Wine pairing"],
+            "preferences": {
+                "wish_products": ["Three-course dinner", "Wine pairing"],
+                "keywords": ["wine"],
+            },
         }
     )
     state.current_step = 3
@@ -102,7 +105,8 @@ def test_stubbed_flow_progression(tmp_path, monkeypatch, room_status):
         assert room_result.action == "room_avail_result"
         assert draft_step3["table_blocks"][0]["type"] == "room_menu"
         assert draft_step3["actions"] and draft_step3["actions"][0]["type"] == "select_room"
-        assert draft_step3["actions"][0]["menu"].endswith("fully covered")
+        assert draft_step3["actions"][0]["hint"].lower().startswith("three-course")
+        assert draft_step3["table_blocks"][0]["rows"][0]["hint"].lower().startswith("three-course")
 
         # HIL approval path
         state.user_info = {"hil_approve_step": 3, "hil_decision": "approve"}

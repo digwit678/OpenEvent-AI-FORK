@@ -190,16 +190,41 @@ class OpenEventAgent:
         drafts = workflow_result.get("draft_messages") or []
         bodies: List[str] = []
         for draft in drafts:
-            body_text = draft.get("body")
-            if not body_text:
-                body_markdown = draft.get("body_markdown") or ""
-                footer = draft.get("footer") or ""
-                if body_markdown and footer:
+            chosen_field = (
+                "body_markdown"
+                if draft.get("body_markdown")
+                else "body_md"
+                if draft.get("body_md")
+                else "body"
+                if draft.get("body")
+                else "prompt"
+                if draft.get("prompt")
+                else "" 
+            )
+            source_value = (
+                draft.get("body_markdown")
+                or draft.get("body_md")
+                or draft.get("body")
+                or draft.get("prompt")
+                or ""
+            )
+            print(
+                "[WF][DEBUG][EmailCompose] body_chosen=",
+                chosen_field or "none",
+                "| len=",
+                len(source_value),
+            )
+            body_markdown = draft.get("body_markdown") or draft.get("body_md")
+            footer = draft.get("footer") or ""
+            body_text = None
+            if body_markdown:
+                body_text = body_markdown
+                if footer:
                     body_text = f"{body_markdown}{FOOTER_SEPARATOR}{footer}".strip()
-                elif body_markdown:
-                    body_text = body_markdown
-                elif footer:
-                    body_text = footer
+            if not body_text:
+                body_text = draft.get("body") or draft.get("prompt")
+                if body_text and footer and footer not in body_text:
+                    body_text = f"{body_text}{FOOTER_SEPARATOR}{footer}".strip()
             if body_text:
                 bodies.append(str(body_text))
         if bodies:

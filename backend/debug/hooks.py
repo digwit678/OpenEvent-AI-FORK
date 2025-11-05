@@ -5,6 +5,11 @@ from functools import wraps
 import inspect
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+try:  # pragma: no cover - debugger counters are optional in some environments
+    from backend.workflows.debugger.counters import compute_step_counters  # type: ignore[import]
+except Exception:  # pragma: no cover - fallback when workflows package unavailable
+    compute_step_counters = None  # type: ignore[assignment]
+
 from .settings import is_trace_enabled
 from .trace import emit, set_hil_open, has_open_hil
 
@@ -601,6 +606,8 @@ def trace_state(thread_id: str, step: str, snapshot: Dict[str, Any]) -> None:
     payload.setdefault("hil_open", bool(hil_flag))
     set_hil_open(thread_id, bool(payload.get("hil_open")))
 
+    counters: Optional[Dict[str, Any]] = None
+
     if is_trace_enabled():
         from backend.debug.state_store import STATE_STORE  # pylint: disable=import-outside-toplevel
 
@@ -612,7 +619,25 @@ def trace_state(thread_id: str, step: str, snapshot: Dict[str, Any]) -> None:
             merged_flags.update(flags)
             merged["flags"] = merged_flags
         merged["hil_open"] = bool(payload.get("hil_open"))
+
+        if compute_step_counters:
+            try:
+                counters = compute_step_counters(merged)
+            except Exception:  # pragma: no cover - defensive fallback
+                counters = None
+        if counters:
+            merged["step_counters"] = counters
+            payload["step_counters"] = counters
+
         STATE_STORE.update(thread_id, merged)
+    else:
+        if compute_step_counters:
+            try:
+                counters = compute_step_counters(payload)
+            except Exception:  # pragma: no cover - defensive fallback
+                counters = None
+        if counters:
+            payload["step_counters"] = counters
     wait_state = snapshot.get("thread_state") or snapshot.get("threadState")
     summary_hint = _state_summary(snapshot)
     if summary_hint:

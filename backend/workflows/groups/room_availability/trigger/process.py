@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import requirements_hash
+from backend.workflows.common.sorting import rank_rooms, RankedRoom
 from backend.workflows.common.room_rules import find_better_room_dates
 from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata
+from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
+from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
 from backend.debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate, trace_state, trace_step
 from backend.utils.profiler import profile_step
 
@@ -116,51 +119,134 @@ def process(state: WorkflowState) -> GroupResult:
     if not eval_needed:
         return _skip_room_evaluation(state, event_entry)
 
+    user_info = state.user_info or {}
+    vague_month = user_info.get("vague_month") or event_entry.get("vague_month")
+    vague_weekday = user_info.get("vague_weekday") or event_entry.get("vague_weekday")
+    range_detected = bool(user_info.get("range_query_detected") or event_entry.get("range_query_detected"))
+
     room_statuses = evaluate_room_statuses(state.db, chosen_date)
+    summary = summarize_room_statuses(room_statuses)
     trace_db_read(
         thread_id,
         "Step3_Room",
         "db.rooms.search",
-        {"date": chosen_date, "rooms": len(room_statuses)},
+        {
+            "date": chosen_date,
+            "participants": participants,
+            "rooms_checked": len(room_statuses),
+            "sample": [
+                {
+                    "room": room,
+                    "status": status,
+                }
+                for entry in room_statuses[:10]
+                for room, status in entry.items()
+            ],
+            "result_summary": summary,
+        },
     )
-    summary = summarize_room_statuses(room_statuses)
     status_map = _flatten_statuses(room_statuses)
 
     preferred_room = _preferred_room(event_entry, user_requested_room)
-    selected_room, selected_status = _select_room(preferred_room, status_map)
+    preferences = event_entry.get("preferences") or state.user_info.get("preferences") or {}
+    explicit_preferences = _has_explicit_preferences(preferences)
+    ranked_rooms = rank_rooms(
+        status_map,
+        preferred_room=preferred_room,
+        pax=participants,
+        preferences=preferences,
+    )
+    selected_entry = _select_room(ranked_rooms)
+    selected_room = selected_entry.room if selected_entry else None
+    selected_status = selected_entry.status if selected_entry else None
 
     outcome = selected_status or ROOM_OUTCOME_UNAVAILABLE
-    skip_capacity_prompt = bool(capacity_shortcut)
 
-    summary_text = _compose_outcome_message(
-        outcome,
-        selected_room,
-        chosen_date,
-        requirements,
-        skip_capacity_prompt=skip_capacity_prompt,
+    candidate_mode = "alternatives"
+    candidate_iso_dates: List[str] = []
+    if range_detected and (vague_month or vague_weekday):
+        candidate_iso_dates = _dates_in_month_weekday_wrapper(vague_month, vague_weekday, limit=5)
+        candidate_mode = "range"
+    else:
+        iso_anchor = _to_iso(chosen_date)
+        if iso_anchor:
+            candidate_iso_dates = _closest_alternatives_wrapper(
+                iso_anchor,
+                vague_weekday,
+                vague_month,
+                limit=3,
+            )
+        if not candidate_iso_dates and (vague_month or vague_weekday):
+            candidate_iso_dates = _dates_in_month_weekday_wrapper(vague_month, vague_weekday, limit=5)
+            candidate_mode = "range"
+
+    available_dates_map = _available_dates_for_rooms(
+        state.db,
+        ranked_rooms,
+        candidate_iso_dates,
+        participants,
     )
 
-    wish_products = _collect_wish_products(event_entry)
-    table_rows, actions = _build_room_menu_rows(
+    table_rows, actions = _build_ranked_rows(
         chosen_date,
-        status_map,
-        selected_room,
-        wish_products,
+        ranked_rooms,
+        preferences if explicit_preferences else None,
+        available_dates_map,
     )
     actions = actions[:5]
 
-    alt_dates: List[str] = []
-    if _needs_better_room_alternatives(state.user_info, status_map, event_entry):
-        alt_dates = find_better_room_dates(event_entry)
-    guidance_line = (
-        "I've summarised the best room/menu pairings below. Please choose one so I can queue it for approval."
-        if actions
-        else "I've listed the room status overview below. Let me know if you'd like me to look at other dates."
+    display_chosen_date = _format_display_date(chosen_date)
+
+    alt_candidates_display: List[str] = []
+    alt_more_available = False
+    if candidate_mode == "alternatives" and candidate_iso_dates:
+        alt_candidates_display = list(candidate_iso_dates)
+    else:
+        raw_alternatives = _collect_alternative_dates(state, preferred_room, display_chosen_date)
+        if _needs_better_room_alternatives(state.user_info, status_map, event_entry):
+            raw_alternatives = _merge_alternative_dates(find_better_room_dates(event_entry), raw_alternatives)
+        MAX_ALT_DATES = 5
+        alt_dates_full = _dedupe_dates(raw_alternatives, display_chosen_date)
+        alt_candidates_display = alt_dates_full[:MAX_ALT_DATES]
+        alt_more_available = len(alt_dates_full) > MAX_ALT_DATES
+
+    room_date_lines = _format_room_sections(
+        actions,
+        candidate_mode,
+        vague_month,
+        vague_weekday,
     )
-    body_lines = [summary_text, guidance_line]
-    if alt_dates:
-        body_lines.append("If you'd like more space, these alternative dates keep larger rooms open.")
-    body_text = "\n\n".join(line for line in body_lines if line)
+
+    attendee_label = f"{participants} guests" if participants else "your group"
+    header_line = _compose_preselection_header(
+        outcome,
+        selected_room,
+        chosen_date,
+        participants,
+        capacity_shortcut,
+    )
+    primary_line = header_line or f"Good news — we have options that fit {attendee_label}."
+    intro_lines: List[str] = [primary_line, ""]
+    if candidate_mode == "alternatives":
+        intro_lines.append("Here are **nearby alternative dates** in case you’d like flexibility.")
+    else:
+        month_label = (str(vague_month).strip().capitalize() if vague_month else "this period")
+        weekday_label = str(vague_weekday).strip().capitalize() if vague_weekday else ""
+        suffix = f" ({weekday_label})" if weekday_label else ""
+        intro_lines.append(f"Here are your **available {month_label}{suffix} options** for each room.")
+    intro_lines.append("Please choose a room to continue.")
+    intro_lines.append("Products available for each room; I’ll keep the menu summary compact unless you’d like more detail.")
+    intro_lines.append("")
+
+    body_sections: List[str] = [line for line in intro_lines if line is not None]
+    body_sections.extend(room_date_lines)
+    body_sections.append("")
+    alt_section = _format_alternative_dates_section(alt_candidates_display, alt_more_available)
+    if alt_section:
+        body_sections.append(alt_section)
+
+    body_markdown = "\n".join(body_sections).strip()
+    body_text = body_markdown
     body_with_footer = append_footer(
         body_text,
         step=3,
@@ -175,25 +261,29 @@ def process(state: WorkflowState) -> GroupResult:
     }[outcome]
 
     table_blocks: List[Dict[str, Any]] = []
+    alt_dates_display = [_format_short_date(value) for value in alt_candidates_display]
+
     if table_rows:
         table_blocks.append(
             {
                 "type": "room_menu",
-                "label": "Room & menu options",
+                "label": "Room options",
                 "rows": table_rows,
             }
         )
-    if alt_dates:
+    if alt_dates_display:
         table_blocks.append(
             {
                 "type": "dates",
-                "label": "Alternative dates",
-                "rows": [{"date": value} for value in alt_dates],
+                "label": "Alternative dates (top 5)" if alt_more_available else "Alternative dates",
+                "rows": [{"date": value} for value in alt_dates_display],
             }
         )
 
     draft_message = {
         "body": body_with_footer,
+        "body_markdown": body_markdown,
+        "body_md": body_markdown,
         "step": 3,
         "next_step": "Choose a room",
         "thread_state": "Awaiting Client",
@@ -203,29 +293,32 @@ def process(state: WorkflowState) -> GroupResult:
         "table_blocks": table_blocks,
         "actions": actions[:5],
     }
-    if alt_dates:
-        draft_message["alt_dates_for_better_room"] = alt_dates
+    draft_message["requires_approval"] = False
+    if alt_dates_display:
+        draft_message["alt_dates_for_better_room"] = alt_dates_display
+    if actions:
+        print(
+            "[WF][DEBUG] step3 actions sample:",
+            actions[0].get("room"),
+            (actions[0].get("available_dates") or [])[:3],
+        )
     state.add_draft_message(draft_message)
+
+    pending_hint = _format_hint(selected_entry.hint if (selected_entry and explicit_preferences) else None)
 
     event_entry["room_pending_decision"] = {
         "selected_room": selected_room,
         "selected_status": outcome,
         "requirements_hash": current_req_hash,
         "summary": summary,
-        "menu": table_rows[0]["menu"] if table_rows else None,
-        "wish_products": wish_products,
+        "hint": pending_hint,
+        "available_dates": available_dates_map.get(selected_room or "", []),
     }
 
     update_event_metadata(
         event_entry,
         thread_state="Awaiting Client",
         current_step=3,
-    )
-    trace_db_write(
-        thread_id,
-        "Step3_Room",
-        "db.events.update_room",
-        {"selected_room": selected_room, "status": outcome},
     )
 
     state.set_thread_state("Awaiting Client")
@@ -238,11 +331,13 @@ def process(state: WorkflowState) -> GroupResult:
         "Step3_Room",
         {
             "selected_room": selected_room,
-            "status": outcome,
+            "room_status_preview": outcome,
             "eval_hash": current_req_hash,
             "room_eval_hash": event_entry.get("room_eval_hash"),
             "requirements_hash": event_entry.get("requirements_hash") or current_req_hash,
             "locked_room_id": event_entry.get("locked_room_id"),
+            "room_hint": pending_hint,
+            "available_dates": available_dates_map,
         },
     )
 
@@ -255,17 +350,18 @@ def process(state: WorkflowState) -> GroupResult:
         "summary": summary,
         "selected_room": selected_room,
         "selected_status": outcome,
-        "room_menu_rows": table_rows,
-        "wish_products": wish_products,
+        "room_rankings": table_rows,
+        "room_hint": pending_hint,
         "actions": actions,
         "draft_messages": state.draft_messages,
         "thread_state": state.thread_state,
         "context": state.context_snapshot,
         "persisted": True,
+        "available_dates": available_dates_map,
     }
-    if alt_dates:
-        payload["alt_dates_for_better_room"] = alt_dates
-    if skip_capacity_prompt:
+    if alt_dates_display:
+        payload["alt_dates_for_better_room"] = alt_dates_display
+    if capacity_shortcut:
         payload["shortcut_capacity_ok"] = True
     return GroupResult(action="room_avail_result", payload=payload, halt=True)
 
@@ -396,25 +492,6 @@ def _flatten_statuses(statuses: List[Dict[str, str]]) -> Dict[str, str]:
     return result
 
 
-def _select_room(preferred_room: Optional[str], status_map: Dict[str, str]) -> Tuple[Optional[str], Optional[str]]:
-    """[Trigger] Choose the best room candidate based on availability."""
-
-    if preferred_room:
-        status = status_map.get(preferred_room)
-        if status and status != "Confirmed":
-            return preferred_room, status
-
-    for room, status in status_map.items():
-        if status == ROOM_OUTCOME_AVAILABLE:
-            return room, status
-
-    for room, status in status_map.items():
-        if status == ROOM_OUTCOME_OPTION:
-            return room, status
-
-    return None, None
-
-
 def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decision: str) -> GroupResult:
     """Handle HIL approval or rejection for the latest room evaluation."""
 
@@ -537,59 +614,50 @@ def _needs_better_room_alternatives(
     return False
 
 
-def _append_alt_dates(message: str, alt_dates: List[str]) -> str:
-    if not alt_dates:
-        return message
-    lines = [message.rstrip(), "", "Here are a few alternative dates with larger rooms available:"]
-    lines.extend(f"- {date}" for date in alt_dates)
-    return "\n".join(lines)
+def _format_display_date(chosen_date: Optional[str]) -> str:
+    display = format_iso_date_to_ddmmyyyy(chosen_date)
+    if display:
+        return display
+    return chosen_date or "your requested date"
 
 
-def _compose_outcome_message(
+def _has_explicit_preferences(preferences: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(preferences, dict):
+        return False
+    wish_products = preferences.get("wish_products")
+    if isinstance(wish_products, (list, tuple)):
+        for item in wish_products:
+            if isinstance(item, str) and item.strip():
+                return True
+    keywords = preferences.get("keywords")
+    if isinstance(keywords, (list, tuple)):
+        for item in keywords:
+            if isinstance(item, str) and item.strip():
+                return True
+    return False
+
+
+def _compose_preselection_header(
     status: str,
     room_name: Optional[str],
     chosen_date: str,
-    requirements: Dict[str, Any],
-    *,
-    skip_capacity_prompt: bool = False,
+    participants: Optional[int],
+    skip_capacity_prompt: bool,
 ) -> str:
-    """[Trigger] Build the draft message for the selected outcome."""
+    """Compose the lead sentence for the Step-3 draft before room selection."""
 
-    participants = requirements.get("number_of_participants")
-    layout = requirements.get("seating_layout")
-
-    if participants and layout:
-        capacity_text = f"{participants} guests in {layout}"
-    elif participants:
-        capacity_text = f"{participants} guests"
-    elif layout:
-        capacity_text = f"a {layout} layout"
-    else:
-        capacity_text = "your requirements"
-
-    capacity_sentence = ""
-    if not skip_capacity_prompt:
-        capacity_sentence = f"It comfortably fits {capacity_text}. "
-
+    date_label = _format_display_date(chosen_date)
     if status == ROOM_OUTCOME_AVAILABLE and room_name:
-        return (
-            f"Good news — {room_name} is available on {chosen_date}. "
-            f"{capacity_sentence}"
-            "Shall we proceed with this room and date?"
-        ).replace("  ", " ").strip()
-
+        if participants and not skip_capacity_prompt:
+            return f"Good news — {room_name} is available on {date_label} and fits {participants} guests."
+        return f"Good news — {room_name} is available on {date_label}."
     if status == ROOM_OUTCOME_OPTION and room_name:
-        return (
-            f"{room_name} is currently on option for {chosen_date}. "
-            f"{capacity_sentence}"
-            "We can proceed under this option or consider other dates/rooms — what would you prefer?"
-        ).replace("  ", " ").strip()
-
-    capacity_clause = f" for {capacity_text}" if not skip_capacity_prompt else ""
-    return (
-        f"Thanks for your request. Unfortunately, no suitable room is available on {chosen_date}{capacity_clause}. "
-        "Would one of these alternative dates work, or would you like to adjust the attendee count or layout?"
-    ).strip()
+        if participants and not skip_capacity_prompt:
+            return f"Heads up — {room_name} is currently on option for {date_label}. It fits {participants} guests."
+        return f"Heads up — {room_name} is currently on option for {date_label}."
+    if participants and not skip_capacity_prompt:
+        return f"I checked availability for {date_label} and captured the latest room status for {participants} guests."
+    return f"I checked availability for {date_label} and captured the latest room status."
 
 
 def _extract_participants(requirements: Dict[str, Any]) -> Optional[int]:
@@ -604,77 +672,186 @@ def _extract_participants(requirements: Dict[str, Any]) -> Optional[int]:
         return None
 
 
-def _collect_wish_products(event_entry: Dict[str, Any]) -> List[str]:
-    wish_products = event_entry.get("wish_products") or []
-    result: List[str] = []
-    for item in wish_products:
-        text = str(item or "").strip()
-        if text:
-            result.append(text)
-    return result
-
-
-def _build_room_menu_rows(
+def _build_ranked_rows(
     chosen_date: str,
-    status_map: Dict[str, str],
-    primary_room: Optional[str],
-    wish_products: List[str],
+    ranked: List[RankedRoom],
+    preferences: Optional[Dict[str, Any]],
+    available_dates_map: Dict[str, List[str]],
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     rows: List[Dict[str, Any]] = []
-    for room, status in status_map.items():
-        normalized_status = status or "Unknown"
-        is_primary = bool(primary_room and room == primary_room)
-        row: Dict[str, Any] = {
-            "date": chosen_date,
-            "room": room,
-            "status": normalized_status,
-            "menu": _menu_label(wish_products, is_primary),
-            "match_score": _match_score(normalized_status, is_primary, wish_products),
-        }
-        if wish_products:
-            row["wish_products"] = wish_products
-            row["matches_all_wishes"] = is_primary
-        rows.append(row)
-
-    rows.sort(key=lambda entry: (-entry["match_score"], entry["room"]))
-
     actions: List[Dict[str, Any]] = []
-    for row in rows:
-        if row["status"] in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}:
+    explicit_prefs = _has_explicit_preferences(preferences)
+
+    for entry in ranked:
+        raw_hint = entry.hint if (explicit_prefs and entry.hint) else None
+        hint_label = _format_hint(raw_hint)
+        available_dates = available_dates_map.get(entry.room, [])
+        row = {
+            "date": chosen_date,
+            "room": entry.room,
+            "status": entry.status,
+            "hint": hint_label,
+            "requirements_score": round(entry.score, 2),
+            "available_dates": available_dates,
+        }
+        rows.append(row)
+        if entry.status in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}:
             actions.append(
                 {
                     "type": "select_room",
-                    "label": f"Proceed with {row['room']} ({row['menu']})",
-                    "room": row["room"],
+                    "label": f"Proceed with {entry.room} ({hint_label})",
+                    "room": entry.room,
                     "date": chosen_date,
-                    "menu": row["menu"],
-                    "status": row["status"],
+                    "status": entry.status,
+                    "hint": hint_label,
+                    "available_dates": available_dates,
                 }
             )
+
     return rows, actions
 
 
-def _menu_label(wish_products: List[str], is_primary: bool) -> str:
-    if not wish_products:
-        return "Atelier seasonal menu"
-    base = ", ".join(wish_products)
-    suffix = " · fully covered" if is_primary else " · may require adjustments"
-    return f"{base}{suffix}"
+def _format_hint(raw: Optional[str]) -> str:
+    text = (raw or "").strip()
+    if not text or text.lower() == "catering available":
+        return "Products available"
+    return text[0].upper() + text[1:]
 
 
-def _match_score(status: str, is_primary: bool, wish_products: List[str]) -> int:
-    status_weight = _status_weight(status)
-    preference_bonus = len(wish_products) if is_primary else max(len(wish_products) - 1, 0)
-    return status_weight * 10 + preference_bonus
+def _dates_in_month_weekday_wrapper(
+    month_hint: Optional[Any],
+    weekday_hint: Optional[Any],
+    *,
+    limit: int,
+) -> List[str]:
+    from backend.workflows.io import dates as dates_module
+
+    return dates_module.dates_in_month_weekday(month_hint, weekday_hint, limit=limit)
 
 
-def _status_weight(status: str) -> int:
-    lookup = {
-        ROOM_OUTCOME_AVAILABLE: 3,
-        ROOM_OUTCOME_OPTION: 2,
-        ROOM_OUTCOME_UNAVAILABLE: 1,
-    }
-    return lookup.get(status, 0)
+def _closest_alternatives_wrapper(
+    anchor_iso: str,
+    weekday_hint: Optional[Any],
+    month_hint: Optional[Any],
+    *,
+    limit: int,
+) -> List[str]:
+    from backend.workflows.io import dates as dates_module
+
+    return dates_module.closest_alternatives(anchor_iso, weekday_hint, month_hint, limit=limit)
+
+
+def _available_dates_for_rooms(
+    db: Dict[str, Any],
+    ranked: List[RankedRoom],
+    candidate_iso_dates: List[str],
+    participants: Optional[int],
+) -> Dict[str, List[str]]:
+    availability: Dict[str, List[str]] = {}
+    for entry in ranked:
+        dates: List[str] = []
+        for iso_date in candidate_iso_dates:
+            display_date = format_iso_date_to_ddmmyyyy(iso_date)
+            if not display_date:
+                continue
+            status = room_status_on_date(db, display_date, entry.room)
+            if status.lower() in {"available", "option"}:
+                dates.append(iso_date)
+        availability[entry.room] = dates
+    return availability
+
+
+def _format_room_sections(
+    actions: List[Dict[str, Any]],
+    mode: str,
+    vague_month: Optional[Any],
+    vague_weekday: Optional[Any],
+) -> List[str]:
+    lines: List[str] = []
+    if not actions:
+        return lines
+
+    descriptor = _format_range_descriptor(vague_month, vague_weekday)
+    max_display = 5 if mode == "range" else 3
+
+    for action in actions:
+        room = action.get("room")
+        status = action.get("status") or "Available"
+        hint = action.get("hint")
+        iso_dates = action.get("available_dates") or []
+        if not room:
+            continue
+        lines.append(f"### {room} — {status}")
+        if hint:
+            lines.append(f"- _{hint}_")
+        if iso_dates:
+            display_text, remainder = _format_dates_list(iso_dates, max_display)
+            if mode == "range":
+                prefix = "Available dates"
+                if descriptor:
+                    prefix += f" {descriptor}"
+            else:
+                prefix = "Alternative dates (closest)"
+            line = f"- **{prefix}:** {display_text}"
+            if remainder:
+                line += f" (+{remainder} more)"
+            lines.append(line)
+        lines.append("")
+
+    return lines
+
+
+def _format_range_descriptor(month_hint: Optional[Any], weekday_hint: Optional[Any]) -> str:
+    parts: List[str] = []
+    if month_hint:
+        parts.append(str(month_hint).strip().capitalize())
+    if weekday_hint:
+        parts.append(str(weekday_hint).strip().capitalize())
+    if not parts:
+        return ""
+    if len(parts) == 2:
+        return f"in {parts[0]} ({parts[1]})"
+    return f"in {parts[0]}"
+
+
+def _format_dates_list(dates: List[str], max_count: int) -> Tuple[str, int]:
+    shown = dates[:max_count]
+    display = ", ".join(_format_short_date(iso) for iso in shown)
+    remainder = max(0, len(dates) - max_count)
+    return display, remainder
+
+
+def _format_short_date(iso_date: str) -> str:
+    try:
+        parsed = datetime.strptime(iso_date, "%Y-%m-%d")
+        return parsed.strftime("%d.%m.")
+    except ValueError:
+        return iso_date
+
+
+def _to_iso(display_date: Optional[str]) -> Optional[str]:
+    if not display_date:
+        return None
+    parsed = parse_ddmmyyyy(display_date)
+    if not parsed:
+        return None
+    return parsed.strftime("%Y-%m-%d")
+
+
+def _select_room(ranked: List[RankedRoom]) -> Optional[RankedRoom]:
+    for entry in ranked:
+        if entry.status == ROOM_OUTCOME_AVAILABLE and entry.capacity_ok:
+            return entry
+    for entry in ranked:
+        if entry.status == ROOM_OUTCOME_AVAILABLE:
+            return entry
+    for entry in ranked:
+        if entry.status == ROOM_OUTCOME_OPTION and entry.capacity_ok:
+            return entry
+    for entry in ranked:
+        if entry.status == ROOM_OUTCOME_OPTION:
+            return entry
+    return ranked[0] if ranked else None
 
 
 def _thread_id(state: WorkflowState) -> str:
@@ -686,3 +863,206 @@ def _thread_id(state: WorkflowState) -> str:
     if message and message.msg_id:
         return str(message.msg_id)
     return "unknown-thread"
+
+
+def handle_select_room_action(
+    state: WorkflowState,
+    *,
+    room: str,
+    status: str,
+    date: Optional[str] = None,
+) -> GroupResult:
+    """[OpenEvent Action] Persist the client's room choice and prompt for products."""
+
+    event_entry = state.event_entry
+    if not event_entry or not event_entry.get("event_id"):
+        payload = {
+            "client_id": state.client_id,
+            "intent": state.intent.value if state.intent else None,
+            "reason": "missing_event_record",
+            "context": state.context_snapshot,
+        }
+        return GroupResult(action="room_select_missing", payload=payload, halt=True)
+
+    event_id = event_entry["event_id"]
+    update_event_room(
+        state.db,
+        event_id,
+        selected_room=room,
+        status=status,
+    )
+    update_event_metadata(
+        event_entry,
+        current_step=3,
+        thread_state="Awaiting Client",
+    )
+
+    event_entry["selected_room"] = room
+    event_entry["selected_room_status"] = status
+    flags = event_entry.setdefault("flags", {})
+    flags["room_selected"] = True
+    pending = event_entry.setdefault("room_pending_decision", {})
+    pending["selected_room"] = room
+    pending["selected_status"] = status
+
+    if not hasattr(state, "flags") or not isinstance(getattr(state, "flags"), dict):
+        state.flags = {}
+    state.flags["room_selected"] = True
+
+    preferences = event_entry.get("preferences") or state.user_info.get("preferences") or {}
+    wish_products: List[str] = []
+    if isinstance(preferences, dict):
+        raw_wishes = preferences.get("wish_products") or []
+        if isinstance(raw_wishes, (list, tuple)):
+            wish_products = [str(item).strip() for item in raw_wishes if str(item).strip()]
+
+    top_summary = (
+        f"Top picks: {', '.join(wish_products[:3])}."
+        if wish_products
+        else "Products available for this room."
+    )
+
+    chosen_date = date or event_entry.get("chosen_date") or ""
+    display_date = _format_display_date(chosen_date)
+
+    body_lines = [
+        f"Great — {room} on {display_date} is reserved as an option.",
+        "Would you like to (A) review products for this room, or (B) confirm products now?",
+        top_summary,
+    ]
+    body_text = "\n\n".join(body_lines)
+    body_with_footer = append_footer(
+        body_text,
+        step=3,
+        next_step="Pick products",
+        thread_state="Awaiting Client",
+    )
+
+    state.draft_messages.clear()
+    follow_up = {
+        "body": body_with_footer,
+        "step": 3,
+        "next_step": "Pick products",
+        "thread_state": "Awaiting Client",
+        "topic": "room_selected_follow_up",
+        "actions": [
+            {
+                "type": "explore_products",
+                "label": f"Explore products for {room}",
+                "room": room,
+                "date": chosen_date or display_date,
+            },
+            {
+                "type": "confirm_products",
+                "label": f"Confirm products for {room}",
+                "room": room,
+                "date": chosen_date or display_date,
+            },
+        ],
+        "requires_approval": False,
+    }
+    state.add_draft_message(follow_up)
+
+    state.current_step = 3
+    state.set_thread_state("Awaiting Client")
+    state.extras["persist"] = True
+
+    trace_db_write(
+        _thread_id(state),
+        "Step3_Room",
+        "db.events.update_room",
+        {"selected_room": room, "status": status},
+    )
+
+    trace_state(
+        _thread_id(state),
+        "Step3_Room",
+        {
+            "selected_room": room,
+            "selected_status": status,
+            "room_hint": top_summary if wish_products else "Products available",
+        },
+    )
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_id,
+        "intent": state.intent.value if state.intent else None,
+        "selected_room": room,
+        "selected_status": status,
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+    }
+    return GroupResult(action="room_selected", payload=payload, halt=False)
+
+
+def _collect_alternative_dates(
+    state: WorkflowState,
+    preferred_room: Optional[str],
+    chosen_date: Optional[str],
+    *,
+    count: int = 7,
+) -> List[str]:
+    from backend.workflows.common.catalog import list_free_dates
+
+    try:
+        alt = list_free_dates(count=count, db=state.db, preferred_room=preferred_room)
+    except Exception:  # pragma: no cover - safety net for missing fixtures
+        alt = []
+
+    chosen_iso = _to_iso(chosen_date)
+    iso_dates: List[str] = []
+    for value in alt:
+        label = str(value).strip()
+        if not label:
+            continue
+        candidate_iso = _to_iso(label) or label if len(label) == 10 and label.count("-") == 2 else None
+        if not candidate_iso:
+            continue
+        if chosen_iso and candidate_iso == chosen_iso:
+            continue
+        if candidate_iso not in iso_dates:
+            iso_dates.append(candidate_iso)
+    return iso_dates
+
+
+def _merge_alternative_dates(primary: List[str], fallback: List[str]) -> List[str]:
+    combined: List[str] = []
+    for source in (primary, fallback):
+        for value in source:
+            if value and value not in combined:
+                combined.append(value)
+    return combined
+
+
+def _dedupe_dates(dates: List[str], chosen_date: Optional[str]) -> List[str]:
+    result: List[str] = []
+    for date in dates:
+        if not date:
+            continue
+        if chosen_date and date == chosen_date:
+            continue
+        if date not in result:
+            result.append(date)
+    return result
+
+
+def _format_alternative_dates_section(dates: List[str], more_available: bool) -> str:
+    if not dates and not more_available:
+        return "Alternative Dates:\n- Let me know if you'd like me to explore additional dates."
+    if not dates:
+        return "Alternative Dates:\n- More options are available on request."
+
+    label = "Alternative Dates"
+    if len(dates) > 1:
+        label = f"Alternative Dates (top {len(dates)})"
+
+    lines = [f"{label}:"]
+    for value in dates:
+        display = _format_short_date(value)
+        lines.append(f"- {display}")
+    if more_available:
+        lines.append("More options are available on request.")
+    return "\n".join(lines)

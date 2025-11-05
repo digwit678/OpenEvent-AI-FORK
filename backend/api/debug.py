@@ -14,8 +14,9 @@ def debug_get_trace(
     *,
     granularity: str = "logic",
     kinds: Optional[List[str]] = None,
+    as_of_ts: Optional[float] = None,
 ) -> Dict[str, Any]:
-    return collect_trace_payload(thread_id, granularity=granularity, kinds=kinds)
+    return collect_trace_payload(thread_id, granularity=granularity, kinds=kinds, as_of_ts=as_of_ts)
 
 
 def debug_get_timeline(
@@ -23,14 +24,16 @@ def debug_get_timeline(
     *,
     granularity: str = "logic",
     kinds: Optional[List[str]] = None,
+    as_of_ts: Optional[float] = None,
 ) -> Dict[str, Any]:
-    payload = collect_trace_payload(thread_id, granularity=granularity, kinds=kinds)
+    payload = collect_trace_payload(thread_id, granularity=granularity, kinds=kinds, as_of_ts=as_of_ts)
     return {
         "thread_id": thread_id,
         "confirmed": payload["confirmed"],
         "trace": payload["trace"],
         "timeline": payload["timeline"],
         "summary": payload["summary"],
+        "time_travel": payload.get("time_travel"),
     }
 
 

@@ -35,6 +35,8 @@ from backend.workflows.io.database import (
 from ..db_pers.tasks import enqueue_manual_review_task
 from ..condition.checks import is_event_request
 from ..llm.analysis import classify_intent, extract_user_information
+from backend.workflows.nlu.preferences import extract_preferences
+from ..billing_flow import handle_billing_capture
 
 __workflow_role__ = "trigger"
 
@@ -85,6 +87,9 @@ def process(state: WorkflowState) -> GroupResult:
         json.dumps(user_info, ensure_ascii=False),
         outputs=user_info,
     )
+    preferences = extract_preferences(user_info)
+    if preferences:
+        user_info["preferences"] = preferences
     state.user_info = user_info
     _trace_user_entities(state, message_payload, user_info)
 
@@ -165,6 +170,7 @@ def process(state: WorkflowState) -> GroupResult:
     event_entry = _ensure_event_record(state, message_payload, user_info)
     if merge_client_profile(event_entry, user_info):
         state.extras["persist"] = True
+    handle_billing_capture(state, event_entry)
     state.event_entry = event_entry
     state.event_id = event_entry["event_id"]
     state.current_step = event_entry.get("current_step")
@@ -180,20 +186,16 @@ def process(state: WorkflowState) -> GroupResult:
         requirements_hash=new_req_hash,
     )
 
-    wish_products = []
-    products_add = user_info.get("products_add") or []
-    if isinstance(products_add, list):
-        wish_products = [
-            item.get("name")
-            for item in products_add
-            if isinstance(item, dict) and item.get("name")
-        ]
+    preferences = user_info.get("preferences") or {}
+    wish_products = list((preferences.get("wish_products") or []))
     vague_month = user_info.get("vague_month")
     vague_weekday = user_info.get("vague_weekday")
     vague_time = user_info.get("vague_time_of_day")
     metadata_updates: Dict[str, Any] = {}
     if wish_products:
         metadata_updates["wish_products"] = wish_products
+    if preferences:
+        metadata_updates["preferences"] = preferences
     if vague_month:
         metadata_updates["vague_month"] = vague_month
     if vague_weekday:

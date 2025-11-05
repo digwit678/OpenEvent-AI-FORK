@@ -21,7 +21,7 @@ def _state(tmp_path: Path) -> WorkflowState:
 
 def test_room_table_ranks_by_menu_preferences(tmp_path, monkeypatch):
     state = _state(tmp_path)
-    requirements = {"number_of_participants": 48, "seating_layout": "banquet"}
+    requirements = {"number_of_participants": 30, "seating_layout": "banquet"}
     req_hash = requirements_hash(requirements)
     state.event_entry = {
         "event_id": state.event_id,
@@ -32,7 +32,10 @@ def test_room_table_ranks_by_menu_preferences(tmp_path, monkeypatch):
         "room_eval_hash": None,
         "locked_room_id": None,
         "thread_state": "Awaiting Client",
-        "wish_products": ["Three-course dinner", "Wine pairing"],
+        "preferences": {
+            "wish_products": ["Wine pairing"],
+            "keywords": ["stage"],
+        },
     }
 
     def fake_eval(_db, _date):
@@ -48,10 +51,9 @@ def test_room_table_ranks_by_menu_preferences(tmp_path, monkeypatch):
 
     assert result.action == "room_avail_result"
     assert table_rows[0]["room"] == "Room A"
-    assert table_rows[0]["matches_all_wishes"] is True
-    assert table_rows[0]["menu"].endswith("fully covered")
-    assert table_rows[1]["menu"].endswith("may require adjustments")
+    assert table_rows[0]["hint"].lower().startswith("wine")
+    assert table_rows[0]["requirements_score"] >= table_rows[1]["requirements_score"]
 
     assert all(action["type"] == "select_room" for action in actions)
-    assert all("menu" in action and "date" in action for action in actions)
+    assert all("hint" in action and "date" in action for action in actions)
     assert actions[0]["room"] == "Room A"

@@ -30,7 +30,7 @@ TIME_SHIFTS = [
 DATE_FORMAT_FALLBACKS = ("%Y-%m-%d", "%d.%m.%Y")
 WF_DB_PATH = Path(__file__).resolve().parent.parent.parent.parent / "events_database.json"
 WF_LOCK_PATH = WF_DB_PATH.with_name(".events_db.lock")
-ROOMS_PATH = Path(__file__).resolve().parent.parent.parent.parent / "rooms.json"
+ROOMS_PATH = Path(__file__).resolve().parent.parent.parent.parent.parent / "rooms.json"
 
 
 @dataclass

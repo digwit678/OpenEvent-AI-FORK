@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import Toolbar from './debug/Toolbar';
 import ManagerView from './debug/ManagerView';
+import StateViewer from './debug/StateViewer';
 import {
   buildManagerTimeline,
   computeStepProgress,
@@ -47,6 +48,7 @@ interface TraceResponse {
   confirmed?: SignalSummary;
   summary?: TraceSummary;
   trace: RawTraceEvent[];
+  time_travel?: { enabled: boolean; as_of_ts?: number | null };
 }
 
 interface DebugPanelProps {
@@ -124,13 +126,20 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
   const [showManagerView, setShowManagerView] = useState(initialManagerView);
   const [rawEvents, setRawEvents] = useState<RawTraceEvent[]>([]);
   const [stateSnapshot, setStateSnapshot] = useState<Record<string, unknown>>({});
+  const [liveState, setLiveState] = useState<Record<string, unknown>>({});
   const [signals, setSignals] = useState<SignalSummary | undefined>();
+  const [liveSignals, setLiveSignals] = useState<SignalSummary | undefined>();
   const [summary, setSummary] = useState<TraceSummary | undefined>();
+  const [liveSummary, setLiveSummary] = useState<TraceSummary | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [disabled, setDisabled] = useState(false);
   const [inspectRow, setInspectRow] = useState<TraceRowData | null>(null);
   const [managerLines, setManagerLines] = useState<string[]>([]);
   const [reportCopyState, setReportCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
+  const [timeTravelTs, setTimeTravelTs] = useState<number | null>(null);
+  const [timeTravelMeta, setTimeTravelMeta] = useState<{ ts: number; label?: string; event?: string } | null>(null);
+  const [timeTravelLoading, setTimeTravelLoading] = useState(false);
+  const [timeTravelError, setTimeTravelError] = useState<string | null>(null);
 
   const tableScrollerRef = useRef<HTMLDivElement | null>(null);
   const bufferRef = useRef<ReturnType<typeof createBufferFlusher<RawTraceEvent[]>> | null>(null);
@@ -165,6 +174,9 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
     if (!threadId) {
       setRawEvents([]);
       setStateSnapshot({});
+      setLiveState({});
+      setLiveSignals(undefined);
+      setLiveSummary(undefined);
       setError('Waiting for session to start…');
       setDisabled(false);
       return;
@@ -188,9 +200,17 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
           throw new Error(await response.text());
         }
         const payload = (await response.json()) as TraceResponse;
-        setStateSnapshot(payload.state || {});
-        setSignals(payload.confirmed);
-        setSummary(payload.summary);
+        const nextState = payload.state || {};
+        const nextSignals = payload.confirmed;
+        const nextSummary = payload.summary;
+        setLiveState(nextState);
+        setLiveSignals(nextSignals);
+        setLiveSummary(nextSummary);
+        if (timeTravelTs === null) {
+          setStateSnapshot(nextState);
+          setSignals(nextSignals);
+          setSummary(nextSummary);
+        }
         bufferRef.current?.push(payload.trace ?? []);
         setError(null);
         setDisabled(false);
@@ -208,11 +228,78 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
       window.clearInterval(timer);
       controller.abort();
     };
-  }, [threadId, pollMs, granularity]);
+  }, [threadId, pollMs, granularity, timeTravelTs]);
+
+  useEffect(() => {
+    if (timeTravelTs === null) {
+      setTimeTravelLoading(false);
+      setTimeTravelError(null);
+      setTimeTravelMeta(null);
+      if (Object.keys(liveState).length) {
+        setStateSnapshot(liveState);
+      }
+      setSignals(liveSignals);
+      setSummary(liveSummary);
+      return;
+    }
+    if (!threadId) {
+      return;
+    }
+    const controller = new AbortController();
+    let cancelled = false;
+    const fetchHistorical = async () => {
+      setTimeTravelLoading(true);
+      setTimeTravelError(null);
+      try {
+        const query = new URLSearchParams();
+        query.set('granularity', determineFetchGranularity(granularity));
+        query.set('as_of_ts', String(timeTravelTs));
+        const response = await fetch(`/api/debug/threads/${encodeURIComponent(threadId)}?${query.toString()}`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(await response.text() || 'Failed to load point-in-time state');
+        }
+        const payload = (await response.json()) as TraceResponse;
+        if (cancelled) {
+          return;
+        }
+        setStateSnapshot(payload.state || {});
+        setSignals(payload.confirmed);
+        setSummary(payload.summary);
+        if (payload.time_travel?.as_of_ts !== undefined) {
+          setTimeTravelMeta((prev) => {
+            if (prev) {
+              return { ...prev, ts: payload.time_travel!.as_of_ts };
+            }
+            return { ts: payload.time_travel.as_of_ts };
+          });
+        }
+        setTimeTravelLoading(false);
+        setTimeTravelError(null);
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') {
+          return;
+        }
+        setTimeTravelLoading(false);
+        setTimeTravelError(err instanceof Error ? err.message : 'Unable to load snapshot.');
+      }
+    };
+    fetchHistorical();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [timeTravelTs, threadId, granularity, liveState, liveSignals, liveSummary]);
 
   const stepProgress = useMemo(
     () => computeStepProgress({ state: stateSnapshot, summary: signals }),
     [stateSnapshot, signals],
+  );
+
+  const hasBackendCounters = useMemo(
+    () => Boolean(stateSnapshot && typeof stateSnapshot === 'object' && 'step_counters' in stateSnapshot),
+    [stateSnapshot],
   );
 
   const currentStepTitle = useMemo(() => {
@@ -230,6 +317,9 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
   const hilOpen = Boolean((summary && summary.hil_open) ?? stateSnapshot.hil_open ?? false);
   const waitStateRaw = summary?.wait_state ?? signals?.wait_state ?? stateSnapshot.thread_state ?? '—';
   const waitStateLabel = waitStateRaw === 'Waiting on HIL' && !hilOpen ? 'Awaiting Client' : (waitStateRaw || '—');
+  const currentStepMajor = summary?.current_step_major ?? null;
+  const timeTravelActive = timeTravelTs !== null;
+  const timeTravelStepMajor = timeTravelActive ? currentStepMajor : null;
 
   const filteredEvents = useMemo(
     () => filterByGranularity(rawEvents, granularity),
@@ -251,7 +341,8 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
       const snapshot = stepSnapshots.get(major);
       let progress = stepProgress[stepKey];
       const infoChips: string[] = [];
-      if (snapshot) {
+      const dimmed = timeTravelActive && timeTravelStepMajor !== null && major > timeTravelStepMajor;
+      if (snapshot && !hasBackendCounters) {
         if (major === 1) {
           const intentDetected = Boolean(snapshot.flags.intentDetected);
           const participants = Boolean(snapshot.flags.participants);
@@ -287,15 +378,16 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
           rows: rowsForStep,
           gateProgress: progress,
           infoChips: infoChips.length ? infoChips : undefined,
+          dimmed,
         });
       }
     });
     const globalRows = groupedRows.get('global');
     if (globalRows && globalRows.length) {
-      result.push({ key: 'global', stepMajor: null, title: 'Global Events', rows: globalRows });
+      result.push({ key: 'global', stepMajor: null, title: 'Global Events', rows: globalRows, dimmed: false });
     }
     return result;
-  }, [groupedRows, stepProgress, stepSnapshots]);
+  }, [groupedRows, stepProgress, stepSnapshots, hasBackendCounters, timeTravelActive, timeTravelStepMajor]);
 
   useEffect(() => {
     const lines = buildManagerTimeline(filteredEvents, stepProgress);
@@ -349,6 +441,28 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
 
   const handleInspect = useCallback((row: TraceRowData) => {
     setInspectRow(row);
+  }, []);
+
+  const handleTimeTravel = useCallback((row: TraceRowData) => {
+    if (!row) {
+      return;
+    }
+    const rawEvent = typeof row.raw.event === 'string' ? row.raw.event : undefined;
+    const rawSubject = typeof row.raw.subject === 'string' ? row.raw.subject : undefined;
+    const rawDetails = typeof row.raw.details === 'string' ? row.raw.details : undefined;
+    setTimeTravelMeta({
+      ts: row.timestamp,
+      label: row.timeLabel,
+      event: row.event || rawEvent || rawSubject || rawDetails || undefined,
+    });
+    setTimeTravelTs(row.timestamp);
+    setPaused(true);
+  }, []);
+
+  const handleExitTimeTravel = useCallback(() => {
+    setTimeTravelTs(null);
+    setTimeTravelMeta(null);
+    setTimeTravelError(null);
   }, []);
 
   const handleRegisterScroller = useCallback((node: HTMLDivElement | null) => {
@@ -540,13 +654,24 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
             <TraceTable
               sections={sections}
               onInspect={handleInspect}
+              onTimeTravel={handleTimeTravel}
               hilOpen={hilOpen}
               granularity={granularity}
               onRegisterScroller={handleRegisterScroller}
+              timeTravelStepMajor={timeTravelStepMajor}
+              activeTimestamp={timeTravelTs}
             />
           )}
         </div>
         <aside className="debug-panel__aside">
+          <StateViewer
+            state={stateSnapshot}
+            isTimeTravel={timeTravelActive}
+            loading={timeTravelLoading}
+            error={timeTravelError}
+            meta={timeTravelMeta}
+            onExit={timeTravelActive ? handleExitTimeTravel : undefined}
+          />
           <div className="trace-card">
             <div className="trace-card__title">Tracked Client Information</div>
             <div className="trace-entities">

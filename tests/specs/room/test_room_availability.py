@@ -79,7 +79,10 @@ def test_room_process_structured_payload(tmp_path, monkeypatch):
         "locked_room_id": None,
         "thread_state": "Awaiting Client",
         "date_confirmed": True,
-        "wish_products": ["Three-course dinner", "Wine pairing"],
+        "preferences": {
+            "wish_products": ["Three-course dinner", "Wine pairing"],
+            "keywords": ["wine"],
+        },
     }
     state.event_entry = event_entry
 
@@ -96,10 +99,10 @@ def test_room_process_structured_payload(tmp_path, monkeypatch):
     assert draft["footer"].startswith("Step: 3 Room Availability")
     first_block = draft["table_blocks"][0]
     assert first_block["type"] == "room_menu"
-    assert first_block["rows"][0]["room"] == "Room A"
-    assert first_block["rows"][0]["menu"].endswith("fully covered")
+    assert any(row["room"] == "Room A" for row in first_block["rows"])
+    assert all("hint" in row for row in first_block["rows"])
     assert any(action["type"] == "select_room" for action in draft["actions"])
-    assert all("menu" in action for action in draft["actions"])
+    assert all("hint" in action for action in draft["actions"])
 
 
 def test_room_process_skips_when_hash_cached(tmp_path, monkeypatch):

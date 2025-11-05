@@ -555,4 +555,5 @@ export interface TraceSection {
   rows: TraceRowData[];
   gateProgress?: GateProgress;
   infoChips?: string[];
+  dimmed?: boolean;
 }

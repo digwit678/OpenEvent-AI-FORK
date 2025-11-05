@@ -111,12 +111,15 @@
       "locked_room_id": "Room A",
       "requirements": {
         "number_of_participants": 30,
-        "seating_layout": null,
-        "event_duration": {},
-        "special_requirements": null,
-        "preferred_room": null
+        "seating_layout": "workshop",
+        "event_duration": {
+          "start": "17:30",
+          "end": null
+        },
+        "special_requirements": "coffee service",
+        "preferred_room": "Room Options"
       },
-      "requirements_hash": "4919ac192a5fda3ee0c945f3d8a50c4a5486e4f67b70db2fce52b2217bae2737",
+      "requirements_hash": "252aefd02dfbc2b725276f6031f1aa1c3df28059d369e918fcf3df9dda566adb",
       "room_eval_hash": "5a5583a6b40e3d24a6b13fd2c3829365184f1d8edd965684ebf4bb7a308cbe55",
       "offer_id": null,
       "audit": [
@@ -216,24 +219,24 @@
         }
       ],
       "event_data": {
-        "Date Email Received": "04.11.2025",
+        "Date Email Received": "05.11.2025",
         "Status": "Lead",
         "Event Date": "2026-04-09",
         "Name": "Alex",
         "Email": "unknown@example.com",
         "Phone": "+41795552211",
-        "Company": "Not specified",
+        "Company": "events",
         "Billing Address": "Not specified",
-        "Start Time": "18:00",
+        "Start Time": "17:30",
         "End Time": "22:00",
-        "Preferred Room": "Atelier",
+        "Preferred Room": "Room Options",
         "Number of Participants": "30",
         "Type of Event": "workshop",
-        "Catering Preference": "Not specified",
+        "Catering Preference": "Coffee service",
         "Billing Amount": "none",
         "Deposit": "none",
         "Language": "en",
-        "Additional Info": "Considering an event and requesting available evening dates in November"
+        "Additional Info": "Considering an event and requesting available evening dates in November | coffee service"
       },
       "msgs": [
         "9b6fcccd-0f6d-42e6-9386-b4847c8ee5d0",
@@ -251,7 +254,9 @@
         "92d1b572-d766-45a6-985c-6fd8fbf95c45",
         "3a2fc340-a501-4157-903f-ebbef91fa9e3",
         "201e713c-4e2c-4b9c-9385-6887317cf68f",
-        "6e15eefc-afea-4bc4-b10a-94058f1e5a50"
+        "6e15eefc-afea-4bc4-b10a-94058f1e5a50",
+        "4dc84083-2fff-43ef-8629-ca838ae8e480",
+        "2e437fec-f130-4504-9d1e-333a45f04eb8"
       ],
       "offers": [
         {
@@ -375,10 +380,9 @@
       "room_pending_decision": {
         "selected_room": "Room A",
         "selected_status": "Available",
-        "requirements_hash": "4919ac192a5fda3ee0c945f3d8a50c4a5486e4f67b70db2fce52b2217bae2737",
+        "requirements_hash": "252aefd02dfbc2b725276f6031f1aa1c3df28059d369e918fcf3df9dda566adb",
         "summary": "Room availability summary — Room A: Available; Room B: Available; Room C: Available; Room D: Available; Room E: Available; Room F: Available.",
-        "menu": "Atelier seasonal menu",
-        "wish_products": []
+        "hint": "Products available"
       },
       "pending_hil_requests": [
         {
@@ -491,7 +495,14 @@
             "created_at_step": 3
           }
         }
-      ]
+      ],
+      "preferences": {
+        "default_hint": "catering available",
+        "keywords": [
+          "coffee service"
+        ]
+      },
+      "vague_weekday": "saturday"
     },
     {
       "event_id": "9b1a04a2-9acc-4962-8b89-500dd76828bb",
@@ -1495,20 +1506,21 @@
       "status": "Lead",
       "current_step": 3,
       "caller_step": 7,
-      "thread_state": "Awaiting Client Response",
+      "thread_state": "Awaiting Client",
       "chosen_date": "20.03.2025",
       "date_confirmed": true,
       "locked_room_id": "Room A",
       "requirements": {
         "number_of_participants": 45,
+        "seating_layout": "Standing reception",
         "event_duration": {
           "start": "14:00",
           "end": "20:00"
         },
-        "special_requirements": "Stage area and screen for presentation; Parking nearby if possible, projector",
-        "seating_layout": "Standing reception"
+        "special_requirements": "projector",
+        "preferred_room": "Room S"
       },
-      "requirements_hash": "4976d50c09ca63dc03a6579e900d63fd974841b297111301a461aa981e546c76",
+      "requirements_hash": "5a09a23a6b0bfde6c56f2b8bc9579879c4ebef04ccf22e638c0752b3cc8237e8",
       "room_eval_hash": "d4752499984f786c43b073fa1b607ee43ef665c7df20e7b9068dca55d55b39ad",
       "offer_id": null,
       "audit": [
@@ -1598,7 +1610,7 @@
         "message": null
       },
       "event_data": {
-        "Date Email Received": "31.10.2025",
+        "Date Email Received": "05.11.2025",
         "Status": "Lead",
         "Event Date": "20.03.2026",
         "Name": "Markus Hofmann",
@@ -1608,7 +1620,7 @@
         "Billing Address": "Not specified",
         "Start Time": "14:00",
         "End Time": "20:00",
-        "Preferred Room": "Room B",
+        "Preferred Room": "Room S",
         "Number of Participants": "45",
         "Type of Event": "product launch presentation",
         "Catering Preference": "Standing apéro setup",
@@ -1631,7 +1643,9 @@
         "9829cd8b-add4-4913-81c3-b9d2663ded61",
         "28de6eda-7bde-42d5-a955-381d808a92f3",
         "7b157d92-1b1a-4f22-945b-ed05d8e74574",
-        "0301e76f-d759-485c-b875-8f19e38b06ab"
+        "0301e76f-d759-485c-b875-8f19e38b06ab",
+        "54fbd770-69e8-4c52-a5c4-7d8f155ad2d2",
+        "05eb7b95-663a-4273-bae4-6e9109c609ba"
       ],
       "captured": {
         "contact": {
@@ -2005,74 +2019,126 @@
       "room_pending_decision": {
         "selected_room": "Room A",
         "selected_status": "Available",
-        "requirements_hash": "4976d50c09ca63dc03a6579e900d63fd974841b297111301a461aa981e546c76",
+        "requirements_hash": "5a09a23a6b0bfde6c56f2b8bc9579879c4ebef04ccf22e638c0752b3cc8237e8",
         "summary": "Room availability summary — Room A: Available; Room B: Available; Room C: Available; Room D: Available; Room E: Available; Room F: Available.",
-        "evaluations": [
-          {
-            "room": "Room B",
+        "menu": "Atelier seasonal menu",
+        "wish_products": []
+      },
+      "vague_month": "march",
+      "vague_weekday": "thursday",
+      "vague_time_of_day": "afternoon",
+      "pending_hil_requests": [
+        {
+          "task_id": "f094f494-1f04-4b93-b93f-379663a390d7",
+          "signature": "7c455cf1b3e3abd75296b7d0c7e24c31dd3b36be9bdcbfca428eab0abea124a6",
+          "step": 3,
+          "draft": {
+            "body": "Good news — Room A is available on 20.03.2025. It comfortably fits 45 guests in Standing reception. Shall we proceed with this room and date?\n\nI've summarised the best room/menu pairings below. Please choose one so I can queue it for approval.\n\n---\nStep: 3 Room Availability · Next: Choose a room · State: Awaiting Client",
+            "step": 3,
+            "next_step": "Choose a room",
+            "thread_state": "Awaiting Client",
+            "topic": "room_available",
+            "room": "Room A",
             "status": "Available",
-            "coverage_matched": 4,
-            "coverage_total": 5,
-            "matched_features": [
-              "Screen",
-              "Projector",
-              "Parking nearby",
-              "Sound system"
+            "table_blocks": [
+              {
+                "type": "room_menu",
+                "label": "Room & menu options",
+                "rows": [
+                  {
+                    "date": "20.03.2025",
+                    "room": "Room A",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "20.03.2025",
+                    "room": "Room B",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "20.03.2025",
+                    "room": "Room C",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "20.03.2025",
+                    "room": "Room D",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "20.03.2025",
+                    "room": "Room E",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "20.03.2025",
+                    "room": "Room F",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  }
+                ]
+              }
             ],
-            "missing_features": [
-              "Stage"
+            "actions": [
+              {
+                "type": "select_room",
+                "label": "Proceed with Room A (Atelier seasonal menu)",
+                "room": "Room A",
+                "date": "20.03.2025",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              },
+              {
+                "type": "select_room",
+                "label": "Proceed with Room B (Atelier seasonal menu)",
+                "room": "Room B",
+                "date": "20.03.2025",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              },
+              {
+                "type": "select_room",
+                "label": "Proceed with Room C (Atelier seasonal menu)",
+                "room": "Room C",
+                "date": "20.03.2025",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              },
+              {
+                "type": "select_room",
+                "label": "Proceed with Room D (Atelier seasonal menu)",
+                "room": "Room D",
+                "date": "20.03.2025",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              },
+              {
+                "type": "select_room",
+                "label": "Proceed with Room E (Atelier seasonal menu)",
+                "room": "Room E",
+                "date": "20.03.2025",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              }
             ],
-            "capacity_slack": 15,
-            "reasons": [
-              "Missing: Stage"
-            ],
-            "available_products": [],
-            "missing_products": []
-          },
-          {
-            "room": "Room F",
-            "status": "Available",
-            "coverage_matched": 3,
-            "coverage_total": 5,
-            "matched_features": [
-              "Screen",
-              "Projector",
-              "Parking nearby"
-            ],
-            "missing_features": [
-              "Stage",
-              "Sound system"
-            ],
-            "capacity_slack": 0,
-            "reasons": [
-              "Missing: Stage, Sound system"
-            ],
-            "available_products": [],
-            "missing_products": []
-          },
-          {
-            "room": "Room C",
-            "status": "Available",
-            "coverage_matched": 3,
-            "coverage_total": 5,
-            "matched_features": [
-              "Stage",
-              "Screen",
-              "Sound system"
-            ],
-            "missing_features": [
-              "Projector",
-              "Parking nearby"
-            ],
-            "capacity_slack": 35,
-            "reasons": [
-              "Missing: Projector, Parking nearby"
-            ],
-            "available_products": [],
-            "missing_products": []
+            "body_markdown": "Good news — Room A is available on 20.03.2025. It comfortably fits 45 guests in Standing reception. Shall we proceed with this room and date?\n\nI've summarised the best room/menu pairings below. Please choose one so I can queue it for approval.",
+            "footer": "Step: 3 Room Availability · Next: Choose a room · State: Awaiting Client",
+            "requires_approval": true,
+            "created_at_step": 3
           }
-        ]
-      }
+        }
+      ]
     },
     {
       "event_id": "70734cfc-50f2-4c19-85c2-d46921d6b488",
@@ -2390,19 +2456,21 @@
       "status": "Lead",
       "current_step": 3,
       "caller_step": null,
-      "thread_state": "Awaiting Client Response",
+      "thread_state": "Awaiting Client",
       "chosen_date": "08.05.2025",
       "date_confirmed": true,
       "locked_room_id": null,
       "requirements": {
         "number_of_participants": 60,
-        "seating_layout": "Networking Event",
+        "seating_layout": "Standing reception",
         "event_duration": {
           "start": "18:00",
           "end": "22:00"
-        }
+        },
+        "special_requirements": "sound system",
+        "preferred_room": "Room S"
       },
-      "requirements_hash": "023ec40c246677efeebe94b3a1dc1ce60151303e1324287636a505d8308c266a",
+      "requirements_hash": "9669db6357333a92b0cdd34d6d65fd7d07b55b9ad1445e1b02f0db231250db47",
       "room_eval_hash": null,
       "offer_id": null,
       "audit": [
@@ -2430,7 +2498,7 @@
         "message": null
       },
       "event_data": {
-        "Date Email Received": "31.10.2025",
+        "Date Email Received": "05.11.2025",
         "Status": "Lead",
         "Event Date": "08.05.2025",
         "Name": "Julia Steiner",
@@ -2440,17 +2508,18 @@
         "Billing Address": "Not specified",
         "Start Time": "18:00",
         "End Time": "22:00",
-        "Preferred Room": "Not specified",
+        "Preferred Room": "Room S",
         "Number of Participants": "60",
         "Type of Event": "Networking Event",
         "Catering Preference": "light catering (finger food + drinks)",
         "Billing Amount": "none",
         "Deposit": "none",
         "Language": "Not specified",
-        "Additional Info": "Not specified"
+        "Additional Info": "sound system"
       },
       "msgs": [
-        "716d8dee-f6f9-4728-a2dd-0cd60ab0450d"
+        "716d8dee-f6f9-4728-a2dd-0cd60ab0450d",
+        "bce8f18b-70d0-4de6-9865-0e61b06e73a0"
       ],
       "captured": {
         "date": "2025-05-08",
@@ -2543,40 +2612,10 @@
       "room_pending_decision": {
         "selected_room": "Room A",
         "selected_status": "Available",
-        "requirements_hash": "023ec40c246677efeebe94b3a1dc1ce60151303e1324287636a505d8308c266a",
+        "requirements_hash": "9669db6357333a92b0cdd34d6d65fd7d07b55b9ad1445e1b02f0db231250db47",
         "summary": "Room availability summary — Room A: Available; Room B: Available; Room C: Available; Room D: Available; Room E: Available; Room F: Available.",
-        "evaluations": [
-          {
-            "room": "Room B",
-            "status": "Available",
-            "coverage_matched": 0,
-            "coverage_total": 0,
-            "matched_features": [],
-            "missing_features": [],
-            "capacity_slack": 0,
-            "reasons": []
-          },
-          {
-            "room": "Room C",
-            "status": "Available",
-            "coverage_matched": 0,
-            "coverage_total": 0,
-            "matched_features": [],
-            "missing_features": [],
-            "capacity_slack": 20,
-            "reasons": []
-          },
-          {
-            "room": "Room E",
-            "status": "Available",
-            "coverage_matched": 0,
-            "coverage_total": 0,
-            "matched_features": [],
-            "missing_features": [],
-            "capacity_slack": 60,
-            "reasons": []
-          }
-        ]
+        "menu": "Atelier seasonal menu",
+        "wish_products": []
       },
       "room_decision": {
         "status": "available",
@@ -2592,7 +2631,122 @@
         ],
         "reason": "locked_room_id"
       },
-      "requested_products": []
+      "requested_products": [],
+      "vague_month": "may",
+      "vague_weekday": "thursday",
+      "vague_time_of_day": "evening",
+      "pending_hil_requests": [
+        {
+          "task_id": "92d64c6c-5a73-4a20-b178-107fc17d6236",
+          "signature": "b3b7b8dba870d072f097dda9febf6bc8f910e0d627828b65d78ef3fd8ab1549b",
+          "step": 3,
+          "draft": {
+            "body": "Good news — Room A is available on 08.05.2025. It comfortably fits 60 guests in Standing reception. Shall we proceed with this room and date?\n\nI've summarised the best room/menu pairings below. Please choose one so I can queue it for approval.\n\n---\nStep: 3 Room Availability · Next: Choose a room · State: Awaiting Client",
+            "step": 3,
+            "next_step": "Choose a room",
+            "thread_state": "Awaiting Client",
+            "topic": "room_available",
+            "room": "Room A",
+            "status": "Available",
+            "table_blocks": [
+              {
+                "type": "room_menu",
+                "label": "Room & menu options",
+                "rows": [
+                  {
+                    "date": "08.05.2025",
+                    "room": "Room A",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "08.05.2025",
+                    "room": "Room B",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "08.05.2025",
+                    "room": "Room C",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "08.05.2025",
+                    "room": "Room D",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "08.05.2025",
+                    "room": "Room E",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  },
+                  {
+                    "date": "08.05.2025",
+                    "room": "Room F",
+                    "status": "Available",
+                    "menu": "Atelier seasonal menu",
+                    "match_score": 30
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_room",
+                "label": "Proceed with Room A (Atelier seasonal menu)",
+                "room": "Room A",
+                "date": "08.05.2025",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              },
+              {
+                "type": "select_room",
+                "label": "Proceed with Room B (Atelier seasonal menu)",
+                "room": "Room B",
+                "date": "08.05.2025",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              },
+              {
+                "type": "select_room",
+                "label": "Proceed with Room C (Atelier seasonal menu)",
+                "room": "Room C",
+                "date": "08.05.2025",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              },
+              {
+                "type": "select_room",
+                "label": "Proceed with Room D (Atelier seasonal menu)",
+                "room": "Room D",
+                "date": "08.05.2025",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              },
+              {
+                "type": "select_room",
+                "label": "Proceed with Room E (Atelier seasonal menu)",
+                "room": "Room E",
+                "date": "08.05.2025",
+                "menu": "Atelier seasonal menu",
+                "status": "Available"
+              }
+            ],
+            "body_markdown": "Good news — Room A is available on 08.05.2025. It comfortably fits 60 guests in Standing reception. Shall we proceed with this room and date?\n\nI've summarised the best room/menu pairings below. Please choose one so I can queue it for approval.",
+            "footer": "Step: 3 Room Availability · Next: Choose a room · State: Awaiting Client",
+            "requires_approval": true,
+            "created_at_step": 3
+          }
+        }
+      ]
     },
     {
       "event_id": "caf6384d-a94f-40b7-96b0-30b81f3477d6",
@@ -2855,20 +3009,20 @@
       "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
       "created_at": "2025-11-04T00:20:48.949901",
       "status": "Lead",
-      "current_step": 1,
+      "current_step": 3,
       "caller_step": 3,
       "thread_state": "Awaiting Client",
       "chosen_date": "03.02.2025",
       "date_confirmed": true,
       "locked_room_id": null,
       "requirements": {
-        "number_of_participants": null,
+        "number_of_participants": 30,
         "seating_layout": null,
         "event_duration": {},
-        "special_requirements": null,
+        "special_requirements": "sound system",
         "preferred_room": null
       },
-      "requirements_hash": "f7a9acafde4167480c885e89b816fbcf57924d7fad42d61dc2be9fd643135ae7",
+      "requirements_hash": "5ab1666b9bc9cbb12fac571bff9d126ea61ee86be164e4f36dc9a426b5246be3",
       "room_eval_hash": null,
       "offer_id": null,
       "audit": [
@@ -2943,16 +3097,16 @@
       },
       "event_data": {
         "Date Email Received": "05.11.2025",
-        "Status": "Date Confirmed",
+        "Status": "Lead",
         "Event Date": "2025-02-03",
         "Name": "Client (GUI)",
         "Email": "laura.meier@bluewin.ch",
         "Phone": "+41782224455",
         "Company": "Not specified",
         "Billing Address": "Not specified",
-        "Start Time": "01:20",
+        "Start Time": "19:45",
         "End Time": "Not specified",
-        "Preferred Room": "Not specified",
+        "Preferred Room": "Room S",
         "Number of Participants": "30",
         "Type of Event": "Not specified",
         "Catering Preference": "Not specified",
@@ -2968,15 +3122,28 @@
         "86b1839d-c8ba-4ab7-98d8-23052f6ad8da",
         "2f17a909-9de5-493c-a52a-cc53dae137fc",
         "570876da-0dac-4a73-acfe-e126c8820222",
-        "b6cc778e-1b9d-43e8-9df1-68e4ef108748"
+        "b6cc778e-1b9d-43e8-9df1-68e4ef108748",
+        "2744dd94-956d-43b8-9e2d-2a1f4e816301",
+        "81bb4b38-cd2c-4e3b-8b91-20bb0576e0d0",
+        "807903ac-f076-4456-8393-47af77532c61",
+        "f3c76d1b-cdee-4386-a6a0-5c6d6f4f1232",
+        "d2bd806b-7867-40c3-810a-2276d8c4f5e7",
+        "0f2b9ae4-d68c-49e9-87cf-4d4e4952809e",
+        "a277ccbc-3233-459b-bcf1-b64f865d6409",
+        "c41742e1-f763-4b37-9d36-8b5e1819be11",
+        "7a439448-985d-41b8-9fc8-84ec81550074",
+        "a2199fc0-5a43-44e1-b1ed-9113546606e9",
+        "246ec739-bb86-4598-9a55-81b73fc740ae",
+        "8e21ac1d-b881-4cba-bf69-2ce36f8db749",
+        "8e79a4ee-66d3-45cf-9ffb-cd03bff53cad"
       ],
       "captured": {},
       "verified": {},
       "captured_sources": [],
       "deferred_intents": [],
-      "current_step_stage": "step_1",
+      "current_step_stage": "step_3",
       "caller_step_stage": null,
-      "subflow_group": "intake",
+      "subflow_group": "room_availability",
       "requested_window": {},
       "offer_hash": null,
       "offers": [],
@@ -3250,7 +3417,25 @@
             "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1"
           }
         }
-      ]
+      ],
+      "room_pending_decision": {
+        "selected_room": "Room A",
+        "selected_status": "Available",
+        "requirements_hash": "5ab1666b9bc9cbb12fac571bff9d126ea61ee86be164e4f36dc9a426b5246be3",
+        "summary": "Room availability summary — Room A: Available; Room B: Available; Room C: Available; Room D: Available; Room E: Available; Room F: Available.",
+        "hint": "Products available",
+        "available_dates": [
+          "2025-02-01",
+          "2025-02-08",
+          "2025-02-15"
+        ]
+      },
+      "preferences": {
+        "default_hint": "catering available",
+        "keywords": [
+          "sound system"
+        ]
+      }
     }
   ],
   "clients": {
@@ -3902,6 +4087,87 @@
             "event_date": null,
             "vague_month": "february",
             "vague_time_of_day": "evening"
+          }
+        },
+        {
+          "msg_id": "4dc84083-2fff-43ef-8629-ca838ae8e480",
+          "ts": "2025-11-05T16:30:04.262958Z",
+          "subject": "Subject: Hi there, Body: Hi there, We’re planning a private family dinner for ab",
+          "body_preview": "Subject: Hi there, Body: Hi there, We’re planning a private family dinner for about 30 guests and are thinking **Saturday evenings in February**. Could you tell",
+          "intent": "event_request",
+          "confidence": 0.85,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": "Room S",
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available"
+            }
+          }
+        },
+        {
+          "msg_id": "2e437fec-f130-4504-9d1e-333a45f04eb8",
+          "ts": "2025-11-05T17:09:54.582349Z",
+          "subject": "🎭 Shami (Event Manager)",
+          "body_preview": "🎭 Shami (Event Manager)\nHi Laura, \n\nThank you for reaching out about your family dinner! For a gathering of around 30 guests, we have two suitable room options ",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": "17:30",
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": "Room Options",
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": "workshop",
+            "catering": "Coffee service",
+            "phone": null,
+            "company": "events",
+            "language": null,
+            "notes": "coffee service",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available",
+              "keywords": [
+                "coffee service"
+              ]
+            }
           }
         }
       ],
@@ -6361,6 +6627,78 @@
             "room_feedback": null,
             "event_date": "20.03.2026"
           }
+        },
+        {
+          "msg_id": "54fbd770-69e8-4c52-a5c4-7d8f155ad2d2",
+          "ts": "2025-11-05T10:51:18.722020Z",
+          "subject": "Subject: Booking Inquiry – Product Launch Presentation, March 2025",
+          "body_preview": "Subject: Booking Inquiry – Product Launch Presentation, March 2025\nBody:\nDear Events Team,\nWe’re planning to host a product launch presentation for our new tech",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": "14:00",
+            "end_time": "20:00",
+            "city": "Zurich",
+            "participants": 45,
+            "room": "Room S",
+            "layout": "Standing reception",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41783452210",
+            "company": null,
+            "language": null,
+            "notes": "projector",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "march",
+            "vague_weekday": "thursday",
+            "vague_time_of_day": "afternoon"
+          }
+        },
+        {
+          "msg_id": "05eb7b95-663a-4273-bae4-6e9109c609ba",
+          "ts": "2025-11-05T10:51:45.593757Z",
+          "subject": "Subject: Booking Inquiry – Product Launch Presentation, March 2025",
+          "body_preview": "Subject: Booking Inquiry – Product Launch Presentation, March 2025\nBody:\nDear Events Team,\nWe’re planning to host a product launch presentation for our new tech",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": "14:00",
+            "end_time": "20:00",
+            "city": "Zurich",
+            "participants": 45,
+            "room": "Room S",
+            "layout": "Standing reception",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41783452210",
+            "company": null,
+            "language": null,
+            "notes": "projector",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "march",
+            "vague_weekday": "thursday",
+            "vague_time_of_day": "afternoon"
+          }
         }
       ],
       "event_ids": [
@@ -6601,6 +6939,42 @@
             "products_remove": null,
             "room_feedback": null,
             "event_date": "08.05.2025"
+          }
+        },
+        {
+          "msg_id": "bce8f18b-70d0-4de6-9865-0e61b06e73a0",
+          "ts": "2025-11-05T10:34:23.891581Z",
+          "subject": "Subject: Networking Event – Availability for May 8 2025",
+          "body_preview": "Subject: Networking Event – Availability for May 8 2025\nBody:\nDear Event Team,\nWe’d like to organize a networking evening for our business partners on Thursday,",
+          "intent": "confirm_date",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": "18:00",
+            "end_time": "22:00",
+            "city": "Basel",
+            "participants": 60,
+            "room": "Room S",
+            "layout": "Standing reception",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41792226614",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "may",
+            "vague_weekday": "thursday",
+            "vague_time_of_day": "evening"
           }
         }
       ],
@@ -7022,6 +7396,546 @@
             "room_feedback": null,
             "shortcut_capacity_ok": null,
             "event_date": "03.02.2025"
+          }
+        },
+        {
+          "msg_id": "2744dd94-956d-43b8-9e2d-2a1f4e816301",
+          "ts": "2025-11-05T12:43:07.843537Z",
+          "subject": "Hi there,",
+          "body_preview": "Hi there,\n\nWe’re planning a private family dinner for about 30 guests and are thinking **Saturday evenings in February**.\nCould you tell us **which rooms are av",
+          "intent": "event_request",
+          "confidence": 0.85,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": "Room S",
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening"
+          }
+        },
+        {
+          "msg_id": "81bb4b38-cd2c-4e3b-8b91-20bb0576e0d0",
+          "ts": "2025-11-05T16:23:36.736416Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available",
+              "keywords": [
+                "sound system"
+              ]
+            }
+          }
+        },
+        {
+          "msg_id": "807903ac-f076-4456-8393-47af77532c61",
+          "ts": "2025-11-05T17:10:34.366803Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available",
+              "keywords": [
+                "sound system"
+              ]
+            }
+          }
+        },
+        {
+          "msg_id": "f3c76d1b-cdee-4386-a6a0-5c6d6f4f1232",
+          "ts": "2025-11-05T18:02:07.285172Z",
+          "subject": "👤 Client",
+          "body_preview": "👤 Client\nSubject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at yo",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available",
+              "keywords": [
+                "sound system"
+              ]
+            }
+          }
+        },
+        {
+          "msg_id": "d2bd806b-7867-40c3-810a-2276d8c4f5e7",
+          "ts": "2025-11-05T18:24:04.542624Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available",
+              "keywords": [
+                "sound system"
+              ]
+            }
+          }
+        },
+        {
+          "msg_id": "0f2b9ae4-d68c-49e9-87cf-4d4e4952809e",
+          "ts": "2025-11-05T18:34:17.262303Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February Body: Hello, We’d like ",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February Body: Hello, We’d like to organize a private dinner for our family (around 30 guests) at your venue. We",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": "19:24",
+            "end_time": null,
+            "city": "February Body",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+4178222445519",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available",
+              "keywords": [
+                "sound system"
+              ]
+            }
+          }
+        },
+        {
+          "msg_id": "a277ccbc-3233-459b-bcf1-b64f865d6409",
+          "ts": "2025-11-05T18:45:42.646852Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available",
+              "keywords": [
+                "sound system"
+              ]
+            }
+          }
+        },
+        {
+          "msg_id": "c41742e1-f763-4b37-9d36-8b5e1819be11",
+          "ts": "2025-11-05T19:01:54.458204Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": "19:45",
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+4178222445519",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available",
+              "keywords": [
+                "sound system"
+              ]
+            }
+          }
+        },
+        {
+          "msg_id": "7a439448-985d-41b8-9fc8-84ec81550074",
+          "ts": "2025-11-05T19:10:06.316284Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available",
+              "keywords": [
+                "sound system"
+              ]
+            }
+          }
+        },
+        {
+          "msg_id": "a2199fc0-5a43-44e1-b1ed-9113546606e9",
+          "ts": "2025-11-05T19:13:25.234463Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available",
+              "keywords": [
+                "sound system"
+              ]
+            }
+          }
+        },
+        {
+          "msg_id": "246ec739-bb86-4598-9a55-81b73fc740ae",
+          "ts": "2025-11-05T20:14:42.449515Z",
+          "subject": "👤 Client",
+          "body_preview": "👤 Client\nSubject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at yo",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available",
+              "keywords": [
+                "sound system"
+              ]
+            }
+          }
+        },
+        {
+          "msg_id": "8e21ac1d-b881-4cba-bf69-2ce36f8db749",
+          "ts": "2025-11-05T20:53:07.574019Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available",
+              "keywords": [
+                "sound system"
+              ]
+            }
+          }
+        },
+        {
+          "msg_id": "8e79a4ee-66d3-45cf-9ffb-cd03bff53cad",
+          "ts": "2025-11-05T21:00:52.321078Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "default_hint": "catering available",
+              "keywords": [
+                "sound system"
+              ]
+            }
           }
         }
       ],
@@ -7514,6 +8428,44 @@
         "caller_step": 3,
         "requirements_hash": "f7a9acafde4167480c885e89b816fbcf57924d7fad42d61dc2be9fd643135ae7",
         "room_eval_hash": null
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "92d64c6c-5a73-4a20-b178-107fc17d6236",
+      "created_at": "2025-11-05T10:34:23.932923",
+      "type": "room_availability_message",
+      "status": "pending",
+      "client_id": "julia.steiner@alpinefinance.ch",
+      "event_id": "8d7eae4c-b6b2-435f-ab0f-7bbc81299980",
+      "payload": {
+        "step_id": 3,
+        "intent": "confirm_date",
+        "event_id": "8d7eae4c-b6b2-435f-ab0f-7bbc81299980",
+        "draft_msg": "Good news — Room A is available on 08.05.2025. It comfortably fits 60 guests in Standing reception. Shall we proceed with this room and date?\n\nI've summarised the best room/menu pairings below. Please choose one so I can queue it for approval.\n\n---\nStep: 3 Room Availability · Next: Choose a room · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "9669db6357333a92b0cdd34d6d65fd7d07b55b9ad1445e1b02f0db231250db47",
+        "room_eval_hash": null
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "f094f494-1f04-4b93-b93f-379663a390d7",
+      "created_at": "2025-11-05T10:51:18.736030",
+      "type": "room_availability_message",
+      "status": "pending",
+      "client_id": "markus.hofmann@novadevices.ch",
+      "event_id": "02673ea2-40c9-478d-8e8e-a823269cdbe6",
+      "payload": {
+        "step_id": 3,
+        "intent": "event_request",
+        "event_id": "02673ea2-40c9-478d-8e8e-a823269cdbe6",
+        "draft_msg": "Good news — Room A is available on 20.03.2025. It comfortably fits 45 guests in Standing reception. Shall we proceed with this room and date?\n\nI've summarised the best room/menu pairings below. Please choose one so I can queue it for approval.\n\n---\nStep: 3 Room Availability · Next: Choose a room · State: Awaiting Client",
+        "language": null,
+        "caller_step": 7,
+        "requirements_hash": "5a09a23a6b0bfde6c56f2b8bc9579879c4ebef04ccf22e638c0752b3cc8237e8",
+        "room_eval_hash": "d4752499984f786c43b073fa1b607ee43ef665c7df20e7b9068dca55d55b39ad"
       },
       "notes": ""
     }

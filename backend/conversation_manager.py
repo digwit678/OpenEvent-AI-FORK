@@ -7,12 +7,15 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from backend.domain import ConversationState, EventInformation
+from backend.domain import ConversationState, EventInformation, IntentLabel
+from backend.workflow_email import DB_PATH as WF_DB_PATH, load_db as wf_load_db, save_db as wf_save_db
+from backend.workflows.common.types import IncomingMessage, WorkflowState
+from backend.workflows.groups.room_availability.trigger import process as step3_process
 
 load_dotenv(override=False)
 
@@ -23,6 +26,118 @@ active_conversations: dict[str, ConversationState] = {}
 
 # Resolve static data paths relative to this module so imports work from any CWD.
 BASE_PATH = Path(__file__).resolve().parent
+
+STEP3_DRAFT_CACHE: Dict[str, str] = {}
+STEP3_PAYLOAD_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def _step3_cache_key(session_id: Optional[str]) -> str:
+    return session_id or "__default__"
+
+
+def _normalise_step3_draft(session_id: Optional[str], drafts: Optional[List[Dict[str, Any]]]) -> Optional[Dict[str, Any]]:
+    if not drafts:
+        return None
+    cache_key = _step3_cache_key(session_id)
+    for draft in drafts:
+        step_raw = draft.get("step")
+        try:
+            step_val = int(step_raw)
+        except (TypeError, ValueError):
+            continue
+        if step_val != 3:
+            continue
+        body_md = draft.get("body_markdown") or draft.get("body_md") or draft.get("body")
+        if not isinstance(body_md, str) or not body_md.strip():
+            continue
+        signature = body_md.strip()
+        cached = STEP3_DRAFT_CACHE.get(cache_key)
+        if cached and cached == signature:
+            return None
+        STEP3_DRAFT_CACHE[cache_key] = signature
+        payload = {
+            "subject": draft.get("subject") or "Room options and available dates",
+            "body_markdown": body_md,
+            "body": draft.get("body") or body_md,
+            "actions": draft.get("actions") or [],
+            "footer": draft.get("footer"),
+        }
+        STEP3_PAYLOAD_CACHE[cache_key] = payload
+        return payload
+    return None
+
+
+def _render_step3_from_workflow(state: ConversationState) -> Optional[Dict[str, Any]]:
+    event_id = state.event_id
+    if not event_id:
+        return None
+    try:
+        db = wf_load_db()
+    except Exception as exc:
+        print(f"[WF][WARN] Step-3 render skipped (load failed): {exc}")
+        return None
+
+    events = db.get("events") or []
+    event_entry = next((evt for evt in events if evt.get("event_id") == event_id), None)
+    if not event_entry:
+        return None
+
+    current = event_entry.get("current_step")
+    try:
+        current_step = int(current)
+    except (TypeError, ValueError):
+        current_step = None
+    if current_step != 3:
+        return None
+
+    message = IncomingMessage(
+        msg_id=f"step3-refresh::{event_id}",
+        from_name=state.event_info.name or event_entry.get("contact_name") or "Client",
+        from_email=state.event_info.email or event_entry.get("contact_email"),
+        subject=event_entry.get("subject") or "Room availability update",
+        body="",
+        ts=datetime.utcnow().isoformat() + "Z",
+    )
+    wf_state = WorkflowState(message=message, db_path=Path(WF_DB_PATH), db=db)
+    wf_state.event_entry = event_entry
+    wf_state.event_id = event_id
+    wf_state.client_id = event_entry.get("client_id") or (state.event_info.email or "").lower()
+    wf_state.thread_id = event_entry.get("thread_id") or state.session_id
+    wf_state.intent = IntentLabel.EVENT_REQUEST
+    wf_state.confidence = 1.0
+    wf_state.user_info = dict(event_entry.get("user_info") or {})
+    wf_state.context_snapshot = event_entry.get("context_snapshot") or {}
+    wf_state.thread_state = event_entry.get("thread_state") or "Awaiting Client"
+    wf_state.current_step = 3
+    wf_state.caller_step = event_entry.get("caller_step")
+
+    try:
+        step3_process(wf_state)
+    except Exception as exc:
+        print(f"[WF][ERROR] Step-3 workflow failed: {exc}")
+        return None
+
+    if wf_state.extras.get("persist"):
+        try:
+            wf_save_db(db)
+        except Exception as exc:
+            print(f"[WF][WARN] Step-3 persist failed: {exc}")
+
+    return _normalise_step3_draft(state.session_id, wf_state.draft_messages)
+
+
+def render_step3_reply(conversation_state: ConversationState, drafts: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
+    """Return the workflow-authored Step-3 reply if available and not yet delivered."""
+
+    cached = _normalise_step3_draft(conversation_state.session_id, drafts)
+    if cached:
+        return cached
+    return _render_step3_from_workflow(conversation_state)
+
+
+def pop_step3_payload(session_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    cache_key = _step3_cache_key(session_id)
+    return STEP3_PAYLOAD_CACHE.pop(cache_key, None)
 
 
 # Load reference data
@@ -524,6 +639,16 @@ def generate_response(conversation_state: ConversationState, user_message: str) 
         "role": "user",
         "content": user_message
     })
+
+    step3_reply = render_step3_reply(conversation_state)
+    if step3_reply:
+        body_text = step3_reply.get("body_markdown") or step3_reply.get("body") or ""
+        body_text = body_text or ""
+        conversation_state.conversation_history.append({
+            "role": "assistant",
+            "content": body_text,
+        })
+        return body_text
     
     # Generate response
     messages = [
