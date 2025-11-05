@@ -120,16 +120,7 @@ function createCsv(rows: TraceRowData[]): string {
 export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView = false }: DebugPanelProps) {
   const [autoScroll, setAutoScroll] = useState(true);
   const [paused, setPaused] = useState(false);
-  const [granularity, setGranularity] = useState<GranularityLevel>(() => {
-    if (typeof window === 'undefined') {
-      return 'logic';
-    }
-    const stored = window.localStorage.getItem('debugLevel');
-    if (stored === 'manager' || stored === 'logic' || stored === 'full') {
-      return stored as GranularityLevel;
-    }
-    return 'logic';
-  });
+  const [granularity, setGranularity] = useState<GranularityLevel>('logic');
   const [showManagerView, setShowManagerView] = useState(initialManagerView);
   const [rawEvents, setRawEvents] = useState<RawTraceEvent[]>([]);
   const [stateSnapshot, setStateSnapshot] = useState<Record<string, unknown>>({});
@@ -143,6 +134,16 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
 
   const tableScrollerRef = useRef<HTMLDivElement | null>(null);
   const bufferRef = useRef<ReturnType<typeof createBufferFlusher<RawTraceEvent[]>> | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const stored = window.localStorage.getItem('debugLevel');
+    if (stored === 'manager' || stored === 'logic' || stored === 'full') {
+      setGranularity(stored as GranularityLevel);
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') {

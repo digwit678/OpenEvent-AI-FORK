@@ -2855,20 +2855,20 @@
       "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
       "created_at": "2025-11-04T00:20:48.949901",
       "status": "Lead",
-      "current_step": 2,
-      "caller_step": null,
+      "current_step": 1,
+      "caller_step": 3,
       "thread_state": "Awaiting Client",
-      "chosen_date": null,
-      "date_confirmed": false,
+      "chosen_date": "03.02.2025",
+      "date_confirmed": true,
       "locked_room_id": null,
       "requirements": {
-        "number_of_participants": 30,
+        "number_of_participants": null,
         "seating_layout": null,
         "event_duration": {},
-        "special_requirements": "sound system",
+        "special_requirements": null,
         "preferred_room": null
       },
-      "requirements_hash": "5ab1666b9bc9cbb12fac571bff9d126ea61ee86be164e4f36dc9a426b5246be3",
+      "requirements_hash": "f7a9acafde4167480c885e89b816fbcf57924d7fad42d61dc2be9fd643135ae7",
       "room_eval_hash": null,
       "offer_id": null,
       "audit": [
@@ -2906,6 +2906,34 @@
           "from_step": 2,
           "to_step": 2,
           "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-05T01:37:50Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-05T01:41:04Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_updated"
+        },
+        {
+          "ts": "2025-11-05T01:41:04Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 3,
+          "reason": "date_confirmed"
+        },
+        {
+          "ts": "2025-11-05T01:41:04Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 1,
+          "reason": "room_requires_capacity"
         }
       ],
       "review_state": {
@@ -2914,10 +2942,10 @@
         "message": null
       },
       "event_data": {
-        "Date Email Received": "04.11.2025",
-        "Status": "Lead",
-        "Event Date": "Not specified",
-        "Name": "Not specified",
+        "Date Email Received": "05.11.2025",
+        "Status": "Date Confirmed",
+        "Event Date": "2025-02-03",
+        "Name": "Client (GUI)",
         "Email": "laura.meier@bluewin.ch",
         "Phone": "+41782224455",
         "Company": "Not specified",
@@ -2938,7 +2966,9 @@
         "cd6fb54f-dae1-4e6f-9445-c91077a5095a",
         "b8d25292-a876-432c-ad00-3f120d57a654",
         "86b1839d-c8ba-4ab7-98d8-23052f6ad8da",
-        "2f17a909-9de5-493c-a52a-cc53dae137fc"
+        "2f17a909-9de5-493c-a52a-cc53dae137fc",
+        "570876da-0dac-4a73-acfe-e126c8820222",
+        "b6cc778e-1b9d-43e8-9df1-68e4ef108748"
       ],
       "captured": {},
       "verified": {},
@@ -2999,10 +3029,11 @@
       "vague_weekday": "saturday",
       "vague_time_of_day": "evening",
       "candidate_dates": [
-        "07.02.2026",
-        "14.02.2026",
-        "21.02.2026",
-        "28.02.2026"
+        "05.11.2025",
+        "06.11.2025",
+        "07.11.2025",
+        "12.11.2025",
+        "13.11.2025"
       ],
       "pending_hil_requests": [
         {
@@ -3163,6 +3194,60 @@
             "footer": "Step: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client",
             "requires_approval": true,
             "created_at_step": 2
+          }
+        },
+        {
+          "task_id": "dc20e2e1-57bd-4a4e-9b91-69348ad7a5cd",
+          "signature": "bac1a71b3e137e94839384258568f7629bc62dd4155d6c9c495138118717ef29",
+          "step": 2,
+          "draft": {
+            "body": "ROOM AVAILABILITY SNAPSHOT:\n- 05.11.2025 · Room A currently shows as available.\n- 06.11.2025 · Room A currently shows as available.\n- 07.11.2025 · Room A currently shows as available.\n- 12.11.2025 · Room A currently shows as available.\n- 13.11.2025 · Room A currently shows as available.\n\nNEXT STEP:\n- Tell me which date works best and I'll lock the room right away.\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client",
+            "step": 2,
+            "next_step": "Confirm date",
+            "thread_state": "Awaiting Client",
+            "topic": "general_room_qna",
+            "candidate_dates": [
+              "05.11.2025",
+              "06.11.2025",
+              "07.11.2025",
+              "12.11.2025",
+              "13.11.2025"
+            ],
+            "actions": [],
+            "body_markdown": "ROOM AVAILABILITY SNAPSHOT:\n- 05.11.2025 · Room A currently shows as available.\n- 06.11.2025 · Room A currently shows as available.\n- 07.11.2025 · Room A currently shows as available.\n- 12.11.2025 · Room A currently shows as available.\n- 13.11.2025 · Room A currently shows as available.\n\nNEXT STEP:\n- Tell me which date works best and I'll lock the room right away.",
+            "footer": "Step: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client",
+            "table_blocks": [],
+            "requires_approval": true,
+            "created_at_step": 2
+          }
+        },
+        {
+          "task_id": "b8f9578e-ce03-410b-9b94-e8090d5ff282",
+          "signature": "be6ff20af2ae7010ee1884576ad0dc3ed8c11cc6be9981b386644a204d46cf25",
+          "step": 2,
+          "draft": {
+            "step": 2,
+            "next_step": "Room availability review",
+            "thread_state": "Waiting on HIL",
+            "topic": "date_confirmation",
+            "date": "03.02.2025",
+            "body_markdown": "Thank you for confirming 03.02.2025. We will check room availability and follow up with the options.\n\nNEXT STEP: I'll send the room availability update shortly.",
+            "footer": "Step: 2 Date Confirmation · Next: Room availability review · State: Waiting on HIL",
+            "table_blocks": [],
+            "actions": [],
+            "body": "Thank you for confirming 03.02.2025. We will check room availability and follow up with the options.\n\nNEXT STEP: I'll send the room availability update shortly.\n\n---\nStep: 2 Date Confirmation · Next: Room availability review · State: Waiting on HIL",
+            "requires_approval": true,
+            "created_at_step": 2
+          }
+        }
+      ],
+      "logs": [
+        {
+          "ts": "2025-11-05T01:41:04.495822Z",
+          "actor": "Platform",
+          "action": "room_availability_triggered_after_date_confirm",
+          "details": {
+            "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1"
           }
         }
       ]
@@ -6869,9 +6954,80 @@
             "vague_weekday": "saturday",
             "vague_time_of_day": "evening"
           }
+        },
+        {
+          "msg_id": "570876da-0dac-4a73-acfe-e126c8820222",
+          "ts": "2025-11-05T01:37:50.172028Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening"
+          }
+        },
+        {
+          "msg_id": "b6cc778e-1b9d-43e8-9df1-68e4ef108748",
+          "ts": "2025-11-05T01:41:04.476662Z",
+          "subject": "Confirmed event date 03.02.2025",
+          "body_preview": "The client confirms the preferred event date is 03.02.2025.",
+          "intent": "confirm_date_partial",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2025-02-03",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": "03.02.2025"
+          }
         }
       ],
-      "event_ids": []
+      "event_ids": [
+        "45f63dce-8805-43e5-acc8-449ce23f46d1"
+      ]
     }
   },
   "tasks": [
@@ -7320,6 +7476,44 @@
         "caller_step": 5,
         "requirements_hash": "4919ac192a5fda3ee0c945f3d8a50c4a5486e4f67b70db2fce52b2217bae2737",
         "room_eval_hash": "5a5583a6b40e3d24a6b13fd2c3829365184f1d8edd965684ebf4bb7a308cbe55"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "dc20e2e1-57bd-4a4e-9b91-69348ad7a5cd",
+      "created_at": "2025-11-05T01:37:50.220310",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "laura.meier@bluewin.ch",
+      "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+      "payload": {
+        "step_id": 2,
+        "intent": "event_request",
+        "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+        "draft_msg": "ROOM AVAILABILITY SNAPSHOT:\n- 05.11.2025 · Room A currently shows as available.\n- 06.11.2025 · Room A currently shows as available.\n- 07.11.2025 · Room A currently shows as available.\n- 12.11.2025 · Room A currently shows as available.\n- 13.11.2025 · Room A currently shows as available.\n\nNEXT STEP:\n- Tell me which date works best and I'll lock the room right away.\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "5ab1666b9bc9cbb12fac571bff9d126ea61ee86be164e4f36dc9a426b5246be3",
+        "room_eval_hash": null
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "b8f9578e-ce03-410b-9b94-e8090d5ff282",
+      "created_at": "2025-11-05T01:41:04.488144",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "laura.meier@bluewin.ch",
+      "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+      "payload": {
+        "step_id": 2,
+        "intent": "confirm_date_partial",
+        "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+        "draft_msg": "Thank you for confirming 03.02.2025. We will check room availability and follow up with the options.\n\nNEXT STEP: I'll send the room availability update shortly.\n\n---\nStep: 2 Date Confirmation · Next: Room availability review · State: Waiting on HIL",
+        "language": null,
+        "caller_step": 3,
+        "requirements_hash": "f7a9acafde4167480c885e89b816fbcf57924d7fad42d61dc2be9fd643135ae7",
+        "room_eval_hash": null
       },
       "notes": ""
     }
