@@ -3096,7 +3096,7 @@
         "message": null
       },
       "event_data": {
-        "Date Email Received": "05.11.2025",
+        "Date Email Received": "10.11.2025",
         "Status": "Lead",
         "Event Date": "2025-02-03",
         "Name": "Client (GUI)",
@@ -3136,7 +3136,8 @@
         "246ec739-bb86-4598-9a55-81b73fc740ae",
         "8e21ac1d-b881-4cba-bf69-2ce36f8db749",
         "8e79a4ee-66d3-45cf-9ffb-cd03bff53cad",
-        "64911f6c-1b25-4d09-8b24-5bde67f5ca73"
+        "64911f6c-1b25-4d09-8b24-5bde67f5ca73",
+        "4f1ddb8f-a34c-4c59-a486-fb34c53759c8"
       ],
       "captured": {},
       "verified": {},
@@ -3420,7 +3421,7 @@
         }
       ],
       "room_pending_decision": {
-        "selected_room": "Room A",
+        "selected_room": "Room B",
         "selected_status": "Available",
         "requirements_hash": "5ab1666b9bc9cbb12fac571bff9d126ea61ee86be164e4f36dc9a426b5246be3",
         "summary": "Room availability summary — Room A: Available; Room B: Available; Room C: Available; Room D: Available; Room E: Available; Room F: Available.",
@@ -3432,10 +3433,12 @@
         ]
       },
       "preferences": {
-        "default_hint": "catering available",
+        "wish_products": [],
         "keywords": [
-          "sound system"
-        ]
+          "sound",
+          "system"
+        ],
+        "default_hint": "Products available"
       }
     }
   ],
@@ -7978,6 +7981,50 @@
               "keywords": [
                 "sound system"
               ]
+            }
+          }
+        },
+        {
+          "msg_id": "4f1ddb8f-a34c-4c59-a486-fb34c53759c8",
+          "ts": "2025-11-10T20:41:56.796510Z",
+          "subject": "Hello,",
+          "body_preview": "Hello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.\n\nWe’re flexible but are thinking sometime in February, preferabl",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "event_date": null,
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [],
+              "keywords": [
+                "sound",
+                "system"
+              ],
+              "default_hint": "Products available"
             }
           }
         }

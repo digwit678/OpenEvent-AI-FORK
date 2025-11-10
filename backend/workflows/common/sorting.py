@@ -76,6 +76,15 @@ def rank_rooms(
     wish_products = list((preferences or {}).get("wish_products") or []) if preferences else []
     keywords = list((preferences or {}).get("keywords") or []) if preferences else []
     hints_default = str((preferences or {}).get("default_hint") or "Products available")
+    similarity_map = {}
+    match_breakdown = {}
+    if isinstance(preferences, dict):
+        similarity_raw = preferences.get("room_similarity") or {}
+        if isinstance(similarity_raw, dict):
+            similarity_map = similarity_raw
+        breakdown_raw = preferences.get("room_match_breakdown") or {}
+        if isinstance(breakdown_raw, dict):
+            match_breakdown = breakdown_raw
 
     ranked: List[RankedRoom] = []
 
@@ -84,8 +93,19 @@ def rank_rooms(
         status_score = _status_weight(status)
         capacity_value = _capacity_score(config, pax)
         preference_value = _preference_score(config.get("features", []) or [], keywords)
+        similarity_score = 0.0
+        if similarity_map:
+            try:
+                similarity_score = float(similarity_map.get(room, 0.0)) * 8.0
+            except (TypeError, ValueError):
+                similarity_score = 0.0
+        preference_value += similarity_score
         preferred_bonus = 10.0 if room.strip().lower() == preferred_lower else 0.0
-        hint = wish_products[0] if wish_products else hints_default
+        matched_items = []
+        match_info = match_breakdown.get(room) if match_breakdown else None
+        if isinstance(match_info, dict):
+            matched_items = [item for item in match_info.get("matched", []) if isinstance(item, str) and item.strip()]
+        hint = matched_items[0] if matched_items else (wish_products[0] if wish_products else hints_default)
         capacity_ok = capacity_value >= 30.0
         total = status_score + capacity_value + preference_value + preferred_bonus
         ranked.append(RankedRoom(room=room, status=status, score=total, hint=hint, capacity_ok=capacity_ok))
