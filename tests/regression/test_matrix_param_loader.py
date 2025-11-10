@@ -21,4 +21,3 @@ def test_matrix_lock_structure() -> None:
     assert all(version.count(".") == 1 for version in data["python"])
     assert data["platform"] == ["ubuntu-latest"]
     assert "workflow" in data["features"]
-

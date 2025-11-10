@@ -35,4 +35,3 @@ def test_agent_reply_endpoint_returns_envelope() -> None:
     assert "requires_hil" in payload
     assert "action" in payload
     assert "payload" in payload
-
