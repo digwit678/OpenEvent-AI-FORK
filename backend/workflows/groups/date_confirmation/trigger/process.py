@@ -1,40 +1,34 @@
 from __future__ import annotations
 
-import datetime as dt
-import re
+import hashlib
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, time, date, timedelta
+from typing import Dict, List, Optional, Tuple
 
-from backend.workflows.common.catalog import list_free_dates
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.sorting import rank_rooms
-from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
-from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.io.dates import next5
-from backend.workflows.nlu import detect_general_room_query
-from backend.debug.hooks import (
-    set_subloop,
-    trace_db_read,
-    trace_db_write,
-    trace_entity,
-    trace_marker,
-    trace_gate,
-    trace_state,
-    trace_step,
+from backend.workflows.common.datetime_parse import (
+    build_window_iso,
+    parse_first_date,
+    parse_time_range,
+    to_ddmmyyyy,
+    to_iso_date,
 )
+from backend.workflows.common.capture import capture_user_fields, promote_fields
+from backend.workflows.common.requirements import requirements_hash
+from backend.workflows.common.gatekeeper import refresh_gatekeeper
+from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from backend.workflows.common.types import GroupResult, WorkflowState
+from backend.workflows.groups.intake.condition.checks import suggest_dates
 from backend.workflows.io.database import (
     append_audit_entry,
     link_event_to_client,
-    load_rooms,
-    record_room_search_start,
     tag_message,
-    update_event_date,
     update_event_metadata,
 )
 from backend.utils.profiler import profile_step
+from backend.services.availability import next_five_venue_dates, validate_window
+from backend.workflow.state import WorkflowStep, default_subflow, write_stage
 
 from ..condition.decide import is_valid_ddmmyyyy
-from backend.workflows.groups.room_availability.condition.decide import room_status_on_date
 from ..llm.analysis import compose_date_confirmation_reply
 
 __workflow_role__ = "trigger"
@@ -42,28 +36,156 @@ __workflow_role__ = "trigger"
 
 @dataclass
 class ConfirmationWindow:
-    display_date: Optional[str]
-    iso_date: Optional[str]
+    """Resolved confirmation payload for the requested event window."""
+
+    display_date: str
+    iso_date: str
     start_time: Optional[str]
     end_time: Optional[str]
     start_iso: Optional[str]
     end_iso: Optional[str]
-    inherited_times: bool = False
-    partial: bool = False
-    source_message_id: Optional[str] = None
-    tz: str = "Europe/Zurich"
+    inherited_times: bool
+    partial: bool
+    source_message_id: Optional[str]
 
 
-@dataclass
-class DateProposal:
-    body_lines: List[str]
-    candidate_dates: List[str]
-    table_blocks: List[dict]
-    actions: List[dict]
-    topic: str = "date_candidates"
+AFFIRMATIVE_TOKENS = {
+    "yes",
+    "yep",
+    "sure",
+    "sounds good",
+    "that works",
+    "works for me",
+    "confirm",
+    "confirmed",
+    "let's do it",
+    "go ahead",
+    "we agree",
+    "all good",
+    "perfect",
+}
+
+CONFIRMATION_KEYWORDS = {
+    "we'll go with",
+    "we will go with",
+    "we'll take",
+    "we will take",
+    "we confirm",
+    "please confirm",
+    "lock in",
+    "book it",
+    "reserve it",
+    "confirm the date",
+    "confirming",
+    "take the",
+    "take ",
+}
 
 
-@trace_step("Step2_Date")
+def _extract_first_name(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return None
+    candidate = str(raw).strip()
+    if not candidate:
+        return None
+    token = candidate.split()[0].strip(",. ")
+    return token or None
+
+
+_SIGNATURE_MARKERS = (
+    "best regards",
+    "kind regards",
+    "regards",
+    "many thanks",
+    "thanks",
+    "thank you",
+    "cheers",
+    "beste grüsse",
+    "freundliche grüsse",
+)
+
+
+def _extract_signature_name(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for idx, line in enumerate(lines):
+        lowered = line.lower()
+        if any(marker in lowered for marker in _SIGNATURE_MARKERS):
+            if idx + 1 < len(lines):
+                candidate = lines[idx + 1].strip(", ")
+                if candidate and len(candidate.split()) <= 4:
+                    return candidate
+    if lines:
+        tail = lines[-1]
+        if 1 <= len(tail.split()) <= 4:
+            return tail
+    return None
+
+
+def _compose_greeting(state: WorkflowState) -> str:
+    profile = (state.client or {}).get("profile", {}) if state.client else {}
+    user_info_name = None
+    if state.user_info:
+        user_info_name = state.user_info.get("name") or state.user_info.get("company_contact")
+    raw_name = (
+        user_info_name
+        or profile.get("name")
+        or _extract_signature_name(state.message.body)
+        or state.message.from_name
+    )
+    first = _extract_first_name(raw_name)
+    if not first:
+        return "Hello,"
+    return f"Hello {first},"
+
+
+def _with_greeting(state: WorkflowState, body: str) -> str:
+    greeting = _compose_greeting(state)
+    if not body:
+        return greeting
+    if body.startswith(greeting):
+        return body
+    return f"{greeting}\n\n{body}"
+
+
+def _future_fridays_in_may_june(anchor: date, count: int = 4) -> List[str]:
+    results: List[str] = []
+    year = anchor.year
+    while len(results) < count:
+        window_start = date(year, 5, 1)
+        window_end = date(year, 6, 30)
+        cursor = max(anchor, window_start)
+        while cursor <= window_end and len(results) < count:
+            if cursor.weekday() == 4 and cursor >= anchor:
+                results.append(cursor.isoformat())
+            cursor += timedelta(days=1)
+        year += 1
+    return results[:count]
+
+
+def _maybe_fuzzy_friday_candidates(text: str, anchor: date) -> List[str]:
+    lowered = text.lower()
+    if "friday" not in lowered:
+        return []
+    if "late spring" in lowered or ("spring" in lowered and "late" in lowered):
+        return _future_fridays_in_may_june(anchor)
+    return []
+
+
+def _next_matching_date(original: date, reference: date) -> date:
+    candidate_year = max(reference.year, original.year)
+    while True:
+        try:
+            candidate = original.replace(year=candidate_year)
+        except ValueError:
+            clamped_day = min(original.day, 28)
+            candidate = date(candidate_year, original.month, clamped_day)
+        if candidate > reference:
+            return candidate
+        candidate_year += 1
+
+
 @profile_step("workflow.step2.date_confirmation")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Run Group B — date negotiation and confirmation."""
@@ -80,91 +202,210 @@ def process(state: WorkflowState) -> GroupResult:
         return GroupResult(action="date_invalid", payload=payload, halt=True)
 
     state.current_step = 2
+    state.subflow_group = "date_confirmation"
+    write_stage(event_entry, current_step=WorkflowStep.STEP_2, subflow_group="date_confirmation")
 
-    message_text = _message_text(state)
-    classification = detect_general_room_query(message_text, state)
-    thread_id = _thread_id(state)
-    if thread_id:
-        trace_marker(
-            thread_id,
-            "QNA_CLASSIFY",
-            detail="general_room_query" if classification["is_general"] else "not_general",
-            data={
-                "heuristics": classification.get("heuristics"),
-                "parsed": classification.get("parsed"),
-                "constraints": classification.get("constraints"),
-                "llm_called": classification.get("llm_called"),
-                "llm_result": classification.get("llm_result"),
-                "cached": classification.get("cached"),
-            },
-            owner_step="Step2_Date",
-            granularity="logic",
-        )
+    capture_user_fields(state, current_step=2, source=state.message.msg_id)
 
-    if classification["is_general"] and not bool(event_entry.get("date_confirmed")):
-        return _present_general_room_qna(state, event_entry, classification, thread_id)
+    pending_future_payload = event_entry.get("pending_future_confirmation")
+    if pending_future_payload:
+        body_text = state.message.body or ""
+        if _message_mentions_new_date(body_text):
+            event_entry.pop("pending_future_confirmation", None)
+        elif _message_signals_confirmation(body_text):
+            pending_future_window = _window_from_payload(pending_future_payload)
+            event_entry.pop("pending_future_confirmation", None)
+            if pending_future_window:
+                return _finalize_confirmation(state, event_entry, pending_future_window)
 
-    chosen_date = event_entry.get("chosen_date")
-    if not chosen_date:
+    window = _resolve_confirmation_window(state, event_entry)
+    if window is None:
         return _present_candidate_dates(state, event_entry)
 
-    confirmed_date = _resolve_confirmed_date(state)
-    if not confirmed_date:
-        return _present_candidate_dates(state, event_entry)
+    if window.partial:
+        return _handle_partial_confirmation(state, event_entry, window)
 
-    return _finalize_confirmation(state, event_entry, confirmed_date)
+    pending_window_payload = event_entry.get("pending_date_confirmation")
+    if pending_window_payload:
+        pending_window = _window_from_payload(pending_window_payload)
+        if _is_affirmative_reply(state.message.body or "") and pending_window:
+            event_entry.pop("pending_date_confirmation", None)
+            return _finalize_confirmation(state, event_entry, pending_window)
+        if _message_mentions_new_date(state.message.body or ""):
+            event_entry.pop("pending_date_confirmation", None)
+        elif pending_window and not window.partial:
+            if (
+                pending_window.iso_date == window.iso_date
+                and pending_window.start_time == window.start_time
+                and pending_window.end_time == window.end_time
+            ):
+                event_entry.pop("pending_date_confirmation", None)
+                return _finalize_confirmation(state, event_entry, window)
+
+    reference_day = _reference_date_from_state(state)
+    feasible, reason = validate_window(window.iso_date, window.start_time, window.end_time, reference=reference_day)
+    if not feasible:
+        return _present_candidate_dates(state, event_entry, reason)
+
+    auto_accept = _should_auto_accept_first_date(event_entry)
+    if state.user_info.get("date") or state.user_info.get("event_date"):
+        auto_accept = True
+    if _message_signals_confirmation(state.message.body or "") or auto_accept:
+        event_entry.pop("pending_date_confirmation", None)
+        return _finalize_confirmation(state, event_entry, window)
+
+    event_entry["pending_date_confirmation"] = _window_payload(window)
+    return _prompt_confirmation(state, event_entry, window)
 
 
-def _present_candidate_dates(state: WorkflowState, event_entry: dict) -> GroupResult:
+def _present_candidate_dates(
+    state: WorkflowState,
+    event_entry: dict,
+    reason: Optional[str] = None,
+) -> GroupResult:
     """[Trigger] Provide five deterministic candidate dates to the client."""
 
-    vague_month, vague_weekday, vague_time = _resolve_vague_components(state, event_entry)
-    thread_id = _thread_id(state)
+    user_text = f"{state.message.subject or ''} {state.message.body or ''}".strip()
+    reference_day = _reference_date_from_state(state)
+    fuzzy_candidates = _maybe_fuzzy_friday_candidates(user_text, reference_day)
 
-    proposal = _build_date_proposal(
-        state,
-        vague_month=vague_month,
-        vague_weekday=vague_weekday,
-        vague_time=vague_time,
-        thread_id=thread_id,
-    )
+    requirements = event_entry.get("requirements") or {}
+    preferred_room = requirements.get("preferred_room") or "Not specified"
+    anchor = parse_first_date(user_text, fallback_year=reference_day.year)
+    anchor_dt = datetime.combine(anchor, time(hour=12)) if anchor else None
 
-    body_with_footer = append_footer(
-        "\n".join(proposal.body_lines),
-        step=2,
-        next_step="Confirm date",
-        thread_state="Awaiting Client",
-    )
+    formatted_dates: List[str] = []
+    event_entry.pop("pending_future_confirmation", None)
+
+    if fuzzy_candidates:
+        seen_iso: set[str] = set()
+        for iso_value in fuzzy_candidates:
+            if iso_value in seen_iso or _iso_date_is_past(iso_value):
+                continue
+            seen_iso.add(iso_value)
+            formatted_dates.append(iso_value)
+    else:
+        candidate_dates_ddmmyyyy: List[str] = suggest_dates(
+            state.db,
+            preferred_room=preferred_room,
+            start_from_iso=anchor_dt.isoformat() if anchor_dt else state.message.ts,
+            days_ahead=45,
+            max_results=5,
+        )
+
+        seen_iso: set[str] = set()
+        for raw in candidate_dates_ddmmyyyy:
+            iso_value = to_iso_date(raw)
+            if not iso_value:
+                continue
+            if _iso_date_is_past(iso_value) or iso_value in seen_iso:
+                continue
+            seen_iso.add(iso_value)
+            formatted_dates.append(iso_value)
+
+        if len(formatted_dates) < 5:
+            skip = {_safe_parse_iso_date(iso) for iso in seen_iso}
+            supplemental = next_five_venue_dates(anchor_dt, skip_dates={dt for dt in skip if dt is not None})
+            for candidate in supplemental:
+                if candidate in seen_iso:
+                    continue
+                seen_iso.add(candidate)
+                formatted_dates.append(candidate)
+                if len(formatted_dates) >= 5:
+                    break
+
+    if fuzzy_candidates:
+        formatted_dates = formatted_dates[:4]
+
+    start_hint = _normalize_time_value(state.user_info.get("start_time"))
+    end_hint = _normalize_time_value(state.user_info.get("end_time"))
+    start_pref = start_hint or "18:00"
+    end_pref = end_hint or "22:00"
+    if start_pref and end_pref:
+        slot_text = f"{start_pref}–{end_pref}"
+    elif start_pref:
+        slot_text = start_pref
+    elif end_pref:
+        slot_text = end_pref
+    else:
+        slot_text = "18:00–22:00"
+
+    greeting = _compose_greeting(state)
+    message_lines: List[str] = [greeting, ""]
+
+    original_requested = parse_first_date(user_text, fallback_year=reference_day.year)
+    future_suggestion = None
+    future_display: Optional[str] = None
+    if original_requested and original_requested < reference_day:
+        future_suggestion = _next_matching_date(original_requested, reference_day)
+
+    if reason and "past" in reason.lower() and future_suggestion:
+        original_display = (
+            format_iso_date_to_ddmmyyyy(original_requested.isoformat())
+            or original_requested.strftime("%d.%m.%Y")
+        )
+        future_display = (
+            format_iso_date_to_ddmmyyyy(future_suggestion.isoformat())
+            or future_suggestion.strftime("%d.%m.%Y")
+        )
+        message_lines.append(f"It looks like {original_display} has already passed. Would {future_display} work for you instead?")
+
+        future_iso = future_suggestion.isoformat()
+        start_iso_val = end_iso_val = None
+        if start_hint and end_hint:
+            try:
+                start_iso_val, end_iso_val = build_window_iso(
+                    future_iso,
+                    _to_time(start_hint),
+                    _to_time(end_hint),
+                )
+            except ValueError:
+                start_iso_val = end_iso_val = None
+        pending_window = ConfirmationWindow(
+            display_date=future_display,
+            iso_date=future_iso,
+            start_time=start_hint,
+            end_time=end_hint,
+            start_iso=start_iso_val,
+            end_iso=end_iso_val,
+            inherited_times=False,
+            partial=not (start_hint and end_hint),
+            source_message_id=state.message.msg_id,
+        )
+        event_entry["pending_future_confirmation"] = _window_payload(pending_window)
+    elif reason:
+        message_lines.append(reason)
+    else:
+        message_lines.append("Thanks for the briefing — here are the next available slots that fit your preferred window.")
+
+    message_lines.extend(["", "AVAILABLE DATES:"])
+    if formatted_dates:
+        for iso_value in formatted_dates[:5]:
+            message_lines.append(f"- {iso_value} {slot_text}")
+    else:
+        message_lines.append("- No suitable slots within the next 45 days.")
+
+    next_step_lines = ["", "NEXT STEP:"]
+    if future_display:
+        next_step_lines.append(f"Say yes if {future_display} works and I'll pencil it in.")
+        next_step_lines.append("Prefer another option? Share a different day or time and I'll check availability.")
+    else:
+        next_step_lines.append("Tell me which date works best so I can continue with Date Confirmation.")
+        next_step_lines.append("Or share another day/time and I'll check availability.")
+    message_lines.extend(next_step_lines)
+    prompt = "\n".join(message_lines)
 
     draft_message = {
-        "body": body_with_footer,
+        "body": prompt,
         "step": 2,
-        "next_step": "Confirm date",
-        "thread_state": "Awaiting Client",
-        "topic": proposal.topic,
-        "candidate_dates": proposal.candidate_dates,
-        "table_blocks": proposal.table_blocks,
-        "actions": proposal.actions,
+        "topic": "date_candidates",
+        "candidate_dates": [format_iso_date_to_ddmmyyyy(iso) or iso for iso in formatted_dates[:5]],
     }
     state.add_draft_message(draft_message)
 
-    update_event_metadata(
-        event_entry,
-        thread_state="Awaiting Client",
-        current_step=2,
-        candidate_dates=proposal.candidate_dates,
-    )
-    _trace_candidate_gate(thread_id, proposal.candidate_dates)
-    trace_state(
-        thread_id,
-        "Step2_Date",
-        {
-            "candidate_dates": proposal.candidate_dates,
-            "vague_month": event_entry.get("vague_month"),
-            "vague_weekday": event_entry.get("vague_weekday"),
-        },
-    )
-    state.set_thread_state("Awaiting Client")
+    update_event_metadata(event_entry, thread_state="Awaiting Client Response", current_step=2)
+    write_stage(event_entry, current_step=WorkflowStep.STEP_2, subflow_group="date_confirmation")
+    state.set_thread_state("Awaiting Client Response")
     state.extras["persist"] = True
 
     payload = {
@@ -172,723 +413,548 @@ def _present_candidate_dates(state: WorkflowState, event_entry: dict) -> GroupRe
         "event_id": event_entry.get("event_id"),
         "intent": state.intent.value if state.intent else None,
         "confidence": round(state.confidence or 0.0, 3),
-        "candidate_dates": proposal.candidate_dates,
+        "candidate_dates": formatted_dates[:5],
         "draft_messages": state.draft_messages,
         "thread_state": state.thread_state,
         "context": state.context_snapshot,
         "persisted": True,
+        "answered_question_first": True,
     }
+    gatekeeper = refresh_gatekeeper(event_entry)
+    state.telemetry.answered_question_first = True
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
+    payload["gatekeeper_passed"] = dict(gatekeeper)
     return GroupResult(action="date_options_proposed", payload=payload, halt=True)
 
 
-def _resolve_vague_components(
-    state: WorkflowState,
-    event_entry: dict,
-) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """Collect vague date hints from the latest turn or persisted metadata."""
-
-    user_info = state.user_info or {}
-    month_token = user_info.get("vague_month") or event_entry.get("vague_month")
-    weekday_token = user_info.get("vague_weekday") or event_entry.get("vague_weekday")
-    time_token = user_info.get("vague_time_of_day") or event_entry.get("vague_time_of_day")
-
-    def _normalize(value: Optional[str]) -> Optional[str]:
-        if not value or not isinstance(value, str):
-            return None
-        stripped = value.strip()
-        return stripped or None
-
-    return _normalize(month_token), _normalize(weekday_token), _normalize(time_token)
-
-
-def _extract_participants_from_state(state: WorkflowState) -> Optional[int]:
-    candidates: List[Any] = []
-    user_info = state.user_info or {}
-    candidates.append(user_info.get("participants"))
-    candidates.append(user_info.get("number_of_participants"))
-    event_entry = state.event_entry or {}
-    requirements = event_entry.get("requirements") or {}
-    candidates.append(requirements.get("number_of_participants"))
-    for raw in candidates:
-        if raw in (None, "", "Not specified", "none"):
-            continue
-        try:
-            return int(str(raw).strip().strip("~+"))
-        except (TypeError, ValueError):
-            continue
-    return None
-
-
-def _is_hybrid_availability_request(classification: Dict[str, Any], state: WorkflowState) -> bool:
-    constraints = classification.get("constraints") or {}
-    if any(constraints.get(key) for key in ("vague_month", "weekday", "time_of_day")):
-        return True
-    user_info = state.user_info or {}
-    return bool(user_info.get("vague_month") or user_info.get("vague_weekday") or user_info.get("vague_time_of_day"))
-
-
-def _search_range_availability(
-    state: WorkflowState,
-    thread_id: Optional[str],
-    constraints: Dict[str, Any],
-    participants: Optional[int],
-    preferences: Dict[str, Any],
-    preferred_room: Optional[str],
-) -> List[Dict[str, Any]]:
-    iso_dates = _candidate_dates_for_constraints(state, constraints)
-    if not iso_dates:
-        return []
-
-    rooms = load_rooms()
-    results: List[Dict[str, Any]] = []
-    for iso_date in iso_dates:
-        status_map = {room: room_status_on_date(state.db, iso_date, room) for room in rooms}
-        ranked = rank_rooms(
-            status_map,
-            preferred_room=preferred_room,
-            pax=participants,
-            preferences=preferences,
-        )
-        for entry in ranked[:3]:
-            results.append(
-                {
-                    "iso_date": iso_date,
-                    "date_label": _format_range_label(iso_date),
-                    "room": entry.room,
-                    "status": entry.status,
-                    "hint": _format_hint(entry.hint),
-                }
-            )
-        if len(results) >= 5:
-            break
-
-    if thread_id:
-        trace_db_read(
-            thread_id,
-            "Step2_Date",
-            "db.rooms.search_range",
-            {
-                "constraints": {
-                    "month": constraints.get("vague_month") or (state.user_info or {}).get("vague_month"),
-                    "weekday": constraints.get("weekday"),
-                    "time_of_day": constraints.get("time_of_day"),
-                    "pax": participants,
-                },
-                "result_count": len(results),
-                "sample": results[:3],
-            },
-        )
-
-    return results[:5]
-
-
-def _candidate_dates_for_constraints(state: WorkflowState, constraints: Dict[str, Any], limit: int = 5) -> List[str]:
-    rules: Dict[str, Any] = {"timezone": "Europe/Zurich"}
-    event_entry = state.event_entry or {}
-    month = constraints.get("vague_month") or state.user_info.get("vague_month") or event_entry.get("vague_month")
-    if month:
-        rules["month"] = month
-    weekday = constraints.get("weekday") or state.user_info.get("vague_weekday") or event_entry.get("vague_weekday")
-    if isinstance(weekday, list) and weekday:
-        rules["weekday"] = weekday[0]
-    elif isinstance(weekday, str):
-        rules["weekday"] = weekday
-    dates = next5(state.message.ts if state.message else None, rules)
-    return [value.strftime("%Y-%m-%d") for value in dates[:limit]]
-
-
-def _describe_constraints(constraints: Dict[str, Any], state: WorkflowState) -> str:
-    month = constraints.get("vague_month") or state.user_info.get("vague_month")
-    weekday = constraints.get("weekday") or state.user_info.get("vague_weekday")
-    time_of_day = constraints.get("time_of_day") or state.user_info.get("vague_time_of_day")
-
-    parts: List[str] = []
-    if weekday:
-        if isinstance(weekday, list):
-            formatted = ", ".join(word.capitalize() for word in weekday)
-        else:
-            formatted = str(weekday).capitalize()
-        parts.append(formatted)
-    if month:
-        parts.append(f"in {str(month).capitalize()}")
-
-    descriptor = " ".join(parts) if parts else "for your requested window"
-    if time_of_day:
-        descriptor += f" ({str(time_of_day).lower()})"
-    return descriptor
-
-
-def _format_range_label(iso_date: str) -> str:
+def _iso_date_is_past(iso_value: str) -> bool:
     try:
-        base_date = dt.date.fromisoformat(iso_date)
+        return datetime.fromisoformat(iso_value).date() < date.today()
     except ValueError:
-        return iso_date
-    return base_date.strftime("%a %d %b %Y")
-
-
-def _format_hint(text: Optional[str]) -> str:
-    value = (text or "").strip()
-    if not value:
-        return "Catering available"
-    return value[0].upper() + value[1:]
-
-
-def _format_room_availability(entries: List[Dict[str, Any]]) -> List[str]:
-    grouped: Dict[str, List[Tuple[str, str]]] = {}
-    for entry in entries:
-        room = str(entry.get("room") or "Room").strip() or "Room"
-        date_label = entry.get("date_label") or _format_range_label(entry.get("iso_date") or "")
-        status = entry.get("status") or "Available"
-        bucket = grouped.setdefault(room, [])
-        bucket.append((date_label, status))
-
-    lines: List[str] = []
-    for room, values in grouped.items():
-        seen: set[Tuple[str, str]] = set()
-        formatted: List[str] = []
-        for date_label, status in values:
-            if not date_label:
-                continue
-            key = (date_label, status)
-            if key in seen:
-                continue
-            seen.add(key)
-            label = date_label
-            if status and status.lower() not in {"available"}:
-                label = f"{date_label} ({status})"
-            formatted.append(label)
-        if formatted:
-            lines.append(f"{room} — Available on: {', '.join(formatted)}")
-    return lines
-
-
-def _compact_products_summary(preferences: Dict[str, Any]) -> List[str]:
-    lines = ["Products & Catering (summary):"]
-    wish_products = []
-    raw_wishes = preferences.get("wish_products") if isinstance(preferences, dict) else None
-    if isinstance(raw_wishes, (list, tuple)):
-        wish_products = [str(item).strip() for item in raw_wishes if str(item).strip()]
-    if wish_products:
-        highlights = ", ".join(wish_products[:2])
-        lines.append(f"- Highlights: {highlights}. We'll share full details once the date is locked in.")
-    else:
-        lines.append("- Seasonal dinner menus and wine pairings available; happy to tailor once you confirm.")
-    return lines
-
-
-def _user_requested_products(state: WorkflowState, classification: Dict[str, Any]) -> bool:
-    message_text = (_message_text(state) or "").lower()
-    keywords = ("menu", "cater", "product")
-    if any(keyword in message_text for keyword in keywords):
         return True
-    parsed = classification.get("parsed") or {}
-    if isinstance(parsed, dict):
-        if parsed.get("products") or parsed.get("catering"):
+
+
+def _safe_parse_iso_date(iso_value: str) -> Optional[date]:
+    try:
+        return datetime.fromisoformat(iso_value).date()
+    except ValueError:
+        return None
+
+
+def _window_payload(window: ConfirmationWindow) -> Dict[str, Any]:
+    return {
+        "display_date": window.display_date,
+        "iso_date": window.iso_date,
+        "start_time": window.start_time,
+        "end_time": window.end_time,
+        "start_iso": window.start_iso,
+        "end_iso": window.end_iso,
+        "inherited_times": window.inherited_times,
+        "partial": window.partial,
+        "source_message_id": window.source_message_id,
+    }
+
+
+def _window_from_payload(payload: Dict[str, Any]) -> Optional[ConfirmationWindow]:
+    if not isinstance(payload, dict):
+        return None
+    try:
+        return ConfirmationWindow(
+            display_date=payload.get("display_date"),
+            iso_date=payload.get("iso_date"),
+            start_time=payload.get("start_time"),
+            end_time=payload.get("end_time"),
+            start_iso=payload.get("start_iso"),
+            end_iso=payload.get("end_iso"),
+            inherited_times=bool(payload.get("inherited_times")),
+            partial=bool(payload.get("partial")),
+            source_message_id=payload.get("source_message_id"),
+        )
+    except TypeError:
+        return None
+
+
+def _format_window(window: ConfirmationWindow) -> str:
+    if window.start_time and window.end_time:
+        return f"{window.display_date} {window.start_time}–{window.end_time}"
+    return window.display_date
+
+
+def _is_affirmative_reply(text: str) -> bool:
+    normalized = text.strip().lower()
+    if not normalized:
+        return False
+    if normalized in AFFIRMATIVE_TOKENS:
+        return True
+    negative_prefixes = ("can you", "could you", "would you", "please", "may you")
+    for token in AFFIRMATIVE_TOKENS:
+        if token in normalized:
+            if any(prefix in normalized for prefix in negative_prefixes) and "?" in normalized:
+                continue
             return True
     return False
 
 
-def _build_date_proposal(
-    state: WorkflowState,
-    vague_month: Optional[str],
-    vague_weekday: Optional[str],
-    vague_time: Optional[str],
-    thread_id: str,
-) -> DateProposal:
-    """Produce a deterministic set of candidate dates and the accompanying draft content."""
+def _message_signals_confirmation(text: str) -> bool:
+    normalized = text.strip().lower()
+    if not normalized:
+        return False
+    if _is_affirmative_reply(normalized):
+        return True
+    for keyword in CONFIRMATION_KEYWORDS:
+        if keyword in normalized:
+            if "?" in normalized and any(prefix in normalized for prefix in ("can you", "could you")):
+                continue
+            return True
+    return False
 
-    base_ts = state.message.ts if state.message else None
-    time_label = _format_time_label(vague_time)
-    timezone_name = "Europe/Zurich"
-    rules: dict = {"timezone": timezone_name}
 
-    if vague_weekday:
-        rules["weekday"] = vague_weekday
-    if vague_month:
-        rules["month"] = vague_month
+def _message_mentions_new_date(text: str) -> bool:
+    if not text.strip():
+        return False
+    detected = parse_first_date(text, fallback_year=datetime.utcnow().year)
+    return detected is not None
 
-    primary_dates = next5(base_ts, rules)
-    fallback_dates: List[dt.date] = []
-    if len(primary_dates) < 5:
-        fallback_rules = {"timezone": timezone_name}
-        fallback_dates = [candidate for candidate in next5(base_ts, fallback_rules) if candidate not in primary_dates]
 
-    all_dates = (primary_dates + fallback_dates)[:5]
-    trace_db_read(
-        thread_id,
-        "Step2_Date",
-        "db.dates.next5",
-        {"dates": [value.isoformat() for value in all_dates]},
+def _should_auto_accept_first_date(event_entry: dict) -> bool:
+    requested_window = event_entry.get("requested_window") or {}
+    if requested_window.get("hash"):
+        return False
+    if event_entry.get("pending_date_confirmation"):
+        return False
+    if event_entry.get("chosen_date") and event_entry.get("date_confirmed"):
+        return False
+    return True
+
+
+def _reference_date_from_state(state: WorkflowState) -> date:
+    ts = state.message.ts
+    if ts:
+        try:
+            return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).date()
+        except ValueError:
+            pass
+    return date.today()
+
+
+def _preferred_room(event_entry: dict) -> str | None:
+    """[Trigger] Helper to extract preferred room from requirements."""
+
+    requirements = event_entry.get("requirements") or {}
+    return requirements.get("preferred_room")
+
+
+def _resolve_confirmation_window(state: WorkflowState, event_entry: dict) -> Optional[ConfirmationWindow]:
+    """Resolve the requested window from the latest client message."""
+
+    user_info = state.user_info or {}
+    body_text = state.message.body or ""
+    subject_text = state.message.subject or ""
+
+    display_date, iso_date = _determine_date(user_info, body_text, subject_text, event_entry)
+    if not display_date or not iso_date:
+        return None
+
+    start_time = _normalize_time_value(user_info.get("start_time"))
+    end_time = _normalize_time_value(user_info.get("end_time"))
+
+    inherited_times = False
+
+    if not (start_time and end_time):
+        parsed_start, parsed_end, matched = parse_time_range(body_text)
+        if parsed_start and parsed_end:
+            start_time = f"{parsed_start.hour:02d}:{parsed_start.minute:02d}"
+            end_time = f"{parsed_end.hour:02d}:{parsed_end.minute:02d}"
+        elif matched and not start_time:
+            start_time = None
+
+    if not (start_time and end_time):
+        fallback = _existing_time_window(event_entry, iso_date)
+        if fallback:
+            start_time, end_time = fallback
+            inherited_times = True
+
+    partial = not (start_time and end_time)
+    start_iso = end_iso = None
+    if start_time and end_time:
+        start_iso, end_iso = build_window_iso(iso_date, _to_time(start_time), _to_time(end_time))
+
+    return ConfirmationWindow(
+        display_date=display_date,
+        iso_date=iso_date,
+        start_time=start_time,
+        end_time=end_time,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        inherited_times=inherited_times,
+        partial=partial,
+        source_message_id=state.message.msg_id,
     )
 
-    candidate_dates: List[str] = []
-    table_rows: List[dict] = []
-    actions: List[dict] = []
-    for date_value in all_dates:
-        ddmmyyyy = date_value.strftime("%d.%m.%Y")
-        candidate_dates.append(ddmmyyyy)
-        table_rows.append(_build_table_row(date_value, "Available", True, time_label))
-        actions.append(_build_select_date_action(date_value, ddmmyyyy, time_label))
 
-    descriptor_month = (vague_month or "").strip().capitalize()
-    descriptor_weekday = (vague_weekday or "").strip().capitalize()
-    topic = "generic_date_candidates"
+def _determine_date(
+    user_info: Dict[str, Optional[str]],
+    body_text: str,
+    subject_text: str,
+    event_entry: dict,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Determine the DD.MM.YYYY and ISO representations for the confirmed date."""
 
-    if vague_month and vague_weekday:
-        first_line = f"You mentioned a {descriptor_weekday}"
-        if time_label:
-            first_line += f" {time_label.lower()}"
-        first_line += f" in {descriptor_month}."
-        body_lines = [
-            first_line,
-            "Here are the upcoming options that are still free:",
-        ]
-        topic = "vague_date_candidates"
-        table_label = f"{descriptor_weekday}s in {descriptor_month}"
-    else:
-        body_lines = [
-            "Here are the next dates we can offer you:",
-        ]
-        table_label = "Upcoming availability"
-
-    body_lines.append("If none of these dates work, let me know another date and I'll recheck availability.")
-
-    table_blocks = [
-        {
-            "type": "dates",
-            "label": table_label,
-            "rows": table_rows,
-        }
-    ]
-
-    return DateProposal(
-        body_lines=body_lines,
-        candidate_dates=candidate_dates,
-        table_blocks=table_blocks,
-        actions=actions,
-        topic=topic,
-    )
-
-
-def _build_table_row(
-    date_value: dt.date,
-    status: str,
-    available: bool,
-    time_label: Optional[str],
-    note: Optional[str] = None,
-) -> dict:
-    row = {
-        "iso_date": date_value.isoformat(),
-        "display": _format_display(date_value),
-        "status": "Available" if available else (status or "Unavailable"),
-    }
-    if time_label:
-        row["time_of_day"] = time_label
-    if note:
-        row["note"] = note
-    return row
-
-
-def _build_select_date_action(
-    date_value: dt.date,
-    ddmmyyyy: str,
-    time_label: Optional[str],
-) -> dict:
-    label = _format_display(date_value)
-    if time_label:
-        label = f"{label} · {time_label}"
-    return {
-        "type": "select_date",
-        "label": f"Confirm {label}",
-        "date": ddmmyyyy,
-        "iso_date": date_value.isoformat(),
-    }
-
-
-def _format_time_label(raw: Optional[str]) -> Optional[str]:
-    if not raw:
-        return None
-    lowered = raw.strip().lower()
-    if not lowered:
-        return None
-    return lowered.capitalize()
-
-
-def _format_display(date_value: dt.date) -> str:
-    return date_value.strftime("%a %d %b %Y")
-
-
-def _trace_candidate_gate(thread_id: str, candidates: List[str]) -> None:
-    count = len(candidates)
-    if count == 0:
-        label = "feasible=0"
-    elif count == 1:
-        label = "feasible=1"
-    else:
-        label = "feasible=many"
-    trace_gate(thread_id, "Step2_Date", label, True, {"count": count})
-
-
-def _thread_id(state: WorkflowState) -> str:
-    if state.thread_id:
-        return str(state.thread_id)
-    if state.client_id:
-        return str(state.client_id)
-    msg_id = state.message.msg_id if state.message else None
-    if msg_id:
-        return str(msg_id)
-    return "unknown-thread"
-
-
-def _resolve_confirmed_date(state: WorkflowState) -> str | None:
-    """[Trigger] Determine the confirmed date from user input."""
-
-    user_event_date = state.user_info.get("event_date")
+    user_event_date = user_info.get("event_date")
     if user_event_date and is_valid_ddmmyyyy(user_event_date):
-        return user_event_date
+        iso_value = to_iso_date(user_event_date)
+        if iso_value:
+            return user_event_date, iso_value
 
-    iso_date = state.user_info.get("date")
-    if iso_date:
-        canonical = format_iso_date_to_ddmmyyyy(iso_date)
-        if canonical:
-            return canonical
-    event_entry = state.event_entry or {}
-    stored_date = event_entry.get("chosen_date")
-    if stored_date and is_valid_ddmmyyyy(stored_date):
-        return stored_date
+    iso_candidate = user_info.get("date")
+    if iso_candidate:
+        ddmmyyyy = format_iso_date_to_ddmmyyyy(iso_candidate)
+        if ddmmyyyy and is_valid_ddmmyyyy(ddmmyyyy):
+            return ddmmyyyy, iso_candidate
+
+    parsed = parse_first_date(body_text) or parse_first_date(subject_text)
+    if parsed:
+        return parsed.strftime("%d.%m.%Y"), parsed.isoformat()
+
+    pending = event_entry.get("pending_time_request") or {}
+    if pending.get("display_date") and pending.get("iso_date"):
+        return pending["display_date"], pending["iso_date"]
+
+    chosen_date = event_entry.get("chosen_date")
+    if chosen_date and is_valid_ddmmyyyy(chosen_date):
+        iso_value = to_iso_date(chosen_date)
+        if iso_value:
+            return chosen_date, iso_value
+    return None, None
+
+
+def _normalize_time_value(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    text = text.replace(".", ":")
+    if ":" not in text:
+        if text.isdigit():
+            text = f"{int(text) % 24:02d}:00"
+        else:
+            return None
+    try:
+        parsed = datetime.strptime(text, "%H:%M").time()
+    except ValueError:
+        return None
+    return f"{parsed.hour:02d}:{parsed.minute:02d}"
+
+
+def _existing_time_window(event_entry: dict, iso_date: str) -> Optional[Tuple[str, str]]:
+    """Locate the last known window associated with the same date."""
+
+    requested = event_entry.get("requested_window") or {}
+    if requested.get("date_iso") == iso_date:
+        start = _normalize_time_value(requested.get("start_time"))
+        end = _normalize_time_value(requested.get("end_time"))
+        if start and end:
+            return start, end
+
+    requirements = event_entry.get("requirements") or {}
+    duration = requirements.get("event_duration") or {}
+    start = _normalize_time_value(duration.get("start"))
+    end = _normalize_time_value(duration.get("end"))
+    if start and end:
+        return start, end
+
+    event_data = event_entry.get("event_data") or {}
+    start = _normalize_time_value(event_data.get("Start Time"))
+    end = _normalize_time_value(event_data.get("End Time"))
+    if start and end:
+        return start, end
+
+    pending = event_entry.get("pending_time_request") or {}
+    if pending.get("iso_date") == iso_date:
+        start = _normalize_time_value(pending.get("start_time"))
+        end = _normalize_time_value(pending.get("end_time"))
+        if start and end:
+            return start, end
     return None
 
 
-def _finalize_confirmation(state: WorkflowState, event_entry: dict, confirmed_date: str) -> GroupResult:
-    """[Trigger] Persist the confirmed date and route to the next step."""
+def _handle_partial_confirmation(
+    state: WorkflowState,
+    event_entry: dict,
+    window: ConfirmationWindow,
+) -> GroupResult:
+    """Persist the date and request a time clarification without stalling the flow."""
 
-    thread_id = _thread_id(state)
-    state.event_id = event_entry.get("event_id")
-    tag_message(event_entry, state.message.msg_id)
+    event_entry.setdefault("event_data", {})["Event Date"] = window.display_date
+    _set_pending_time_state(event_entry, window)
 
-    iso_candidate = state.user_info.get("date")
-    iso_date = iso_candidate if isinstance(iso_candidate, str) else None
-    if not iso_date:
-        parsed = parse_ddmmyyyy(confirmed_date)
-        if parsed:
-            iso_date = parsed.strftime("%Y-%m-%d")
+    state.user_info["event_date"] = window.display_date
+    state.user_info["date"] = window.iso_date
 
-    try:
-        if state.event_id and iso_date:
-            event_entry = update_event_date(state.db, state.event_id, iso_date)
-            state.event_entry = event_entry
-        else:
-            event_entry.setdefault("event_data", {})["Event Date"] = confirmed_date
-            update_event_metadata(
-                event_entry,
-                chosen_date=confirmed_date,
-                date_confirmed=True,
-            )
-    except ValueError:
-        event_entry.setdefault("event_data", {})["Event Date"] = confirmed_date
-        update_event_metadata(
-            event_entry,
-            chosen_date=confirmed_date,
-            date_confirmed=True,
-        )
-
-    trace_db_write(
-        thread_id,
-        "Step2_Date",
-        "db.events.update_date",
-        {"event_id": state.event_id, "date_iso": iso_date or "unknown"},
+    prompt = _with_greeting(
+        state,
+        f"Noted {window.display_date}. Preferred time? Examples: 14–18, 18–22.",
     )
-    trace_entity(
-        thread_id,
-        "Step2_Date",
-        "date",
-        "confirmation_step",
-        True,
-        {"value": confirmed_date},
-        status_override="confirmed",
-    )
+    state.add_draft_message({"body": prompt, "step": 2, "topic": "date_time_clarification"})
 
-    pax_label, pax_count = _participants_metadata(event_entry)
-    if state.event_id and iso_date:
-        try:
-            record_room_search_start(
-                state.db,
-                state.event_id,
-                date_iso=iso_date,
-                participants=pax_count,
-            )
-            trace_db_write(
-                thread_id,
-                "Step2_Date",
-                "db.rooms.search_start",
-                {"event_id": state.event_id, "date_iso": iso_date, "participants": pax_count},
-            )
-        except ValueError:
-            pass
-
-    append_audit_entry(event_entry, 2, 3, "date_confirmed")
     update_event_metadata(
         event_entry,
-        current_step=3,
-        caller_step=None,
-        thread_state="Checking",
+        chosen_date=window.display_date,
+        date_confirmed=False,
+        thread_state="Awaiting Client Response",
+        current_step=2,
+    )
+    write_stage(event_entry, current_step=WorkflowStep.STEP_2, subflow_group="date_confirmation")
+
+    state.set_thread_state("Awaiting Client Response")
+    state.extras["persist"] = True
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "pending_time": True,
+        "event_date": window.display_date,
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+        "answered_question_first": True,
+    }
+    gatekeeper = refresh_gatekeeper(event_entry)
+    state.telemetry.answered_question_first = True
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
+    payload["gatekeeper_passed"] = dict(gatekeeper)
+    return GroupResult(action="date_time_clarification", payload=payload, halt=True)
+
+
+def _prompt_confirmation(
+    state: WorkflowState,
+    event_entry: dict,
+    window: ConfirmationWindow,
+) -> GroupResult:
+    formatted_window = _format_window(window)
+    lines = [
+        "INFO:",
+        f"- {formatted_window} is available on our side. Shall I continue?",
+        "",
+        "NEXT STEP:",
+        "- Reply \"yes\" to continue with Room Availability.",
+        "- Or share another day/time and I'll check again.",
+    ]
+    prompt = _with_greeting(state, "\n".join(lines))
+
+    draft_message = {
+        "body": prompt,
+        "step": 2,
+        "topic": "date_confirmation_pending",
+        "proposed_date": window.display_date,
+        "proposed_time": f"{window.start_time or ''}–{window.end_time or ''}".strip("–"),
+    }
+    state.add_draft_message(draft_message)
+
+    update_event_metadata(
+        event_entry,
+        current_step=2,
+        thread_state="Awaiting Client Response",
+        date_confirmed=False,
+    )
+    write_stage(event_entry, current_step=WorkflowStep.STEP_2, subflow_group="date_confirmation")
+    state.set_thread_state("Awaiting Client Response")
+    state.extras["persist"] = True
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "pending_confirmation": True,
+        "proposed_date": window.iso_date,
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+        "answered_question_first": True,
+    }
+    gatekeeper = refresh_gatekeeper(event_entry)
+    payload["gatekeeper_passed"] = dict(gatekeeper)
+    state.telemetry.answered_question_first = True
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
+    return GroupResult(action="date_confirmation_pending", payload=payload, halt=True)
+
+
+def _finalize_confirmation(
+    state: WorkflowState,
+    event_entry: dict,
+    window: ConfirmationWindow,
+) -> GroupResult:
+    """Persist the requested window and trigger availability."""
+
+    state.event_id = event_entry.get("event_id")
+    tag_message(event_entry, window.source_message_id)
+    event_entry.setdefault("event_data", {})["Event Date"] = window.display_date
+    event_entry["event_data"]["Start Time"] = window.start_time
+    event_entry["event_data"]["End Time"] = window.end_time
+
+    requirements = dict(event_entry.get("requirements") or {})
+    requirements["event_duration"] = {"start": window.start_time, "end": window.end_time}
+    new_req_hash = requirements_hash(requirements)
+
+    state.user_info["event_date"] = window.display_date
+    state.user_info["date"] = window.iso_date
+    state.user_info["start_time"] = window.start_time
+    state.user_info["end_time"] = window.end_time
+
+    previous_window = event_entry.get("requested_window") or {}
+    new_hash = _window_hash(window.iso_date, window.start_iso, window.end_iso)
+    reuse_previous = previous_window.get("hash") == new_hash
+
+    requested_payload = {
+        "display_date": window.display_date,
+        "date_iso": window.iso_date,
+        "start_time": window.start_time,
+        "end_time": window.end_time,
+        "start": window.start_iso,
+        "end": window.end_iso,
+        "tz": "Europe/Zurich",
+        "hash": new_hash,
+        "times_inherited": window.inherited_times,
+        "source_message_id": window.source_message_id,
+        "updated_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "cached": reuse_previous,
+    }
+    event_entry["requested_window"] = requested_payload
+    event_entry.pop("pending_time_request", None)
+
+    update_event_metadata(
+        event_entry,
+        chosen_date=window.display_date,
+        date_confirmed=True,
+        requirements=requirements,
+        requirements_hash=new_req_hash,
+        thread_state="In Progress",
     )
 
-    acknowledgement = compose_date_confirmation_reply(confirmed_date, pax_label)
-    acknowledgement_with_footer = append_footer(
-        acknowledgement,
-        step=3,
-        next_step="Availability result",
-        thread_state="Checking",
-    )
+    if not reuse_previous:
+        update_event_metadata(
+            event_entry,
+            room_eval_hash=None,
+            locked_room_id=None,
+        )
+
+    caller_step = event_entry.get("caller_step")
+    next_step = caller_step if caller_step else 3
+
+    append_audit_entry(event_entry, 2, next_step, "date_confirmed")
+    update_event_metadata(event_entry, current_step=next_step, caller_step=None)
+    try:
+        next_stage = WorkflowStep(f"step_{next_step}")
+    except ValueError:
+        next_stage = WorkflowStep.STEP_3
+    write_stage(event_entry, current_step=next_stage, subflow_group=default_subflow(next_stage))
+
+    reply = compose_date_confirmation_reply(window.display_date, _preferred_room(event_entry))
+    reply = _with_greeting(state, reply)
     state.add_draft_message(
         {
-            "body": acknowledgement_with_footer,
-            "step": 3,
-            "next_step": "Availability result",
-            "thread_state": "Checking",
-            "topic": "date_confirmation_ack",
-            "requires_approval": False,
-            "date": confirmed_date,
+            "body": reply,
+            "step": 2,
+            "topic": "date_confirmation",
+            "date": window.display_date,
         }
     )
 
     if state.client and state.event_id:
         link_event_to_client(state.client, state.event_id)
 
-    trace_marker(
-        thread_id,
-        "ROUTE Step3_Room",
-        data={"from": 2, "to": 3, "reason": "date_confirmed"},
-        owner_step="Step2_Date",
-        granularity="logic",
-    )
+    _record_confirmation_log(event_entry, state, window, reuse_previous)
 
-    state.set_thread_state("Checking")
-    state.current_step = 3
+    state.set_thread_state("In Progress")
+    state.current_step = next_step
     state.caller_step = None
-    state.event_entry = event_entry
+    state.subflow_group = default_subflow(next_stage)
     state.extras["persist"] = True
-
-    trace_state(
-        thread_id,
-        "Step2_Date",
-        {
-            "confirmed_date": confirmed_date,
-            "next_step": 3,
-            "thread_state": "Checking",
-        },
-    )
 
     payload = {
         "client_id": state.client_id,
         "event_id": state.event_id,
         "intent": state.intent.value if state.intent else None,
         "confidence": round(state.confidence or 0.0, 3),
-        "event_date": confirmed_date,
-        "assistant_message": acknowledgement_with_footer,
+        "event_date": window.display_date,
+        "requested_window": requested_payload,
         "draft_messages": state.draft_messages,
         "thread_state": state.thread_state,
-        "next_step": 3,
+        "next_step": next_step,
+        "cache_reused": reuse_previous,
         "context": state.context_snapshot,
         "persisted": True,
+        "answered_question_first": True,
     }
+    gatekeeper = refresh_gatekeeper(event_entry)
+    state.telemetry.answered_question_first = True
+    state.telemetry.gatekeeper_passed = dict(gatekeeper)
+    payload["gatekeeper_passed"] = dict(gatekeeper)
+
+    promote_fields(
+        state,
+        event_entry,
+        {
+            ("date",): window.iso_date,
+            ("event_date",): window.display_date,
+            ("start_time",): window.start_time,
+            ("end_time",): window.end_time,
+        },
+        remove_deferred=["date_confirmation"],
+    )
     return GroupResult(action="date_confirmed", payload=payload)
 
 
-def _extract_participant_int(value: Any) -> Optional[int]:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        if value <= 0:
-            return None
-        return int(value)
-    if isinstance(value, str):
-        match = re.search(r"\d{1,4}", value)
-        if match:
-            try:
-                number = int(match.group(0))
-                return number if number > 0 else None
-            except ValueError:
-                return None
-    return None
-
-
-def _participants_metadata(event_entry: dict) -> Tuple[str, Optional[int]]:
-    """Return a human-friendly participant label and numeric count when known."""
-
-    requirements = event_entry.get("requirements") or {}
-    event_data = event_entry.get("event_data") or {}
-
-    candidates = [
-        requirements.get("number_of_participants"),
-        event_data.get("Number of Participants"),
-    ]
-
-    for candidate in candidates:
-        number = _extract_participant_int(candidate)
-        if number:
-            label = f"{number} guests" if number != 1 else "1 guest"
-            return (label, number)
-
-    for candidate in candidates:
-        if isinstance(candidate, str):
-            text = candidate.strip()
-            if text and text.lower() not in {"not specified", "none"}:
-                return (text, None)
-
-    return ("your group", None)
-
-
-def _message_text(state: WorkflowState) -> str:
-    message = state.message
-    if not message:
-        return ""
-    subject = message.subject or ""
-    body = message.body or ""
-    if subject and body:
-        return f"{subject}\n{body}"
-    return subject or body
-
-
-def _present_general_room_qna(
-    state: WorkflowState,
+def _record_confirmation_log(
     event_entry: dict,
-    classification: Dict[str, Any],
-    thread_id: Optional[str],
-) -> GroupResult:
-    requirements = event_entry.get("requirements") or {}
-    preferred_room = requirements.get("preferred_room") or "Room A"
-    subloop_label = "general_q_a"
-    state.extras["subloop"] = subloop_label
-    if thread_id:
-        set_subloop(thread_id, subloop_label)
-    candidate_dates = list_free_dates(
-        count=5,
-        db=state.db,
-        preferred_room=preferred_room,
-    )
-
-    participants = _extract_participants_from_state(state)
-    preferences = event_entry.get("preferences") or state.user_info.get("preferences") or {}
-    constraints = classification.get("constraints") or {}
-
-    range_results: List[Dict[str, Any]] = []
-    if classification.get("is_general") and _is_hybrid_availability_request(classification, state):
-        range_results = _search_range_availability(
-            state,
-            thread_id,
-            constraints,
-            participants,
-            preferences,
-            preferred_room,
-        )
-
-    if thread_id and not range_results:
-        trace_db_read(
-            thread_id,
-            "Step2_Date",
-            "db.dates.general_qna",
-            {
-                "count": len(candidate_dates),
-                "preferred_room": preferred_room,
-                "constraints": constraints,
-            },
-        )
-
-    descriptor: Optional[str] = None
-    products_requested = _user_requested_products(state, classification)
-    if range_results:
-        descriptor = _describe_constraints(constraints, state)
-        availability_lines = _format_room_availability(range_results)
-        info_lines = []
-        if descriptor:
-            info_lines.append(f"I checked availability {descriptor}:")
-        info_lines.extend(availability_lines)
-        info_lines.append("")
-        if products_requested:
-            info_lines.extend(_compact_products_summary(preferences))
-            info_lines.append("")
-        info_lines.append("Pick a date below to confirm and I'll lock it in immediately.")
-        body = "\n".join(info_lines)
-    else:
-        info_lines = []
-        if candidate_dates:
-            info_lines.append("Room availability snapshot:")
-            for value in candidate_dates:
-                info_lines.append(f"- {preferred_room}: {value}")
-        else:
-            info_lines.append("- Share a preferred month or weekday and I can re-check the calendar right away.")
-        info_lines.append("")
-        if products_requested:
-            info_lines.extend(_compact_products_summary(preferences))
-            info_lines.append("")
-        info_lines.append("NEXT STEP:")
-        info_lines.append("- Tell me which date works best and I'll lock the room right away.")
-        body = "\n".join(info_lines)
-    body_with_footer = append_footer(
-        body,
-        step=2,
-        next_step="Confirm date",
-        thread_state="Awaiting Client",
-    )
-
-    draft_message = {
-        "body": body_with_footer,
-        "step": 2,
-        "next_step": "Confirm date",
-        "thread_state": "Awaiting Client",
-        "topic": "general_room_qna",
-        "candidate_dates": candidate_dates,
-        "actions": [],
-    }
-    actions: List[Dict[str, Any]] = []
-    for candidate in candidate_dates:
-        parsed = parse_ddmmyyyy(candidate)
-        if parsed:
-            actions.append(_build_select_date_action(parsed, candidate, None))
-    if actions:
-        draft_message["actions"] = actions
-    if range_results:
-        draft_message["range_results"] = range_results
-        if descriptor:
-            draft_message["range_descriptor"] = descriptor
-    state.add_draft_message(draft_message)
-
-    update_event_metadata(
-        event_entry,
-        thread_state="Awaiting Client",
-        current_step=2,
-        candidate_dates=candidate_dates,
-    )
-
-    state.set_thread_state("Awaiting Client")
-    if thread_id:
-        trace_state(
-            thread_id,
-            "Step2_Date",
-            {
-                "thread_state": state.thread_state,
-                "candidate_dates": candidate_dates,
-                "subloop": subloop_label,
-            },
-        )
-    state.extras["persist"] = True
-
-    payload = {
-        "client_id": state.client_id,
-        "event_id": event_entry.get("event_id"),
+    state: WorkflowState,
+    window: ConfirmationWindow,
+    reused: bool,
+) -> None:
+    logs = event_entry.setdefault("logs", [])
+    details = {
         "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "candidate_dates": candidate_dates,
-        "draft_messages": state.draft_messages,
-        "thread_state": state.thread_state,
-        "context": state.context_snapshot,
-        "persisted": True,
-        "general_room_constraints": classification.get("constraints"),
+        "requested_window": {
+            "date": window.iso_date,
+            "start": window.start_iso,
+            "end": window.end_iso,
+            "tz": "Europe/Zurich",
+        },
+        "times_inherited": window.inherited_times,
+        "source_message_id": window.source_message_id,
+        "reused": reused,
     }
-    if range_results:
-        payload["range_results"] = range_results
-        if descriptor:
-            payload["range_descriptor"] = descriptor
-    return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
+    logs.append(
+        {
+            "ts": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+            "actor": "workflow",
+            "action": "date_confirmed",
+            "details": details,
+        }
+    )
+
+
+def _window_hash(date_iso: str, start_iso: Optional[str], end_iso: Optional[str]) -> str:
+    payload = f"{date_iso}|{start_iso or ''}|{end_iso or ''}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _to_time(value: str) -> time:
+    return datetime.strptime(value, "%H:%M").time()
+
+
+def _set_pending_time_state(event_entry: dict, window: ConfirmationWindow) -> None:
+    event_entry["pending_time_request"] = {
+        "display_date": window.display_date,
+        "iso_date": window.iso_date,
+        "start_time": window.start_time,
+        "end_time": window.end_time,
+        "source_message_id": window.source_message_id,
+        "created_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+    }
