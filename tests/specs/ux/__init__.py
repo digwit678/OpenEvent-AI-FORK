@@ -1,1 +1,0 @@
-# UX spec tests package
