@@ -1,0 +1,144 @@
+p{
+  "suite": "flow_E_past_date",
+  "initial_clock": "2025-11-11T10:00:00+01:00",
+  "steps": [
+    {
+      "turn": 1,
+      "msg_in": {
+        "subject": "Networking evening in May",
+        "body": "Hello team,\nWe’d like to host a networking evening on Thu, May 8 2025 in Basel from 18:00 to 22:00 for about 60 guests.\nSetup: standing reception with bar tables, sound system, light catering.\nCould you suggest the best dates?\nThanks,\nJulia"
+      },
+      "expect": {
+        "intent": "event_intake",
+        "user_info": {
+          "participants": 60,
+          "start_time": "18:00",
+          "end_time": "22:00",
+          "vague_month": "May",
+          "vague_weekday": "thu"
+        },
+        "actions": [
+          {
+            "type": "ask_for_date_enqueued",
+            "payload": {
+              "suggested_dates": [
+                "2026-05-07",
+                "2026-05-14",
+                "2026-05-21",
+                "2026-05-28"
+              ]
+            }
+          }
+        ],
+        "res": {
+          "assistant_draft": {
+            "headers_subset": [
+              "Date options for May"
+            ],
+            "contains_all": [
+              "Thursdays available in May 2026: 07, 14, 21, 28"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "turn": "1a",
+      "gui_action": {
+        "approve_task": "ask_for_date_enqueued"
+      },
+      "expect": {
+        "actions": [
+          {
+            "type": "send_reply"
+          }
+        ],
+        "res": {
+          "assistant_draft": {
+            "headers_subset": [
+              "Date options for May"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "turn": 2,
+      "msg_in": {
+        "body": "21.05.2026 works for us."
+      },
+      "expect": {
+        "intent": "event_update",
+        "user_info": {
+          "date": "2026-05-21"
+        },
+        "actions": []
+      }
+    },
+    {
+      "turn": 3,
+      "system_call": "room_status_on_date",
+      "args": {
+        "date": "2026-05-21"
+      },
+      "expect": {
+        "rooms_min": 2,
+        "res": {
+          "assistant_draft": {
+            "headers": [
+              "Room options for 21.05.2026"
+            ],
+            "body_order": [
+              "21.05.2026 is set.",
+              "For 60 people on 21.05.2026",
+              "Room C",
+              "Room D"
+            ],
+            "contains_all": [
+              "Standing reception",
+              "Bar tables",
+              "Sound system",
+              "Missing:"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "turn": 4,
+      "msg_in": {
+        "body": "Room C sounds perfect. Please proceed with the offer."
+      },
+      "simulate_intent": "room_choice",
+      "expect": {
+        "intent": "room_choice"
+      }
+    },
+    {
+      "turn": 5,
+      "system_call": "build_offer",
+      "args": {
+        "room_id": "R-C",
+        "date": "2026-05-21",
+        "pax": 60
+      },
+      "expect": {
+        "status": "Option",
+        "res": {
+          "assistant_draft": {
+            "headers_subset": [
+              "Offer"
+            ],
+            "contains_all": [
+              "Offer sent",
+              "status is Option",
+              "Room C",
+              "21.05.2026",
+              "60 guests"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

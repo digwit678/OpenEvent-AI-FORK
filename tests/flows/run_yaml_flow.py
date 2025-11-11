@@ -95,6 +95,7 @@ class FlowHarness:
             "backend.workflows.groups.intake.condition.checks",
             "backend.workflows.groups.intake.condition",
             "backend.workflows.groups.intake",
+            "backend.workflows.groups.date_confirmation.trigger.process",
         ]
         for name in modules:
             module = import_module(name)
