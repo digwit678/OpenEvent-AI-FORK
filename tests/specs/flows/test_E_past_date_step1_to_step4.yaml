@@ -1,4 +1,4 @@
-p{
+{
   "suite": "flow_E_past_date",
   "initial_clock": "2025-11-11T10:00:00+01:00",
   "steps": [
