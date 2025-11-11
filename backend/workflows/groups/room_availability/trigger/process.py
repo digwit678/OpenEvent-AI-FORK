@@ -301,6 +301,7 @@ def process(state: WorkflowState) -> GroupResult:
         "status": outcome,
         "table_blocks": table_blocks,
         "actions": actions[:5],
+        "headers": [f"Room options for {display_chosen_date}"] if display_chosen_date else ["Room options"],
     }
     draft_message["requires_approval"] = False
     if alt_dates_display:
@@ -697,6 +698,13 @@ def _extract_participants(requirements: Dict[str, Any]) -> Optional[int]:
         return None
 
 
+def _room_requirements_payload(entry: RankedRoom) -> Dict[str, List[str]]:
+    return {
+        "matched": list(entry.matched),
+        "missing": list(entry.missing),
+    }
+
+
 def _build_ranked_rows(
     chosen_date: str,
     ranked: List[RankedRoom],
@@ -711,6 +719,7 @@ def _build_ranked_rows(
         raw_hint = entry.hint if (explicit_prefs and entry.hint) else None
         hint_label = _format_hint(raw_hint)
         available_dates = available_dates_map.get(entry.room, [])
+        requirements_info = _room_requirements_payload(entry) if explicit_prefs else {"matched": [], "missing": []}
         row = {
             "date": chosen_date,
             "room": entry.room,
@@ -718,6 +727,7 @@ def _build_ranked_rows(
             "hint": hint_label,
             "requirements_score": round(entry.score, 2),
             "available_dates": available_dates,
+            "requirements": requirements_info,
         }
         rows.append(row)
         if entry.status in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}:
@@ -730,6 +740,7 @@ def _build_ranked_rows(
                     "status": entry.status,
                     "hint": hint_label,
                     "available_dates": available_dates,
+                    "requirements": dict(requirements_info),
                 }
             )
 
@@ -786,6 +797,24 @@ def _available_dates_for_rooms(
     return availability
 
 
+def _format_requirements_line(requirements: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not isinstance(requirements, dict):
+        return None
+    matched = [str(item).strip() for item in requirements.get("matched", []) if str(item).strip()]
+    missing = [str(item).strip() for item in requirements.get("missing", []) if str(item).strip()]
+    tokens: List[str] = []
+    tokens.extend(f"✔ {label}" for label in matched)
+    tokens.extend(f"○ {label}" for label in missing)
+    if not tokens:
+        return None
+    max_tokens = 4
+    display = "; ".join(tokens[:max_tokens])
+    overflow = len(tokens) - max_tokens
+    if overflow > 0:
+        display += f" (+{overflow} more)"
+    return f"- Requirements: {display}"
+
+
 def _format_room_sections(
     actions: List[Dict[str, Any]],
     mode: str,
@@ -809,6 +838,9 @@ def _format_room_sections(
         lines.append(f"### {room} — {status}")
         if hint:
             lines.append(f"- _{hint}_")
+        requirements_line = _format_requirements_line(action.get("requirements"))
+        if requirements_line:
+            lines.append(requirements_line)
         if iso_dates:
             display_text, remainder = _format_dates_list(iso_dates, max_display)
             if mode == "range":

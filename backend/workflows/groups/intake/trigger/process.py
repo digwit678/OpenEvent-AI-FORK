@@ -9,6 +9,7 @@ from backend.workflows.common.timeutils import format_ts_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
 import json
 
+from backend.domain import IntentLabel
 from backend.debug.hooks import (
     trace_db_write,
     trace_entity,
@@ -39,6 +40,29 @@ from backend.workflows.nlu.preferences import extract_preferences
 from ..billing_flow import handle_billing_capture
 
 __workflow_role__ = "trigger"
+
+
+def _needs_vague_date_confirmation(user_info: Dict[str, Any]) -> bool:
+    explicit_date = bool(user_info.get("event_date") or user_info.get("date"))
+    vague_tokens = any(
+        bool(user_info.get(key))
+        for key in ("range_query_detected", "vague_month", "vague_weekday", "vague_time_of_day")
+    )
+    return vague_tokens and not explicit_date
+
+
+def _initial_intent_detail(intent: IntentLabel) -> str:
+    if intent == IntentLabel.EVENT_REQUEST:
+        return "event_intake"
+    if intent == IntentLabel.NON_EVENT:
+        return "non_event"
+    return intent.value
+
+
+def _has_same_turn_shortcut(user_info: Dict[str, Any]) -> bool:
+    participants = user_info.get("participants") or user_info.get("number_of_participants")
+    date_value = user_info.get("date") or user_info.get("event_date")
+    return bool(participants and date_value)
 
 
 @trace_step("Step1_Intake")
@@ -77,6 +101,7 @@ def process(state: WorkflowState) -> GroupResult:
     )
     state.intent = intent
     state.confidence = confidence
+    state.intent_detail = _initial_intent_detail(intent)
 
     trace_prompt_in(thread_id, owner_step, "extract_user_information", prompt_payload)
     user_info = extract_user_information(message_payload)
@@ -87,10 +112,18 @@ def process(state: WorkflowState) -> GroupResult:
         json.dumps(user_info, ensure_ascii=False),
         outputs=user_info,
     )
+    needs_vague_date_confirmation = _needs_vague_date_confirmation(user_info)
+    if needs_vague_date_confirmation:
+        user_info.pop("event_date", None)
+        user_info.pop("date", None)
     preferences = extract_preferences(user_info)
     if preferences:
         user_info["preferences"] = preferences
     state.user_info = user_info
+    if intent == IntentLabel.EVENT_REQUEST and _has_same_turn_shortcut(user_info):
+        state.intent_detail = "event_intake_shortcut"
+        state.extras["shortcut_detected"] = True
+        state.record_subloop("shortcut")
     _trace_user_entities(state, message_payload, user_info)
 
     client = upsert_client(
@@ -211,6 +244,22 @@ def process(state: WorkflowState) -> GroupResult:
     previous_step = state.current_step or 1
     detoured_to_step2 = False
 
+    if needs_vague_date_confirmation:
+        event_entry["range_query_detected"] = True
+        update_event_metadata(
+            event_entry,
+            chosen_date=None,
+            date_confirmed=False,
+            current_step=2,
+            room_eval_hash=None,
+            locked_room_id=None,
+            thread_state="Awaiting Client Response",
+        )
+        event_entry.setdefault("event_data", {})["Event Date"] = "Not specified"
+        append_audit_entry(event_entry, previous_step, 2, "date_pending_vague_request")
+        detoured_to_step2 = True
+        state.set_thread_state("Awaiting Client Response")
+
     if new_date and new_date != event_entry.get("chosen_date"):
         if (
             previous_step not in (None, 1, 2)
@@ -242,6 +291,8 @@ def process(state: WorkflowState) -> GroupResult:
             append_audit_entry(event_entry, previous_step, 2, "date_updated")
             detoured_to_step2 = True
 
+    if needs_vague_date_confirmation:
+        new_date = None
     if not new_date and not event_entry.get("chosen_date"):
         update_event_metadata(
             event_entry,

@@ -98,6 +98,7 @@ def process(state: WorkflowState) -> GroupResult:
                 "offer_id": offer_id,
             }
         ],
+        "headers": ["Offer"],
     }
     state.add_draft_message(draft_message)
 
