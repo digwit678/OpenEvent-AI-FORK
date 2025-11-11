@@ -1,109 +1,161 @@
-suite: flow_A_general_qna
-initial_clock: 2025-11-11T10:00:00+01:00
-steps:
-  - turn: 1
-    msg_in:
-      subject: Private Dinner Event – Date Options in February
-      body: |-
-        Hello,
-        We’d like to organize a private dinner for our family (around 30 guests) at your venue.
-        We’re flexible but are thinking sometime in February, preferably a Saturday evening.
-        Requirements:
-        – Long dining table setup
-        – Three-course dinner menu with wine
-        – Background music (live or playlist)
-        Question: Which vegetarian three-course menus with wine pairing do you offer?
-        Many thanks,
-        Laura Meier
-        laura.meier@bluewin.ch
-    expect:
-      intent: event_intake_with_question
-      user_info:
-        participants: 30
-        vague_month: February
-        vague_weekday: Saturday
-        vague_time_of_day: evening
-      actions:
-        - type: ask_for_date_enqueued
-          payload:
-            suggested_dates:
-              - "2026-02-07"
-              - "2026-02-14"
-              - "2026-02-21"
-              - "2026-02-28"
-            event_id: ANY
-      status: Lead
-      trace:
-        subloops: ["general_q_a"]
-      res:
-        general_qa:
-          select_expr: "SELECT menu_name, courses, vegetarian, wine_pairing, price"
-          where_clauses: ["courses=3","vegetarian=true","wine_pairing=true"]
-          rows_min: 2
-        assistant_draft:
-          headers: ["General Q&A","Date options for February"]
-          contains:
-            - "Vegetarian three-course menus with wine pairings"
-            - "Saturdays available in February 2026: 07, 14, 21, 28"
-  - turn: 1a
-    gui_action:
-      approve_task: ask_for_date_enqueued
-    expect:
-      actions:
-        - type: send_reply
-      res:
-        assistant_draft:
-          headers: ["General Q&A","Date options for February"]
-  - turn: 2
-    msg_in:
-      body: |-
-        Thanks. 21.02.2026 works for us for 30 guests. Please proceed.
-    expect:
-      intent: event_update
-      user_info:
-        date: "2026-02-21"
-        participants: 30
-      actions:
-        - type: send_reply
-      trace:
-        subloops: []
-      db_assert:
-        gatekeeping:
-          attendees: 30
-          date: "2026-02-21"
-      res:
-        assistant_draft:
-          headers: ["Next step"]
-          contains:
-            - "Noted: 30 guests and 21.02.2026."
-            - "We'll check room availability next."
-  - turn: 3
-    system_call: room_status_on_date
-    args:
-      date: "2026-02-21"
-    stub_returns:
-      rooms:
-        - id: R-A
-          name: "Room A"
-          capacity: 40
-          matched: ["Long dining table","Background music"]
-          missing: []
-        - id: R-B
-          name: "Room B"
-          capacity: 32
-          matched: ["Long dining table"]
-          missing: ["Background music"]
-  - turn: 4
-    msg_in:
-      body: |-
-        Let’s go with Room A.
-    expect:
-      intent: room_choice
-      actions:
-        - type: send_reply
-      status: Option
-      res:
-        assistant_draft:
-          headers: ["Offer"]
-          contains:
-            - "Offer for Room A on 21.02.2026 for 30 guests"
+{
+  "suite": "flow_A_general_qna",
+  "initial_clock": "2025-11-11T10:00:00+01:00",
+  "steps": [
+    {
+      "turn": 1,
+      "msg_in": {
+        "subject": "Private Dinner Event – Date Options in February",
+        "body": "Hello,\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.\nWe’re flexible but are thinking sometime in February, preferably a Saturday evening.\nRequirements:\n– Long dining table setup\n– Three-course dinner menu with wine\n– Background music (live or playlist)\nQuestion: Which vegetarian three-course menus with wine pairing do you offer?\nMany thanks,\nLaura Meier\nlaura.meier@bluewin.ch"
+      },
+      "expect": {
+        "intent": "event_intake_with_question",
+        "user_info": {
+          "participants": 30,
+          "vague_month": "February",
+          "vague_weekday": "Saturday",
+          "vague_time_of_day": "evening"
+        },
+        "actions": [
+          {
+            "type": "ask_for_date_enqueued",
+            "payload": {
+              "suggested_dates": [
+                "2026-02-07",
+                "2026-02-14",
+                "2026-02-21",
+                "2026-02-28"
+              ],
+              "event_id": "ANY"
+            }
+          }
+        ],
+        "trace": {
+          "subloops_contains": [
+            "general_q_a"
+          ]
+        },
+        "res": {
+          "assistant_draft": {
+            "headers_subset": [
+              "General Q&A",
+              "Date options for February"
+            ],
+            "body_order": [
+              "Vegetarian three-course menus with wine pairings",
+              "Saturdays available in February 2026: 07, 14, 21, 28"
+            ],
+            "contains_all": [
+              "Vegetarian three-course menus with wine pairings",
+              "Saturdays available in February 2026: 07, 14, 21, 28"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "turn": "1a",
+      "gui_action": {
+        "approve_task": "ask_for_date_enqueued"
+      },
+      "expect": {
+        "actions": [
+          {
+            "type": "send_reply"
+          }
+        ],
+        "res": {
+          "assistant_draft": {
+            "headers_subset": [
+              "General Q&A",
+              "Date options for February"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "turn": 2,
+      "msg_in": {
+        "body": "Thanks. 21.02.2026 works for us for 30 guests. Please proceed."
+      },
+      "expect": {
+        "intent": "event_update",
+        "user_info": {
+          "date": "2026-02-21",
+          "participants": 30
+        },
+        "actions": [],
+        "db_assert": {
+          "gatekeeping": {
+            "attendees": 30,
+            "date": "2026-02-21"
+          }
+        }
+      }
+    },
+    {
+      "turn": 3,
+      "system_call": "room_status_on_date",
+      "args": {
+        "date": "2026-02-21"
+      },
+      "expect": {
+        "rooms_min": 2,
+        "res": {
+          "assistant_draft": {
+            "headers": [
+              "Room options for 21.02.2026"
+            ],
+            "body_order": [
+              "21.02.2026 is set.",
+              "For 30 people on 21.02.2026",
+              "Room A",
+              "Room B"
+            ],
+            "contains_all": [
+              "Matches:",
+              "Missing:"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "turn": 4,
+      "msg_in": {
+        "body": "Let’s confirm Room A for that date and proceed with the offer."
+      },
+      "simulate_intent": "room_choice",
+      "expect": {
+        "intent": "room_choice"
+      }
+    },
+    {
+      "turn": 5,
+      "system_call": "build_offer",
+      "args": {
+        "room_id": "R-A",
+        "date": "2026-02-21",
+        "pax": 30
+      },
+      "expect": {
+        "status": "Option",
+        "res": {
+          "assistant_draft": {
+            "headers_subset": [
+              "Offer"
+            ],
+            "contains_all": [
+              "Offer sent",
+              "status is Option",
+              "Room A",
+              "21.02.2026",
+              "30 guests"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -7,7 +7,7 @@ const nextConfig = {
   async rewrites() {
     return [{ source: '/api/:path*', destination: `${backendBase}/api/:path*` }];
   },
-  turbopack: { root: path.resolve(__dirname, '..') },
+  turbopack: { root: path.resolve(__dirname) },
 };
 
 module.exports = nextConfig;

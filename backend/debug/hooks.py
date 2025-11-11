@@ -780,6 +780,7 @@ def trace_state(thread_id: str, step: str, snapshot: Dict[str, Any]) -> None:
 
 
 def trace_qa_enter(thread_id: str, detail: str, data: Optional[Dict[str, Any]] = None) -> None:
+    set_subloop_context(thread_id, "general_q_a")
     emit(
         thread_id,
         "QA_ENTER",
@@ -813,6 +814,7 @@ def trace_qa_exit(thread_id: str, detail: str, data: Optional[Dict[str, Any]] = 
         event_name="Exit",
         details_label=detail,
     )
+    clear_subloop_context(thread_id)
 
 
 def trace_marker(

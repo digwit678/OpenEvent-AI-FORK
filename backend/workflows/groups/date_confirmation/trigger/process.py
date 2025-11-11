@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime, time, date, timedelta
+from calendar import monthrange
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 import datetime as dt
 import re
@@ -372,8 +373,14 @@ def process(state: WorkflowState) -> GroupResult:
             },
             owner_step="Step2_Date",
         )
-    if classification["is_general"] and not bool(event_entry.get("date_confirmed")):
-        return _present_general_room_qna(state, event_entry, classification, thread_id)
+    qa_payload = _maybe_general_qa_payload(state)
+    general_qna_applicable = (
+        classification["is_general"]
+        and not bool(event_entry.get("date_confirmed"))
+        and qa_payload is not None
+    )
+    if general_qna_applicable:
+        return _present_general_room_qna(state, event_entry, classification, thread_id, qa_payload)
 
     pending_future_payload = event_entry.get("pending_future_confirmation")
     if pending_future_payload:
@@ -394,7 +401,11 @@ def process(state: WorkflowState) -> GroupResult:
         return _present_candidate_dates(state, event_entry)
 
     if window.partial:
-        return _handle_partial_confirmation(state, event_entry, window)
+        filled = _maybe_complete_from_time_hint(window, state, event_entry)
+        if filled:
+            window = filled
+        else:
+            return _handle_partial_confirmation(state, event_entry, window)
 
     pending_window_payload = event_entry.get("pending_date_confirmation")
     if pending_window_payload:
@@ -446,16 +457,38 @@ def _present_candidate_dates(
     anchor_dt = datetime.combine(anchor, time(hour=12)) if anchor else None
 
     formatted_dates: List[str] = []
+    seen_iso: set[str] = set()
+    limit = 5
     event_entry.pop("pending_future_confirmation", None)
 
     if fuzzy_candidates:
-        seen_iso: set[str] = set()
         for iso_value in fuzzy_candidates:
             if iso_value in seen_iso or _iso_date_is_past(iso_value):
                 continue
             seen_iso.add(iso_value)
             formatted_dates.append(iso_value)
     else:
+        constraints_for_window = {
+            "vague_month": state.user_info.get("vague_month") or event_entry.get("vague_month"),
+            "weekday": state.user_info.get("vague_weekday") or event_entry.get("vague_weekday"),
+            "time_of_day": state.user_info.get("vague_time_of_day") or event_entry.get("vague_time_of_day"),
+        }
+        window_hints = _resolve_window_hints(constraints_for_window, state)
+        strict_window = _has_window_constraints(window_hints)
+        if strict_window:
+            hinted_dates = _candidate_dates_for_constraints(
+                state,
+                constraints_for_window,
+                limit=limit,
+                window_hints=window_hints,
+                strict=True,
+            )
+            for iso_value in hinted_dates:
+                if not iso_value or iso_value in seen_iso or _iso_date_is_past(iso_value):
+                    continue
+                seen_iso.add(iso_value)
+                formatted_dates.append(iso_value)
+
         candidate_dates_ddmmyyyy: List[str] = suggest_dates(
             state.db,
             preferred_room=preferred_room,
@@ -474,7 +507,6 @@ def _present_candidate_dates(
             },
         )
 
-        seen_iso: set[str] = set()
         for raw in candidate_dates_ddmmyyyy:
             iso_value = to_iso_date(raw)
             if not iso_value:
@@ -484,7 +516,7 @@ def _present_candidate_dates(
             seen_iso.add(iso_value)
             formatted_dates.append(iso_value)
 
-        if len(formatted_dates) < 5:
+        if len(formatted_dates) < limit:
             skip = {_safe_parse_iso_date(iso) for iso in seen_iso}
             supplemental = next_five_venue_dates(anchor_dt, skip_dates={dt for dt in skip if dt is not None})
             trace_db_read(
@@ -503,7 +535,7 @@ def _present_candidate_dates(
                     continue
                 seen_iso.add(iso_candidate)
                 formatted_dates.append(iso_candidate)
-                if len(formatted_dates) >= 5:
+                if len(formatted_dates) >= limit:
                     break
 
     if fuzzy_candidates:
@@ -645,7 +677,6 @@ def _present_candidate_dates(
             }
         ] if table_rows else [],
         "actions": actions_payload,
-    }
         "headers": [date_header_label],
     }
     if actions_payload:
@@ -1135,26 +1166,6 @@ def _finalize_confirmation(
         next_stage = WorkflowStep.STEP_3
     write_stage(event_entry, current_step=next_stage, subflow_group=default_subflow(next_stage))
 
-    participants = _extract_participants_from_state(state)
-    pax_label = f"{participants} guests" if participants else "your group"
-    section_lines = [
-        f"Noted: {pax_label} and {window.display_date}.",
-        "We'll check room availability next and send the best-fitting rooms.",
-    ]
-    body_text, headers = format_sections_with_headers([("Next step", section_lines)])
-    reply = append_footer(body_text, step=2, next_step="Room availability", thread_state="In Progress")
-    state.add_draft_message(
-        {
-            "body": reply,
-            "body_markdown": body_text,
-            "step": 2,
-            "topic": "date_confirmation",
-            "date": window.display_date,
-            "headers": headers,
-            "requires_approval": False,
-        }
-    )
-
     if state.client and state.event_id:
         link_event_to_client(state.client, state.event_id)
 
@@ -1185,6 +1196,7 @@ def _finalize_confirmation(
     state.telemetry.answered_question_first = True
     state.telemetry.gatekeeper_passed = dict(gatekeeper)
     payload["gatekeeper_passed"] = dict(gatekeeper)
+    state.intent_detail = "event_update"
 
     promote_fields(
         state,
@@ -1197,7 +1209,7 @@ def _finalize_confirmation(
         },
         remove_deferred=["date_confirmation"],
     )
-    return GroupResult(action="date_confirmed", payload=payload)
+    return GroupResult(action="date_confirmed", payload=payload, halt=True)
 
 
 def _record_confirmation_log(
@@ -1403,6 +1415,45 @@ def _maybe_general_qa_payload(state: WorkflowState) -> Optional[Dict[str, Any]]:
     return None
 
 
+_TIME_HINT_DEFAULTS = {
+    "morning": ("08:00", "12:00"),
+    "afternoon": ("12:00", "17:00"),
+    "evening": ("18:00", "22:00"),
+}
+
+
+def _maybe_complete_from_time_hint(
+    window: ConfirmationWindow,
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+) -> Optional[ConfirmationWindow]:
+    hint = state.user_info.get("vague_time_of_day") or event_entry.get("vague_time_of_day")
+    if not hint:
+        return None
+    defaults = _TIME_HINT_DEFAULTS.get(str(hint).lower())
+    if not defaults:
+        return None
+    try:
+        start_iso, end_iso = build_window_iso(
+            window.iso_date,
+            _to_time(defaults[0]),
+            _to_time(defaults[1]),
+        )
+    except ValueError:
+        return None
+    return ConfirmationWindow(
+        display_date=window.display_date,
+        iso_date=window.iso_date,
+        start_time=defaults[0],
+        end_time=defaults[1],
+        start_iso=start_iso,
+        end_iso=end_iso,
+        inherited_times=True,
+        partial=False,
+        source_message_id=window.source_message_id,
+    )
+
+
 def _normalize_month_token(value: Optional[str]) -> Optional[int]:
     if not value:
         return None
@@ -1487,6 +1538,7 @@ def _candidate_dates_for_constraints(
 ) -> List[str]:
     hints = window_hints or _resolve_window_hints(constraints, state)
     month_hint, weekday_hint, _ = hints
+    reference_day = _reference_date_from_state(state)
     rules: Dict[str, Any] = {"timezone": "Europe/Zurich"}
     if month_hint:
         rules["month"] = month_hint
@@ -1500,8 +1552,21 @@ def _candidate_dates_for_constraints(
     iso_values: List[str] = []
     seen: set[str] = set()
     month_index, weekday_indices = _window_filters(hints)
+    clamp_year: Optional[int] = None
+    if month_index:
+        clamp_year = reference_day.year
+        days_in_month = monthrange(clamp_year, month_index)[1]
+        if reference_day.month > month_index or (
+            reference_day.month == month_index and reference_day.day > days_in_month
+        ):
+            clamp_year += 1
 
     for value in dates:
+        if clamp_year:
+            if value.year < clamp_year:
+                continue
+            if value.year > clamp_year:
+                break
         iso_value = value.strftime("%Y-%m-%d")
         if iso_value in seen:
             continue
@@ -1633,6 +1698,7 @@ def _present_general_room_qna(
     event_entry: dict,
     classification: Dict[str, Any],
     thread_id: Optional[str],
+    qa_payload: Optional[Dict[str, Any]] = None,
 ) -> GroupResult:
     requirements = event_entry.get("requirements") or {}
     preferred_room = requirements.get("preferred_room") or "Room A"
@@ -1718,10 +1784,11 @@ def _present_general_room_qna(
     state.intent_detail = "event_intake_with_question"
     state.record_subloop(subloop_label)
 
-    qa_payload = _maybe_general_qa_payload(state)
+    qa_payload = qa_payload or _maybe_general_qa_payload(state)
     if qa_payload:
         state.turn_notes["general_qa"] = qa_payload
 
+    descriptor = _describe_constraints(month_hint, weekday_hint, time_of_day_hint)
     sections: List[Tuple[str, List[str]]] = []
     if qa_payload:
         qa_lines = ["Vegetarian three-course menus with wine pairings:"]

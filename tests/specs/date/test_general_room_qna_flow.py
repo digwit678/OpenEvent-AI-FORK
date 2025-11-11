@@ -42,6 +42,11 @@ def test_general_room_qna_path(monkeypatch, tmp_path):
 
     step2_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
     monkeypatch.setattr(step2_module, "list_free_dates", lambda count, db, preferred_room: free_dates[:count])
+    monkeypatch.setattr(
+        step2_module,
+        "_candidate_dates_for_constraints",
+        lambda *_args, **_kwargs: ["2026-02-01", "2026-02-08", "2026-02-15"],
+    )
 
     result = process(state)
 
@@ -50,8 +55,13 @@ def test_general_room_qna_path(monkeypatch, tmp_path):
     assert draft["topic"] == "general_room_qna"
     assert draft["candidate_dates"] == free_dates
     assert draft["range_results"], "Hybrid queries should include concrete availability rows"
-    assert draft["body"].startswith("I checked availability")
-    assert "Pick a date below to confirm" in draft["body"]
+    body = draft["body"]
+    assert body.startswith("I checked availability")
+    assert "which date works best" in body.lower()
+    assert "Room A" not in body
+    assert "Room B" not in body
+    assert "01 Feb 2026" in body
+    assert "08 Feb 2026" in body
     assert draft["footer"].endswith("State: Awaiting Client")
 
     events = BUS.get(state.thread_id)  # type: ignore[attr-defined]
@@ -61,3 +71,75 @@ def test_general_room_qna_path(monkeypatch, tmp_path):
         if event.get("kind") == "DB_READ"
     )
     assert any(event.get("subject") == "QNA_CLASSIFY" for event in events)
+
+
+def test_general_room_qna_captures_shortcuts(monkeypatch, tmp_path):
+    state = _state(tmp_path)
+    event_entry = {
+        "event_id": "EVT-GENERAL",
+        "requirements": {"preferred_room": "Room B"},
+        "thread_state": "Awaiting Client",
+        "current_step": 2,
+        "date_confirmed": False,
+    }
+    state.event_entry = event_entry
+    state.user_info = {
+        "company": "ACME AG",
+        "billing_address": "Bahnhofstrasse 1",
+        "vague_month": "February",
+        "vague_weekday": "Saturday",
+    }
+
+    import importlib
+
+    step2_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
+    monkeypatch.setattr(
+        step2_module,
+        "_candidate_dates_for_constraints",
+        lambda *_args, **_kwargs: ["2026-02-07", "2026-02-14"],
+    )
+    monkeypatch.setattr(step2_module, "list_free_dates", lambda *_a, **_k: ["07.02.2026", "14.02.2026"])
+
+    process(state)
+
+    captured = event_entry.get("captured") or {}
+    billing = captured.get("billing") or {}
+    assert billing.get("company") == "ACME AG"
+    assert billing.get("address") == "Bahnhofstrasse 1"
+
+
+def test_general_room_qna_respects_window_without_fallback(monkeypatch, tmp_path):
+    state = _state(tmp_path)
+    event_entry = {
+        "event_id": "EVT-GENERAL",
+        "requirements": {"preferred_room": "Room C"},
+        "thread_state": "Awaiting Client",
+        "current_step": 2,
+        "date_confirmed": False,
+    }
+    state.event_entry = event_entry
+    state.user_info = {
+        "vague_month": "February",
+        "vague_weekday": "Saturday",
+    }
+
+    import importlib
+
+    step2_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
+    monkeypatch.setattr(step2_module, "_search_range_availability", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(step2_module, "_candidate_dates_for_constraints", lambda *_args, **_kwargs: [])
+    fallback_called = {"flag": False}
+
+    def _fake_list_free(*_args, **_kwargs):
+        fallback_called["flag"] = True
+        return ["12.11.2025", "13.11.2025"]
+
+    monkeypatch.setattr(step2_module, "list_free_dates", _fake_list_free)
+
+    result = process(state)
+    draft = state.draft_messages[-1]
+
+    assert result.action == "general_rooms_qna"
+    assert not fallback_called["flag"], "Off-window fallback should not run when constraints are present."
+    assert draft["candidate_dates"] == []
+    assert "need a specific date" in draft["body"].lower()
