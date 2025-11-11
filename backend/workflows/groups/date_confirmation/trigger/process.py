@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from collections import Counter
 from datetime import datetime, time, date, timedelta
 from calendar import monthrange
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -458,7 +459,7 @@ def _present_candidate_dates(
 
     formatted_dates: List[str] = []
     seen_iso: set[str] = set()
-    limit = 5
+    limit = 4 if reason and "past" in reason.lower() else 5
     event_entry.pop("pending_future_confirmation", None)
 
     if fuzzy_candidates:
@@ -530,7 +531,7 @@ def _present_candidate_dates(
                 },
             )
             for candidate in supplemental:
-                iso_candidate = candidate.isoformat()
+                iso_candidate = candidate if isinstance(candidate, str) else candidate.isoformat()
                 if iso_candidate in seen_iso:
                     continue
                 seen_iso.add(iso_candidate)
@@ -540,6 +541,7 @@ def _present_candidate_dates(
 
     if fuzzy_candidates:
         formatted_dates = formatted_dates[:4]
+    formatted_dates = formatted_dates[:limit]
 
     start_hint = _normalize_time_value(state.user_info.get("start_time"))
     end_hint = _normalize_time_value(state.user_info.get("end_time"))
@@ -602,13 +604,23 @@ def _present_candidate_dates(
     else:
         message_lines.append("Thanks for the briefing — here are the next available slots that fit your preferred window.")
 
-    day_line, day_year = _format_day_list(formatted_dates[:4])
+    if future_suggestion:
+        target_month = future_suggestion.strftime("%Y-%m")
+        filtered_dates = [iso for iso in formatted_dates if iso.startswith(target_month)]
+        if filtered_dates:
+            formatted_dates = filtered_dates[:4]
+
+    sample_dates = formatted_dates[:4]
+    day_line, day_year = _format_day_list(sample_dates)
     month_hint_value = state.user_info.get("vague_month") or event_entry.get("vague_month")
-    date_header_label = _date_header_label(month_hint_value)
-    month_for_line = month_hint_value or "February"
+    month_for_line = month_hint_value or _month_label_from_dates(sample_dates, "February")
+    date_header_label = _date_header_label(month_hint_value or month_for_line)
+    weekday_hint_value = state.user_info.get("vague_weekday") or event_entry.get("vague_weekday")
+    weekday_label = _weekday_label_from_dates(sample_dates, _pluralize_weekday_hint(weekday_hint_value))
     if day_line and month_for_line and day_year:
         message_lines.append("")
-        message_lines.append(f"Saturdays available in {str(month_for_line).strip().capitalize()} {day_year}: {day_line}")
+        label_prefix = weekday_label or "Dates"
+        message_lines.append(f"{label_prefix} available in {str(month_for_line).strip().capitalize()} {day_year}: {day_line}")
         message_lines.append("")
 
     message_lines.extend(["", "AVAILABLE DATES:"])
@@ -628,7 +640,7 @@ def _present_candidate_dates(
     message_lines.extend(next_step_lines)
     prompt = "\n".join(message_lines)
 
-    weekday_hint = state.user_info.get("vague_weekday") or event_entry.get("vague_weekday")
+    weekday_hint = weekday_hint_value
     time_hint = state.user_info.get("vague_time_of_day") or event_entry.get("vague_time_of_day")
     time_display = str(time_hint).strip().capitalize() if time_hint else slot_text
     table_rows: List[Dict[str, Any]] = []
@@ -651,10 +663,10 @@ def _present_candidate_dates(
             }
         )
 
-    if weekday_hint and month_hint_value:
-        label_base = f"{str(weekday_hint).strip().capitalize()}s in {str(month_hint_value).strip().capitalize()}"
-    elif month_hint_value:
-        label_base = f"Dates in {str(month_hint_value).strip().capitalize()}"
+    if weekday_label and month_for_line:
+        label_base = f"{weekday_label} in {str(month_for_line).strip().capitalize()}"
+    elif month_for_line:
+        label_base = f"Dates in {str(month_for_line).strip().capitalize()}"
     else:
         label_base = "Candidate dates"
     if time_hint:
@@ -1400,6 +1412,57 @@ def _format_day_list(iso_dates: Sequence[str]) -> Tuple[str, Optional[int]]:
         day_labels.append(parsed.strftime("%d"))
         year_value = year_value or parsed.year
     return ", ".join(day_labels), year_value
+
+
+_WEEKDAY_LABELS = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]
+
+
+def _weekday_label_from_dates(
+    iso_dates: Sequence[str],
+    fallback: Optional[str] = None,
+) -> Optional[str]:
+    counts: Counter[int] = Counter()
+    for iso_value in iso_dates:
+        try:
+            parsed = datetime.fromisoformat(iso_value)
+        except ValueError:
+            continue
+        counts.update([parsed.weekday()])
+    if counts:
+        weekday_index, _ = counts.most_common(1)[0]
+        base = _WEEKDAY_LABELS[weekday_index]
+        return f"{base}s"
+    return fallback
+
+
+def _month_label_from_dates(
+    iso_dates: Sequence[str],
+    fallback: Optional[str] = None,
+) -> Optional[str]:
+    for iso_value in iso_dates:
+        try:
+            parsed = datetime.fromisoformat(iso_value)
+        except ValueError:
+            continue
+        return parsed.strftime("%B")
+    return fallback
+
+
+def _pluralize_weekday_hint(weekday_hint: Any) -> Optional[str]:
+    if isinstance(weekday_hint, str):
+        token = weekday_hint.strip()
+        if token:
+            label = token.capitalize()
+            return f"{label}s" if not label.endswith("s") else label
+    return None
 
 
 def _maybe_general_qa_payload(state: WorkflowState) -> Optional[Dict[str, Any]]:

@@ -23,3 +23,7 @@ def test_flow_normal():
 
 def test_flow_hybrid():
     run_suite_file(_spec("test_D_hybrid_step1_to_step4.yaml"))
+
+
+def test_flow_past_date():
+    run_suite_file(_spec("test_E_past_date_step1_to_step4.yaml"))

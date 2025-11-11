@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Sequence
 
 SUGGESTED_SATURDAYS = ["2026-02-07", "2026-02-14", "2026-02-21", "2026-02-28"]
+MAY_THURSDAYS = ["2026-05-07", "2026-05-14", "2026-05-21", "2026-05-28"]
 
 ROOM_LIBRARY: Dict[str, List[Dict[str, Any]]] = {
     "2026-02-07": [
@@ -70,12 +71,82 @@ ROOM_LIBRARY: Dict[str, List[Dict[str, Any]]] = {
             "missing": ["Background music"],
         },
     ],
+    "2026-05-07": [
+        {
+            "id": "R-C",
+            "name": "Room C",
+            "capacity": 80,
+            "matched": ["Standing reception", "Bar tables", "Sound system"],
+            "missing": ["Dedicated catering station"],
+        },
+        {
+            "id": "R-D",
+            "name": "Room D",
+            "capacity": 70,
+            "matched": ["Sound system"],
+            "missing": ["Standing reception", "Bar tables"],
+        },
+    ],
+    "2026-05-14": [
+        {
+            "id": "R-C",
+            "name": "Room C",
+            "capacity": 80,
+            "matched": ["Standing reception", "Bar tables", "Sound system"],
+            "missing": ["Dedicated catering station"],
+        },
+        {
+            "id": "R-D",
+            "name": "Room D",
+            "capacity": 70,
+            "matched": ["Sound system"],
+            "missing": ["Standing reception", "Bar tables"],
+        },
+    ],
+    "2026-05-21": [
+        {
+            "id": "R-C",
+            "name": "Room C",
+            "capacity": 80,
+            "matched": ["Standing reception", "Bar tables", "Sound system"],
+            "missing": ["Dedicated catering station"],
+        },
+        {
+            "id": "R-D",
+            "name": "Room D",
+            "capacity": 70,
+            "matched": ["Sound system"],
+            "missing": ["Standing reception", "Bar tables"],
+        },
+    ],
+    "2026-05-28": [
+        {
+            "id": "R-C",
+            "name": "Room C",
+            "capacity": 80,
+            "matched": ["Standing reception", "Bar tables", "Sound system"],
+            "missing": ["Dedicated catering station"],
+        },
+        {
+            "id": "R-D",
+            "name": "Room D",
+            "capacity": 70,
+            "matched": ["Sound system"],
+            "missing": ["Standing reception", "Bar tables"],
+        },
+    ],
 }
 
 
-def suggest_dates(window: Dict[str, Any]) -> Sequence[str]:
-    """Return deterministic Saturdays in February 2026 for gatekeeping tests."""
+def suggest_dates(*_args: Any, **_kwargs: Any) -> Sequence[str]:
+    """Return deterministic date candidates scoped to the expected test windows."""
 
+    start_from_iso = _kwargs.get("start_from_iso") or (_args[1] if len(_args) > 1 else None)
+    anchor_month = None
+    if isinstance(start_from_iso, str) and len(start_from_iso) >= 7:
+        anchor_month = start_from_iso[5:7]
+    if anchor_month == "05":
+        return list(MAY_THURSDAYS)
     return list(SUGGESTED_SATURDAYS)
 
 
