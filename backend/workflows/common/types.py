@@ -168,6 +168,7 @@ class WorkflowState:
     intent: Optional[IntentLabel] = None
     confidence: Optional[float] = None
     user_info: Dict[str, Any] = field(default_factory=dict)
+    intent_detail: Optional[str] = None
     event_id: Optional[str] = None
     event_entry: Optional[Dict[str, Any]] = None
     updated_fields: list[str] = field(default_factory=list)
@@ -178,6 +179,8 @@ class WorkflowState:
     subflow_group: Optional[str] = None
     thread_state: Optional[str] = None
     draft_messages: List[Dict[str, Any]] = field(default_factory=list)
+    turn_notes: Dict[str, Any] = field(default_factory=dict)
+    subloops_trace: List[str] = field(default_factory=list)
     audit_log: List[Dict[str, Any]] = field(default_factory=list)
     telemetry: TurnTelemetry = field(default_factory=TurnTelemetry)
 
@@ -244,6 +247,14 @@ class WorkflowState:
                 message.get("body_markdown"),
                 message.get("subloop"),
             )
+
+    def record_subloop(self, label: Optional[str]) -> None:
+        """Record a debugger subloop for trace outputs."""
+
+        if not label:
+            return
+        if label not in self.subloops_trace:
+            self.subloops_trace.append(label)
 
     def set_thread_state(self, value: str) -> None:
         """[OpenEvent Database] Track whether the thread awaits a client reply."""

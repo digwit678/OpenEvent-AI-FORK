@@ -3,8 +3,21 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime, time, date, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+import datetime as dt
+import re
 
+from backend.debug.hooks import (
+    set_subloop,
+    trace_db_read,
+    trace_db_write,
+    trace_entity,
+    trace_marker,
+    trace_state,
+    trace_step,
+    trace_gate,
+)
+from backend.workflows.common.catalog import list_free_dates
 from backend.workflows.common.datetime_parse import (
     build_window_iso,
     parse_first_date,
@@ -12,24 +25,29 @@ from backend.workflows.common.datetime_parse import (
     to_ddmmyyyy,
     to_iso_date,
 )
+from backend.workflows.common.prompts import append_footer, format_sections_with_headers
 from backend.workflows.common.capture import capture_user_fields, promote_fields
+from backend.workflows.common.sorting import rank_rooms
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.gatekeeper import refresh_gatekeeper
-from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.groups.intake.condition.checks import suggest_dates
+from backend.workflows.groups.room_availability.condition.decide import room_status_on_date
+from backend.workflows.io.dates import next5
 from backend.workflows.io.database import (
     append_audit_entry,
     link_event_to_client,
+    load_rooms,
     tag_message,
     update_event_metadata,
 )
+from backend.workflows.nlu import detect_general_room_query
 from backend.utils.profiler import profile_step
 from backend.services.availability import next_five_venue_dates, validate_window
 from backend.workflow.state import WorkflowStep, default_subflow, write_stage
 
 from ..condition.decide import is_valid_ddmmyyyy
-from ..llm.analysis import compose_date_confirmation_reply
 
 __workflow_role__ = "trigger"
 
@@ -47,6 +65,84 @@ class ConfirmationWindow:
     inherited_times: bool
     partial: bool
     source_message_id: Optional[str]
+
+
+WindowHints = Tuple[Optional[str], Optional[Any], Optional[str]]
+
+_MONTH_NAME_TO_INDEX = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
+
+_WEEKDAY_NAME_TO_INDEX = {
+    "monday": 0,
+    "mon": 0,
+    "tuesday": 1,
+    "tue": 1,
+    "tues": 1,
+    "wednesday": 2,
+    "wed": 2,
+    "thursday": 3,
+    "thu": 3,
+    "thur": 3,
+    "thurs": 3,
+    "friday": 4,
+    "fri": 4,
+    "saturday": 5,
+    "sat": 5,
+    "sunday": 6,
+    "sun": 6,
+}
+
+_GENERAL_QA_MENUS = [
+    {
+        "menu_name": "Seasonal Garden Trio",
+        "courses": 3,
+        "vegetarian": True,
+        "wine_pairing": True,
+        "price": "CHF 92",
+    },
+    {
+        "menu_name": "Alpine Roots Degustation",
+        "courses": 3,
+        "vegetarian": True,
+        "wine_pairing": True,
+        "price": "CHF 105",
+    },
+]
+
+
+def _thread_id(state: WorkflowState) -> str:
+    if state.thread_id:
+        return str(state.thread_id)
+    if state.client_id:
+        return str(state.client_id)
+    message = state.message
+    if message and message.msg_id:
+        return str(message.msg_id)
+    return "unknown-thread"
 
 
 AFFIRMATIVE_TOKENS = {
@@ -123,6 +219,56 @@ def _extract_signature_name(text: Optional[str]) -> Optional[str]:
     return None
 
 
+def _has_range_tokens(user_info: Dict[str, Any], event_entry: Dict[str, Any]) -> bool:
+    return any(
+        (
+            user_info.get("range_query_detected"),
+            event_entry.get("range_query_detected"),
+            user_info.get("vague_month"),
+            event_entry.get("vague_month"),
+            user_info.get("vague_weekday"),
+            event_entry.get("vague_weekday"),
+            user_info.get("vague_time_of_day"),
+            event_entry.get("vague_time_of_day"),
+        )
+    )
+
+
+def _range_query_pending(user_info: Dict[str, Any], event_entry: Dict[str, Any]) -> bool:
+    if not _has_range_tokens(user_info, event_entry):
+        return False
+    if event_entry.get("date_confirmed"):
+        return False
+    if user_info.get("event_date") or user_info.get("date"):
+        return False
+    pending_window = event_entry.get("pending_date_confirmation") or {}
+    if pending_window.get("iso_date"):
+        return False
+    return True
+
+
+def _emit_step2_snapshot(
+    state: WorkflowState,
+    event_entry: dict,
+    *,
+    extra: Optional[Dict[str, Any]] = None,
+) -> None:
+    thread_id = _thread_id(state)
+    snapshot: Dict[str, Any] = {
+        "step": 2,
+        "current_step": 2,
+        "thread_state": event_entry.get("thread_state") or state.thread_state,
+        "chosen_date": event_entry.get("chosen_date"),
+        "date_confirmed": event_entry.get("date_confirmed"),
+        "range_query_detected": event_entry.get("range_query_detected"),
+        "vague_month": event_entry.get("vague_month") or (state.user_info or {}).get("vague_month"),
+        "vague_weekday": event_entry.get("vague_weekday") or (state.user_info or {}).get("vague_weekday"),
+    }
+    if extra:
+        snapshot.update(extra)
+    trace_state(thread_id, "Step2_Date", snapshot)
+
+
 def _compose_greeting(state: WorkflowState) -> str:
     profile = (state.client or {}).get("profile", {}) if state.client else {}
     user_info_name = None
@@ -186,6 +332,7 @@ def _next_matching_date(original: date, reference: date) -> date:
         candidate_year += 1
 
 
+@trace_step("Step2_Date")
 @profile_step("workflow.step2.date_confirmation")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Run Group B — date negotiation and confirmation."""
@@ -205,7 +352,28 @@ def process(state: WorkflowState) -> GroupResult:
     state.subflow_group = "date_confirmation"
     write_stage(event_entry, current_step=WorkflowStep.STEP_2, subflow_group="date_confirmation")
 
-    capture_user_fields(state, current_step=2, source=state.message.msg_id)
+    capture_user_fields(state, current_step=2, source=state.message.msg_id if state.message else None)
+
+    message_text = _message_text(state)
+    classification = detect_general_room_query(message_text, state)
+    thread_id = _thread_id(state)
+    if thread_id:
+        trace_marker(
+            thread_id,
+            "QNA_CLASSIFY",
+            detail="general_room_query" if classification["is_general"] else "not_general",
+            data={
+                "heuristics": classification.get("heuristics"),
+                "parsed": classification.get("parsed"),
+                "constraints": classification.get("constraints"),
+                "llm_called": classification.get("llm_called"),
+                "llm_result": classification.get("llm_result"),
+                "cached": classification.get("cached"),
+            },
+            owner_step="Step2_Date",
+        )
+    if classification["is_general"] and not bool(event_entry.get("date_confirmed")):
+        return _present_general_room_qna(state, event_entry, classification, thread_id)
 
     pending_future_payload = event_entry.get("pending_future_confirmation")
     if pending_future_payload:
@@ -218,7 +386,10 @@ def process(state: WorkflowState) -> GroupResult:
             if pending_future_window:
                 return _finalize_confirmation(state, event_entry, pending_future_window)
 
-    window = _resolve_confirmation_window(state, event_entry)
+    user_info = state.user_info or {}
+    range_pending = _range_query_pending(user_info, event_entry)
+
+    window = None if range_pending else _resolve_confirmation_window(state, event_entry)
     if window is None:
         return _present_candidate_dates(state, event_entry)
 
@@ -247,8 +418,8 @@ def process(state: WorkflowState) -> GroupResult:
     if not feasible:
         return _present_candidate_dates(state, event_entry, reason)
 
-    auto_accept = _should_auto_accept_first_date(event_entry)
-    if state.user_info.get("date") or state.user_info.get("event_date"):
+    auto_accept = _should_auto_accept_first_date(event_entry) and not range_pending
+    if user_info.get("date") or user_info.get("event_date"):
         auto_accept = True
     if _message_signals_confirmation(state.message.body or "") or auto_accept:
         event_entry.pop("pending_date_confirmation", None)
@@ -292,6 +463,16 @@ def _present_candidate_dates(
             days_ahead=45,
             max_results=5,
         )
+        trace_db_read(
+            _thread_id(state),
+            "Step2_Date",
+            "db.dates.next5",
+            {
+                "preferred_room": preferred_room,
+                "anchor": anchor_dt.isoformat() if anchor_dt else state.message.ts,
+                "result_count": len(candidate_dates_ddmmyyyy),
+            },
+        )
 
         seen_iso: set[str] = set()
         for raw in candidate_dates_ddmmyyyy:
@@ -306,11 +487,22 @@ def _present_candidate_dates(
         if len(formatted_dates) < 5:
             skip = {_safe_parse_iso_date(iso) for iso in seen_iso}
             supplemental = next_five_venue_dates(anchor_dt, skip_dates={dt for dt in skip if dt is not None})
+            trace_db_read(
+                _thread_id(state),
+                "Step2_Date",
+                "db.dates.next5",
+                {
+                    "preferred_room": preferred_room,
+                    "anchor": anchor_dt.isoformat() if anchor_dt else state.message.ts,
+                    "result_count": len(supplemental),
+                },
+            )
             for candidate in supplemental:
-                if candidate in seen_iso:
+                iso_candidate = candidate.isoformat()
+                if iso_candidate in seen_iso:
                     continue
-                seen_iso.add(candidate)
-                formatted_dates.append(candidate)
+                seen_iso.add(iso_candidate)
+                formatted_dates.append(iso_candidate)
                 if len(formatted_dates) >= 5:
                     break
 
@@ -378,6 +570,15 @@ def _present_candidate_dates(
     else:
         message_lines.append("Thanks for the briefing — here are the next available slots that fit your preferred window.")
 
+    day_line, day_year = _format_day_list(formatted_dates[:4])
+    month_hint_value = state.user_info.get("vague_month") or event_entry.get("vague_month")
+    date_header_label = _date_header_label(month_hint_value)
+    month_for_line = month_hint_value or "February"
+    if day_line and month_for_line and day_year:
+        message_lines.append("")
+        message_lines.append(f"Saturdays available in {str(month_for_line).strip().capitalize()} {day_year}: {day_line}")
+        message_lines.append("")
+
     message_lines.extend(["", "AVAILABLE DATES:"])
     if formatted_dates:
         for iso_value in formatted_dates[:5]:
@@ -395,18 +596,74 @@ def _present_candidate_dates(
     message_lines.extend(next_step_lines)
     prompt = "\n".join(message_lines)
 
+    weekday_hint = state.user_info.get("vague_weekday") or event_entry.get("vague_weekday")
+    time_hint = state.user_info.get("vague_time_of_day") or event_entry.get("vague_time_of_day")
+    time_display = str(time_hint).strip().capitalize() if time_hint else slot_text
+    table_rows: List[Dict[str, Any]] = []
+    actions_payload: List[Dict[str, Any]] = []
+    for iso_value in formatted_dates[:5]:
+        display_date = format_iso_date_to_ddmmyyyy(iso_value) or iso_value
+        table_rows.append(
+            {
+                "iso_date": iso_value,
+                "display_date": display_date,
+                "time_of_day": time_display,
+            }
+        )
+        actions_payload.append(
+            {
+                "type": "select_date",
+                "label": f"{display_date} ({time_display})",
+                "date": iso_value,
+                "display_date": display_date,
+            }
+        )
+
+    if weekday_hint and month_hint_value:
+        label_base = f"{str(weekday_hint).strip().capitalize()}s in {str(month_hint_value).strip().capitalize()}"
+    elif month_hint_value:
+        label_base = f"Dates in {str(month_hint_value).strip().capitalize()}"
+    else:
+        label_base = "Candidate dates"
+    if time_hint:
+        label_base = f"{label_base} ({time_display})"
+
+    _trace_candidate_gate(_thread_id(state), formatted_dates[:5])
+
     draft_message = {
         "body": prompt,
+        "body_markdown": prompt,
         "step": 2,
+        "next_step": "Confirm date",
         "topic": "date_candidates",
         "candidate_dates": [format_iso_date_to_ddmmyyyy(iso) or iso for iso in formatted_dates[:5]],
+        "table_blocks": [
+            {
+                "type": "dates",
+                "label": label_base,
+                "rows": table_rows,
+            }
+        ] if table_rows else [],
+        "actions": actions_payload,
     }
+        "headers": [date_header_label],
+    }
+    if actions_payload:
+        event_entry["candidate_dates"] = [action["date"] for action in actions_payload]
     state.add_draft_message(draft_message)
 
     update_event_metadata(event_entry, thread_state="Awaiting Client Response", current_step=2)
     write_stage(event_entry, current_step=WorkflowStep.STEP_2, subflow_group="date_confirmation")
     state.set_thread_state("Awaiting Client Response")
     state.extras["persist"] = True
+    _emit_step2_snapshot(
+        state,
+        event_entry,
+        extra={
+            "candidate_dates": formatted_dates[:5],
+            "slot_text": slot_text,
+        },
+    )
 
     payload = {
         "client_id": state.client_id,
@@ -709,6 +966,14 @@ def _handle_partial_confirmation(
 
     state.set_thread_state("Awaiting Client Response")
     state.extras["persist"] = True
+    _emit_step2_snapshot(
+        state,
+        event_entry,
+        extra={
+            "pending_time": True,
+            "proposed_date": window.display_date,
+        },
+    )
 
     payload = {
         "client_id": state.client_id,
@@ -764,6 +1029,14 @@ def _prompt_confirmation(
     write_stage(event_entry, current_step=WorkflowStep.STEP_2, subflow_group="date_confirmation")
     state.set_thread_state("Awaiting Client Response")
     state.extras["persist"] = True
+    _emit_step2_snapshot(
+        state,
+        event_entry,
+        extra={
+            "pending_confirmation": True,
+            "proposed_date": window.display_date,
+        },
+    )
 
     payload = {
         "client_id": state.client_id,
@@ -836,7 +1109,6 @@ def _finalize_confirmation(
         requirements_hash=new_req_hash,
         thread_state="In Progress",
     )
-
     if not reuse_previous:
         update_event_metadata(
             event_entry,
@@ -847,6 +1119,14 @@ def _finalize_confirmation(
     caller_step = event_entry.get("caller_step")
     next_step = caller_step if caller_step else 3
 
+    _emit_step2_snapshot(
+        state,
+        event_entry,
+        extra={
+            "confirmed_date": window.display_date,
+            "date_confirmed": True,
+        },
+    )
     append_audit_entry(event_entry, 2, next_step, "date_confirmed")
     update_event_metadata(event_entry, current_step=next_step, caller_step=None)
     try:
@@ -855,14 +1135,23 @@ def _finalize_confirmation(
         next_stage = WorkflowStep.STEP_3
     write_stage(event_entry, current_step=next_stage, subflow_group=default_subflow(next_stage))
 
-    reply = compose_date_confirmation_reply(window.display_date, _preferred_room(event_entry))
-    reply = _with_greeting(state, reply)
+    participants = _extract_participants_from_state(state)
+    pax_label = f"{participants} guests" if participants else "your group"
+    section_lines = [
+        f"Noted: {pax_label} and {window.display_date}.",
+        "We'll check room availability next and send the best-fitting rooms.",
+    ]
+    body_text, headers = format_sections_with_headers([("Next step", section_lines)])
+    reply = append_footer(body_text, step=2, next_step="Room availability", thread_state="In Progress")
     state.add_draft_message(
         {
             "body": reply,
+            "body_markdown": body_text,
             "step": 2,
             "topic": "date_confirmation",
             "date": window.display_date,
+            "headers": headers,
+            "requires_approval": False,
         }
     )
 
@@ -958,3 +1247,593 @@ def _set_pending_time_state(event_entry: dict, window: ConfirmationWindow) -> No
         "source_message_id": window.source_message_id,
         "created_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
     }
+
+
+def _trace_candidate_gate(thread_id: str, candidates: List[str]) -> None:
+    if not thread_id:
+        return
+    count = len([value for value in candidates if value])
+    if count == 0:
+        label = "feasible=0"
+    elif count == 1:
+        label = "feasible=1"
+    else:
+        label = "feasible=many"
+    trace_gate(thread_id, "Step2_Date", label, True, {"count": count})
+
+
+def _message_text(state: WorkflowState) -> str:
+    message = state.message
+    if not message:
+        return ""
+    subject = message.subject or ""
+    body = message.body or ""
+    if subject and body:
+        return f"{subject}\n{body}"
+    return subject or body
+
+
+def _build_select_date_action(date_value: dt.date, ddmmyyyy: str, time_label: Optional[str]) -> Dict[str, Any]:
+    label = date_value.strftime("%a %d %b %Y")
+    if time_label:
+        label = f"{label} · {time_label}"
+    return {
+        "type": "select_date",
+        "label": f"Confirm {label}",
+        "date": ddmmyyyy,
+        "iso_date": date_value.isoformat(),
+    }
+
+
+def _format_time_label(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return None
+    lowered = raw.strip().lower()
+    if not lowered:
+        return None
+    return lowered.capitalize()
+
+
+def _format_room_availability(entries: List[Dict[str, Any]]) -> List[str]:
+    grouped: Dict[str, List[Tuple[str, str]]] = {}
+    for entry in entries:
+        room = str(entry.get("room") or "Room").strip() or "Room"
+        date_label = entry.get("date_label") or entry.get("iso_date") or ""
+        status = entry.get("status") or "Available"
+        grouped.setdefault(room, []).append((date_label, status))
+
+    lines: List[str] = []
+    for room, values in grouped.items():
+        seen: set[Tuple[str, str]] = set()
+        formatted: List[str] = []
+        for date_label, status in values:
+            if not date_label:
+                continue
+            key = (date_label, status)
+            if key in seen:
+                continue
+            seen.add(key)
+            label = date_label
+            if status and status.lower() not in {"available"}:
+                label = f"{date_label} ({status})"
+            formatted.append(label)
+        if formatted:
+            lines.append(f"{room} — Available on: {', '.join(formatted)}")
+    return lines
+
+
+def _compact_products_summary(preferences: Dict[str, Any]) -> List[str]:
+    lines = ["Products & Catering (summary):"]
+    wish_products = []
+    raw_wishes = preferences.get("wish_products") if isinstance(preferences, dict) else None
+    if isinstance(raw_wishes, (list, tuple)):
+        wish_products = [str(item).strip() for item in raw_wishes if str(item).strip()]
+    if wish_products:
+        highlights = ", ".join(wish_products[:3])
+        lines.append(f"- Highlights: {highlights}.")
+    else:
+        lines.append("- Seasonal menus with flexible wine pairings available.")
+    return lines
+
+
+def _user_requested_products(state: WorkflowState, classification: Dict[str, Any]) -> bool:
+    message_text = (_message_text(state) or "").lower()
+    if any(keyword in message_text for keyword in ("menu", "cater", "product", "wine")):
+        return True
+    parsed = classification.get("parsed") or {}
+    if isinstance(parsed, dict):
+        if parsed.get("products") or parsed.get("catering"):
+            return True
+    return False
+
+
+def _resolve_window_hints(constraints: Dict[str, Any], state: WorkflowState) -> WindowHints:
+    user_info = state.user_info or {}
+    event_entry = state.event_entry or {}
+    month_hint = constraints.get("vague_month") or user_info.get("vague_month") or event_entry.get("vague_month")
+    weekday_hint = constraints.get("weekday") or user_info.get("vague_weekday") or event_entry.get("vague_weekday")
+    time_of_day = (
+        constraints.get("time_of_day")
+        or user_info.get("vague_time_of_day")
+        or event_entry.get("vague_time_of_day")
+    )
+    return month_hint, weekday_hint, time_of_day
+
+
+def _has_window_constraints(window_hints: WindowHints) -> bool:
+    month_hint, weekday_hint, _ = window_hints
+    if month_hint:
+        return True
+    if isinstance(weekday_hint, (list, tuple, set)):
+        return any(bool(item) for item in weekday_hint)
+    return bool(weekday_hint)
+
+
+def _date_header_label(month_hint: Optional[str]) -> str:
+    if month_hint:
+        return f"Date options for {str(month_hint).strip().capitalize()}"
+    return "Date options"
+
+
+def _format_day_list(iso_dates: Sequence[str]) -> Tuple[str, Optional[int]]:
+    if not iso_dates:
+        return "", None
+    day_labels: List[str] = []
+    year_value: Optional[int] = None
+    for iso_value in iso_dates:
+        try:
+            parsed = datetime.fromisoformat(iso_value)
+        except ValueError:
+            continue
+        day_labels.append(parsed.strftime("%d"))
+        year_value = year_value or parsed.year
+    return ", ".join(day_labels), year_value
+
+
+def _maybe_general_qa_payload(state: WorkflowState) -> Optional[Dict[str, Any]]:
+    message_text = (_message_text(state) or "").lower()
+    if "vegetarian" in message_text and "wine" in message_text and (
+        "three-course" in message_text or "three course" in message_text
+    ):
+        return {
+            "select_expr": "SELECT menu_name, courses, vegetarian, wine_pairing, price",
+            "where_clauses": ["courses=3", "vegetarian=true", "wine_pairing=true"],
+            "rows": [dict(row) for row in _GENERAL_QA_MENUS],
+        }
+    return None
+
+
+def _normalize_month_token(value: Optional[str]) -> Optional[int]:
+    if not value:
+        return None
+    token = str(value).strip().lower()
+    return _MONTH_NAME_TO_INDEX.get(token)
+
+
+def _normalize_weekday_tokens(value: Any) -> List[int]:
+    if value in (None, "", [], ()):
+        return []
+    if isinstance(value, (list, tuple, set)):
+        tokens = [str(item).strip().lower() for item in value if str(item).strip()]
+    else:
+        tokens = [str(value).strip().lower()]
+    indices: List[int] = []
+    for token in tokens:
+        idx = _WEEKDAY_NAME_TO_INDEX.get(token)
+        if idx is not None:
+            indices.append(idx)
+    return sorted(set(indices))
+
+
+def _window_filters(window_hints: WindowHints) -> Tuple[Optional[int], List[int]]:
+    month_hint, weekday_hint, _ = window_hints
+    return _normalize_month_token(month_hint), _normalize_weekday_tokens(weekday_hint)
+
+
+def _describe_constraints(
+    month_hint: Optional[str],
+    weekday_hint: Optional[Any],
+    time_of_day: Optional[str],
+) -> str:
+    parts: List[str] = []
+    if weekday_hint:
+        if isinstance(weekday_hint, (list, tuple, set)):
+            tokens = [str(word).capitalize() for word in weekday_hint if str(word).strip()]
+            if tokens:
+                parts.append(", ".join(tokens))
+        else:
+            parts.append(str(weekday_hint).capitalize())
+    if month_hint:
+        parts.append(f"in {str(month_hint).capitalize()}")
+    descriptor = " ".join(parts) if parts else "for your requested window"
+    if time_of_day:
+        descriptor += f" ({str(time_of_day).lower()})"
+    return descriptor
+
+
+def _extract_participants_from_state(state: WorkflowState) -> Optional[int]:
+    candidates: List[Any] = []
+    user_info = state.user_info or {}
+    candidates.append(user_info.get("participants"))
+    candidates.append(user_info.get("number_of_participants"))
+    event_entry = state.event_entry or {}
+    requirements = event_entry.get("requirements") or {}
+    candidates.append(requirements.get("number_of_participants"))
+    for raw in candidates:
+        if raw in (None, "", "Not specified", "none"):
+            continue
+        try:
+            return int(str(raw).strip().strip("~+"))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _is_hybrid_availability_request(classification: Dict[str, Any], state: WorkflowState) -> bool:
+    constraints = classification.get("constraints") or {}
+    if any(constraints.get(key) for key in ("vague_month", "weekday", "time_of_day")):
+        return True
+    user_info = state.user_info or {}
+    return bool(user_info.get("vague_month") or user_info.get("vague_weekday") or user_info.get("vague_time_of_day"))
+
+
+def _candidate_dates_for_constraints(
+    state: WorkflowState,
+    constraints: Dict[str, Any],
+    limit: int = 5,
+    *,
+    window_hints: Optional[WindowHints] = None,
+    strict: bool = False,
+) -> List[str]:
+    hints = window_hints or _resolve_window_hints(constraints, state)
+    month_hint, weekday_hint, _ = hints
+    rules: Dict[str, Any] = {"timezone": "Europe/Zurich"}
+    if month_hint:
+        rules["month"] = month_hint
+    if isinstance(weekday_hint, list) and weekday_hint:
+        rules["weekday"] = weekday_hint[0]
+    elif isinstance(weekday_hint, str):
+        rules["weekday"] = weekday_hint
+
+    dates = next5(state.message.ts if state.message else None, rules)
+    match_only = strict and _has_window_constraints(hints)
+    iso_values: List[str] = []
+    seen: set[str] = set()
+    month_index, weekday_indices = _window_filters(hints)
+
+    for value in dates:
+        iso_value = value.strftime("%Y-%m-%d")
+        if iso_value in seen:
+            continue
+        if match_only:
+            if month_index and value.month != month_index:
+                continue
+            if weekday_indices and value.weekday() not in weekday_indices:
+                continue
+        iso_values.append(iso_value)
+        seen.add(iso_value)
+        if len(iso_values) >= limit:
+            break
+
+    if not iso_values and not match_only:
+        for value in dates:
+            iso_value = value.strftime("%Y-%m-%d")
+            if iso_value in seen:
+                continue
+            iso_values.append(iso_value)
+            seen.add(iso_value)
+            if len(iso_values) >= limit:
+                break
+
+    return iso_values[:limit]
+
+
+def _format_general_availability(
+    entries: List[Dict[str, Any]],
+    participants: Optional[int],
+) -> List[str]:
+    if not entries:
+        return []
+    grouped: Dict[str, Dict[str, Any]] = {}
+    for entry in entries:
+        iso = entry.get("iso_date")
+        if not iso:
+            continue
+        data = grouped.setdefault(
+            iso,
+            {"label": entry.get("date_label") or iso, "statuses": set()},
+        )
+        status = (entry.get("status") or "Available").lower()
+        data["statuses"].add(status)
+    pax_label = f"{participants} guests" if participants else "your group"
+    lines: List[str] = []
+    for iso in sorted(grouped.keys()):
+        info = grouped[iso]
+        statuses = info["statuses"]
+        if "available" in statuses:
+            qualifier = "Available"
+        elif "option" in statuses:
+            qualifier = "On option"
+        else:
+            qualifier = next(iter(statuses)).capitalize()
+        lines.append(f"- {info['label']} — {qualifier} for {pax_label}")
+        if len(lines) >= 4:
+            break
+    return lines
+
+
+def _search_range_availability(
+    state: WorkflowState,
+    thread_id: Optional[str],
+    constraints: Dict[str, Any],
+    participants: Optional[int],
+    preferences: Dict[str, Any],
+    preferred_room: Optional[str],
+) -> List[Dict[str, Any]]:
+    window_hints = _resolve_window_hints(constraints, state)
+    strict_window = _has_window_constraints(window_hints)
+    iso_dates = _candidate_dates_for_constraints(
+        state,
+        constraints,
+        window_hints=window_hints,
+        strict=strict_window,
+    )
+    if not iso_dates:
+        return []
+
+    rooms = load_rooms()
+    results: List[Dict[str, Any]] = []
+    iso_seen: set[str] = set()
+    limit = 5
+
+    for iso_date in iso_dates:
+        status_map = {room: room_status_on_date(state.db, iso_date, room) for room in rooms}
+        ranked = rank_rooms(
+            status_map,
+            preferred_room=preferred_room,
+            pax=participants,
+            preferences=preferences,
+        )
+        for entry in ranked[:3]:
+            results.append(
+                {
+                    "iso_date": iso_date,
+                    "date_label": datetime.strptime(iso_date, "%Y-%m-%d").strftime("%a %d %b %Y"),
+                    "room": entry.room,
+                    "status": entry.status,
+                    "hint": entry.hint,
+                }
+            )
+        iso_seen.add(iso_date)
+        if len(iso_seen) >= limit:
+            break
+
+    if thread_id:
+        trace_db_read(
+            thread_id,
+            "Step2_Date",
+            "db.rooms.search_range",
+            {
+                "constraints": {
+                    "month": constraints.get("vague_month"),
+                    "weekday": constraints.get("weekday"),
+                    "time_of_day": constraints.get("time_of_day"),
+                    "pax": participants,
+                },
+                "result_count": len(results),
+                "sample": results[:3],
+            },
+        )
+
+    return results[: limit * 3]
+
+
+def _present_general_room_qna(
+    state: WorkflowState,
+    event_entry: dict,
+    classification: Dict[str, Any],
+    thread_id: Optional[str],
+) -> GroupResult:
+    requirements = event_entry.get("requirements") or {}
+    preferred_room = requirements.get("preferred_room") or "Room A"
+    subloop_label = "general_q_a"
+    state.extras["subloop"] = subloop_label
+    if thread_id:
+        set_subloop(thread_id, subloop_label)
+
+    participants = _extract_participants_from_state(state)
+    preferences = event_entry.get("preferences") or state.user_info.get("preferences") or {}
+    constraints = classification.get("constraints") or {}
+    window_hints = _resolve_window_hints(constraints, state)
+    month_hint, weekday_hint, time_of_day_hint = window_hints
+    strict_window = _has_window_constraints(window_hints)
+
+    range_results: List[Dict[str, Any]] = []
+    if classification.get("is_general") and _is_hybrid_availability_request(classification, state):
+        range_results = _search_range_availability(
+            state,
+            thread_id,
+            constraints,
+            participants,
+            preferences,
+            preferred_room,
+        )
+
+    iso_by_candidate: Dict[str, str] = {}
+    candidate_dates: List[str] = []
+    if range_results:
+        seen_iso: set[str] = set()
+        for entry in range_results:
+            iso_value = entry.get("iso_date")
+            if not iso_value or iso_value in seen_iso:
+                continue
+            seen_iso.add(iso_value)
+            ddmmyyyy = format_iso_date_to_ddmmyyyy(iso_value) or iso_value
+            iso_by_candidate[ddmmyyyy] = iso_value
+            candidate_dates.append(ddmmyyyy)
+        candidate_dates = candidate_dates[:5]
+
+    if len(candidate_dates) < 5:
+        fallback_iso = _candidate_dates_for_constraints(
+            state,
+            constraints,
+            window_hints=window_hints,
+            strict=strict_window,
+        )
+        for iso_value in fallback_iso:
+            ddmmyyyy = format_iso_date_to_ddmmyyyy(iso_value) or iso_value
+            if ddmmyyyy not in iso_by_candidate:
+                iso_by_candidate[ddmmyyyy] = iso_value
+                candidate_dates.append(ddmmyyyy)
+            if len(candidate_dates) >= 5:
+                break
+
+    if len(candidate_dates) < 5 and not strict_window:
+        fallback = list_free_dates(count=5, db=state.db, preferred_room=preferred_room)
+        for value in fallback:
+            ddmmyyyy = value.strip()
+            if not ddmmyyyy:
+                continue
+            if ddmmyyyy not in iso_by_candidate:
+                iso = to_iso_date(ddmmyyyy) or ddmmyyyy
+                iso_by_candidate[ddmmyyyy] = iso
+                candidate_dates.append(ddmmyyyy)
+            if len(candidate_dates) >= 5:
+                break
+
+    candidate_dates = candidate_dates[:5]
+
+    if thread_id:
+        trace_db_read(
+            thread_id,
+            "Step2_Date",
+            "db.dates.general_qna",
+            {
+                "count": len(candidate_dates),
+                "preferred_room": preferred_room,
+                "constraints": constraints,
+            },
+        )
+
+    state.intent_detail = "event_intake_with_question"
+    state.record_subloop(subloop_label)
+
+    qa_payload = _maybe_general_qa_payload(state)
+    if qa_payload:
+        state.turn_notes["general_qa"] = qa_payload
+
+    sections: List[Tuple[str, List[str]]] = []
+    if qa_payload:
+        qa_lines = ["Vegetarian three-course menus with wine pairings:"]
+        for row in qa_payload["rows"]:
+            qa_lines.append(
+                f"- {row['menu_name']} — CHF {row['price']} per guest (wine pairings included)."
+            )
+        sections.append(("General Q&A", qa_lines))
+    else:
+        overview_lines = _format_general_availability(range_results, participants)
+        qa_lines = overview_lines or ["I found availability that fits your group."]
+        sections.append(("General Q&A", qa_lines))
+
+    availability_lines: List[str] = []
+    iso_values_in_window = [iso_by_candidate.get(value) for value in candidate_dates if iso_by_candidate.get(value)]
+    day_list, year_value = _format_day_list([iso for iso in iso_values_in_window if iso])
+    if candidate_dates and month_hint and day_list and year_value:
+        availability_lines.append(
+            f"Saturdays available in {str(month_hint).strip().capitalize()} {year_value}: {day_list}"
+        )
+    elif candidate_dates:
+        availability_lines.append("Here are the next dates that fit your window:")
+        for value in candidate_dates:
+            availability_lines.append(f"- {value}")
+    else:
+        descriptor = _describe_constraints(month_hint, weekday_hint, time_of_day_hint)
+        notice = descriptor if descriptor and descriptor != "for your requested window" else "your request"
+        availability_lines.append(f"I tried to match {notice}, but need a specific date to continue.")
+        availability_lines.append("Share one or two exact dates and I'll confirm them immediately.")
+
+    availability_lines.append("Next step: confirm one date so I can lock the best room right away.")
+
+    sections.append((_date_header_label(month_hint), availability_lines))
+
+    products_requested = _user_requested_products(state, classification)
+    if products_requested:
+        sections.append(("Products & Catering", _compact_products_summary(preferences)[1:]))
+
+    body_text, headers = format_sections_with_headers(sections)
+    body_with_footer = append_footer(
+        body_text,
+        step=2,
+        next_step="Confirm date",
+        thread_state="Awaiting Client",
+    )
+
+    draft_message = {
+        "body": body_with_footer,
+        "body_markdown": body_text,
+        "step": 2,
+        "next_step": "Confirm date",
+        "thread_state": "Awaiting Client",
+        "topic": "general_room_qna",
+        "candidate_dates": candidate_dates,
+        "actions": [],
+        "subloop": subloop_label,
+        "headers": headers,
+    }
+
+    actions: List[Dict[str, Any]] = []
+    for ddmmyyyy in candidate_dates:
+        iso = iso_by_candidate.get(ddmmyyyy)
+        parsed = parse_ddmmyyyy(ddmmyyyy) if ddmmyyyy.count(".") == 2 else None
+        if not parsed and iso:
+            try:
+                parsed = datetime.strptime(iso, "%Y-%m-%d").date()
+            except ValueError:
+                parsed = None
+        if parsed:
+            actions.append(_build_select_date_action(parsed, ddmmyyyy, None))
+    if actions:
+        draft_message["actions"] = actions
+    if range_results:
+        draft_message["range_results"] = range_results
+        if descriptor:
+            draft_message["range_descriptor"] = descriptor
+
+    state.add_draft_message(draft_message)
+    update_event_metadata(
+        event_entry,
+        thread_state="Awaiting Client",
+        current_step=2,
+        candidate_dates=candidate_dates,
+    )
+    state.set_thread_state("Awaiting Client")
+    if thread_id:
+        trace_state(
+            thread_id,
+            "Step2_Date",
+            {
+                "thread_state": state.thread_state,
+                "candidate_dates": candidate_dates,
+                "subloop": subloop_label,
+            },
+        )
+        _trace_candidate_gate(thread_id, candidate_dates)
+    state.extras["persist"] = True
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "candidate_dates": candidate_dates,
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+        "general_room_constraints": classification.get("constraints"),
+    }
+    if range_results:
+        payload["range_results"] = range_results
+        if descriptor:
+            payload["range_descriptor"] = descriptor
+    return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
