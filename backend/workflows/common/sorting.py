@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional
 
 ROOM_OUTCOME_AVAILABLE = "Available"
@@ -15,6 +15,8 @@ class RankedRoom:
     score: float
     hint: str
     capacity_ok: bool
+    matched: List[str] = field(default_factory=list)
+    missing: List[str] = field(default_factory=list)
 
 
 def _config_by_name() -> Dict[str, Dict[str, object]]:
@@ -101,14 +103,26 @@ def rank_rooms(
                 similarity_score = 0.0
         preference_value += similarity_score
         preferred_bonus = 10.0 if room.strip().lower() == preferred_lower else 0.0
-        matched_items = []
+        matched_items: List[str] = []
+        missing_items: List[str] = []
         match_info = match_breakdown.get(room) if match_breakdown else None
         if isinstance(match_info, dict):
             matched_items = [item for item in match_info.get("matched", []) if isinstance(item, str) and item.strip()]
+            missing_items = [item for item in match_info.get("missing", []) if isinstance(item, str) and item.strip()]
         hint = matched_items[0] if matched_items else (wish_products[0] if wish_products else hints_default)
         capacity_ok = capacity_value >= 30.0
         total = status_score + capacity_value + preference_value + preferred_bonus
-        ranked.append(RankedRoom(room=room, status=status, score=total, hint=hint, capacity_ok=capacity_ok))
+        ranked.append(
+            RankedRoom(
+                room=room,
+                status=status,
+                score=total,
+                hint=hint,
+                capacity_ok=capacity_ok,
+                matched=matched_items,
+                missing=missing_items,
+            )
+        )
 
     ranked.sort(key=lambda entry: (-entry.score, entry.room))
     return ranked

@@ -210,6 +210,10 @@ def process(state: WorkflowState) -> GroupResult:
     state.caller_step = event_entry.get("caller_step")
     state.thread_state = event_entry.get("thread_state")
 
+    requirements_snapshot = event_entry.get("requirements") or {}
+    if not user_info.get("participants") and requirements_snapshot.get("number_of_participants"):
+        user_info["participants"] = requirements_snapshot.get("number_of_participants")
+
     requirements = build_requirements(user_info)
     new_req_hash = requirements_hash(requirements)
     prev_req_hash = event_entry.get("requirements_hash")

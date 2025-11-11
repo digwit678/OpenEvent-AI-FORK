@@ -72,6 +72,12 @@ def _collect_wish_products(user_info: Dict[str, Any]) -> List[str]:
     if isinstance(catering_pref, str) and catering_pref.strip():
         _append([catering_pref])
 
+    notes = user_info.get("notes")
+    if isinstance(notes, str) and notes.strip():
+        fragments = re.split(r"(?:[\n\r]+|[•\-–]\s*)", notes)
+        cleaned = [fragment.strip(" .") for fragment in fragments if fragment and fragment.strip()]
+        _append(cleaned)
+
     return result[:10]
 
 

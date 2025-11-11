@@ -322,6 +322,7 @@ def approve_task_and_send(task_id: str, db_path: Path = DB_PATH) -> Dict[str, An
             "assistant_draft": assistant_draft,
             "assistant_draft_text": body_text,
         },
+        "actions": [{"type": "send_reply"}],
     }
 
 
@@ -566,8 +567,7 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
     if general_qa_payload:
         res_meta["general_qa"] = general_qa_payload
     trace_payload = payload.setdefault("trace", {})
-    if state.subloops_trace:
-        trace_payload["subloops"] = list(state.subloops_trace)
+    trace_payload["subloops"] = list(state.subloops_trace)
     if state.draft_messages:
         if any(not flag for flag in requires_approval_flags):
             actions_out.append({"type": "send_reply"})

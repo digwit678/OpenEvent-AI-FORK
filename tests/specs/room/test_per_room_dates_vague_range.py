@@ -79,3 +79,4 @@ def test_step3_includes_available_dates_for_vague_range(tmp_path: Path, monkeypa
 
     first_row = draft["table_blocks"][0]["rows"][0]
     assert first_row["available_dates"], "Table rows should expose available_dates."
+    assert "requirements" in first_row

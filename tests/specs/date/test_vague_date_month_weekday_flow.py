@@ -41,7 +41,12 @@ def test_vague_month_weekday_enumeration(monkeypatch, tmp_path):
 
     monkeypatch.setattr("backend.workflows.io.dates.next5", _fake_next5)
     step2_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
-    monkeypatch.setattr(step2_module, "next5", _fake_next5)
+    monkeypatch.setattr(
+        step2_module,
+        "suggest_dates",
+        lambda *_args, **_kwargs: ["07.02.2026", "14.02.2026", "21.02.2026", "28.02.2026", "07.03.2026"],
+    )
+    monkeypatch.setattr(step2_module, "next_five_venue_dates", lambda *_a, **_k: [])
 
     state = _state(tmp_path)
     state.thread_id = "vague-thread"
@@ -90,3 +95,42 @@ def test_vague_month_weekday_enumeration(monkeypatch, tmp_path):
     trace_events = BUS.get(state.thread_id)  # type: ignore[attr-defined]
     db_events = [event for event in trace_events if event.get("kind") == "DB_READ"]
     assert any(event.get("io", {}).get("op") == "db.dates.next5" for event in db_events)
+
+
+def test_vague_range_forces_candidates(monkeypatch, tmp_path):
+    step2_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
+    monkeypatch.setenv("DEBUG_TRACE", "1")
+
+    state = _state(tmp_path)
+    state.thread_id = "thread-range"
+    state.client_id = "laura@example.com"
+    event_entry = {
+        "event_id": "EVT-VAGUE",
+        "requirements": {"preferred_room": "Room B"},
+        "thread_state": "Awaiting Client",
+        "current_step": 2,
+        "range_query_detected": True,
+        "vague_month": "February",
+        "vague_weekday": "Saturday",
+        "date_confirmed": False,
+    }
+    state.event_entry = event_entry
+    state.user_info = {
+        "range_query_detected": True,
+        "vague_month": "February",
+        "vague_weekday": "Saturday",
+    }
+
+    monkeypatch.setattr(
+        step2_module,
+        "suggest_dates",
+        lambda *_args, **_kwargs: ["01.02.2026", "08.02.2026", "15.02.2026"],
+    )
+    monkeypatch.setattr(step2_module, "next_five_venue_dates", lambda *_a, **_k: [])
+
+    result = step2_module.process(state)
+    assert result.action == "date_options_proposed"
+    draft = state.draft_messages[-1]
+    assert draft["topic"] == "date_candidates"
+    assert draft["candidate_dates"] == ["01.02.2026", "08.02.2026", "15.02.2026"]
+    assert event_entry.get("date_confirmed") is False

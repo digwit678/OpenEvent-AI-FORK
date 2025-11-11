@@ -12,11 +12,6 @@ date_module = importlib.import_module("backend.workflows.groups.date_confirmatio
 room_module = importlib.import_module("backend.workflows.groups.room_availability.trigger.process")
 
 
-def _contains_room_dates_block(text: str) -> bool:
-    pattern = r"Room\s+[A-Z].*Available on:\s*(?:\d{2}\.\d{2}\.\d{4}|[A-Za-z]{3}\s+\d{2}\s+[A-Za-z]{3}\s+\d{4})"
-    return bool(re.search(pattern, text))
-
-
 def _assert_no_full_menu_dump(text: str) -> None:
     too_many_bullets = len(re.findall(r"^\s*[-•]\s+", text, flags=re.MULTILINE)) > 8
     keywords = [
@@ -183,15 +178,18 @@ laura.meier@bluewin.ch
         """,
     ),
 ])
-def test_step2_hybrid_shows_room_dates_plus_compact_products(subject, body, tmp_path, monkeypatch):
+def test_step2_hybrid_stays_in_date_gate_with_products(subject, body, tmp_path, monkeypatch):
     draft = _render_step2_draft(subject, body, tmp_path, monkeypatch)
 
     assert str(draft["step"]).startswith("2"), "Expected Step-2 draft."
 
-    assert _contains_room_dates_block(draft["body"]), "Missing per-room 'Available on:' dates in Step-2."
-
-    assert "Products & Catering (summary)" in draft["body"]
-    _assert_no_full_menu_dump(draft["body"])
+    body_text = draft["body"]
+    assert "I checked availability" in body_text
+    assert "Next step" in body_text
+    assert "Products & Catering (summary)" in body_text
+    assert not re.search(r"Room\s+[A-Z]", body_text), "Step-2 must not list rooms before the gate."
+    _assert_no_full_menu_dump(body_text)
+    assert all(not value.endswith(".2025") for value in draft["candidate_dates"]), "Off-window dates leaked into Step-2 candidates."
 
     assert _actions_are_only_date_confirms(draft["actions"]), "Step-2 must only offer date confirm actions."
 
