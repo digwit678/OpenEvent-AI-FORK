@@ -1,0 +1,50 @@
+{
+  "suite": "guard_coffee_only_no_lunch",
+  "initial_clock": "2025-11-25T09:00:00+01:00",
+  "steps": [
+    {
+      "turn": 1,
+      "msg_in": {
+        "subject": "Coffee service only",
+        "body": "Hello,\nWe need a workshop in the second week of December for about 22 people. Coffee service only, projector, U-shape.\nBest,\nTest Client"
+      },
+      "expect": {
+        "actions": [
+          {
+            "type": "ask_for_date_enqueued"
+          }
+        ]
+      }
+    },
+    {
+      "turn": "1a",
+      "gui_action": {
+        "approve_task": "ask_for_date_enqueued"
+      }
+    },
+    {
+      "turn": 2,
+      "msg_in": {
+        "body": "10.12.2025 works, 09:00-17:00 is fine."
+      }
+    },
+    {
+      "turn": "2a",
+      "system_call": "room_status_on_date",
+      "args": {
+        "date": "2025-12-10"
+      },
+      "expect": {
+        "rooms_min": 3,
+        "res": {
+          "assistant_draft": {
+            "not_contains_all": [
+              "Lunch",
+              "lunch"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
