@@ -89,17 +89,17 @@
         "res": {
           "assistant_draft": {
             "headers": [
-              "Room options for 07.02.2026"
+              "Rooms for 30 people on 07.02.2026"
             ],
             "body_order": [
               "07.02.2026 is set.",
-              "For 30 people on 07.02.2026",
+              "For 30 people on 07.02.2026, these rooms are available (ranked):",
               "Room A",
               "Room D"
             ],
             "contains_all": [
-              "Matches:",
-              "Missing:"
+              "Room A — Coffee ✓ · U-shape ~ · Projector ✓ · Capacity ✓ (max 40)",
+              "Room D — Coffee ✓ · U-shape ✗ · Projector ✓ · Capacity ✓ (max 50)"
             ]
           }
         }

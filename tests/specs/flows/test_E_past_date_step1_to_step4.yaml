@@ -86,19 +86,17 @@
         "res": {
           "assistant_draft": {
             "headers": [
-              "Room options for 21.05.2026"
+              "Rooms for 60 people on 21.05.2026"
             ],
             "body_order": [
               "21.05.2026 is set.",
-              "For 60 people on 21.05.2026",
+              "For 60 people on 21.05.2026, these rooms are available (ranked):",
               "Room C",
               "Room D"
             ],
             "contains_all": [
-              "Standing reception",
-              "Bar tables",
-              "Sound system",
-              "Missing:"
+              "Room C — Coffee ✗ · U-shape ✗ · Projector ~ · Capacity ✓ (max 80)",
+              "Room D — Coffee ✓ · U-shape ✗ · Projector ✓ · Capacity ✓ (max 70)"
             ]
           }
         }

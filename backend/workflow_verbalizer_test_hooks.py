@@ -50,19 +50,28 @@ def render_rooms(
         confirmation_line = f"{display_date} {display_time} is set."
     body_lines = [
         confirmation_line,
-        f"For {pax} people on {display_date}, here are the available rooms:",
+        f"For {pax} people on {display_date}, these rooms are available (ranked):",
     ]
     for room in rooms:
         name = room.get("name", "Room")
         capacity = room.get("capacity", "?")
-        matched = _format_matched(room.get("matched", []))
-        missing = _format_missing(room.get("missing", []))
-        line = f"- {name} — capacity {capacity}. Matches: {matched}. Missing: {missing}."
+        badges = room.get("badges") or {}
+        coffee_badge = badges.get("coffee") or "—"
+        u_shape_badge = badges.get("u-shape")
+        projector_badge = badges.get("projector")
+        capacity_badge = badges.get("capacity") or ("✓" if capacity != "?" else "—")
+        segments = [f"Coffee {coffee_badge}"]
+        if u_shape_badge:
+            segments.append(f"U-shape {u_shape_badge}")
+        if projector_badge:
+            segments.append(f"Projector {projector_badge}")
+        segments.append(f"Capacity {capacity_badge} (max {capacity})")
+        line = f"- {name} — " + " · ".join(segments)
         body_lines.append(line)
     body_lines.append("Let me know which room you prefer so I can send the offer.")
     return {
         "assistant_draft": {
-            "headers": [f"Room options for {display_date}"],
+            "headers": [f"Rooms for {pax} people on {display_date}"],
             "body": "\n".join(body_lines),
         }
     }

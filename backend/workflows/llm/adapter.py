@@ -6,12 +6,13 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from backend.adapters.agent_adapter import AgentAdapter, StubAgentAdapter, get_agent_adapter, reset_agent_adapter
 from backend.domain import IntentLabel
 from backend.llm.provider_registry import get_provider, reset_provider_for_tests
 
+from backend.prefs.semantics import normalize_catering, normalize_products
 from backend.services.products import list_product_records, normalise_product_payload
 from backend.workflows.common.room_rules import (
     USER_INFO_KEYS,
@@ -28,6 +29,7 @@ from backend.workflows.common.datetime_parse import (
     month_name_to_number,
     weekday_name_to_number,
 )
+from backend.utils.dates import MONTH_INDEX_TO_NAME, from_hints
 
 adapter: AgentAdapter = get_agent_adapter()
 _LAST_CALL_METADATA: Dict[str, Any] = {}
@@ -88,6 +90,34 @@ _VAGUE_WEEKDAY_TOKENS = [
     "sunday",
     "sun",
 ]
+
+_ORDINAL_MAP = {
+    "first": 1,
+    "1st": 1,
+    "second": 2,
+    "2nd": 2,
+    "third": 3,
+    "3rd": 3,
+    "fourth": 4,
+    "4th": 4,
+    "fifth": 5,
+    "5th": 5,
+}
+
+_WEEK_INDEX_PATTERNS = [
+    re.compile(r"\b(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+week\b", re.IGNORECASE),
+    re.compile(r"\bweek\s*(?:number\s*)?(?P<index>\d)\b", re.IGNORECASE),
+]
+
+_DAY_PAIR_PATTERNS = [
+    re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s*(?:/|or)\s*(\d{1,2})(?:st|nd|rd|th)?\b"),
+    re.compile(r"\(([^)]+)\)"),
+]
+
+_SINGLE_DAY_CONTEXT = re.compile(
+    r"\b(?:around|on|between|for)\s+(\d{1,2})(?:st|nd|rd|th)?\b",
+    re.IGNORECASE,
+)
 
 
 def _extract_requirement_hints(text: str) -> Dict[str, Any]:
@@ -349,6 +379,12 @@ def extract_user_information(message: Dict[str, Optional[str]]) -> Dict[str, Opt
     if note_tokens:
         sanitized["notes"] = ", ".join(note_tokens)
 
+    full_day_tokens = ("full-day", "full day", "all-day", "all day")
+    if not sanitized.get("start_time") and any(token in body_text.lower() for token in full_day_tokens):
+        sanitized["start_time"] = "09:00"
+    if not sanitized.get("end_time") and any(token in body_text.lower() for token in full_day_tokens):
+        sanitized["end_time"] = "17:00"
+
     matched_products = _match_catalog_products(body_text)
     if matched_products:
         high_confidence: List[str] = []
@@ -386,6 +422,29 @@ def extract_user_information(message: Dict[str, Optional[str]]) -> Dict[str, Opt
     for key, value in vague_components.items():
         if value and not sanitized.get(key):
             sanitized[key] = value
+    month_hint = sanitized.get("vague_month") or vague_components.get("vague_month")
+    week_window = _extract_week_window(body_text, month_hint)
+    if week_window:
+        if week_window.get("month") and not sanitized.get("vague_month"):
+            sanitized["vague_month"] = week_window["month"]
+        if week_window.get("week_index") is not None:
+            sanitized["week_index"] = week_window.get("week_index")
+        if week_window.get("weekdays_hint"):
+            sanitized["weekdays_hint"] = list(week_window["weekdays_hint"])
+        window_payload = {
+            key: week_window[key]
+            for key in ("month", "week_index", "weekdays_hint")
+            if week_window.get(key)
+        }
+        if window_payload:
+            sanitized["window"] = window_payload
+
+    lowered_body = body_text.lower()
+    if "zurich" in lowered_body:
+        city_candidate = "Zürich" if "zürich" in body_text else "Zurich"
+        existing_city = sanitized.get("city")
+        if not existing_city or existing_city.strip().lower() in _MONTHS:
+            sanitized["city"] = city_candidate
 
     products_add = sanitized.get("products_add")
     if isinstance(products_add, list) and products_add:
@@ -438,6 +497,103 @@ def _extract_vague_date_components(text: str) -> Dict[str, Optional[str]]:
     return result
 
 
+def _extract_week_index(text: str) -> Optional[int]:
+    lowered = text.lower()
+    for pattern in _WEEK_INDEX_PATTERNS:
+        match = pattern.search(lowered)
+        if not match:
+            continue
+        if "index" in match.groupdict():
+            try:
+                value = int(match.group("index"))
+            except (TypeError, ValueError):
+                continue
+            if 1 <= value <= 6:
+                return value
+            continue
+        ordinal = match.group(1).lower()
+        value = _ORDINAL_MAP.get(ordinal)
+        if value:
+            return value
+    return None
+
+
+def _safe_day(value: str | None) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        number = int(re.sub(r"[^\d]", "", value))
+    except ValueError:
+        return None
+    return number if 1 <= number <= 31 else None
+
+
+def _extract_day_hints(text: str) -> List[int]:
+    hints: Set[int] = set()
+    for match in _DAY_PAIR_PATTERNS[0].finditer(text):
+        for group in match.groups():
+            day = _safe_day(group)
+            if day is not None:
+                hints.add(day)
+    for match in _DAY_PAIR_PATTERNS[1].finditer(text):
+        inside = match.group(1)
+        for inner in _DAY_PAIR_PATTERNS[0].finditer(inside):
+            for group in inner.groups():
+                day = _safe_day(group)
+                if day is not None:
+                    hints.add(day)
+        for token in re.findall(r"\b(\d{1,2})(?:st|nd|rd|th)?\b", inside):
+            day = _safe_day(token)
+            if day is not None:
+                hints.add(day)
+    for match in _SINGLE_DAY_CONTEXT.finditer(text):
+        day = _safe_day(match.group(1))
+        if day is not None:
+            hints.add(day)
+    return sorted(hints)
+
+
+def _extract_week_window(text: str, month_hint: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not text:
+        return None
+    week_index = _extract_week_index(text)
+    day_hints = _extract_day_hints(text)
+    if week_index is None and not day_hints:
+        return None
+    resolved_month = month_hint
+    if not resolved_month and day_hints:
+        resolved_month = None
+    window: Dict[str, Any] = {
+        "week_index": week_index,
+        "weekdays_hint": day_hints,
+    }
+    if resolved_month:
+        index = month_name_to_number(resolved_month)
+        label = MONTH_INDEX_TO_NAME.get(index, str(resolved_month).strip().capitalize())
+        window["month"] = label
+        window["month_index"] = index
+    return window
+
+
+def _sanitize_weekdays_hint(value: Any) -> Optional[List[int]]:
+    if value is None:
+        return None
+    result: List[int] = []
+    if isinstance(value, (list, tuple, set)):
+        candidates = list(value)
+    else:
+        candidates = re.findall(r"\d{1,2}", str(value))
+    for candidate in candidates:
+        try:
+            day = int(candidate)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= day <= 31:
+            if day not in result:
+                result.append(day)
+    return result or None
+
+
 def sanitize_user_info(raw: Dict[str, Any]) -> Dict[str, Optional[Any]]:
     """[LLM] Coerce adapter outputs into the workflow schema."""
 
@@ -466,6 +622,19 @@ def sanitize_user_info(raw: Dict[str, Any]) -> Dict[str, Optional[Any]]:
                 sanitized[key] = city_text
             else:
                 sanitized[key] = None
+        elif key == "week_index":
+            try:
+                candidate = int(value) if value is not None else None
+            except (TypeError, ValueError):
+                candidate = None
+            if candidate is not None and 1 <= candidate <= 6:
+                sanitized[key] = candidate
+            else:
+                sanitized[key] = None
+        elif key == "weekdays_hint":
+            sanitized[key] = _sanitize_weekdays_hint(value)
+        elif key == "window":
+            sanitized[key] = value if isinstance(value, dict) else None
         elif key in {"date", "start_time", "end_time"}:
             sanitized[key] = clean_text(value)
         else:
@@ -557,5 +726,14 @@ def _heuristic_intent_override(
     # Escalate direct affirmative + date replies even without keywords.
     if detected_date and body_lower.startswith(_AFFIRMATIVE_PREFIXES):
         return IntentLabel.CONFIRM_DATE if has_time_range else IntentLabel.CONFIRM_DATE_PARTIAL
+
+    if detected_date and "works" in body_lower:
+        return IntentLabel.CONFIRM_DATE if has_time_range else IntentLabel.CONFIRM_DATE_PARTIAL
+
+    if base_intent != IntentLabel.EVENT_REQUEST:
+        if any(token in text for token in ("workshop", "conference", "meeting", "event")) and any(
+            pax_token in text for pax_token in ("people", "guests", "participants", "pax")
+        ):
+            return IntentLabel.EVENT_REQUEST
 
     return None

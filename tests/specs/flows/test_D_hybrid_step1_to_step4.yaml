@@ -38,18 +38,18 @@
           "assistant_draft": {
             "headers": [
               "General Q&A",
-              "Room options for 21.02.2026"
+              "Rooms for 30 people on 21.02.2026"
             ],
             "body_order": [
               "Vegetarian three-course menus with wine pairings",
               "21.02.2026 is set.",
-              "For 30 people on 21.02.2026",
+              "For 30 people on 21.02.2026, these rooms are available (ranked):",
               "Room A",
               "Room B"
             ],
             "contains_all": [
-              "Matches:",
-              "Missing:"
+              "Room A — Coffee ✓ · U-shape ~ · Projector ✓ · Capacity ✓ (max 40)",
+              "Room B — Coffee ✓ · U-shape ~ · Projector ✓ · Capacity ✓ (max 32)"
             ]
           }
         }
