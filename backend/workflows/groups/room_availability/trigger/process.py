@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import requirements_hash
@@ -14,6 +14,7 @@ from backend.debug.hooks import trace_db_read, trace_db_write, trace_detour, tra
 from backend.utils.profiler import profile_step
 from backend.workflow_verbalizer_test_hooks import render_rooms
 from backend.workflows.groups.room_availability.db_pers import load_rooms_config
+from backend.rooms import rank as rank_rooms_profiles
 
 from ..condition.decide import room_status_on_date
 from ..llm.analysis import summarize_room_statuses
@@ -172,12 +173,26 @@ def process(state: WorkflowState) -> GroupResult:
     preferred_room = _preferred_room(event_entry, user_requested_room)
     preferences = event_entry.get("preferences") or state.user_info.get("preferences") or {}
     explicit_preferences = _has_explicit_preferences(preferences)
+    catering_tokens = [str(token).strip().lower() for token in (preferences.get("catering") or []) if str(token).strip()]
+    product_tokens = [str(token).strip().lower() for token in (preferences.get("products") or []) if str(token).strip()]
+    if not product_tokens:
+        product_tokens = [str(token).strip().lower() for token in (preferences.get("wish_products") or []) if str(token).strip()]
     ranked_rooms = rank_rooms(
         status_map,
         preferred_room=preferred_room,
         pax=participants,
         preferences=preferences,
     )
+    profile_entries = rank_rooms_profiles(
+        chosen_date,
+        participants,
+        status_map=status_map,
+        needs_catering=catering_tokens,
+        needs_products=product_tokens,
+    )
+    room_profiles = {entry["room"]: entry for entry in profile_entries}
+    order_map = {entry["room"]: idx for idx, entry in enumerate(profile_entries)}
+    ranked_rooms.sort(key=lambda entry: order_map.get(entry.room, len(order_map)))
     selected_entry = _select_room(ranked_rooms)
     selected_room = selected_entry.room if selected_entry else None
     selected_status = selected_entry.status if selected_entry else None
@@ -214,6 +229,7 @@ def process(state: WorkflowState) -> GroupResult:
         ranked_rooms,
         preferences if explicit_preferences else None,
         available_dates_map,
+        room_profiles,
     )
 
     display_chosen_date = _format_display_date(chosen_date)
@@ -224,7 +240,12 @@ def process(state: WorkflowState) -> GroupResult:
         ROOM_OUTCOME_UNAVAILABLE: "room_unavailable",
     }[outcome]
 
-    verbalizer_rooms = _verbalizer_rooms_payload(ranked_rooms, limit=3)
+    verbalizer_rooms = _verbalizer_rooms_payload(
+        ranked_rooms,
+        room_profiles,
+        needs_products=product_tokens,
+        limit=3,
+    )
     rendered = render_rooms(
         state.event_id or "",
         chosen_date,
@@ -373,6 +394,7 @@ def render_rooms_response(
 def _detour_to_date(state: WorkflowState, event_entry: dict) -> GroupResult:
     """[Trigger] Redirect to Step 2 when no chosen date exists."""
 
+    thread_id = _thread_id(state)
     trace_detour(
         thread_id,
         "Step3_Room",
@@ -688,7 +710,13 @@ def _room_requirements_payload(entry: RankedRoom) -> Dict[str, List[str]]:
     }
 
 
-def _verbalizer_rooms_payload(ranked: List[RankedRoom], limit: int = 3) -> List[Dict[str, Any]]:
+def _verbalizer_rooms_payload(
+    ranked: List[RankedRoom],
+    profiles: Dict[str, Dict[str, Any]],
+    *,
+    needs_products: Sequence[str],
+    limit: int = 3,
+) -> List[Dict[str, Any]]:
     rooms_catalog = load_rooms_config() or []
     capacity_map = {}
     for item in rooms_catalog:
@@ -707,13 +735,22 @@ def _verbalizer_rooms_payload(ranked: List[RankedRoom], limit: int = 3) -> List[
             capacity_map[name] = capacity
     payload: List[Dict[str, Any]] = []
     for entry in ranked[:limit]:
+        profile = profiles.get(entry.room, {})
+        badges_map = profile.get("requirements_badges") or {}
+        coffee_badge = profile.get("coffee_badge", "—")
+        capacity_badge = profile.get("capacity_badge", "—")
+        normalized_products = {str(token).strip().lower() for token in needs_products}
         payload.append(
             {
                 "id": entry.room,
                 "name": entry.room,
                 "capacity": capacity_map.get(entry.room),
-                "matched": list(entry.matched),
-                "missing": list(entry.missing),
+                "badges": {
+                    "coffee": coffee_badge,
+                    "capacity": capacity_badge,
+                    "u-shape": badges_map.get("u-shape") if "u-shape" in normalized_products else badges_map.get("u-shape"),
+                    "projector": badges_map.get("projector") if "projector" in normalized_products else badges_map.get("projector"),
+                },
             }
         )
     return payload
@@ -753,6 +790,7 @@ def _build_ranked_rows(
     ranked: List[RankedRoom],
     preferences: Optional[Dict[str, Any]],
     available_dates_map: Dict[str, List[str]],
+    room_profiles: Dict[str, Dict[str, Any]],
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     rows: List[Dict[str, Any]] = []
     actions: List[Dict[str, Any]] = []
@@ -763,14 +801,19 @@ def _build_ranked_rows(
         hint_label = _format_hint(raw_hint)
         available_dates = available_dates_map.get(entry.room, [])
         requirements_info = _room_requirements_payload(entry) if explicit_prefs else {"matched": [], "missing": []}
+        profile = room_profiles.get(entry.room, {})
+        badges = profile.get("requirements_badges") or {}
         row = {
             "date": chosen_date,
             "room": entry.room,
             "status": entry.status,
             "hint": hint_label,
-            "requirements_score": round(entry.score, 2),
+            "requirements_score": round(profile.get("requirements_score", entry.score), 2),
             "available_dates": available_dates,
             "requirements": requirements_info,
+            "coffee_match": profile.get("coffee_badge"),
+            "u_shape_match": badges.get("u-shape"),
+            "projector_match": badges.get("projector"),
         }
         rows.append(row)
         if entry.status in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}:

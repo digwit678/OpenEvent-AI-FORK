@@ -189,12 +189,29 @@ def _tracked_info(snapshot: Dict[str, Any]) -> Dict[str, Any]:
             if key != "raw" and _normalised_str(value)
         }
         if structured:
-            info["billing_address_saved"] = True
+            meaningful = {
+                key: value
+                for key, value in structured.items()
+                if _is_meaningful_address(value)
+            }
+            info["billing_address_saved"] = bool(meaningful)
+            if meaningful:
+                return info
             return info
     raw_text = _normalised_str(billing_raw)
     if raw_text:
         info["billing_address_captured_raw"] = raw_text
     return info
+
+
+def _is_meaningful_address(value: Any) -> bool:
+    text = _normalised_str(value)
+    if not text:
+        return False
+    lowered = text.lower()
+    if lowered in {"not specified", "none", "n/a"}:
+        return False
+    return True
 
 
 def _mask_prompt(text: Optional[str]) -> Optional[str]:

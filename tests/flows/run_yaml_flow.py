@@ -10,6 +10,8 @@ from backend.workflows.io import database as db_io
 from backend.workflow_verbalizer_test_hooks import render_rooms
 from tests.stubs.dates_and_rooms import room_status_on_date as stub_room_status
 from tests.stubs.dates_and_rooms import suggest_dates as stub_suggest_dates
+from tests.stubs.dates_and_rooms import load_rooms_config as stub_load_rooms_config
+from tests.stubs.dates_and_rooms import week_window as stub_week_window
 
 ACTION_TASK_MAP = {
     "ask_for_date_enqueued": 2,
@@ -103,6 +105,18 @@ class FlowHarness:
                 original = getattr(module, "suggest_dates")
                 self._original_patches.append((module, "suggest_dates", original))
                 setattr(module, "suggest_dates", stub_suggest_dates)
+        dates_module = import_module("backend.utils.dates")
+        original_week_window = getattr(dates_module, "week_window")
+        self._original_patches.append((dates_module, "week_window", original_week_window))
+        setattr(dates_module, "week_window", stub_week_window)
+        room_config_module = import_module("backend.workflows.groups.room_availability.db_pers")
+        original_load_rooms = getattr(room_config_module, "load_rooms_config")
+        self._original_patches.append((room_config_module, "load_rooms_config", original_load_rooms))
+        setattr(room_config_module, "load_rooms_config", stub_load_rooms_config)
+        ranking_module = import_module("backend.rooms.ranking")
+        original_ranking_load = getattr(ranking_module, "load_rooms_config")
+        self._original_patches.append((ranking_module, "load_rooms_config", original_ranking_load))
+        setattr(ranking_module, "load_rooms_config", stub_load_rooms_config)
 
     def _handle_msg(
         self,
@@ -279,6 +293,10 @@ class FlowHarness:
                     assert_contains_all(body_actual, draft_expect["contains"])
                 if "contains_all" in draft_expect:
                     assert_contains_all(body_actual, draft_expect["contains_all"])
+                if "not_contains_all" in draft_expect:
+                    for phrase in draft_expect["not_contains_all"]:
+                        if phrase in body_actual:
+                            raise AssertionError(f"Unexpected phrase '{phrase}' present in body: {body_actual}")
                 if "body_order" in draft_expect:
                     assert_body_order(body_actual, draft_expect["body_order"])
             if "general_qa" in res_expect:

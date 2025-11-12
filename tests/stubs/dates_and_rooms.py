@@ -3,10 +3,81 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict, List, Sequence
 
+ROOM_CONFIG: List[Dict[str, Any]] = [
+    {
+        "id": "R-A",
+        "name": "Room A",
+        "capacity_max": 40,
+        "capacity_min": 12,
+        "capacity_by_layout": {"u_shape": 24, "theatre": 40},
+        "features": ["projector", "screen"],
+        "services": ["coffee service", "water station"],
+    },
+    {
+        "id": "R-B",
+        "name": "Room B",
+        "capacity_max": 60,
+        "capacity_min": 20,
+        "capacity_by_layout": {"u_shape": 20, "theatre": 60},
+        "features": ["projector", "sound system"],
+        "services": ["coffee service"],
+    },
+    {
+        "id": "R-C",
+        "name": "Room C",
+        "capacity_max": 28,
+        "capacity_min": 10,
+        "capacity_by_layout": {"workshop": 24},
+        "features": ["screen"],
+        "services": ["water station"],
+    },
+    {
+        "id": "R-D",
+        "name": "Room D",
+        "capacity_max": 26,
+        "capacity_min": 10,
+        "capacity_by_layout": {"boardroom": 16, "workshop": 22},
+        "features": ["projector", "screen"],
+        "services": ["coffee service"],
+    },
+    {
+        "id": "R-E",
+        "name": "Room E",
+        "capacity_max": 60,
+        "capacity_min": 24,
+        "capacity_by_layout": {"workshop": 40, "theatre": 80},
+        "features": ["stage", "sound system", "screen"],
+        "services": ["coffee service"],
+    },
+]
+
 SUGGESTED_SATURDAYS = ["2026-02-07", "2026-02-14", "2026-02-21", "2026-02-28"]
 MAY_THURSDAYS = ["2026-05-07", "2026-05-14", "2026-05-21", "2026-05-28"]
 
 ROOM_LIBRARY: Dict[str, List[Dict[str, Any]]] = {
+    "2025-12-10": [
+        {
+            "id": "R-A",
+            "name": "Room A",
+            "capacity": 40,
+            "matched": ["U-shape setup", "Projector available", "Coffee service"],
+            "missing": [],
+        },
+        {
+            "id": "R-B",
+            "name": "Room B",
+            "capacity": 60,
+            "matched": ["Projector available", "Coffee service"],
+            "missing": ["U-shape setup (seats 20)"],
+        },
+        {
+            "id": "R-C",
+            "name": "Room C",
+            "capacity": 28,
+            "matched": ["Screen"],
+            "missing": ["U-shape setup", "Coffee service", "Projector"],
+        },
+    ],
     "2026-02-07": [
         {
             "id": "R-A",
@@ -150,6 +221,33 @@ def suggest_dates(*_args: Any, **_kwargs: Any) -> Sequence[str]:
     return list(SUGGESTED_SATURDAYS)
 
 
+def week_window(
+    year: int,
+    month: int,
+    week_index: int,
+    *,
+    weekdays_hint: Sequence[int] | None = None,
+    mon_fri_only: bool = True,
+) -> List[str]:
+    if year == 2025 and month == 12 and week_index == 2:
+        return [
+            "2025-12-08",
+            "2025-12-09",
+            "2025-12-10",
+            "2025-12-11",
+            "2025-12-12",
+        ]
+    from backend.utils import dates as dates_module
+
+    return dates_module.week_window(
+        year,
+        month,
+        week_index,
+        weekdays_hint=weekdays_hint,
+        mon_fri_only=mon_fri_only,
+    )
+
+
 def room_status_on_date(date_iso: str, pax: int, requirements: Sequence[str] | None = None) -> List[Dict[str, Any]]:
     """Provide deterministic room availability responses for tests."""
 
@@ -159,7 +257,45 @@ def room_status_on_date(date_iso: str, pax: int, requirements: Sequence[str] | N
     for room in rooms:
         room.setdefault("matched", [])
         room.setdefault("missing", [])
+        config = next((cfg for cfg in ROOM_CONFIG if cfg.get("name") == room.get("name")), {})
+        services = {str(item).strip().lower() for item in config.get("services") or []}
+        features = {str(item).strip().lower() for item in config.get("features") or []}
+        layout_map = config.get("capacity_by_layout") or {}
+        layout_capacity = layout_map.get("u_shape") or layout_map.get("u-shape")
+        badges = {}
+        badges["coffee"] = "✓" if "coffee service" in services else "✗"
+        if layout_capacity:
+            try:
+                badge_capacity = int(layout_capacity)
+            except (TypeError, ValueError):
+                badge_capacity = None
+            if badge_capacity is None or pax is None or badge_capacity >= pax:
+                badges["u-shape"] = "✓"
+            else:
+                badges["u-shape"] = "~"
+        else:
+            badges["u-shape"] = "✗"
+        if "projector" in features:
+            badges["projector"] = "✓"
+        elif "screen" in features:
+            badges["projector"] = "~"
+        else:
+            badges["projector"] = "✗"
+        capacity_value = room.get("capacity")
+        try:
+            capacity_int = int(capacity_value)
+        except (TypeError, ValueError):
+            capacity_int = None
+        if pax is None or capacity_int is None or capacity_int >= pax:
+            badges["capacity"] = "✓"
+        else:
+            badges["capacity"] = "✗"
+        room["badges"] = badges
     return rooms
 
 
-__all__ = ["room_status_on_date", "suggest_dates"]
+def load_rooms_config(*_args: Any, **_kwargs: Any) -> List[Dict[str, Any]]:
+    return deepcopy(ROOM_CONFIG)
+
+
+__all__ = ["room_status_on_date", "suggest_dates", "week_window", "load_rooms_config"]

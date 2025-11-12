@@ -228,6 +228,9 @@ def process(state: WorkflowState) -> GroupResult:
     vague_month = user_info.get("vague_month")
     vague_weekday = user_info.get("vague_weekday")
     vague_time = user_info.get("vague_time_of_day")
+    week_index = user_info.get("week_index")
+    weekdays_hint = user_info.get("weekdays_hint")
+    window_scope = user_info.get("window") if isinstance(user_info.get("window"), dict) else None
     metadata_updates: Dict[str, Any] = {}
     if wish_products:
         metadata_updates["wish_products"] = wish_products
@@ -239,6 +242,16 @@ def process(state: WorkflowState) -> GroupResult:
         metadata_updates["vague_weekday"] = vague_weekday
     if vague_time:
         metadata_updates["vague_time_of_day"] = vague_time
+    if week_index:
+        metadata_updates["week_index"] = week_index
+    if weekdays_hint:
+        metadata_updates["weekdays_hint"] = list(weekdays_hint) if isinstance(weekdays_hint, (list, tuple, set)) else weekdays_hint
+    if window_scope:
+        metadata_updates["window_scope"] = {
+            key: value
+            for key, value in window_scope.items()
+            if key in {"month", "week_index", "weekdays_hint"}
+        }
     if metadata_updates:
         update_event_metadata(event_entry, **metadata_updates)
 

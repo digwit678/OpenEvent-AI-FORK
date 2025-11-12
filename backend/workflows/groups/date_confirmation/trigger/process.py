@@ -47,6 +47,7 @@ from backend.workflows.io.database import (
 from backend.workflows.nlu import detect_general_room_query
 from backend.utils.profiler import profile_step
 from backend.services.availability import next_five_venue_dates, validate_window
+from backend.utils.dates import MONTH_INDEX_TO_NAME, from_hints
 from backend.workflow.state import WorkflowStep, default_subflow, write_stage
 
 from ..condition.decide import is_valid_ddmmyyyy
@@ -462,7 +463,33 @@ def _present_candidate_dates(
     limit = 4 if reason and "past" in reason.lower() else 5
     event_entry.pop("pending_future_confirmation", None)
 
-    if fuzzy_candidates:
+    week_scope = _resolve_week_scope(state, reference_day)
+    week_label_value: Optional[str] = None
+
+    if week_scope:
+        limit = min(len(week_scope["dates"]), 7)
+
+    if week_scope:
+        for iso_value in week_scope["dates"]:
+            if iso_value in seen_iso or _iso_date_is_past(iso_value):
+                continue
+            seen_iso.add(iso_value)
+            formatted_dates.append(iso_value)
+        week_label_value = week_scope["label"]
+        event_entry["week_index"] = week_scope["week_index"]
+        event_entry["weekdays_hint"] = list(week_scope.get("weekdays_hint") or [])
+        event_entry["window_scope"] = {
+            "month": week_scope["month_label"],
+            "week_index": week_scope["week_index"],
+            "weekdays_hint": list(week_scope.get("weekdays_hint") or []),
+        }
+        update_event_metadata(
+            event_entry,
+            week_index=week_scope["week_index"],
+            weekdays_hint=list(week_scope.get("weekdays_hint") or []),
+            window_scope=event_entry["window_scope"],
+        )
+    elif fuzzy_candidates:
         for iso_value in fuzzy_candidates:
             if iso_value in seen_iso or _iso_date_is_past(iso_value):
                 continue
@@ -611,16 +638,29 @@ def _present_candidate_dates(
             formatted_dates = filtered_dates[:4]
 
     sample_dates = formatted_dates[:4]
+    if week_scope:
+        sample_dates = list(formatted_dates)
     day_line, day_year = _format_day_list(sample_dates)
-    month_hint_value = state.user_info.get("vague_month") or event_entry.get("vague_month")
-    month_for_line = month_hint_value or _month_label_from_dates(sample_dates, "February")
-    date_header_label = _date_header_label(month_hint_value or month_for_line)
+    month_hint_value = (
+        week_scope["month_label"]
+        if week_scope
+        else state.user_info.get("vague_month") or event_entry.get("vague_month")
+    )
+    month_for_line = week_label_value or month_hint_value or _month_label_from_dates(sample_dates, "February")
+    date_header_label = _date_header_label(month_hint_value, week_label_value)
     weekday_hint_value = state.user_info.get("vague_weekday") or event_entry.get("vague_weekday")
     weekday_label = _weekday_label_from_dates(sample_dates, _pluralize_weekday_hint(weekday_hint_value))
+    if week_scope:
+        weekday_label = None
     if day_line and month_for_line and day_year:
         message_lines.append("")
-        label_prefix = weekday_label or "Dates"
-        message_lines.append(f"{label_prefix} available in {str(month_for_line).strip().capitalize()} {day_year}: {day_line}")
+        if week_scope:
+            message_lines.append(
+                f"Dates available in {_format_label_text(week_scope['label'])} {day_year}: {day_line}"
+            )
+        else:
+            label_prefix = weekday_label or "Dates"
+            message_lines.append(f"{label_prefix} available in {_format_label_text(month_for_line)} {day_year}: {day_line}")
         message_lines.append("")
 
     message_lines.extend(["", "AVAILABLE DATES:"])
@@ -634,6 +674,8 @@ def _present_candidate_dates(
     if future_display:
         next_step_lines.append(f"Say yes if {future_display} works and I'll pencil it in.")
         next_step_lines.append("Prefer another option? Share a different day or time and I'll check availability.")
+    elif week_scope:
+        next_step_lines.append("Tell me which date works best so I can continue with Date Confirmation.")
     else:
         next_step_lines.append("Tell me which date works best so I can continue with Date Confirmation.")
         next_step_lines.append("Or share another day/time and I'll check availability.")
@@ -664,9 +706,9 @@ def _present_candidate_dates(
         )
 
     if weekday_label and month_for_line:
-        label_base = f"{weekday_label} in {str(month_for_line).strip().capitalize()}"
+        label_base = f"{weekday_label} in {_format_label_text(month_for_line)}"
     elif month_for_line:
-        label_base = f"Dates in {str(month_for_line).strip().capitalize()}"
+        label_base = f"Dates in {_format_label_text(month_for_line)}"
     else:
         label_base = "Candidate dates"
     if time_hint:
@@ -1384,6 +1426,60 @@ def _resolve_window_hints(constraints: Dict[str, Any], state: WorkflowState) -> 
     return month_hint, weekday_hint, time_of_day
 
 
+def _resolve_week_scope(state: WorkflowState, reference_day: date) -> Optional[Dict[str, Any]]:
+    user_info = state.user_info or {}
+    event_entry = state.event_entry or {}
+    window_scope: Dict[str, Any] = {}
+    for candidate in (event_entry.get("window_scope"), user_info.get("window")):
+        if isinstance(candidate, dict):
+            window_scope.update(candidate)
+
+    month_hint = (
+        window_scope.get("month")
+        or user_info.get("vague_month")
+        or event_entry.get("vague_month")
+    )
+    week_index = (
+        window_scope.get("week_index")
+        or user_info.get("week_index")
+        or event_entry.get("week_index")
+    )
+    weekdays_hint = (
+        window_scope.get("weekdays_hint")
+        or user_info.get("weekdays_hint")
+        or event_entry.get("weekdays_hint")
+    )
+
+    if not month_hint or (week_index is None and not weekdays_hint):
+        return None
+
+    dates = from_hints(
+        month=month_hint,
+        week_index=week_index,
+        weekdays_hint=weekdays_hint if isinstance(weekdays_hint, (list, tuple, set)) else None,
+        reference=reference_day,
+    )
+    if not dates:
+        return None
+    try:
+        first_day = datetime.fromisoformat(dates[0])
+    except ValueError:
+        return None
+    derived_week_index = ((first_day.day - 1) // 7) + 1
+    month_index = _MONTH_NAME_TO_INDEX.get(str(month_hint).strip().lower())
+    if month_index is None:
+        month_index = first_day.month
+    month_label = window_scope.get("month") or MONTH_INDEX_TO_NAME.get(month_index, _format_label_text(month_hint))
+    label = f"Week {derived_week_index} of {month_label}"
+    return {
+        "dates": dates,
+        "week_index": derived_week_index,
+        "month_label": month_label,
+        "label": label,
+        "weekdays_hint": list(weekdays_hint) if isinstance(weekdays_hint, (list, tuple, set)) else [],
+    }
+
+
 def _has_window_constraints(window_hints: WindowHints) -> bool:
     month_hint, weekday_hint, _ = window_hints
     if month_hint:
@@ -1393,9 +1489,22 @@ def _has_window_constraints(window_hints: WindowHints) -> bool:
     return bool(weekday_hint)
 
 
-def _date_header_label(month_hint: Optional[str]) -> str:
+def _format_label_text(label: Optional[Any]) -> str:
+    if label is None:
+        return ""
+    text = str(label).strip()
+    if not text:
+        return ""
+    if text.lower() == text:
+        return text.capitalize()
+    return text
+
+
+def _date_header_label(month_hint: Optional[str], week_label: Optional[str] = None) -> str:
+    if week_label:
+        return f"Date options for {_format_label_text(week_label)}"
     if month_hint:
-        return f"Date options for {str(month_hint).strip().capitalize()}"
+        return f"Date options for {_format_label_text(month_hint)}"
     return "Date options"
 
 

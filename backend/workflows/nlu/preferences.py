@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from backend.services.products import list_product_records
+from backend.prefs.semantics import normalize_catering, normalize_products
 
 PreferencePayload = Dict[str, Any]
 
@@ -21,20 +22,51 @@ def extract_preferences(user_info: Dict[str, Any]) -> Optional[PreferencePayload
     if not isinstance(user_info, dict):
         return None
 
-    wish_products = _collect_wish_products(user_info)
+    raw_wish_products = _collect_wish_products(user_info)
+    catering_sources: List[str] = []
+    catering_pref = user_info.get("catering")
+    if isinstance(catering_pref, str) and catering_pref.strip():
+        catering_sources.append(catering_pref)
+    catering_sources.extend(raw_wish_products)
+    catering_tokens = normalize_catering(catering_sources)
+    catering_lower = {token.lower() for token in catering_tokens}
+
+    wish_products = [item for item in raw_wish_products if item.lower() not in catering_lower]
+
+    product_sources: List[str] = list(wish_products)
+    layout = user_info.get("layout")
+    if isinstance(layout, str) and layout.strip():
+        layout_lower = layout.strip().lower()
+        if layout_lower not in {item.lower() for item in product_sources}:
+            product_sources.append(layout)
+    notes = user_info.get("notes")
+    if isinstance(notes, str) and notes.strip():
+        product_sources.append(notes)
+
+    product_tokens = normalize_products(product_sources)
+
+    if not wish_products and product_tokens:
+        wish_products = [token.title() for token in product_tokens]
+
     keywords = _collect_keywords(user_info, wish_products)
 
-    if not wish_products and not keywords:
+    if not wish_products and not keywords and not catering_tokens and not product_tokens:
         return None
 
+    default_hint = wish_products[0] if wish_products else (product_tokens[0].title() if product_tokens else "Products available")
     preferences: PreferencePayload = {
         "wish_products": wish_products,
         "keywords": keywords,
-        "default_hint": wish_products[0] if wish_products else "Products available",
+        "default_hint": default_hint,
     }
+    if catering_tokens:
+        preferences["catering"] = catering_tokens
+    if product_tokens:
+        preferences["products"] = product_tokens
 
-    if wish_products:
-        recommendations = _score_rooms_by_products(wish_products)
+    scoring_wishes = wish_products or [token.title() for token in product_tokens]
+    if scoring_wishes:
+        recommendations = _score_rooms_by_products(scoring_wishes)
         if recommendations:
             preferences["room_recommendations"] = recommendations
             preferences["room_similarity"] = {entry["room"]: entry["score"] for entry in recommendations}

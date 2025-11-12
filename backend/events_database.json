@@ -103,24 +103,24 @@
       "event_id": "76059788-dbae-4533-a4dd-3c3dd1857d41",
       "created_at": "2025-10-23T01:31:38.455183",
       "status": "Lead",
-      "current_step": 3,
+      "current_step": 2,
       "caller_step": 5,
-      "thread_state": "Awaiting Client",
-      "chosen_date": "09.04.2026",
-      "date_confirmed": true,
-      "locked_room_id": "Room A",
+      "thread_state": "Awaiting Client Response",
+      "chosen_date": null,
+      "date_confirmed": false,
+      "locked_room_id": null,
       "requirements": {
         "number_of_participants": 30,
-        "seating_layout": "workshop",
+        "seating_layout": "U-shape",
         "event_duration": {
-          "start": "17:30",
-          "end": null
+          "start": "15:01",
+          "end": "17:00"
         },
         "special_requirements": "coffee service",
-        "preferred_room": "Room Options"
+        "preferred_room": "Room B"
       },
-      "requirements_hash": "252aefd02dfbc2b725276f6031f1aa1c3df28059d369e918fcf3df9dda566adb",
-      "room_eval_hash": "5a5583a6b40e3d24a6b13fd2c3829365184f1d8edd965684ebf4bb7a308cbe55",
+      "requirements_hash": "6c8affc8f5b2fa20f0bbbdc59bb3acd20f990a52759d2cda2fe789fde87e4de0",
+      "room_eval_hash": null,
       "offer_id": null,
       "audit": [
         {
@@ -216,20 +216,34 @@
           "from_step": 5,
           "to_step": 3,
           "reason": "requirements_updated"
+        },
+        {
+          "ts": "2025-11-12T14:52:14Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-11-12T14:52:14Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 2,
+          "reason": "date_missing"
         }
       ],
       "event_data": {
-        "Date Email Received": "05.11.2025",
+        "Date Email Received": "12.11.2025",
         "Status": "Lead",
-        "Event Date": "2026-04-09",
+        "Event Date": "Not specified",
         "Name": "Alex",
         "Email": "unknown@example.com",
         "Phone": "+41795552211",
-        "Company": "events",
+        "Company": "Basic Package plus croissants",
         "Billing Address": "Not specified",
-        "Start Time": "17:30",
-        "End Time": "22:00",
-        "Preferred Room": "Room Options",
+        "Start Time": "15:01",
+        "End Time": "17:00",
+        "Preferred Room": "Room B",
         "Number of Participants": "30",
         "Type of Event": "workshop",
         "Catering Preference": "Coffee service",
@@ -256,7 +270,8 @@
         "201e713c-4e2c-4b9c-9385-6887317cf68f",
         "6e15eefc-afea-4bc4-b10a-94058f1e5a50",
         "4dc84083-2fff-43ef-8629-ca838ae8e480",
-        "2e437fec-f130-4504-9d1e-333a45f04eb8"
+        "2e437fec-f130-4504-9d1e-333a45f04eb8",
+        "f7153b7c-af56-4fb9-85de-934897658f83"
       ],
       "offers": [
         {
@@ -332,7 +347,7 @@
       "choice_context": null,
       "gatekeeper_passed": {
         "step2": false,
-        "step3": true,
+        "step3": false,
         "step4": true,
         "step7": false
       },
@@ -345,9 +360,11 @@
       "gatekeeper_explain": {
         "ready": false,
         "missing_now": [
+          "date_confirmed",
+          "locked_room_id",
           "offer_status"
         ],
-        "reason": "offer_status"
+        "reason": "date_confirmed"
       },
       "pricing_inputs": {
         "line_items": []
@@ -361,21 +378,36 @@
         "country": null,
         "raw": "Not specified"
       },
-      "captured": {},
+      "captured": {
+        "start_time": "15:01",
+        "end_time": "17:00",
+        "preferred_room": "Room B",
+        "billing": {
+          "company": "Basic Package plus croissants"
+        }
+      },
       "verified": {},
-      "captured_sources": [],
-      "deferred_intents": [],
+      "captured_sources": [
+        "f7153b7c-af56-4fb9-85de-934897658f83:start_time",
+        "f7153b7c-af56-4fb9-85de-934897658f83:end_time",
+        "f7153b7c-af56-4fb9-85de-934897658f83:preferred_room",
+        "f7153b7c-af56-4fb9-85de-934897658f83:billing.company"
+      ],
+      "deferred_intents": [
+        "room_selection",
+        "billing_update"
+      ],
       "review_state": {
         "state": "rejected",
         "reviewed_at": "2025-10-31T01:07:14.597103Z",
         "message": null
       },
       "selected_catering": [],
-      "current_step_stage": "step_3",
+      "current_step_stage": "step_2",
       "caller_step_stage": "step_5",
-      "subflow_group": "room_availability",
+      "subflow_group": "date_confirmation",
       "requested_products": [],
-      "vague_month": "february",
+      "vague_month": "december",
       "vague_time_of_day": "evening",
       "room_pending_decision": {
         "selected_room": "Room A",
@@ -494,15 +526,223 @@
             "requires_approval": true,
             "created_at_step": 3
           }
+        },
+        {
+          "task_id": "91e38e4f-7217-4fbd-84b9-128869ae47df",
+          "signature": "e65501504582e89e5e89f15514fb6eb5476218b9a110e7217a2093e13e11ef64",
+          "step": 2,
+          "draft": {
+            "body": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nDates available in Week 2 of December 2025: 10, 11, 08, 09, 12\n\n\nAVAILABLE DATES:\n- 2025-12-10 15:01–17:00\n- 2025-12-11 15:01–17:00\n- 2025-12-08 15:01–17:00\n- 2025-12-09 15:01–17:00\n- 2025-12-12 15:01–17:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+            "step": 2,
+            "next_step": "Confirm date",
+            "topic": "date_candidates",
+            "candidate_dates": [
+              "10.12.2025",
+              "11.12.2025",
+              "08.12.2025",
+              "09.12.2025",
+              "12.12.2025"
+            ],
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Dates in Week 2 of December (Evening)",
+                "rows": [
+                  {
+                    "iso_date": "2025-12-10",
+                    "display_date": "10.12.2025",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2025-12-11",
+                    "display_date": "11.12.2025",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2025-12-08",
+                    "display_date": "08.12.2025",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2025-12-09",
+                    "display_date": "09.12.2025",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2025-12-12",
+                    "display_date": "12.12.2025",
+                    "time_of_day": "Evening"
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "10.12.2025 (Evening)",
+                "date": "2025-12-10",
+                "display_date": "10.12.2025"
+              },
+              {
+                "type": "select_date",
+                "label": "11.12.2025 (Evening)",
+                "date": "2025-12-11",
+                "display_date": "11.12.2025"
+              },
+              {
+                "type": "select_date",
+                "label": "08.12.2025 (Evening)",
+                "date": "2025-12-08",
+                "display_date": "08.12.2025"
+              },
+              {
+                "type": "select_date",
+                "label": "09.12.2025 (Evening)",
+                "date": "2025-12-09",
+                "display_date": "09.12.2025"
+              },
+              {
+                "type": "select_date",
+                "label": "12.12.2025 (Evening)",
+                "date": "2025-12-12",
+                "display_date": "12.12.2025"
+              }
+            ],
+            "headers": [
+              "Date options for Week 2 of December"
+            ],
+            "body_markdown": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nDates available in Week 2 of December 2025: 10, 11, 08, 09, 12\n\n\nAVAILABLE DATES:\n- 2025-12-10 15:01–17:00\n- 2025-12-11 15:01–17:00\n- 2025-12-08 15:01–17:00\n- 2025-12-09 15:01–17:00\n- 2025-12-12 15:01–17:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.",
+            "footer": "Step: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+            "thread_state": "Waiting on HIL",
+            "requires_approval": true,
+            "created_at_step": 2
+          }
         }
       ],
       "preferences": {
-        "default_hint": "catering available",
+        "wish_products": [
+          "U-Shape"
+        ],
         "keywords": [
+          "shape",
+          "coffee",
+          "service",
+          "workshop"
+        ],
+        "default_hint": "U-Shape",
+        "catering": [
           "coffee service"
+        ],
+        "products": [
+          "u-shape"
+        ],
+        "room_recommendations": [
+          {
+            "room": "Room A",
+            "score": 0.0,
+            "matched": [],
+            "missing": [
+              "U-Shape"
+            ]
+          },
+          {
+            "room": "Room B",
+            "score": 0.0,
+            "matched": [],
+            "missing": [
+              "U-Shape"
+            ]
+          },
+          {
+            "room": "Room C",
+            "score": 0.0,
+            "matched": [],
+            "missing": [
+              "U-Shape"
+            ]
+          },
+          {
+            "room": "Room D",
+            "score": 0.0,
+            "matched": [],
+            "missing": [
+              "U-Shape"
+            ]
+          },
+          {
+            "room": "Room E",
+            "score": 0.0,
+            "matched": [],
+            "missing": [
+              "U-Shape"
+            ]
+          }
+        ],
+        "room_similarity": {
+          "Room A": 0.0,
+          "Room B": 0.0,
+          "Room C": 0.0,
+          "Room D": 0.0,
+          "Room E": 0.0
+        },
+        "room_match_breakdown": {
+          "Room A": {
+            "matched": [],
+            "missing": [
+              "U-Shape"
+            ]
+          },
+          "Room B": {
+            "matched": [],
+            "missing": [
+              "U-Shape"
+            ]
+          },
+          "Room C": {
+            "matched": [],
+            "missing": [
+              "U-Shape"
+            ]
+          },
+          "Room D": {
+            "matched": [],
+            "missing": [
+              "U-Shape"
+            ]
+          },
+          "Room E": {
+            "matched": [],
+            "missing": [
+              "U-Shape"
+            ]
+          }
+        }
+      },
+      "vague_weekday": "saturday",
+      "wish_products": [
+        "U-Shape"
+      ],
+      "weekdays_hint": [
+        10,
+        11
+      ],
+      "window_scope": {
+        "month": "December",
+        "week_index": 2,
+        "weekdays_hint": [
+          10,
+          11
         ]
       },
-      "vague_weekday": "saturday"
+      "range_query_detected": true,
+      "week_index": 2,
+      "candidate_dates": [
+        "2025-12-10",
+        "2025-12-11",
+        "2025-12-08",
+        "2025-12-09",
+        "2025-12-12"
+      ]
     },
     {
       "event_id": "9b1a04a2-9acc-4962-8b89-500dd76828bb",
@@ -3504,7 +3744,7 @@
       "status": "Lead",
       "current_step": 2,
       "caller_step": null,
-      "thread_state": "Awaiting Client",
+      "thread_state": "Awaiting Client Response",
       "chosen_date": null,
       "date_confirmed": false,
       "locked_room_id": null,
@@ -3542,6 +3782,20 @@
           "from_step": 2,
           "to_step": 2,
           "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-12T14:56:59Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-11-12T14:56:59Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
         }
       ],
       "review_state": {
@@ -3550,7 +3804,7 @@
         "message": null
       },
       "event_data": {
-        "Date Email Received": "04.11.2025",
+        "Date Email Received": "12.11.2025",
         "Status": "Lead",
         "Event Date": "Not specified",
         "Name": "Nadine Keller",
@@ -3572,7 +3826,8 @@
       "msgs": [
         "d683999e-ff17-4208-b389-ed1e757a0872",
         "f8351b91-65a3-4f55-bafb-ed6317557b87",
-        "497816e9-7cf2-4308-b791-d55595109bcc"
+        "497816e9-7cf2-4308-b791-d55595109bcc",
+        "8bc36d91-547f-4b98-a391-536a0c88d599"
       ],
       "captured": {
         "date": "2025-06-12",
@@ -3593,7 +3848,8 @@
         "d683999e-ff17-4208-b389-ed1e757a0872:billing.company",
         "d683999e-ff17-4208-b389-ed1e757a0872:contact.name",
         "d683999e-ff17-4208-b389-ed1e757a0872:contact.email",
-        "d683999e-ff17-4208-b389-ed1e757a0872:contact.phone"
+        "d683999e-ff17-4208-b389-ed1e757a0872:contact.phone",
+        "8bc36d91-547f-4b98-a391-536a0c88d599:contact.phone"
       ],
       "deferred_intents": [
         "date_confirmation",
@@ -3618,9 +3874,9 @@
         "country": null,
         "raw": "Not specified"
       },
-      "current_step_stage": "step_1",
+      "current_step_stage": "step_2",
       "caller_step_stage": null,
-      "subflow_group": "intake",
+      "subflow_group": "date_confirmation",
       "requested_window": {},
       "offer_hash": null,
       "offers": [],
@@ -3671,10 +3927,10 @@
       "vague_month": "june",
       "vague_weekday": "thursday",
       "candidate_dates": [
-        "04.06.2026",
-        "11.06.2026",
-        "18.06.2026",
-        "25.06.2026"
+        "2026-06-04",
+        "2026-06-11",
+        "2026-06-18",
+        "2026-06-25"
       ],
       "pending_hil_requests": [
         {
@@ -3752,8 +4008,201 @@
             "requires_approval": true,
             "created_at_step": 2
           }
+        },
+        {
+          "task_id": "e5ceb782-4fc5-4ead-8b92-58997cbb28dd",
+          "signature": "ad82118439b307d84719947fe01c7177bdfacebca480f3f0a6f74f7ee974f453",
+          "step": 2,
+          "draft": {
+            "body": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nThursdays available in June 2026: 04, 11, 18, 25\n\n\nAVAILABLE DATES:\n- 2026-06-04 18:00–22:00\n- 2026-06-11 18:00–22:00\n- 2026-06-18 18:00–22:00\n- 2026-06-25 18:00–22:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.\nOr share another day/time and I'll check availability.\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+            "step": 2,
+            "next_step": "Confirm date",
+            "topic": "date_candidates",
+            "candidate_dates": [
+              "04.06.2026",
+              "11.06.2026",
+              "18.06.2026",
+              "25.06.2026"
+            ],
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Thursdays in June",
+                "rows": [
+                  {
+                    "iso_date": "2026-06-04",
+                    "display_date": "04.06.2026",
+                    "time_of_day": "18:00–22:00"
+                  },
+                  {
+                    "iso_date": "2026-06-11",
+                    "display_date": "11.06.2026",
+                    "time_of_day": "18:00–22:00"
+                  },
+                  {
+                    "iso_date": "2026-06-18",
+                    "display_date": "18.06.2026",
+                    "time_of_day": "18:00–22:00"
+                  },
+                  {
+                    "iso_date": "2026-06-25",
+                    "display_date": "25.06.2026",
+                    "time_of_day": "18:00–22:00"
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "04.06.2026 (18:00–22:00)",
+                "date": "2026-06-04",
+                "display_date": "04.06.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "11.06.2026 (18:00–22:00)",
+                "date": "2026-06-11",
+                "display_date": "11.06.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "18.06.2026 (18:00–22:00)",
+                "date": "2026-06-18",
+                "display_date": "18.06.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "25.06.2026 (18:00–22:00)",
+                "date": "2026-06-25",
+                "display_date": "25.06.2026"
+              }
+            ],
+            "headers": [
+              "Date options for June"
+            ],
+            "body_markdown": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nThursdays available in June 2026: 04, 11, 18, 25\n\n\nAVAILABLE DATES:\n- 2026-06-04 18:00–22:00\n- 2026-06-11 18:00–22:00\n- 2026-06-18 18:00–22:00\n- 2026-06-25 18:00–22:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.\nOr share another day/time and I'll check availability.",
+            "footer": "Step: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+            "thread_state": "Waiting on HIL",
+            "requires_approval": true,
+            "created_at_step": 2
+          }
         }
-      ]
+      ],
+      "wish_products": [
+        "projector, coffee service"
+      ],
+      "preferences": {
+        "wish_products": [
+          "projector, coffee service"
+        ],
+        "keywords": [
+          "projector",
+          "coffee",
+          "service",
+          "shape",
+          "workshop"
+        ],
+        "default_hint": "projector, coffee service",
+        "catering": [
+          "coffee service"
+        ],
+        "products": [
+          "projector",
+          "u-shape"
+        ],
+        "room_recommendations": [
+          {
+            "room": "Room A",
+            "score": 1.0,
+            "matched": [
+              "Coffee & Tea Bar"
+            ],
+            "missing": []
+          },
+          {
+            "room": "Room B",
+            "score": 1.0,
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          },
+          {
+            "room": "Room C",
+            "score": 1.0,
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          },
+          {
+            "room": "Room D",
+            "score": 1.0,
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          },
+          {
+            "room": "Room E",
+            "score": 1.0,
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          }
+        ],
+        "room_similarity": {
+          "Room A": 1.0,
+          "Room B": 1.0,
+          "Room C": 1.0,
+          "Room D": 1.0,
+          "Room E": 1.0
+        },
+        "room_match_breakdown": {
+          "Room A": {
+            "matched": [
+              "Coffee & Tea Bar"
+            ],
+            "missing": []
+          },
+          "Room B": {
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          },
+          "Room C": {
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          },
+          "Room D": {
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          },
+          "Room E": {
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          }
+        }
+      },
+      "range_query_detected": true,
+      "gatekeeper_explain": {
+        "ready": false,
+        "missing_now": [
+          "date_confirmed",
+          "locked_room_id",
+          "offer_status"
+        ],
+        "reason": "date_confirmed"
+      }
     },
     {
       "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
@@ -5354,6 +5803,149 @@
               "keywords": [
                 "coffee service"
               ]
+            }
+          }
+        },
+        {
+          "msg_id": "f7153b7c-af56-4fb9-85de-934897658f83",
+          "ts": "2025-11-12T14:52:14.445648Z",
+          "subject": "Hello Sophie,",
+          "body_preview": "Hello Sophie,\n\nThank you for reaching out! I’m glad to assist you with your workshop planning. For your event on December 10 or 11, Room B is a great fit. It ac",
+          "intent": "confirm_date_partial",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": "15:01",
+            "end_time": "17:00",
+            "city": null,
+            "participants": 30,
+            "room": "Room B",
+            "layout": "U-shape",
+            "name": null,
+            "email": null,
+            "type": "workshop",
+            "catering": "Coffee service",
+            "phone": null,
+            "company": "Basic Package plus croissants",
+            "language": null,
+            "notes": "coffee service",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              10,
+              11
+            ],
+            "window": {
+              "month": "December",
+              "weekdays_hint": [
+                10,
+                11
+              ]
+            },
+            "vague_month": "december",
+            "preferences": {
+              "wish_products": [
+                "U-Shape"
+              ],
+              "keywords": [
+                "shape",
+                "coffee",
+                "service",
+                "workshop"
+              ],
+              "default_hint": "U-Shape",
+              "catering": [
+                "coffee service"
+              ],
+              "products": [
+                "u-shape"
+              ],
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "U-Shape"
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "U-Shape"
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "U-Shape"
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "U-Shape"
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "U-Shape"
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.0,
+                "Room B": 0.0,
+                "Room C": 0.0,
+                "Room D": 0.0,
+                "Room E": 0.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "missing": [
+                    "U-Shape"
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "missing": [
+                    "U-Shape"
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "missing": [
+                    "U-Shape"
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "missing": [
+                    "U-Shape"
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "missing": [
+                    "U-Shape"
+                  ]
+                }
+              }
             }
           }
         }
@@ -8780,6 +9372,143 @@
             "vague_month": "june",
             "vague_weekday": "thursday"
           }
+        },
+        {
+          "msg_id": "8bc36d91-547f-4b98-a391-536a0c88d599",
+          "ts": "2025-11-12T14:56:59.349198Z",
+          "subject": "Subject: Training Workshop – 2-Day Booking Request in June",
+          "body_preview": "Subject: Training Workshop – 2-Day Booking Request in June\n\nBody:\n\nHello,\n\nWe’re planning a two-day internal training workshop for our support team and are look",
+          "intent": "confirm_date",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": 25,
+            "room": null,
+            "layout": "U-shape",
+            "name": null,
+            "email": null,
+            "type": "workshop",
+            "catering": "Coffee service",
+            "phone": "+41798809122",
+            "company": null,
+            "language": null,
+            "notes": "projector, coffee service",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "vague_month": "june",
+            "vague_weekday": "thursday",
+            "preferences": {
+              "wish_products": [
+                "projector, coffee service"
+              ],
+              "keywords": [
+                "projector",
+                "coffee",
+                "service",
+                "shape",
+                "workshop"
+              ],
+              "default_hint": "projector, coffee service",
+              "catering": [
+                "coffee service"
+              ],
+              "products": [
+                "projector",
+                "u-shape"
+              ],
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 1.0,
+                  "matched": [
+                    "Coffee & Tea Bar"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room B",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room C",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room D",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room E",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                }
+              ],
+              "room_similarity": {
+                "Room A": 1.0,
+                "Room B": 1.0,
+                "Room C": 1.0,
+                "Room D": 1.0,
+                "Room E": 1.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [
+                    "Coffee & Tea Bar"
+                  ],
+                  "missing": []
+                },
+                "Room B": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                "Room C": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                "Room D": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                "Room E": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                }
+              }
+            }
+          }
         }
       ],
       "event_ids": []
@@ -10739,6 +11468,44 @@
         "language": null,
         "caller_step": null,
         "requirements_hash": "9669db6357333a92b0cdd34d6d65fd7d07b55b9ad1445e1b02f0db231250db47",
+        "room_eval_hash": null
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "91e38e4f-7217-4fbd-84b9-128869ae47df",
+      "created_at": "2025-11-12T14:52:14.511151",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "unknown@example.com",
+      "event_id": "76059788-dbae-4533-a4dd-3c3dd1857d41",
+      "payload": {
+        "step_id": 2,
+        "intent": "confirm_date_partial",
+        "event_id": "76059788-dbae-4533-a4dd-3c3dd1857d41",
+        "draft_msg": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nDates available in Week 2 of December 2025: 10, 11, 08, 09, 12\n\n\nAVAILABLE DATES:\n- 2025-12-10 15:01–17:00\n- 2025-12-11 15:01–17:00\n- 2025-12-08 15:01–17:00\n- 2025-12-09 15:01–17:00\n- 2025-12-12 15:01–17:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+        "language": null,
+        "caller_step": 5,
+        "requirements_hash": "6c8affc8f5b2fa20f0bbbdc59bb3acd20f990a52759d2cda2fe789fde87e4de0",
+        "room_eval_hash": null
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "e5ceb782-4fc5-4ead-8b92-58997cbb28dd",
+      "created_at": "2025-11-12T14:56:59.370944",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "nadine.keller@solviontech.ch",
+      "event_id": "caf6384d-a94f-40b7-96b0-30b81f3477d6",
+      "payload": {
+        "step_id": 2,
+        "intent": "confirm_date",
+        "event_id": "caf6384d-a94f-40b7-96b0-30b81f3477d6",
+        "draft_msg": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nThursdays available in June 2026: 04, 11, 18, 25\n\n\nAVAILABLE DATES:\n- 2026-06-04 18:00–22:00\n- 2026-06-11 18:00–22:00\n- 2026-06-18 18:00–22:00\n- 2026-06-25 18:00–22:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.\nOr share another day/time and I'll check availability.\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "a5f3cf8d4de4e919ae1b8758b4cdc1cc95233d6413852439faba2a2aae6ba9f3",
         "room_eval_hash": null
       },
       "notes": ""

@@ -27,3 +27,19 @@ def test_flow_hybrid():
 
 def test_flow_past_date():
     run_suite_file(_spec("test_E_past_date_step1_to_step4.yaml"))
+
+
+def test_flow_week2_december():
+    run_suite_file(_spec("test_E_week2_december_workshop.yaml"))
+
+
+def test_guard_no_rooms_before_date():
+    run_suite_file(_spec("test_GUARD_no_rooms_before_date.yaml"))
+
+
+def test_guard_no_billing_before_room():
+    run_suite_file(_spec("test_GUARD_no_billing_before_room.yaml"))
+
+
+def test_guard_coffee_only_no_lunch():
+    run_suite_file(_spec("test_GUARD_coffee_only_no_lunch.yaml"))
