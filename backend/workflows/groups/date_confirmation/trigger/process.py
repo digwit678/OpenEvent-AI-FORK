@@ -1426,6 +1426,17 @@ def _resolve_window_hints(constraints: Dict[str, Any], state: WorkflowState) -> 
     return month_hint, weekday_hint, time_of_day
 
 
+def _is_weekend_token(token: Optional[Any]) -> bool:
+    if token is None:
+        return False
+    if isinstance(token, (list, tuple, set)):
+        return any(_is_weekend_token(item) for item in token)
+    normalized = str(token).strip().lower()
+    if not normalized:
+        return False
+    return normalized.startswith("sat") or normalized.startswith("sun") or "weekend" in normalized
+
+
 def _resolve_week_scope(state: WorkflowState, reference_day: date) -> Optional[Dict[str, Any]]:
     user_info = state.user_info or {}
     event_entry = state.event_entry or {}
@@ -1449,15 +1460,22 @@ def _resolve_week_scope(state: WorkflowState, reference_day: date) -> Optional[D
         or user_info.get("weekdays_hint")
         or event_entry.get("weekdays_hint")
     )
+    weekday_token = (
+        window_scope.get("weekday")
+        or user_info.get("vague_weekday")
+        or event_entry.get("vague_weekday")
+    )
 
     if not month_hint or (week_index is None and not weekdays_hint):
         return None
 
+    include_weekends = _is_weekend_token(weekday_token)
     dates = from_hints(
         month=month_hint,
         week_index=week_index,
         weekdays_hint=weekdays_hint if isinstance(weekdays_hint, (list, tuple, set)) else None,
         reference=reference_day,
+        mon_fri_only=not include_weekends,
     )
     if not dates:
         return None
@@ -1978,8 +1996,10 @@ def _present_general_room_qna(
     iso_values_in_window = [iso_by_candidate.get(value) for value in candidate_dates if iso_by_candidate.get(value)]
     day_list, year_value = _format_day_list([iso for iso in iso_values_in_window if iso])
     if candidate_dates and month_hint and day_list and year_value:
+        plural_weekday = _pluralize_weekday_hint(weekday_hint)
+        label_text = plural_weekday or "Dates"
         availability_lines.append(
-            f"Saturdays available in {str(month_hint).strip().capitalize()} {year_value}: {day_list}"
+            f"{label_text} available in {str(month_hint).strip().capitalize()} {year_value}: {day_list}"
         )
     elif candidate_dates:
         availability_lines.append("Here are the next dates that fit your window:")

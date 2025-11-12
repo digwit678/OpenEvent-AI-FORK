@@ -4329,6 +4329,48 @@
           "from_step": 2,
           "to_step": 2,
           "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-12T16:13:50Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-11-12T16:13:50Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-12T16:41:25Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-11-12T16:41:25Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-12T17:25:30Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-11-12T17:25:30Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
         }
       ],
       "review_state": {
@@ -4337,7 +4379,7 @@
         "message": null
       },
       "event_data": {
-        "Date Email Received": "11.11.2025",
+        "Date Email Received": "12.11.2025",
         "Status": "Lead",
         "Event Date": "Not specified",
         "Name": "Client (GUI)",
@@ -4382,7 +4424,10 @@
         "e53ef6ac-312e-4403-9875-81672de0e426",
         "29b4309a-a07b-4fce-a386-b931103c57c6",
         "a8b294a9-a48d-4908-a423-eae79f81eefa",
-        "b6603e56-ca32-4c58-b822-ded05417ccc8"
+        "b6603e56-ca32-4c58-b822-ded05417ccc8",
+        "85b691d9-2d14-4405-ab6b-70d8e370205f",
+        "77cd5614-e51d-4b5f-ba37-788d60270506",
+        "c317cf5f-40d1-4fda-bbdf-834860cae1d1"
       ],
       "captured": {
         "contact": {
@@ -4391,7 +4436,10 @@
       },
       "verified": {},
       "captured_sources": [
-        "b6603e56-ca32-4c58-b822-ded05417ccc8:contact.phone"
+        "b6603e56-ca32-4c58-b822-ded05417ccc8:contact.phone",
+        "85b691d9-2d14-4405-ab6b-70d8e370205f:contact.phone",
+        "77cd5614-e51d-4b5f-ba37-788d60270506:contact.phone",
+        "c317cf5f-40d1-4fda-bbdf-834860cae1d1:contact.phone"
       ],
       "deferred_intents": [
         "contact_update"
@@ -4451,11 +4499,11 @@
       "vague_weekday": "saturday",
       "vague_time_of_day": "evening",
       "candidate_dates": [
-        "2026-02-07",
-        "2026-02-14",
-        "2026-02-21",
-        "2026-02-28",
-        "2025-11-12"
+        "2026-02-02",
+        "2026-02-03",
+        "2026-02-04",
+        "2026-02-05",
+        "2026-02-06"
       ],
       "pending_hil_requests": [
         {
@@ -4942,6 +4990,279 @@
             "requires_approval": true,
             "created_at_step": 2
           }
+        },
+        {
+          "task_id": "24c653e3-044a-496f-9fff-803a074ee234",
+          "signature": "59aef4bf5c98e98cb996a23f8327408066a691d9914c39ef51ce4c693845d813",
+          "step": 2,
+          "draft": {
+            "body": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nDates available in Week 1 of February 2026: 02, 03, 04, 05, 06\n\n\nAVAILABLE DATES:\n- 2026-03-02 18:00–22:00\n- 2026-03-03 18:00–22:00\n- 2026-03-04 18:00–22:00\n- 2026-03-05 18:00–22:00\n- 2026-03-06 18:00–22:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+            "step": 2,
+            "next_step": "Confirm date",
+            "topic": "date_candidates",
+            "candidate_dates": [
+              "02.03.2026",
+              "03.03.2026",
+              "04.03.2026",
+              "05.03.2026",
+              "06.03.2026"
+            ],
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Dates in Week 1 of February (Evening)",
+                "rows": [
+                  {
+                    "iso_date": "2026-03-02",
+                    "display_date": "02.03.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-03-03",
+                    "display_date": "03.03.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-03-04",
+                    "display_date": "04.03.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-03-05",
+                    "display_date": "05.03.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-03-06",
+                    "display_date": "06.03.2026",
+                    "time_of_day": "Evening"
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "02.03.2026 (Evening)",
+                "date": "2026-03-02",
+                "display_date": "02.03.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "03.03.2026 (Evening)",
+                "date": "2026-03-03",
+                "display_date": "03.03.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "04.03.2026 (Evening)",
+                "date": "2026-03-04",
+                "display_date": "04.03.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "05.03.2026 (Evening)",
+                "date": "2026-03-05",
+                "display_date": "05.03.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "06.03.2026 (Evening)",
+                "date": "2026-03-06",
+                "display_date": "06.03.2026"
+              }
+            ],
+            "headers": [
+              "Date options for Week 1 of February"
+            ],
+            "body_markdown": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nDates available in Week 1 of February 2026: 02, 03, 04, 05, 06\n\n\nAVAILABLE DATES:\n- 2026-03-02 18:00–22:00\n- 2026-03-03 18:00–22:00\n- 2026-03-04 18:00–22:00\n- 2026-03-05 18:00–22:00\n- 2026-03-06 18:00–22:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.",
+            "footer": "Step: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+            "thread_state": "Waiting on HIL",
+            "requires_approval": true,
+            "created_at_step": 2
+          }
+        },
+        {
+          "task_id": "930c0ebc-4a9b-40d9-83aa-714df3d6b810",
+          "signature": "87bb1d6065234c6ad44f2e32be8f2a818d867c80ce129d1d5f5785a9e82cf9b0",
+          "step": 2,
+          "draft": {
+            "body": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nDates available in Week 1 of February 2026: 02, 03, 04, 05, 06\n\n\nAVAILABLE DATES:\n- 2026-02-02 18:00–22:00\n- 2026-02-03 18:00–22:00\n- 2026-02-04 18:00–22:00\n- 2026-02-05 18:00–22:00\n- 2026-02-06 18:00–22:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+            "step": 2,
+            "next_step": "Confirm date",
+            "topic": "date_candidates",
+            "candidate_dates": [
+              "02.02.2026",
+              "03.02.2026",
+              "04.02.2026",
+              "05.02.2026",
+              "06.02.2026"
+            ],
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Dates in Week 1 of February (Evening)",
+                "rows": [
+                  {
+                    "iso_date": "2026-02-02",
+                    "display_date": "02.02.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-02-03",
+                    "display_date": "03.02.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-02-04",
+                    "display_date": "04.02.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-02-05",
+                    "display_date": "05.02.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-02-06",
+                    "display_date": "06.02.2026",
+                    "time_of_day": "Evening"
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "02.02.2026 (Evening)",
+                "date": "2026-02-02",
+                "display_date": "02.02.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "03.02.2026 (Evening)",
+                "date": "2026-02-03",
+                "display_date": "03.02.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "04.02.2026 (Evening)",
+                "date": "2026-02-04",
+                "display_date": "04.02.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "05.02.2026 (Evening)",
+                "date": "2026-02-05",
+                "display_date": "05.02.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "06.02.2026 (Evening)",
+                "date": "2026-02-06",
+                "display_date": "06.02.2026"
+              }
+            ],
+            "headers": [
+              "Date options for Week 1 of February"
+            ],
+            "body_markdown": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nDates available in Week 1 of February 2026: 02, 03, 04, 05, 06\n\n\nAVAILABLE DATES:\n- 2026-02-02 18:00–22:00\n- 2026-02-03 18:00–22:00\n- 2026-02-04 18:00–22:00\n- 2026-02-05 18:00–22:00\n- 2026-02-06 18:00–22:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.",
+            "footer": "Step: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+            "thread_state": "Waiting on HIL",
+            "requires_approval": true,
+            "created_at_step": 2
+          }
+        },
+        {
+          "task_id": "9934636c-d3cb-462f-a945-c3275808433f",
+          "signature": "8bfa3bfd478931aac1446b4991f9124f404da0bfe77810e924354d6baaa26d84",
+          "step": 2,
+          "draft": {
+            "body": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nDates available in Week 1 of February 2026: 02, 03, 04, 05, 06, 07, 08\n\n\nAVAILABLE DATES:\n- 2026-02-02 18:00–22:00\n- 2026-02-03 18:00–22:00\n- 2026-02-04 18:00–22:00\n- 2026-02-05 18:00–22:00\n- 2026-02-06 18:00–22:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+            "step": 2,
+            "next_step": "Confirm date",
+            "topic": "date_candidates",
+            "candidate_dates": [
+              "02.02.2026",
+              "03.02.2026",
+              "04.02.2026",
+              "05.02.2026",
+              "06.02.2026"
+            ],
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Dates in Week 1 of February (Evening)",
+                "rows": [
+                  {
+                    "iso_date": "2026-02-02",
+                    "display_date": "02.02.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-02-03",
+                    "display_date": "03.02.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-02-04",
+                    "display_date": "04.02.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-02-05",
+                    "display_date": "05.02.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-02-06",
+                    "display_date": "06.02.2026",
+                    "time_of_day": "Evening"
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "02.02.2026 (Evening)",
+                "date": "2026-02-02",
+                "display_date": "02.02.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "03.02.2026 (Evening)",
+                "date": "2026-02-03",
+                "display_date": "03.02.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "04.02.2026 (Evening)",
+                "date": "2026-02-04",
+                "display_date": "04.02.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "05.02.2026 (Evening)",
+                "date": "2026-02-05",
+                "display_date": "05.02.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "06.02.2026 (Evening)",
+                "date": "2026-02-06",
+                "display_date": "06.02.2026"
+              }
+            ],
+            "headers": [
+              "Date options for Week 1 of February"
+            ],
+            "body_markdown": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nDates available in Week 1 of February 2026: 02, 03, 04, 05, 06, 07, 08\n\n\nAVAILABLE DATES:\n- 2026-02-02 18:00–22:00\n- 2026-02-03 18:00–22:00\n- 2026-02-04 18:00–22:00\n- 2026-02-05 18:00–22:00\n- 2026-02-06 18:00–22:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.",
+            "footer": "Step: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+            "thread_state": "Waiting on HIL",
+            "requires_approval": true,
+            "created_at_step": 2
+          }
         }
       ],
       "logs": [
@@ -5071,7 +5392,18 @@
           "offer_status"
         ],
         "reason": "date_confirmed"
-      }
+      },
+      "weekdays_hint": [
+        30
+      ],
+      "window_scope": {
+        "month": "February",
+        "week_index": 1,
+        "weekdays_hint": [
+          30
+        ]
+      },
+      "week_index": 1
     }
   ],
   "clients": {
@@ -10811,6 +11143,411 @@
               }
             }
           }
+        },
+        {
+          "msg_id": "85b691d9-2d14-4405-ab6b-70d8e370205f",
+          "ts": "2025-11-12T16:13:50.485818Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              30
+            ],
+            "window": {
+              "month": "February",
+              "weekdays_hint": [
+                30
+              ]
+            },
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "sound system"
+              ],
+              "keywords": [
+                "sound",
+                "system"
+              ],
+              "default_hint": "sound system",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.0,
+                "Room B": 0.0,
+                "Room C": 0.0,
+                "Room D": 0.0,
+                "Room E": 0.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "msg_id": "77cd5614-e51d-4b5f-ba37-788d60270506",
+          "ts": "2025-11-12T16:41:25.361357Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nBody:\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              30
+            ],
+            "window": {
+              "month": "February",
+              "weekdays_hint": [
+                30
+              ]
+            },
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "sound system"
+              ],
+              "keywords": [
+                "sound",
+                "system"
+              ],
+              "default_hint": "sound system",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.0,
+                "Room B": 0.0,
+                "Room C": 0.0,
+                "Room D": 0.0,
+                "Room E": 0.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "msg_id": "c317cf5f-40d1-4fda-bbdf-834860cae1d1",
+          "ts": "2025-11-12T17:25:30.014857Z",
+          "subject": "6️⃣ Private Dinner – February 2026",
+          "body_preview": "6️⃣ Private Dinner – February 2026\n\nSubject: Private Dinner Event – Date Options in February\n\nHello,\n\nWe’d like to organize a private dinner for our family (aro",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              30
+            ],
+            "window": {
+              "month": "February",
+              "weekdays_hint": [
+                30
+              ]
+            },
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "sound system"
+              ],
+              "keywords": [
+                "sound",
+                "system"
+              ],
+              "default_hint": "sound system",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.0,
+                "Room B": 0.0,
+                "Room C": 0.0,
+                "Room D": 0.0,
+                "Room E": 0.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              }
+            }
+          }
         }
       ],
       "event_ids": [
@@ -11506,6 +12243,63 @@
         "language": null,
         "caller_step": null,
         "requirements_hash": "a5f3cf8d4de4e919ae1b8758b4cdc1cc95233d6413852439faba2a2aae6ba9f3",
+        "room_eval_hash": null
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "24c653e3-044a-496f-9fff-803a074ee234",
+      "created_at": "2025-11-12T16:13:50.550080",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "laura.meier@bluewin.ch",
+      "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+      "payload": {
+        "step_id": 2,
+        "intent": "event_request",
+        "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+        "draft_msg": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nDates available in Week 1 of February 2026: 02, 03, 04, 05, 06\n\n\nAVAILABLE DATES:\n- 2026-03-02 18:00–22:00\n- 2026-03-03 18:00–22:00\n- 2026-03-04 18:00–22:00\n- 2026-03-05 18:00–22:00\n- 2026-03-06 18:00–22:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+        "language": null,
+        "caller_step": 3,
+        "requirements_hash": "5ab1666b9bc9cbb12fac571bff9d126ea61ee86be164e4f36dc9a426b5246be3",
+        "room_eval_hash": null
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "930c0ebc-4a9b-40d9-83aa-714df3d6b810",
+      "created_at": "2025-11-12T16:41:25.425168",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "laura.meier@bluewin.ch",
+      "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+      "payload": {
+        "step_id": 2,
+        "intent": "event_request",
+        "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+        "draft_msg": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nDates available in Week 1 of February 2026: 02, 03, 04, 05, 06\n\n\nAVAILABLE DATES:\n- 2026-02-02 18:00–22:00\n- 2026-02-03 18:00–22:00\n- 2026-02-04 18:00–22:00\n- 2026-02-05 18:00–22:00\n- 2026-02-06 18:00–22:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+        "language": null,
+        "caller_step": 3,
+        "requirements_hash": "5ab1666b9bc9cbb12fac571bff9d126ea61ee86be164e4f36dc9a426b5246be3",
+        "room_eval_hash": null
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "9934636c-d3cb-462f-a945-c3275808433f",
+      "created_at": "2025-11-12T17:25:30.076508",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "laura.meier@bluewin.ch",
+      "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+      "payload": {
+        "step_id": 2,
+        "intent": "event_request",
+        "event_id": "45f63dce-8805-43e5-acc8-449ce23f46d1",
+        "draft_msg": "Hello Not,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nDates available in Week 1 of February 2026: 02, 03, 04, 05, 06, 07, 08\n\n\nAVAILABLE DATES:\n- 2026-02-02 18:00–22:00\n- 2026-02-03 18:00–22:00\n- 2026-02-04 18:00–22:00\n- 2026-02-05 18:00–22:00\n- 2026-02-06 18:00–22:00\n\nNEXT STEP:\nTell me which date works best so I can continue with Date Confirmation.\n\n---\nStep: 2 Date Confirmation · Next: Confirm date · State: Waiting on HIL",
+        "language": null,
+        "caller_step": 3,
+        "requirements_hash": "5ab1666b9bc9cbb12fac571bff9d126ea61ee86be164e4f36dc9a426b5246be3",
         "room_eval_hash": null
       },
       "notes": ""

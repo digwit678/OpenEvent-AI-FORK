@@ -122,6 +122,7 @@ def from_hints(
     week_index: Optional[int],
     weekdays_hint: Optional[Sequence[int]] = None,
     reference: Optional[date] = None,
+    mon_fri_only: bool = True,
 ) -> List[str]:
     """
     Derive ISO dates from month/week hints, defaulting to the next occurrence from reference.
@@ -143,7 +144,7 @@ def from_hints(
         month_index,
         inferred_week,
         weekdays_hint=hint_days,
-        mon_fri_only=True,
+        mon_fri_only=mon_fri_only,
     )
     if hint_days:
         day_map = {int(value.split("-")[2]): value for value in window_dates}

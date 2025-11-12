@@ -15,9 +15,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from backend.domain import ConversationState, EventInformation
 from backend.conversation_manager import (
-    classify_email,
-    generate_response,
-    create_summary,
     active_conversations,
     extract_information_incremental,
     render_step3_reply,
@@ -140,6 +137,85 @@ def save_events_database(database):
     """Save all events to the database file"""
     with open(EVENTS_FILE, 'w', encoding='utf-8') as f:
         json_io.dump(database, f, indent=2, ensure_ascii=False)
+
+
+def _format_draft_text(draft: Dict[str, Any]) -> str:
+    headers = [
+        str(header).strip()
+        for header in draft.get("headers") or []
+        if str(header).strip()
+    ]
+    body = draft.get("body_markdown") or draft.get("body") or ""
+    parts = headers + [body]
+    return "\n\n".join(part for part in parts if part)
+
+
+def _extract_workflow_reply(wf_res: Dict[str, Any]) -> tuple[str, List[Dict[str, Any]]]:
+    drafts = wf_res.get("draft_messages") or []
+    if drafts:
+        draft = drafts[-1]
+        text = _format_draft_text(draft)
+        actions = draft.get("actions") or wf_res.get("actions") or []
+        return text.strip(), actions
+    text = wf_res.get("assistant_message") or ""
+    return text.strip(), wf_res.get("actions") or []
+
+
+def _merge_field(current: Optional[str], candidate: Optional[str]) -> Optional[str]:
+    if not candidate:
+        return current
+    candidate_str = str(candidate).strip()
+    if not candidate_str or candidate_str.lower() == "not specified":
+        return current
+    return candidate_str
+
+
+def _update_event_info_from_db(event_info: EventInformation, event_id: Optional[str]) -> EventInformation:
+    if not event_id:
+        return event_info
+    try:
+        db = wf_load_db()
+    except Exception as exc:
+        print(f"[WF][WARN] Unable to refresh event info from DB: {exc}")
+        return event_info
+
+    events = db.get("events") or []
+    entry = next((evt for evt in events if evt.get("event_id") == event_id), None)
+    if not entry:
+        return event_info
+
+    event_info.status = _merge_field(event_info.status, entry.get("status"))
+    data = entry.get("event_data") or {}
+
+    event_info.event_date = _merge_field(event_info.event_date, data.get("Event Date"))
+    event_info.name = _merge_field(event_info.name, data.get("Name"))
+    event_info.email = _merge_field(event_info.email, data.get("Email"))
+    event_info.phone = _merge_field(event_info.phone, data.get("Phone"))
+    event_info.company = _merge_field(event_info.company, data.get("Company"))
+    event_info.billing_address = _merge_field(event_info.billing_address, data.get("Billing Address"))
+    event_info.start_time = _merge_field(event_info.start_time, data.get("Start Time"))
+    event_info.end_time = _merge_field(event_info.end_time, data.get("End Time"))
+    event_info.preferred_room = _merge_field(event_info.preferred_room, data.get("Preferred Room"))
+    event_info.number_of_participants = _merge_field(
+        event_info.number_of_participants, data.get("Number of Participants")
+    )
+    event_info.type_of_event = _merge_field(event_info.type_of_event, data.get("Type of Event"))
+    event_info.catering_preference = _merge_field(
+        event_info.catering_preference, data.get("Catering Preference")
+    )
+    event_info.billing_amount = _merge_field(event_info.billing_amount, data.get("Billing Amount"))
+    event_info.deposit = _merge_field(event_info.deposit, data.get("Deposit"))
+    event_info.language = _merge_field(event_info.language, data.get("Language"))
+    event_info.additional_info = _merge_field(event_info.additional_info, data.get("Additional Info"))
+
+    requirements = entry.get("requirements") or {}
+    participants_req = requirements.get("number_of_participants")
+    if participants_req:
+        event_info.number_of_participants = _merge_field(
+            event_info.number_of_participants, str(participants_req)
+        )
+
+    return event_info
 
 # REQUEST/RESPONSE MODELS
 class StartConversationRequest(BaseModel):
@@ -429,47 +505,7 @@ async def start_conversation(request: StartConversationRequest):
             "pending_actions": None,
         }
 
-    # Classify the email
-    workflow_type = classify_email(request.email_body)
-    
-    # Handle different workflow types
-    if workflow_type == "update":
-        return {
-            "session_id": None,
-            "workflow_type": workflow_type,
-            "response": "This appears to be a request to update an existing booking. This feature is coming soon! For now, please contact us directly at info@theatelier.ch to modify your booking.",
-            "is_complete": False,
-            "event_info": None
-        }
-    
-    elif workflow_type == "follow_up":
-        return {
-            "session_id": None,
-            "workflow_type": workflow_type,
-            "response": "Thank you for your follow-up message! This feature is under development. For immediate assistance, please email us at info@theatelier.ch",
-            "is_complete": False,
-            "event_info": None
-        }
-    
-    elif workflow_type == "other":
-        return {
-            "session_id": None,
-            "workflow_type": workflow_type,
-            "response": "Thank you for your message. However, this doesn't appear to be a new event booking request. I specialize in processing new venue bookings. For other inquiries, please contact our team at info@theatelier.ch",
-            "is_complete": False,
-            "event_info": None
-        }
-    
-    # Only proceed if it's a new event
-    if workflow_type != "new_event":
-        return {
-            "session_id": None,
-            "workflow_type": workflow_type,
-            "response": "I apologize, but I can only process new event booking requests at this time. For other matters, please reach out to info@theatelier.ch",
-            "is_complete": False,
-            "event_info": None
-        }
-    
+    workflow_type = "new_event"
     event_info = EventInformation(
         date_email_received=datetime.now().strftime("%d.%m.%Y"),
         email=request.client_email
@@ -484,25 +520,24 @@ async def start_conversation(request: StartConversationRequest):
         event_id=event_id,
     )
     
-    # Generate first response
-    response_text = generate_response(conversation_state, request.email_body)
-    step3_payload = pop_step3_payload(session_id)
-    pending_actions = None
-    if step3_payload:
-        actions = step3_payload.get("actions") or []
-        if actions:
-            pending_actions = {"type": "workflow_actions", "actions": actions}
-        body_pref = step3_payload.get("body_markdown") or step3_payload.get("body")
-        if body_pref:
-            response_text = body_pref
-    
-    # Store in memory
+    conversation_state.conversation_history.append({"role": "user", "content": request.email_body or ""})
+
+    assistant_reply, action_items = _extract_workflow_reply(wf_res)
+    if not assistant_reply:
+        assistant_reply = "Thanks for your message. I'll follow up shortly with availability details."
+
+    conversation_state.event_id = wf_res.get("event_id") or event_id
+    conversation_state.event_info = _update_event_info_from_db(conversation_state.event_info, conversation_state.event_id)
+    conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+
     active_conversations[session_id] = conversation_state
-    
+
+    pending_actions = {"type": "workflow_actions", "actions": action_items} if action_items else None
+
     return {
         "session_id": session_id,
         "workflow_type": workflow_type,
-        "response": response_text,
+        "response": assistant_reply,
         "is_complete": conversation_state.is_complete,
         "event_info": conversation_state.event_info.model_dump(),
         "pending_actions": pending_actions,
@@ -516,7 +551,6 @@ async def send_message(request: SendMessageRequest):
 
     conversation_state = active_conversations[request.session_id]
 
-    previous_date = conversation_state.event_info.event_date
     try:
         conversation_state.event_info = extract_information_incremental(
             request.message,
@@ -525,82 +559,101 @@ async def send_message(request: SendMessageRequest):
     except Exception as exc:
         print(f"[WF][WARN] incremental extraction failed: {exc}")
 
-    current_date = conversation_state.event_info.event_date or ""
-    has_new_date = (
-        current_date
-        and DATE_PATTERN.fullmatch(current_date.strip())
-        and current_date.strip() != (previous_date or "").strip()
-    )
+    conversation_state.conversation_history.append({"role": "user", "content": request.message})
 
-    if has_new_date:
-        chosen_date = current_date.strip()
-        conversation_state.conversation_history.append({"role": "user", "content": request.message})
+    payload = {
+        "msg_id": str(uuid.uuid4()),
+        "from_name": conversation_state.event_info.name or "Client",
+        "from_email": conversation_state.event_info.email,
+        "subject": f"Client follow-up ({datetime.utcnow().strftime('%Y-%m-%d %H:%M')})",
+        "ts": datetime.utcnow().isoformat() + "Z",
+        "body": request.message,
+        "thread_id": request.session_id,
+        "session_id": request.session_id,
+    }
+
+    try:
+        wf_res = wf_process_msg(payload)
+    except Exception as exc:
+        print(f"[WF][ERROR] send_message workflow failed: {exc}")
+        assistant_reply = "Thanks for the update. I'll follow up shortly with the latest availability."
+        conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+        return {
+            "session_id": request.session_id,
+            "workflow_type": conversation_state.workflow_type,
+            "response": assistant_reply,
+            "is_complete": conversation_state.is_complete,
+            "event_info": conversation_state.event_info.dict(),
+            "pending_actions": None,
+        }
+
+    wf_action = wf_res.get("action")
+    if wf_action == "manual_review_enqueued":
         assistant_reply = (
-            f"Thanks - I've noted {chosen_date}. Please confirm this is your preferred date."
+            "Thanks for your message. We routed it for manual review and will get back to you shortly."
+        )
+        conversation_state.event_id = wf_res.get("event_id") or conversation_state.event_id
+        conversation_state.event_info = _update_event_info_from_db(
+            conversation_state.event_info,
+            conversation_state.event_id,
         )
         conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
-        iso_payload = _to_iso_date(chosen_date)
-        pop_step3_payload(request.session_id)
         return {
             "session_id": request.session_id,
             "workflow_type": conversation_state.workflow_type,
             "response": assistant_reply,
             "is_complete": conversation_state.is_complete,
             "event_info": conversation_state.event_info.dict(),
-            "pending_actions": {"type": "confirm_date", "date": iso_payload or chosen_date},
+            "pending_actions": None,
         }
 
-    user_message_clean = request.message.strip().lower()
-    stored_date = (conversation_state.event_info.event_date or "").strip()
-    if (
-        stored_date
-        and stored_date not in {"Not specified", "none"}
-        and user_message_clean in CONFIRM_PHRASES
-    ):
-        if not DATE_PATTERN.fullmatch(stored_date):
-            iso_candidate = _to_iso_date(stored_date)
-            if iso_candidate:
-                try:
-                    stored_date = datetime.strptime(iso_candidate, "%Y-%m-%d").strftime("%d.%m.%Y")
-                except ValueError:
-                    pass
-        conversation_state.conversation_history.append({"role": "user", "content": request.message})
-        assistant_payload = _persist_confirmed_date(conversation_state, stored_date)
-        assistant_reply = assistant_payload.get("body") or ""
-        actions = assistant_payload.get("actions") or []
+    if wf_action == "ask_for_date_enqueued":
+        suggested_dates = (wf_res or {}).get("suggested_dates") or []
+        dates_text = ", ".join(suggested_dates) if suggested_dates else "No specific dates yet."
+        assistant_reply = (
+            f"Hello again,\n\nHere are the next available dates that fit your window: {dates_text}"
+        )
+        conversation_state.event_id = wf_res.get("event_id") or conversation_state.event_id
+        conversation_state.event_info = _update_event_info_from_db(
+            conversation_state.event_info,
+            conversation_state.event_id,
+        )
         conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
-        pending_actions = {"type": "workflow_actions", "actions": actions} if actions else None
         return {
             "session_id": request.session_id,
             "workflow_type": conversation_state.workflow_type,
             "response": assistant_reply,
             "is_complete": conversation_state.is_complete,
             "event_info": conversation_state.event_info.dict(),
-            "pending_actions": pending_actions,
+            "pending_actions": None,
         }
 
-    response_text = generate_response(conversation_state, request.message)
-
-    print(f"\n=== DEBUG INFO ===")
-    print(f"User message: {request.message}")
-    print(f"Is complete: {conversation_state.is_complete}")
-    print(f"Event info complete: {conversation_state.event_info.is_complete()}")
-    print(f"==================\n")
+    assistant_reply, action_items = _extract_workflow_reply(wf_res)
+    if not assistant_reply:
+        assistant_reply = "Thanks for the update. I’ll keep you posted as I gather the details."
 
     step3_payload = pop_step3_payload(request.session_id)
-    pending_actions = None
     if step3_payload:
-        actions = step3_payload.get("actions") or []
-        if actions:
-            pending_actions = {"type": "workflow_actions", "actions": actions}
         body_pref = step3_payload.get("body_markdown") or step3_payload.get("body")
         if body_pref:
-            response_text = body_pref
+            assistant_reply = body_pref
+        actions_override = step3_payload.get("actions") or []
+        if actions_override:
+            action_items = actions_override
+
+    conversation_state.event_id = wf_res.get("event_id") or conversation_state.event_id
+    conversation_state.event_info = _update_event_info_from_db(
+        conversation_state.event_info,
+        conversation_state.event_id,
+    )
+    conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+
+    pending_actions = {"type": "workflow_actions", "actions": action_items} if action_items else None
 
     return {
         "session_id": request.session_id,
         "workflow_type": conversation_state.workflow_type,
-        "response": response_text,
+        "response": assistant_reply,
         "is_complete": conversation_state.is_complete,
         "event_info": conversation_state.event_info.dict(),
         "pending_actions": pending_actions,

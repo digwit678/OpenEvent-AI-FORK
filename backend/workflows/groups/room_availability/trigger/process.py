@@ -243,6 +243,7 @@ def process(state: WorkflowState) -> GroupResult:
     verbalizer_rooms = _verbalizer_rooms_payload(
         ranked_rooms,
         room_profiles,
+        available_dates_map,
         needs_products=product_tokens,
         limit=3,
     )
@@ -713,6 +714,7 @@ def _room_requirements_payload(entry: RankedRoom) -> Dict[str, List[str]]:
 def _verbalizer_rooms_payload(
     ranked: List[RankedRoom],
     profiles: Dict[str, Dict[str, Any]],
+    available_dates_map: Dict[str, List[str]],
     *,
     needs_products: Sequence[str],
     limit: int = 3,
@@ -740,6 +742,10 @@ def _verbalizer_rooms_payload(
         coffee_badge = profile.get("coffee_badge", "—")
         capacity_badge = profile.get("capacity_badge", "—")
         normalized_products = {str(token).strip().lower() for token in needs_products}
+        alt_dates = [
+            format_iso_date_to_ddmmyyyy(value) or value
+            for value in available_dates_map.get(entry.room, [])
+        ]
         payload.append(
             {
                 "id": entry.room,
@@ -751,6 +757,7 @@ def _verbalizer_rooms_payload(
                     "u-shape": badges_map.get("u-shape") if "u-shape" in normalized_products else badges_map.get("u-shape"),
                     "projector": badges_map.get("projector") if "projector" in normalized_products else badges_map.get("projector"),
                 },
+                "alternatives": alt_dates,
             }
         )
     return payload
