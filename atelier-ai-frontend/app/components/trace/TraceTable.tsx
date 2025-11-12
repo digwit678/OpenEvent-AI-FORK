@@ -4,12 +4,13 @@ import React from 'react';
 import { useDeferredValue, useEffect, useMemo } from 'react';
 import type { CSSProperties } from 'react';
 
-import type { GranularityLevel, GateProgress } from '../debug/utils';
+import type { GranularityLevel } from '../debug/utils';
 import { TRACE_COLUMNS, TraceColumnContext } from './ColumnDefs';
 import { TraceRowData, TraceSection } from './TraceTypes';
 import { useStickyScroll } from './useStickyScroll';
+import StepGroup from '../debug/StepGroup';
 
-type RenderedSection = TraceSection & { rowElements: JSX.Element[] };
+type RenderedSection = TraceSection & { rowElements: JSX.Element[]; dimmed?: boolean };
 
 interface TraceTableProps {
   sections: TraceSection[];
@@ -20,33 +21,6 @@ interface TraceTableProps {
   onRegisterScroller?: (element: HTMLDivElement | null) => void;
   timeTravelStepMajor?: number | null;
   activeTimestamp?: number | null;
-}
-
-function renderGateBadge(progress: GateProgress | undefined): JSX.Element | null {
-  if (!progress) {
-    return null;
-  }
-  const ratio = `${progress.completed}/${progress.total}`;
-  return (
-    <span className="trace-progress__badge" title={progress.breakdown.map((item) => `${item.met ? '✔' : '○'} ${item.label}`).join('\n')}>
-      {ratio}
-    </span>
-  );
-}
-
-function renderGateBreakdown(progress: GateProgress | undefined): JSX.Element | null {
-  if (!progress) {
-    return null;
-  }
-  return (
-    <div className="trace-progress__chips">
-      {progress.breakdown.map((item) => (
-        <span key={item.label} className={`trace-chip trace-chip--${item.met ? 'ok' : 'pending'}`} title={item.hint || item.label}>
-          {item.label}
-        </span>
-      ))}
-    </div>
-  );
 }
 
 export default function TraceTable({
@@ -151,58 +125,16 @@ export default function TraceTable({
   return (
     <div className="trace-table__container">
       <div className="trace-table__scroller" ref={scrollerRef}>
-        {renderedSections.map((section) => {
-          const future = section.dimmed;
-          const sectionClass = future ? 'trace-section trace-section--future' : 'trace-section';
-          return (
-            <section key={section.key} className={sectionClass}>
-              <header className="trace-section__header">
-                <div className="trace-section__title">
-                  <span>{section.title}</span>
-                  {renderGateBadge(section.gateProgress)}
-                </div>
-                {renderGateBreakdown(section.gateProgress)}
-                {section.infoChips?.length ? (
-                  <div className="trace-section__info">
-                    {section.infoChips.map((chip) => (
-                      <span key={chip} className="trace-chip trace-chip--info">{chip}</span>
-                    ))}
-                  </div>
-                ) : null}
-              </header>
-              <div className="trace-section__grid">
-                <div
-                  className="trace-table__header-row"
-                  style={{ gridTemplateColumns: columnTemplate, transform: `translateX(-${scrollLeft}px)` }}
-                >
-                  {TRACE_COLUMNS.map((column, index) => {
-                    const style: CSSProperties = {
-                      width: column.width,
-                      minWidth: column.width,
-                    };
-                    if (column.sticky) {
-                      style.position = 'sticky';
-                      style.left = stickyOffsets[index];
-                      style.zIndex = 3;
-                    }
-                    return (
-                      <div key={column.id} className={`trace-cell trace-cell__header trace-cell--${column.id}`} style={style}>
-                        {column.label}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="trace-table__body">
-                  {section.rowElements.length === 0 ? (
-                    <div className="trace-table__empty">No events recorded for this step.</div>
-                  ) : (
-                    section.rowElements
-                  )}
-                </div>
-              </div>
-            </section>
-          );
-        })}
+        {renderedSections.map((section) => (
+          <StepGroup
+            key={section.key}
+            section={section}
+            columns={TRACE_COLUMNS}
+            columnTemplate={columnTemplate}
+            stickyOffsets={stickyOffsets}
+            scrollLeft={scrollLeft}
+          />
+        ))}
       </div>
     </div>
   );

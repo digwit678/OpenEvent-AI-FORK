@@ -10,7 +10,7 @@ from backend.workflows.nlu import parse_billing_address
 
 
 def handle_billing_capture(state: WorkflowState, event_entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Process newly captured billing details during intake."""
+    """Process newly captured billing information during intake."""
 
     user_info = state.user_info or {}
     raw_address = user_info.get("billing_address")
@@ -25,14 +25,14 @@ def handle_billing_capture(state: WorkflowState, event_entry: Dict[str, Any]) ->
     parsed, missing = parse_billing_address(raw_address, fallback_name=fallback_name)
     parsed.setdefault("raw", raw_address.strip() if isinstance(raw_address, str) else raw_address)
 
-    # Avoid re-processing the same snippet on next turns.
+    # Prevent re-processing on subsequent turns
     user_info.pop("billing_address", None)
 
     if missing:
         prompt = billing_prompt_for_missing_fields(missing)
         notice_lines = [
             "Thanks for sharing your billing details.",
-            "",
+            "",  # blank line for readability
             prompt,
         ]
         body = "\n".join(line for line in notice_lines if line)

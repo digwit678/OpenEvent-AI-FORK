@@ -1,0 +1,95 @@
+{
+  "suite": "flow_B_shortcut",
+  "initial_clock": "2025-11-11T10:00:00+01:00",
+  "steps": [
+    {
+      "turn": 1,
+      "msg_in": {
+        "subject": "Booking request",
+        "body": "Please book 30 guests on 14.02.2026 at 19:00. Long table, three-course with wine, light background music."
+      },
+      "expect": {
+        "intent": "event_intake_shortcut",
+        "user_info": {
+          "participants": 30,
+          "date": "2026-02-14",
+          "start_time": "19:00"
+        },
+        "trace": {
+          "subloops_contains": [
+            "shortcut"
+          ]
+        },
+        "db_assert": {
+          "gatekeeping": {
+            "attendees": 30,
+            "date": "14.02.2026"
+          }
+        }
+      }
+    },
+    {
+      "turn": 2,
+      "system_call": "room_status_on_date",
+      "args": {
+        "date": "2026-02-14T19:00:00+01:00"
+      },
+      "expect": {
+        "rooms_min": 2,
+        "res": {
+          "assistant_draft": {
+            "headers": [
+              "Rooms for 30 people on 14.02.2026"
+            ],
+            "body_order": [
+              "14.02.2026 19:00 is set.",
+              "For 30 people on 14.02.2026, these rooms are available (ranked):",
+              "Room B",
+              "Room C"
+            ],
+            "contains_all": [
+              "Room B — Coffee ✓ · U-shape ~ · Projector ✓ · Capacity ✓ (max 32)",
+              "Room C — Coffee ✗ · U-shape ✗ · Projector ~ · Capacity ✗ (max 28)"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "turn": 3,
+      "msg_in": {
+        "body": "Room B looks good. Send the offer."
+      },
+      "simulate_intent": "room_choice",
+      "expect": {
+        "intent": "room_choice"
+      }
+    },
+    {
+      "turn": 4,
+      "system_call": "build_offer",
+      "args": {
+        "room_id": "R-B",
+        "date": "2026-02-14",
+        "pax": 30
+      },
+      "expect": {
+        "status": "Option",
+        "res": {
+          "assistant_draft": {
+            "headers_subset": [
+              "Offer"
+            ],
+            "contains_all": [
+              "Offer sent",
+              "status is Option",
+              "Room B",
+              "14.02.2026",
+              "30 guests"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

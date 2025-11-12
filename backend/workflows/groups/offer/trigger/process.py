@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from backend.workflows.common.requirements import merge_client_profile, requirements_hash
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
+from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.debug.hooks import trace_db_write, trace_detour, trace_gate, trace_state, trace_step
 from backend.debug.trace import set_hil_open
 from backend.utils.profiler import profile_step
@@ -98,6 +99,7 @@ def process(state: WorkflowState) -> GroupResult:
                 "offer_id": offer_id,
             }
         ],
+        "headers": ["Offer"],
     }
     state.add_draft_message(draft_message)
 
@@ -150,6 +152,33 @@ def process(state: WorkflowState) -> GroupResult:
         "persisted": True,
     }
     return GroupResult(action="offer_draft_prepared", payload=payload, halt=True)
+
+
+def build_offer(event_id: str, room_id: str, date_iso: str, pax: int) -> Dict[str, Any]:
+    """Render a deterministic offer summary used by the YAML flow harness."""
+
+    display_date = format_iso_date_to_ddmmyyyy(date_iso) or date_iso
+    room_label = room_id.replace("R-", "Room ") if room_id.startswith("R-") else room_id
+    body_lines = [
+        f"Offer sent for {room_label} on {display_date} for {pax} guests.",
+        "The status is Option. Please review and confirm.",
+    ]
+    body = "\n".join(body_lines)
+    assistant_draft = {"headers": ["Offer"], "body": body}
+    return {
+        "action": "send_reply",
+        "event_id": event_id,
+        "status": "Option",
+        "offer": {
+            "room_id": room_id,
+            "date": date_iso,
+            "pax": pax,
+        },
+        "res": {
+            "assistant_draft": assistant_draft,
+            "assistant_draft_text": body,
+        },
+    }
 
 
 def _evaluate_preconditions(

@@ -272,6 +272,60 @@ def _enqueue_hil_tasks(state: WorkflowState, event_entry: Dict[str, Any]) -> Non
     set_hil_open(thread_id, bool(pending_records))
 
 
+def _hil_action_type_for_step(step_id: Optional[int]) -> Optional[str]:
+    if step_id == 2:
+        return "ask_for_date_enqueued"
+    if step_id == 3:
+        return "room_options_enqueued"
+    if step_id == 4:
+        return "offer_enqueued"
+    return None
+
+
+def approve_task_and_send(task_id: str, db_path: Path = DB_PATH) -> Dict[str, Any]:
+    """[OpenEvent Action] Approve a pending HIL task and emit the send_reply payload used in tests."""
+
+    path = Path(db_path)
+    lock_path = _resolve_lock_path(path)
+    db = db_io.load_db(path, lock_path=lock_path)
+    update_task_status(db, task_id, TaskStatus.APPROVED)
+
+    target_event: Optional[Dict[str, Any]] = None
+    target_request: Optional[Dict[str, Any]] = None
+    for event in db.get("events", []):
+        pending = event.get("pending_hil_requests") or []
+        for request in pending:
+            if request.get("task_id") == task_id:
+                target_event = event
+                target_request = request
+                pending.remove(request)
+                break
+        if target_event:
+            break
+
+    if not target_event or not target_request:
+        raise ValueError(f"Task {task_id} not found in pending approvals.")
+
+    db_io.save_db(db, path, lock_path=lock_path)
+
+    draft = target_request.get("draft") or {}
+    body_text = draft.get("body_markdown") or draft.get("body") or ""
+    headers = draft.get("headers") or []
+    assistant_draft = {"headers": headers, "body": body_text}
+
+    return {
+        "action": "send_reply",
+        "event_id": target_event.get("event_id"),
+        "thread_state": target_event.get("thread_state"),
+        "draft": draft,
+        "res": {
+            "assistant_draft": assistant_draft,
+            "assistant_draft_text": body_text,
+        },
+        "actions": [{"type": "send_reply"}],
+    }
+
+
 @profile_step("workflow.router.process_msg")
 def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     """[Trigger] Process an inbound message through workflow groups A–C."""
@@ -477,6 +531,10 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
     """[Trigger] Normalise final payload with workflow metadata."""
 
     payload = result.merged()
+    if state.user_info:
+        payload.setdefault("user_info", dict(state.user_info))
+    if state.intent_detail:
+        payload["intent_detail"] = state.intent_detail
     event_entry = state.event_entry
     if event_entry:
         payload.setdefault("event_id", event_entry.get("event_id"))
@@ -486,12 +544,42 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
         payload.setdefault("stage", stage_payload(event_entry))
     elif state.thread_state:
         payload["thread_state"] = state.thread_state
+    res_meta = payload.setdefault("res", {})
+    actions_out = payload.setdefault("actions", [])
+    requires_approval_flags: List[bool] = []
     if state.draft_messages:
         payload["draft_messages"] = state.draft_messages
         if event_entry:
             _enqueue_hil_tasks(state, event_entry)
+        requires_approval_flags = [draft.get("requires_approval", True) for draft in state.draft_messages]
     else:
         payload.setdefault("draft_messages", [])
+    if state.draft_messages:
+        latest_draft = state.draft_messages[-1]
+        draft_body = latest_draft.get("body_markdown") or latest_draft.get("body") or ""
+        draft_headers = list(latest_draft.get("headers") or [])
+        res_meta["assistant_draft"] = {"headers": draft_headers, "body": draft_body}
+        res_meta["assistant_draft_text"] = draft_body
+    else:
+        res_meta.setdefault("assistant_draft", None)
+        res_meta.setdefault("assistant_draft_text", "")
+    general_qa_payload = state.turn_notes.get("general_qa")
+    if general_qa_payload:
+        res_meta["general_qa"] = general_qa_payload
+    trace_payload = payload.setdefault("trace", {})
+    trace_payload["subloops"] = list(state.subloops_trace)
+    if state.draft_messages:
+        if any(not flag for flag in requires_approval_flags):
+            actions_out.append({"type": "send_reply"})
+        elif event_entry:
+            hil_type = _hil_action_type_for_step(state.draft_messages[-1].get("step"))
+            if hil_type:
+                hil_payload = {
+                    "event_id": event_entry.get("event_id"),
+                }
+                if event_entry.get("candidate_dates"):
+                    hil_payload["suggested_dates"] = list(event_entry.get("candidate_dates"))
+                actions_out.append({"type": hil_type, "payload": hil_payload})
     if state.telemetry:
         payload["telemetry"] = state.telemetry.to_payload()
     return payload

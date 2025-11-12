@@ -101,8 +101,10 @@ def test_room_process_structured_payload(tmp_path, monkeypatch):
     assert first_block["type"] == "room_menu"
     assert any(row["room"] == "Room A" for row in first_block["rows"])
     assert all("hint" in row for row in first_block["rows"])
+    assert all("requirements" in row for row in first_block["rows"])
     assert any(action["type"] == "select_room" for action in draft["actions"])
     assert all("hint" in action for action in draft["actions"])
+    assert all("requirements" in action for action in draft["actions"])
 
 
 def test_room_process_skips_when_hash_cached(tmp_path, monkeypatch):
