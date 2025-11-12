@@ -1,0 +1,49 @@
+{
+  "suite": "guard_no_billing_before_room",
+  "initial_clock": "2025-11-25T09:00:00+01:00",
+  "steps": [
+    {
+      "turn": 1,
+      "msg_in": {
+        "subject": "December workshop",
+        "body": "Hi team,\nFull-day workshop in December, second week (around 10/11), ~22 people. We need a U-shape setup, projector, and coffee service.\nRegards,\nTest Client"
+      },
+      "expect": {}
+    },
+    {
+      "turn": "1a",
+      "gui_action": {
+        "approve_task": "ask_for_date_enqueued"
+      }
+    },
+    {
+      "turn": 2,
+      "msg_in": {
+        "body": "10.12.2025 works."
+      },
+      "expect": {
+        "intent": "event_update",
+        "user_info": {
+          "date": "2025-12-10"
+        }
+      }
+    },
+    {
+      "turn": "2a",
+      "system_call": "room_status_on_date",
+      "args": {
+        "date": "2025-12-10"
+      },
+      "expect": {
+        "rooms_min": 3,
+        "res": {
+          "assistant_draft": {
+            "not_contains_all": [
+              "billing address"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
