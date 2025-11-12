@@ -1,0 +1,121 @@
+{
+  "suite": "flow_B_shortcut",
+  "initial_clock": "2025-11-11T10:00:00+01:00",
+  "steps": [
+    {
+      "turn": 1,
+      "msg_in": {
+        "subject": "Booking request",
+        "body": "Please book 30 guests on 14.02.2026 at 19:00. Long table, three-course with wine, light background music."
+      },
+      "simulate_intent": "event_intake_shortcut",
+      "expect": {
+        "intent": "event_intake_shortcut",
+        "user_info": {
+          "participants": 30,
+          "date": "2026-02-14T19:00:00+01:00"
+        },
+        "actions": [
+          {
+            "type": "send_reply"
+          }
+        ],
+        "trace": {
+          "subloops": [
+            "shortcut"
+          ]
+        },
+        "res": {
+          "assistant_draft": {
+            "headers": [
+              "Shortcut"
+            ],
+            "contains": [
+              "14.02.2026"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "turn": 2,
+      "system_call": "room_status_on_date",
+      "args": {
+        "date": "2026-02-14"
+      },
+      "stub_returns": {
+        "rooms": [
+          {
+            "id": "R-B",
+            "name": "Room B",
+            "capacity": 32,
+            "matched": [
+              "Long dining table",
+              "Background music"
+            ],
+            "missing": []
+          },
+          {
+            "id": "R-C",
+            "name": "Room C",
+            "capacity": 28,
+            "matched": [
+              "Background music"
+            ],
+            "missing": [
+              "Long dining table"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "rooms_min": 2,
+        "res": {
+          "assistant_draft": {
+            "headers": [
+              "Rooms for 30 people on 14.02.2026"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "turn": 3,
+      "msg_in": {
+        "body": "Room B looks good. Send the offer."
+      },
+      "simulate_intent": "room_choice",
+      "expect": {
+        "intent": "room_choice",
+        "actions": [
+          {
+            "type": "send_reply"
+          }
+        ]
+      }
+    },
+    {
+      "turn": 4,
+      "system_call": "build_offer",
+      "args": {
+        "room_id": "R-B",
+        "date": "2026-02-14",
+        "pax": 30
+      },
+      "expect": {
+        "status": "Option",
+        "res": {
+          "assistant_draft": {
+            "headers": [
+              "Offer"
+            ],
+            "contains": [
+              "Room B",
+              "14.02.2026"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

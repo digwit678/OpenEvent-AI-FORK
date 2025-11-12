@@ -11,6 +11,7 @@
         "workshop": 28
       },
       "features": ["stage", "screen", "projector", "parking"],
+      "services": ["coffee service", "water station"],
       "calendar_id": "atelier-room-a",
       "buffer_before_min": 30,
       "buffer_after_min": 30,
@@ -27,6 +28,7 @@
         "workshop": 32
       },
       "features": ["screen", "projector", "sound_system", "parking"],
+      "services": ["coffee service"],
       "calendar_id": "atelier-room-b",
       "buffer_before_min": 30,
       "buffer_after_min": 30,
@@ -43,6 +45,7 @@
         "workshop": 40
       },
       "features": ["stage", "sound_system", "screen"],
+      "services": ["water station"],
       "calendar_id": "atelier-room-c",
       "buffer_before_min": 45,
       "buffer_after_min": 45,
@@ -58,6 +61,7 @@
         "workshop": 22
       },
       "features": ["screen", "projector"],
+      "services": ["coffee service"],
       "calendar_id": "atelier-room-d",
       "buffer_before_min": 20,
       "buffer_after_min": 20,
@@ -73,6 +77,7 @@
         "banquet": 80
       },
       "features": ["stage", "sound_system", "parking"],
+      "services": ["coffee service"],
       "calendar_id": "atelier-room-e",
       "buffer_before_min": 60,
       "buffer_after_min": 60,
@@ -89,6 +94,7 @@
         "workshop": 30
       },
       "features": ["screen", "projector", "parking"],
+      "services": ["coffee service"],
       "calendar_id": "atelier-room-f",
       "buffer_before_min": 30,
       "buffer_after_min": 30,

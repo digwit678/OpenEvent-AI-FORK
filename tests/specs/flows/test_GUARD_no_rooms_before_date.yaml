@@ -1,0 +1,32 @@
+{
+  "suite": "guard_no_rooms_before_date",
+  "initial_clock": "2025-11-25T09:00:00+01:00",
+  "steps": [
+    {
+      "turn": 1,
+      "msg_in": {
+        "subject": "Week 2 workshop",
+        "body": "Hi team,\nFull-day workshop in December, second week (around 10/11), ~22 people. We need a U-shape setup, projector, and coffee service.\nThanks,\nTest Client"
+      },
+      "expect": {}
+    },
+    {
+      "turn": "1a",
+      "gui_action": {
+        "approve_task": "ask_for_date_enqueued"
+      },
+      "expect": {
+        "res": {
+          "assistant_draft": {
+            "headers_subset": [
+              "Date options for Week 2 of December"
+            ],
+            "not_contains_all": [
+              "Room "
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

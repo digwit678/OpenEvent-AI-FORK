@@ -1,98 +1,265 @@
 from __future__ import annotations
 
+import difflib
+import json
 import re
-from typing import Any, Dict, Iterable, List, Optional, Set
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+from backend.services.products import list_product_records
+from backend.prefs.semantics import normalize_catering, normalize_products
+
+PreferencePayload = Dict[str, Any]
+
+
+def extract_preferences(user_info: Dict[str, Any]) -> Optional[PreferencePayload]:
+    """
+    Normalise structured product/menu preferences captured during intake and
+    derive quick room recommendations so downstream steps can reuse them.
+    """
+
+    if not isinstance(user_info, dict):
+        return None
+
+    raw_wish_products = _collect_wish_products(user_info)
+    catering_sources: List[str] = []
+    catering_pref = user_info.get("catering")
+    if isinstance(catering_pref, str) and catering_pref.strip():
+        catering_sources.append(catering_pref)
+    catering_sources.extend(raw_wish_products)
+    catering_tokens = normalize_catering(catering_sources)
+    catering_lower = {token.lower() for token in catering_tokens}
+
+    wish_products = [item for item in raw_wish_products if item.lower() not in catering_lower]
+
+    product_sources: List[str] = list(wish_products)
+    layout = user_info.get("layout")
+    if isinstance(layout, str) and layout.strip():
+        layout_lower = layout.strip().lower()
+        if layout_lower not in {item.lower() for item in product_sources}:
+            product_sources.append(layout)
+    notes = user_info.get("notes")
+    if isinstance(notes, str) and notes.strip():
+        product_sources.append(notes)
+
+    product_tokens = normalize_products(product_sources)
+
+    if not wish_products and product_tokens:
+        wish_products = [token.title() for token in product_tokens]
+
+    keywords = _collect_keywords(user_info, wish_products)
+
+    if not wish_products and not keywords and not catering_tokens and not product_tokens:
+        return None
+
+    default_hint = wish_products[0] if wish_products else (product_tokens[0].title() if product_tokens else "Products available")
+    preferences: PreferencePayload = {
+        "wish_products": wish_products,
+        "keywords": keywords,
+        "default_hint": default_hint,
+    }
+    if catering_tokens:
+        preferences["catering"] = catering_tokens
+    if product_tokens:
+        preferences["products"] = product_tokens
+
+    scoring_wishes = wish_products or [token.title() for token in product_tokens]
+    if scoring_wishes:
+        recommendations = _score_rooms_by_products(scoring_wishes)
+        if recommendations:
+            preferences["room_recommendations"] = recommendations
+            preferences["room_similarity"] = {entry["room"]: entry["score"] for entry in recommendations}
+            preferences["room_match_breakdown"] = {
+                entry["room"]: {"matched": entry["matched"], "missing": entry["missing"]}
+                for entry in recommendations
+            }
+
+    return preferences
+
+
+def _collect_wish_products(user_info: Dict[str, Any]) -> List[str]:
+    result: List[str] = []
+
+    def _append(values: Iterable[str]) -> None:
+        for value in values:
+            cleaned = value.strip()
+            if cleaned and cleaned.lower() not in {"none", "not specified"} and cleaned not in result:
+                result.append(cleaned)
+
+    raw_wishes = user_info.get("wish_products")
+    _append(_normalise_sequence(raw_wishes))
+
+    products_add = user_info.get("products_add")
+    if isinstance(products_add, list):
+        extracted: List[str] = []
+        for entry in products_add:
+            if isinstance(entry, dict) and entry.get("name"):
+                extracted.append(str(entry["name"]))
+            elif isinstance(entry, str):
+                extracted.append(entry)
+        _append(extracted)
+
+    catering_pref = user_info.get("catering")
+    if isinstance(catering_pref, str) and catering_pref.strip():
+        _append([catering_pref])
+
+    notes = user_info.get("notes")
+    if isinstance(notes, str) and notes.strip():
+        fragments = re.split(r"(?:[\n\r]+|[•\-–]\s*)", notes)
+        cleaned = [fragment.strip(" .") for fragment in fragments if fragment and fragment.strip()]
+        _append(cleaned)
+
+    return result[:10]
+
+
+def _collect_keywords(user_info: Dict[str, Any], wish_products: Sequence[str]) -> List[str]:
+    tokens: List[str] = []
+
+    def _extend(text: Optional[Any]) -> None:
+        if not text:
+            return
+        for token in _tokenize(str(text)):
+            if len(token) >= 3 and token not in tokens:
+                tokens.append(token)
+
+    for wish in wish_products:
+        _extend(wish)
+
+    for field in ("notes", "catering", "layout", "type"):
+        _extend(user_info.get(field))
+
+    return tokens[:20]
+
+
+def _normalise_sequence(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        chunks = re.split(r"[,\n;]+", value)
+        return [chunk.strip() for chunk in chunks if chunk.strip()]
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def _tokenize(text: str) -> List[str]:
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def _score_rooms_by_products(wish_products: Sequence[str]) -> List[Dict[str, Any]]:
+    catalog = _room_catalog()
+    recommendations: List[Dict[str, Any]] = []
+
+    for room, data in catalog.items():
+        phrases = data["phrases"]
+        score = 0.0
+        matched: List[str] = []
+        missing: List[str] = []
+        for wish in wish_products:
+            ratio, label = _best_phrase_match(wish, phrases)
+            if ratio >= 0.85:
+                score += 1.0
+                matched.append(label or wish)
+            elif ratio >= 0.65:
+                score += 0.5
+                matched.append(label or wish)
+            else:
+                missing.append(wish)
+        recommendations.append(
+            {
+                "room": room,
+                "score": round(score, 3),
+                "matched": matched,
+                "missing": missing,
+            }
+        )
+
+    recommendations.sort(key=lambda entry: (-entry["score"], entry["room"]))
+    return recommendations[:5]
+
+
+def _best_phrase_match(needle: str, phrases: Dict[str, str]) -> Tuple[float, Optional[str]]:
+    if not needle:
+        return 0.0, None
+    target = _normalise_phrase(needle)
+    if not target:
+        return 0.0, None
+    best_ratio = 0.0
+    best_label: Optional[str] = None
+    for variant, label in phrases.items():
+        if not variant:
+            continue
+        if target == variant:
+            return 1.0, label
+        if target in variant or variant in target:
+            ratio = 0.92
+        else:
+            ratio = difflib.SequenceMatcher(a=target, b=variant).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_label = label
+    return best_ratio, best_label
+
+
+def _normalise_phrase(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+@lru_cache(maxsize=1)
+def _room_catalog() -> Dict[str, Dict[str, Any]]:
+    rooms = _load_rooms()
+    room_products = {room["name"]: {"phrases": {}, "features": room.get("features") or []} for room in rooms}
+    room_ids = {room.get("id", "").strip().lower(): room["name"] for room in rooms if room.get("id")}
+    room_aliases = {room["name"].strip().lower(): room["name"] for room in rooms}
+    product_records = list_product_records()
+
+    for record in product_records:
+        variants = [record.name] + [syn for syn in record.synonyms if syn]
+        variants = [variant for variant in variants if variant]
+        base_tokens = set()
+        for variant in variants:
+            base_tokens.update(_tokenize(variant))
+        if record.category:
+            base_tokens.update(_tokenize(record.category))
+
+        unavailable = {
+            room_ids.get(str(room_id).strip().lower())
+            or room_aliases.get(str(room_id).strip().lower())
+            for room_id in record.unavailable_in
+        }
+        available_rooms = [room for room in room_products if room not in unavailable]
+
+        for room in available_rooms:
+            phrases = room_products[room]["phrases"]
+            for variant in variants:
+                normalized = _normalise_phrase(variant)
+                if normalized:
+                    phrases.setdefault(normalized, record.name)
+            for token in base_tokens:
+                if len(token) >= 3:
+                    phrases.setdefault(token, record.name)
+
+    return room_products
+
+
+@lru_cache(maxsize=1)
+def _load_rooms() -> List[Dict[str, Any]]:
+    path = Path(__file__).resolve().parents[2] / "rooms.json"
+    with path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    rooms = payload.get("rooms")
+    if not isinstance(rooms, list):
+        return []
+    normalised: List[Dict[str, Any]] = []
+    for entry in rooms:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        if not name:
+            continue
+        normalised.append(entry)
+    return normalised
+
 
 __all__ = ["extract_preferences"]
-
-_TOKEN_SPLIT = re.compile(r"[,\n;/]+")
-_WORD_SPLIT = re.compile(r"[^a-z0-9]+", re.IGNORECASE)
-
-_DEFAULT_HINT = "catering available"
-
-
-def _clean_tokens(raw: Optional[str]) -> List[str]:
-    if not raw:
-        return []
-    tokens: List[str] = []
-    for segment in _TOKEN_SPLIT.split(str(raw)):
-        lowered = segment.strip().lower()
-        if not lowered:
-            continue
-        tokens.append(lowered)
-    return tokens
-
-
-def _normalise_keyword(text: str) -> Optional[str]:
-    cleaned = _WORD_SPLIT.sub(" ", text or "").strip().lower()
-    if not cleaned:
-        return None
-    if len(cleaned) <= 2:
-        return None
-    return cleaned
-
-
-def _extend_keywords(target: Set[str], values: Iterable[str]) -> None:
-    for value in values:
-        normalised = _normalise_keyword(value)
-        if normalised:
-            target.add(normalised)
-
-
-def extract_preferences(user_info: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Derive lightweight room and catering preferences from captured user info.
-
-    The output structure:
-        {
-            "wish_products": ["wine pairing", ...],
-            "keywords": ["red wine", "long table"],
-            "default_hint": "catering available",
-        }
-    """
-
-    preferences: Dict[str, Any] = {"default_hint": _DEFAULT_HINT}
-    wish_products: List[str] = []
-    keywords: Set[str] = set()
-
-    products_field = user_info.get("products_add") or user_info.get("wishlist_products")
-    if isinstance(products_field, list):
-        for item in products_field:
-            if isinstance(item, dict):
-                name = item.get("name")
-            else:
-                name = item
-            if not name:
-                continue
-            label = str(name).strip()
-            if not label:
-                continue
-            wish_products.append(label)
-            normalized = _normalise_keyword(label)
-            if normalized:
-                keywords.add(normalized)
-
-    catering_value = user_info.get("catering") or user_info.get("catering_preference")
-    catering_value = catering_value or user_info.get("catering_preferences")
-    if catering_value:
-        _extend_keywords(keywords, _clean_tokens(str(catering_value)))
-
-    layout_pref = user_info.get("layout") or user_info.get("seating_layout")
-    if layout_pref:
-        normalized = _normalise_keyword(str(layout_pref))
-        if normalized:
-            keywords.add(normalized)
-
-    requirement_tokens: List[str] = []
-    for field in ("notes", "special_requirements", "requirements_text"):
-        value = user_info.get(field)
-        if value:
-            requirement_tokens.extend(_clean_tokens(str(value)))
-    if requirement_tokens:
-        _extend_keywords(keywords, requirement_tokens)
-
-    if wish_products:
-        preferences["wish_products"] = list(dict.fromkeys(wish_products))
-    if keywords:
-        preferences["keywords"] = list(sorted(keywords))
-    return preferences

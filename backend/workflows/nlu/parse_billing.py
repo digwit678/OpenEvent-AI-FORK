@@ -3,189 +3,213 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
-BillingDetails = Dict[str, Optional[str]]
+BillingFields = Dict[str, Optional[str]]
 
-_POSTAL_CITY_RE = re.compile(
-    r"^(?:(?P<prefix>[A-Za-z]{2})[-\s])?(?P<postal>\d{3,6})\s+(?P<city>[A-Za-zÄÖÜäöüßéèàçëïöü\-.'\s]+)$"
-)
-_VAT_RE = re.compile(r"(vat|mwst|tva|iva|uid)[:\s\-]*([A-Z0-9\-. ]+)", re.IGNORECASE)
+_REQUIRED_FIELDS = ("name_or_company", "street", "postal_code", "city", "country")
+
 _COUNTRY_ALIASES = {
-    "switzerland": "Switzerland",
-    "schweiz": "Switzerland",
-    "suisse": "Switzerland",
-    "svizzera": "Switzerland",
-    "ch": "Switzerland",
-    "germany": "Germany",
-    "deutschland": "Germany",
-    "france": "France",
-    "fr": "France",
-    "italy": "Italy",
-    "italia": "Italy",
-    "austria": "Austria",
-    "österreich": "Austria",
-    "liechtenstein": "Liechtenstein",
-    "uk": "United Kingdom",
-    "united kingdom": "United Kingdom",
-    "england": "United Kingdom",
-    "usa": "United States",
-    "united states": "United States",
+    "Switzerland": {"switzerland", "schweiz", "suisse", "svizzera", "ch"},
+    "Germany": {"germany", "deutschland", "de"},
+    "France": {"france", "fr", "république française", "republique francaise"},
+    "Italy": {"italy", "italia", "it"},
+    "Austria": {"austria", "österreich", "osterreich", "at"},
+    "Liechtenstein": {"liechtenstein", "li"},
 }
+_COUNTRY_ALIAS_FLAT = {alias for group in _COUNTRY_ALIASES.values() for alias in group}
+
+_POSTAL_CITY_COMBINED = re.compile(
+    r"^(?:CH[-\s])?(?P<postal>\d{4,6})[\s,]+(?P<city>[A-Za-zÀ-ÖØ-öø-ÿ' \-]+)$",
+    re.IGNORECASE,
+)
+_POSTAL_CODE = re.compile(r"(?:CH[-\s])?(?P<postal>\d{4,6})")
+_VAT_PATTERNS = [
+    re.compile(r"\bCHE[-\s]?\d{3}\.\d{3}\.\d{3}(?:\s*MWST)?\b", re.IGNORECASE),
+    re.compile(r"\b(?:VAT|UID|TVA|IVA)\s*[:\-]?\s*([A-Z0-9\.\- ]{5,})", re.IGNORECASE),
+]
+_LABELED_FIELD = re.compile(
+    r"^\s*(?P<label>[A-Za-z ]{3,})\s*[:=\-]\s*(?P<value>.+?)\s*$",
+    re.IGNORECASE,
+)
+_STREET_PATTERN = re.compile(r"^\s*(?P<street>.+?\d+\w*(?:[ /-]\w+)*)\s*$")
 
 
-def parse_billing_address(raw: Optional[str], *, fallback_name: Optional[str] = None) -> Tuple[BillingDetails, List[str]]:
+def parse_billing_address(raw: Optional[str], *, fallback_name: Optional[str] = None) -> Tuple[BillingFields, List[str]]:
     """
-    Best-effort normaliser for free-form billing addresses.
+    Parse common billing-address formats into structured fields.
 
-    Returns structured fields plus a list of required fields that are still missing.
+    Returns (fields, missing_required_fields).
     """
 
-    text = _normalise_raw(raw)
-    tokens = _tokenise_lines(text)
-
-    details: BillingDetails = {
+    details: BillingFields = {
         "name_or_company": None,
         "street": None,
         "postal_code": None,
         "city": None,
         "country": None,
         "vat": None,
-        "raw": text or None,
+        "raw": raw.strip() if isinstance(raw, str) else raw,
     }
 
-    vat_value = _extract_vat(tokens)
-    if vat_value:
-        details["vat"] = vat_value
-
-    country_value = _extract_country(tokens)
-    if country_value:
-        details["country"] = country_value
-
-    postal, city = _extract_postal_city(tokens)
-    if postal:
-        details["postal_code"] = postal
-    if city:
-        details["city"] = city
-
-    street = _extract_street(tokens)
-    if street:
-        details["street"] = street
-
-    name = _extract_name(tokens, fallback_name)
-    if name:
-        details["name_or_company"] = name
-
-    required = ["name_or_company", "street", "postal_code", "city", "country"]
-    missing = [field for field in required if not details.get(field)]
-    return details, missing
-
-
-def _normalise_raw(raw: Optional[object]) -> str:
-    if raw is None:
-        return ""
-    if isinstance(raw, str):
-        return raw.strip()
-    if isinstance(raw, dict):
-        ordered: List[str] = []
-        for key in ("name", "company", "street", "postal_code", "city", "country", "vat"):
-            value = raw.get(key) if isinstance(raw, dict) else None
-            if value:
-                ordered.append(str(value))
-        return "\n".join(ordered).strip()
-    if isinstance(raw, (list, tuple, set)):
-        return "\n".join(str(value).strip() for value in raw if value).strip()
-    return str(raw).strip()
-
-
-def _tokenise_lines(text: str) -> List[str]:
+    text = _normalise_text(raw)
     if not text:
-        return []
-    normalised = text.replace("\r\n", "\n").replace(",", "\n").replace(";", "\n")
-    tokens = [line.strip() for line in normalised.split("\n")]
-    return [line for line in tokens if line]
+        return details, list(_missing_fields(details, fallback_name))
+
+    segments = _split_segments(text)
+    labeled = _extract_labeled_values(segments)
+
+    details["vat"] = _extract_vat(text, labeled)
+
+    details["postal_code"], details["city"] = _extract_postal_city(segments, labeled)
+    details["country"] = _extract_country(segments, labeled)
+
+    details["street"] = _extract_street(segments, labeled)
+    details["name_or_company"] = _extract_name(segments, labeled, fallback_name)
+
+    missing_fields = list(_missing_fields(details, fallback_name))
+    return details, missing_fields
 
 
-def _extract_vat(tokens: List[str]) -> Optional[str]:
-    for idx, line in enumerate(list(tokens)):
-        match = _VAT_RE.search(line)
+def _normalise_text(raw: Optional[str]) -> str:
+    if not isinstance(raw, str):
+        return ""
+    text = raw.replace("\r", "\n")
+    return text.strip()
+
+
+def _split_segments(text: str) -> List[str]:
+    interim = text.replace(";", "\n")
+    interim = interim.replace(",", "\n")
+    lines = [line.strip() for line in interim.splitlines() if line.strip()]
+    return lines
+
+
+def _extract_labeled_values(segments: Sequence[str]) -> Dict[str, str]:
+    labeled: Dict[str, str] = {}
+    for line in segments:
+        match = _LABELED_FIELD.match(line)
+        if not match:
+            continue
+        label = match.group("label").strip().lower()
+        value = match.group("value").strip()
+        if not value:
+            continue
+        labeled[label] = value
+    return labeled
+
+
+def _extract_vat(text: str, labeled: Dict[str, str]) -> Optional[str]:
+    for key in ("vat", "uid", "tva", "iva"):
+        if key in labeled:
+            return labeled[key]
+    for pattern in _VAT_PATTERNS:
+        match = pattern.search(text)
         if match:
-            tokens.pop(idx)
-            value = match.group(2).strip()
-            return value or None
-        if line.upper().startswith("CHE-") or line.upper().startswith("CH-"):
-            tokens.pop(idx)
-            return line.strip()
+            return match.group(0)
     return None
 
 
-def _extract_country(tokens: List[str]) -> Optional[str]:
-    for idx in range(len(tokens) - 1, -1, -1):
-        text = tokens[idx]
-        normalised = _normalise_country(text)
-        if normalised:
-            tokens.pop(idx)
-            return normalised
+def _extract_postal_city(
+    segments: Sequence[str],
+    labeled: Dict[str, str],
+) -> Tuple[Optional[str], Optional[str]]:
+    postal = None
+    city = None
+
+    if "postal code" in labeled or "zip" in labeled:
+        candidate = labeled.get("postal code") or labeled.get("zip")
+        if candidate:
+            match = _POSTAL_CODE.search(candidate)
+            if match:
+                postal = match.group("postal")
+    if "city" in labeled:
+        city = labeled["city"]
+
+    if postal and city:
+        return postal, city
+
+    for line in segments:
+        combined = _POSTAL_CITY_COMBINED.match(line)
+        if combined:
+            return combined.group("postal"), combined.group("city").strip()
+
+    for idx, line in enumerate(segments):
+        number_only = _POSTAL_CODE.fullmatch(line)
+        if number_only and idx + 1 < len(segments):
+            next_line = segments[idx + 1]
+            if not _LABELED_FIELD.match(next_line):
+                return number_only.group("postal"), next_line
+
+    return postal, city
+
+
+def _extract_country(segments: Sequence[str], labeled: Dict[str, str]) -> Optional[str]:
+    country = labeled.get("country")
+    if country:
+        return _normalise_country(country)
+
+    for line in reversed(segments):
+        normalized = _normalise_country(line)
+        if normalized:
+            return normalized
     return None
 
 
-def _normalise_country(text: str) -> Optional[str]:
-    key = text.strip().lower()
-    key = key.replace(".", "")
-    if not key:
-        return None
-    if key in _COUNTRY_ALIASES:
-        return _COUNTRY_ALIASES[key]
-    if len(key) > 5 and key.endswith("land"):
-        return text.strip().title()
-    return None
+def _extract_street(segments: Sequence[str], labeled: Dict[str, str]) -> Optional[str]:
+    for label in ("street", "address", "billing address", "address line 1"):
+        if label in labeled:
+            return labeled[label]
 
-
-def _extract_postal_city(tokens: List[str]) -> Tuple[Optional[str], Optional[str]]:
-    for idx in range(len(tokens) - 1, -1, -1):
-        line = tokens[idx]
-        match = _POSTAL_CITY_RE.match(line)
-        if match:
-            tokens.pop(idx)
-            postal = match.group("postal")
-            city = match.group("city").strip().title()
-            return postal, city
-        split = _split_numeric_suffix(line)
-        if split:
-            tokens.pop(idx)
-            return split
-    return None, None
-
-
-def _split_numeric_suffix(line: str) -> Optional[Tuple[str, str]]:
-    digits = re.findall(r"\d{3,6}", line)
-    if not digits:
-        return None
-    postal = digits[-1]
-    before, _, after = line.partition(postal)
-    city = after.strip() or before.strip()
-    if city:
-        return postal, city.title()
-    return None
-
-
-def _extract_street(tokens: List[str]) -> Optional[str]:
-    for idx, line in enumerate(list(tokens)):
-        if _looks_like_street(line):
-            tokens.pop(idx)
+    for line in segments:
+        if _LABELED_FIELD.match(line):
+            continue
+        if _POSTAL_CODE.search(line):
+            continue
+        if line.isdigit():
+            continue
+        if re.search(r"\d", line):
+            match = _STREET_PATTERN.match(line)
+            if match:
+                return match.group("street").strip()
             return line
-    return tokens.pop(0) if tokens else None
+    return None
 
 
-def _looks_like_street(text: str) -> bool:
-    if any(char.isdigit() for char in text):
-        return True
-    lowered = text.lower()
-    return any(keyword in lowered for keyword in ("street", "strasse", "str.", "road", "avenue", "allee", "weg"))
+def _extract_name(segments: Sequence[str], labeled: Dict[str, str], fallback_name: Optional[str]) -> Optional[str]:
+    for label in ("name", "company"):
+        if label in labeled:
+            return labeled[label]
+
+    for line in segments:
+        if _LABELED_FIELD.match(line):
+            continue
+        if re.search(r"\d", line):
+            continue
+        if line.lower() in _COUNTRY_ALIAS_FLAT:
+            continue
+        postal_match = _POSTAL_CODE.search(line)
+        if postal_match:
+            continue
+        return line
+    return fallback_name
 
 
-def _extract_name(tokens: List[str], fallback: Optional[str]) -> Optional[str]:
-    if tokens:
-        candidate = tokens.pop(0)
-        if not _looks_like_street(candidate):
-            return candidate
-        tokens.insert(0, candidate)
-    return fallback
+def _normalise_country(candidate: str) -> Optional[str]:
+    token = re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ ]", "", candidate or "").strip()
+    if not token:
+        return None
+    lowered = token.lower()
+    for canonical, variants in _COUNTRY_ALIASES.items():
+        if lowered in variants:
+            return canonical
+    return token.title()
+
+
+def _missing_fields(details: BillingFields, fallback_name: Optional[str]) -> List[str]:
+    missing: List[str] = []
+    for field in _REQUIRED_FIELDS:
+        value = details.get(field)
+        if field == "name_or_company" and not value and fallback_name:
+            continue
+        if not value:
+            missing.append(field)
+    return missing

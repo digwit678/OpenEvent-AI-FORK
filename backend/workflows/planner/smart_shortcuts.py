@@ -303,6 +303,7 @@ def maybe_run_smart_shortcuts(state: WorkflowState) -> Optional[GroupResult]:
         }
     )
     state.extras["persist"] = True
+    state.extras["subloop"] = "shortcut"
     return GroupResult(action="smart_shortcut_processed", payload=result.merged())
 
 

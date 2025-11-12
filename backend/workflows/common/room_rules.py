@@ -47,6 +47,9 @@ USER_INFO_KEYS = [
     "products_remove",
     "room_feedback",
     "shortcut_capacity_ok",
+    "week_index",
+    "weekdays_hint",
+    "window",
 ]
 
 

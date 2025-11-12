@@ -4,24 +4,32 @@ from typing import Any, Dict, List, Optional
 
 
 class LLMProvider:
-    """Minimal interface expected by workflow adapters when delegating to LLM providers."""
+    """Abstract interface for LLM providers used by the workflow adapter."""
 
     def classify_extract(self, text: str) -> Dict[str, Any]:
-        """Return {intent, confidence, fields{...}} for the provided text."""
+        """
+        Combined intent classification + entity extraction entrypoint.
 
-        raise NotImplementedError
+        Implementations receive a JSON-encoded payload (subject/body/msg_id) and
+        should return `{"intent": str, "confidence": float, "fields": {...}}`.
+        """
+
+        raise NotImplementedError("classify_extract must be implemented by subclasses.")
 
     def chat(
         self,
-        messages: List[Dict[str, Any]],
+        messages: List[Dict[str, str]],
         tools: Optional[List[Dict[str, Any]]] = None,
-        tool_choice: Optional[Dict[str, Any]] = None,
+        tool_choice: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Chat wrapper that may return tool_calls; intentionally optional for providers."""
+        """Optional helper for multi-turn chat integrations (unused for now)."""
 
-        raise NotImplementedError
+        raise NotImplementedError("chat is not implemented for this provider.")
 
     def supports_json_schema(self) -> bool:
-        """Flag whether the provider natively supports JSON schema outputs."""
+        """Return whether the provider natively enforces JSON schema outputs."""
 
         return False
+
+
+__all__ = ["LLMProvider"]

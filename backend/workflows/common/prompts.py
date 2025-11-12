@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Union
+from typing import List, Sequence, Tuple, Union
 
 FOOTER_SEPARATOR = "\n\n---\n"
 
@@ -64,3 +64,23 @@ def append_footer(body: str, *, step: int, next_step: Union[int, str], thread_st
     sanitized_body = body.rstrip()
     footer = compose_footer(step, next_step, thread_state)
     return f"{sanitized_body}{FOOTER_SEPARATOR}{footer}"
+
+
+def format_sections_with_headers(sections: Sequence[Tuple[str, Sequence[str]]]) -> Tuple[str, List[str]]:
+    """Compose body text from logical sections and return (body, headers)."""
+
+    headers: List[str] = []
+    lines: List[str] = []
+    for header, content in sections:
+        header_text = (header or "").strip()
+        content_lines = [line for line in content if line is not None]
+        if header_text:
+            headers.append(header_text)
+            lines.append(header_text)
+        for line in content_lines:
+            stripped = line.rstrip("\n")
+            lines.append(stripped)
+        if content_lines:
+            lines.append("")
+    body = "\n".join(line for line in lines if line is not None).strip()
+    return body, headers

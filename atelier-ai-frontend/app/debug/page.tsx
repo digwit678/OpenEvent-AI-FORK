@@ -22,8 +22,8 @@ export default function DebugPage() {
         setThreadId(stored);
         setManualId(stored);
       }
-    } catch (error) {
-      // ignore storage access errors
+    } catch {
+      // ignore storage errors
     }
   }, [queryThreadId]);
 
@@ -42,8 +42,8 @@ export default function DebugPage() {
           setThreadId(stored);
           setManualId(stored);
         }
-      } catch (error) {
-        // ignore storage access errors
+      } catch {
+        // ignore
       }
     }, 2000);
     return () => {
