@@ -60,6 +60,7 @@ def render_rooms(
         u_shape_badge = badges.get("u-shape")
         projector_badge = badges.get("projector")
         capacity_badge = badges.get("capacity") or ("✓" if capacity != "?" else "—")
+        alternatives = [str(value).strip() for value in room.get("alternatives") or [] if str(value).strip()]
         segments = [f"Coffee {coffee_badge}"]
         if u_shape_badge:
             segments.append(f"U-shape {u_shape_badge}")
@@ -68,6 +69,8 @@ def render_rooms(
         segments.append(f"Capacity {capacity_badge} (max {capacity})")
         line = f"- {name} — " + " · ".join(segments)
         body_lines.append(line)
+        if alternatives:
+            body_lines.append(f"  ↳ Also available: {', '.join(alternatives)}")
     body_lines.append("Let me know which room you prefer so I can send the offer.")
     return {
         "assistant_draft": {

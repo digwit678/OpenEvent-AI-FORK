@@ -43,3 +43,7 @@ def test_guard_no_billing_before_room():
 
 def test_guard_coffee_only_no_lunch():
     run_suite_file(_spec("test_GUARD_coffee_only_no_lunch.yaml"))
+
+
+def test_flow_february_saturday():
+    run_suite_file(_spec("test_F_february_saturday_availability.yaml"))

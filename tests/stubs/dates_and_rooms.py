@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import date, timedelta
 from typing import Any, Dict, List, Sequence
 
 ROOM_CONFIG: List[Dict[str, Any]] = [
@@ -237,15 +238,28 @@ def week_window(
             "2025-12-11",
             "2025-12-12",
         ]
-    from backend.utils import dates as dates_module
-
-    return dates_module.week_window(
-        year,
-        month,
-        week_index,
-        weekdays_hint=weekdays_hint,
-        mon_fri_only=mon_fri_only,
-    )
+    anchor = date(year, month, 1)
+    offset = (7 - anchor.weekday()) % 7
+    first_monday = anchor + timedelta(days=offset)
+    raw_dates = [
+        first_monday + timedelta(days=7 * (week_index - 1) + delta)
+        for delta in range(7)
+    ]
+    filtered: List[str] = []
+    for candidate in raw_dates:
+        if mon_fri_only and candidate.weekday() >= 5:
+            continue
+        filtered.append(candidate.isoformat())
+    hint_days = sorted({int(day) for day in (weekdays_hint or []) if 1 <= int(day) <= 31})
+    if hint_days:
+        ordered = [
+            cand.isoformat()
+            for cand in raw_dates
+            if cand.day in hint_days and cand.isoformat() in filtered
+        ]
+        remaining = [iso for iso in filtered if iso not in ordered]
+        return ordered + remaining
+    return filtered
 
 
 def room_status_on_date(date_iso: str, pax: int, requirements: Sequence[str] | None = None) -> List[Dict[str, Any]]:
