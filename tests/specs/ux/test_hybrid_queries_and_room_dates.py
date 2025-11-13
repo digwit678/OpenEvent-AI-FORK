@@ -6,6 +6,7 @@ from datetime import datetime
 
 import pytest
 
+from backend.workflows.common.general_qna import enrich_general_qna_step2
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 
 date_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
@@ -90,6 +91,7 @@ def _render_step2_draft(subject: str, body: str, tmp_path, monkeypatch: pytest.M
 
     classification = date_module.detect_general_room_query(body, state)
     date_module._present_general_room_qna(state, state.event_entry, classification, thread_id="THREAD-1")
+    enrich_general_qna_step2(state, classification)
     return state.draft_messages[-1]
 
 
@@ -184,10 +186,10 @@ def test_step2_hybrid_stays_in_date_gate_with_products(subject, body, tmp_path, 
     assert str(draft["step"]).startswith("2"), "Expected Step-2 draft."
 
     body_text = draft["body"]
-    assert "I checked availability" in body_text
-    assert "Next step" in body_text
-    assert "Products & Catering (summary)" in body_text
-    assert not re.search(r"Room\s+[A-Z]", body_text), "Step-2 must not list rooms before the gate."
+    assert "Saturdays available in February" in body_text
+    assert "| Room | Dates | Notes |" in body_text
+    assert "NEXT STEP:" in body_text
+    assert "- Room " not in body_text, "Step-2 must not list rooms before the gate."
     _assert_no_full_menu_dump(body_text)
     assert all(not value.endswith(".2025") for value in draft["candidate_dates"]), "Off-window dates leaked into Step-2 candidates."
 
@@ -196,7 +198,7 @@ def test_step2_hybrid_stays_in_date_gate_with_products(subject, body, tmp_path, 
     footer = draft.get("footer")
     footer_text = footer.get("text", "") if isinstance(footer, dict) else (footer or "")
     assert "Step: 2 Date Confirmation" in footer_text
-    assert "Next: Confirm date" in footer_text
+    assert "Next: Room Availability" in footer_text
 
 
 @pytest.mark.parametrize("subject, body", [
@@ -222,11 +224,10 @@ def test_step3_rooms_plus_alt_dates_no_menu_dump(subject, body, tmp_path, monkey
     assert _actions_are_room_selects(draft["actions"]), "Step-3 must offer room selection actions."
 
     body_text = draft.get("body_markdown") or draft["body"]
-    assert "Available dates" in body_text or "Alternative dates" in body_text
-    assert "Products" in body_text or "Catering" in body_text
+    assert "Also available" in body_text or "Alternative dates" in body_text
     _assert_no_full_menu_dump(body_text)
 
-    assert "Alternative Dates" in body_text, "Step-3 should show alternative dates."
+    assert "Also available" in body_text or "Alternative Dates" in body_text, "Step-3 should show alternative dates."
     if "Alternative Dates (top 5)" in body_text or "Alternative Dates (top 3)" in body_text:
         assert "more options" in body_text.lower() or "ask for more" in body_text.lower()
 

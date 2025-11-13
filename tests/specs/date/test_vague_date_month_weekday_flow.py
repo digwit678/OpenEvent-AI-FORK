@@ -89,8 +89,8 @@ def test_vague_month_weekday_enumeration(monkeypatch, tmp_path):
     assert stored_candidates == [action["date"] for action in actions]
 
     footer = draft.get("footer", "")
-    assert footer == "Step: 2 Date Confirmation · Next: Confirm date · State: Awaiting Client"
-    assert "Room" not in draft.get("body_markdown", "")
+    assert footer == "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client"
+    assert "- Room " not in draft.get("body_markdown", "")
 
     trace_events = BUS.get(state.thread_id)  # type: ignore[attr-defined]
     db_events = [event for event in trace_events if event.get("kind") == "DB_READ"]

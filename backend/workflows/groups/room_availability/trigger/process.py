@@ -4,6 +4,13 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from backend.workflows.common.prompts import append_footer
+from backend.workflows.common.menu_options import (
+    ALLOW_CONTEXTUAL_HINTS,
+    build_menu_title,
+    extract_menu_request,
+    format_menu_line,
+    select_menu_options,
+)
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.sorting import rank_rooms, RankedRoom
 from backend.workflows.common.room_rules import find_better_room_dates
@@ -32,17 +39,6 @@ ROOM_SIZE_ORDER = {
     "Room C": 3,
     "Punkt.Null": 4,
 }
-
-GENERAL_QA_MENUS = [
-    {
-        "menu_name": "Seasonal Garden Trio",
-        "price": "CHF 92",
-    },
-    {
-        "menu_name": "Alpine Roots Degustation",
-        "price": "CHF 105",
-    },
-]
 
 
 @trace_step("Step3_Room")
@@ -258,6 +254,21 @@ def process(state: WorkflowState) -> GroupResult:
     headers = assistant_draft.get("headers") or (
         [f"Room options for {display_chosen_date}"] if display_chosen_date else ["Room options"]
     )
+    table_blocks = rendered.get("table_blocks")
+    if not table_blocks and table_rows:
+        label = f"Rooms for {display_chosen_date}" if display_chosen_date else "Room options"
+        table_blocks = [
+            {
+                "type": "room_menu",
+                "label": label,
+                "rows": table_rows,
+            }
+        ]
+    elif not table_blocks:
+        table_blocks = []
+    actions_payload = rendered.get("actions")
+    if not actions_payload:
+        actions_payload = actions or [{"type": "send_reply"}]
 
     qa_lines = _general_qna_lines(state)
     if qa_lines:
@@ -279,8 +290,8 @@ def process(state: WorkflowState) -> GroupResult:
         "topic": outcome_topic,
         "room": selected_room,
         "status": outcome,
-        "table_blocks": [],
-        "actions": [{"type": "send_reply"}],
+        "table_blocks": table_blocks,
+        "actions": actions_payload,
         "headers": headers,
     }
     draft_message["requires_approval"] = False
@@ -763,32 +774,33 @@ def _verbalizer_rooms_payload(
     return payload
 
 
-def _message_has_menu_question(state: WorkflowState) -> bool:
-    text = (state.message.body or "").lower()
-    return (
-        "vegetarian" in text
-        and "wine" in text
-        and ("three-course" in text or "three course" in text)
-    )
-
-
 def _general_qna_lines(state: WorkflowState) -> List[str]:
     payload = state.turn_notes.get("general_qa")
-    rows = None
+    rows: Optional[List[Dict[str, Any]]] = None
+    title: Optional[str] = None
+    month_hint: Optional[str] = None
     if isinstance(payload, dict) and payload.get("rows"):
         rows = payload["rows"]
-    elif _message_has_menu_question(state):
-        rows = GENERAL_QA_MENUS
+        title = payload.get("title")
+        month_hint = payload.get("month")
+    else:
+        request = extract_menu_request(state.message.body or "")
+        if request:
+            user_info = state.user_info or {}
+            event_entry = state.event_entry or {}
+            context_month = user_info.get("vague_month") or event_entry.get("vague_month")
+            rows = select_menu_options(request, month_hint=request.get("month"))
+            if not rows and ALLOW_CONTEXTUAL_HINTS and context_month:
+                rows = select_menu_options(request, month_hint=context_month)
+            if rows:
+                title = build_menu_title(request)
     if not rows:
         return []
-    lines = ["Vegetarian three-course menus with wine pairings:"]
+    lines = [title or "Menu options we can offer:"]
     for row in rows:
-        name = str(row.get("menu_name") or "").strip()
-        price_raw = str(row.get("price") or "").strip()
-        price = price_raw if price_raw.startswith("CHF") else f"CHF {price_raw}" if price_raw else "CHF ?"
-        if not name:
-            continue
-        lines.append(f"- {name} — {price} per guest (wine pairings included).")
+        rendered = format_menu_line(row, month_hint=month_hint)
+        if rendered:
+            lines.append(rendered)
     return lines
 
 

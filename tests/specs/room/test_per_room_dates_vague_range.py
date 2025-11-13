@@ -69,8 +69,8 @@ def test_step3_includes_available_dates_for_vague_range(tmp_path: Path, monkeypa
 
     draft = state.draft_messages[-1]
     body_md = draft.get("body_markdown") or draft["body"]
-    assert "### Room A" in body_md
-    assert "Available dates" in body_md
+    assert "- Room A" in body_md
+    assert "Also available" in body_md
     assert "Room A" in body_md and "Room B" in body_md
 
     for action in draft["actions"]:

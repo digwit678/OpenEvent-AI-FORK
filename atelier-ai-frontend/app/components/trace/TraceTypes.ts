@@ -3,6 +3,7 @@ import { SUBLOOP_COLORS, SUBLOOP_LABELS, SubloopKey } from '../debug/constants';
 
 export type TraceEntity =
   | 'TRIGGER'
+  | 'CLIENT'
   | 'AGENT'
   | 'HIL'
   | 'DB_ACTION'
@@ -96,6 +97,7 @@ export type StepSnapshotMap = Map<number, StepSnapshot>;
 
 const ENTITY_MAP: Record<string, TraceEntity> = {
   trigger: 'TRIGGER',
+  client: 'CLIENT',
   agent: 'AGENT',
   hil: 'HIL',
   'db action': 'DB_ACTION',

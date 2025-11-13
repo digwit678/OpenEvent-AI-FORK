@@ -9,7 +9,7 @@
         "body": "Hello, we’re planning a family dinner event for about 30 people. Prefer a Saturday evening in February. Please advise on availability for this booking."
       },
       "expect": {
-        "intent": "event_intake",
+        "intent": "event_intake_with_question",
         "user_info": {
           "participants": 30,
           "vague_month": "February",
@@ -31,10 +31,14 @@
         "res": {
           "assistant_draft": {
             "headers_subset": [
-              "Date options for February"
+              "General Q&A"
             ],
             "contains_all": [
-              "Saturdays available in February 2026: 07, 14, 21, 28"
+              "| Room | Dates | Notes |",
+              "| Room A | 07.02.2026, 14.02.2026, 21.02.2026, 28.02.2026 |",
+              "Status: Available; Evening",
+              "Saturdays available in February 2026: 07, 14, 21, 28",
+              "- Choose a date so I can move straight into Room Availability and hold the best-fitting room — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you."
             ]
           }
         }
@@ -54,7 +58,7 @@
         "res": {
           "assistant_draft": {
             "headers_subset": [
-              "Date options for February"
+              "General Q&A"
             ]
           }
         }
@@ -70,7 +74,23 @@
         "user_info": {
           "date": "2026-02-07"
         },
-        "actions": [],
+        "actions": [
+          {
+            "type": "send_reply"
+          },
+          {
+            "type": "room_options_enqueued",
+            "payload": {
+              "suggested_dates": [
+                "07.02.2026",
+                "14.02.2026",
+                "21.02.2026",
+                "28.02.2026"
+              ],
+              "event_id": "ANY"
+            }
+          }
+        ],
         "db_assert": {
           "gatekeeping": {
             "date": "2026-02-07"

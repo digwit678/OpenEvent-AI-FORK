@@ -72,8 +72,8 @@ def test_step3_lists_alternative_dates_after_confirmation(tmp_path: Path, monkey
 
     draft = state.draft_messages[-1]
     body_md = draft.get("body_markdown") or draft["body"]
-    assert "### Room A" in body_md
-    assert "Alternative dates (closest)" in body_md
+    assert "- Room A" in body_md
+    assert "Also available" in body_md
 
     for action in draft["actions"]:
         assert "available_dates" in action

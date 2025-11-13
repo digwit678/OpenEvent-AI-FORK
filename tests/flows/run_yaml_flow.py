@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from backend.workflow_email import approve_task_and_send, process_msg
+from backend.workflows.common.menu_options import build_menu_payload, extract_menu_request, format_menu_line
 from backend.workflows.io import database as db_io
 from backend.workflow_verbalizer_test_hooks import render_rooms
 from tests.stubs.dates_and_rooms import room_status_on_date as stub_room_status
@@ -172,16 +173,25 @@ class FlowHarness:
             assistant = payload.get("assistant_draft", {})
             body_text = assistant.get("body", "")
             if self._message_has_menu_question():
-                qa_lines = [
-                    "Vegetarian three-course menus with wine pairings:",
-                    "- Seasonal Garden Trio — CHF 92 per guest (wine pairings included).",
-                    "- Alpine Roots Degustation — CHF 105 per guest (wine pairings included).",
-                ]
-                combined_body = "\n".join(qa_lines + ["", body_text]) if body_text else "\n".join(qa_lines)
-                assistant["body"] = combined_body
-                headers = assistant.get("headers") or []
-                assistant["headers"] = ["General Q&A"] + [header for header in headers if header]
-                payload["assistant_draft_text"] = combined_body
+                menu_payload = build_menu_payload(
+                    (self._last_msg_payload or {}).get("body"),
+                    context_month=(self._current_event() or {}).get("vague_month"),
+                )
+                qa_lines = []
+                if menu_payload:
+                    month_hint = menu_payload.get("month")
+                    title = menu_payload.get("title") or "Menu options we can offer:"
+                    qa_lines.append(title)
+                    for row in menu_payload.get("rows", []):
+                        rendered = format_menu_line(row, month_hint=month_hint)
+                        if rendered:
+                            qa_lines.append(rendered)
+                if qa_lines:
+                    combined_body = "\n".join(qa_lines + ["", body_text]) if body_text else "\n".join(qa_lines)
+                    assistant["body"] = combined_body
+                    headers = assistant.get("headers") or []
+                    assistant["headers"] = ["General Q&A"] + [header for header in headers if header]
+                    payload["assistant_draft_text"] = combined_body
             if "assistant_draft" not in payload:
                 payload["assistant_draft"] = assistant
             payload.setdefault("actions", []).append({"type": "send_reply"})
@@ -343,12 +353,8 @@ class FlowHarness:
 
     def _message_has_menu_question(self) -> bool:
         payload = self._last_msg_payload or {}
-        text = str(payload.get("body") or "").lower()
-        return (
-            "vegetarian" in text
-            and "wine" in text
-            and ("three-course" in text or "three course" in text)
-        )
+        text = str(payload.get("body") or "")
+        return extract_menu_request(text) is not None
 
 
 def _extract_pax(event: Dict[str, Any]) -> Optional[int]:
