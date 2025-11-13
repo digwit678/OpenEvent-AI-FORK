@@ -4,6 +4,7 @@ from pathlib import Path
 
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 from backend.workflows.qna.extraction import ensure_qna_extraction
+from backend.workflow_email import _ensure_general_qna_classification
 
 
 def _make_state() -> WorkflowState:
@@ -44,3 +45,20 @@ def test_borderline_message_triggers_extraction(monkeypatch):
     assert result["qna_subtype"] == "catalog_by_capacity"
     assert state.extras["qna_extraction_meta"]["trigger"] in {"borderline", "general"}
     assert "payload" in called
+
+
+def test_classification_persists_qna_cache():
+    state = _make_state()
+    state.event_entry = {}
+    state.message.subject = "Private dinner dates"
+    state.message.body = "Which Saturdays in February 2026 are free for 30 guests?"
+
+    _ensure_general_qna_classification(
+        state,
+        "Private dinner dates\nWhich Saturdays in February 2026 are free for 30 guests?",
+    )
+
+    cache = state.event_entry.get("qna_cache")
+    assert cache is not None
+    assert "extraction" in cache
+    assert cache.get("last_message_text", "").startswith("Private dinner dates")

@@ -23,6 +23,7 @@ class StructuredQnAResult:
     action_payload: Dict[str, Any]
     body_markdown: Optional[str]
     unresolved: List[str]
+    debug: Dict[str, Any]
 
 
 def build_structured_qna_result(state: WorkflowState, extraction: Dict[str, Any]) -> Optional[StructuredQnAResult]:
@@ -44,12 +45,23 @@ def build_structured_qna_result(state: WorkflowState, extraction: Dict[str, Any]
     context = build_qna_context(qna_intent, qna_subtype, q_values, captured_state)
 
     effective_payload = _effective_payload(context)
+    debug_info = {
+        "extraction": extraction,
+        "case_tags": context.case_tags,
+        "effective": effective_payload,
+        "unresolved": list(context.unresolved),
+    }
+    state.turn_notes["structured_qna"] = debug_info
+    state.turn_notes["structured_qna_handled"] = context.handled
+
     base_payload: Dict[str, Any] = {
         "qna_intent": context.intent,
         "qna_subtype": context.subtype,
         "effective": effective_payload,
         "exclude_rooms": context.exclude_rooms,
         "case_tags": context.case_tags,
+        "extraction": extraction,
+        "debug": debug_info,
     }
 
     if not context.handled:
@@ -66,6 +78,7 @@ def build_structured_qna_result(state: WorkflowState, extraction: Dict[str, Any]
             action_payload=action_payload,
             body_markdown=None,
             unresolved=list(context.unresolved),
+            debug=debug_info,
         )
 
     db_results = _execute_query(context)
@@ -94,6 +107,7 @@ def build_structured_qna_result(state: WorkflowState, extraction: Dict[str, Any]
         action_payload=action_payload,
         body_markdown=body_markdown,
         unresolved=list(context.unresolved),
+        debug=debug_info,
     )
 
 
@@ -121,7 +135,7 @@ def _execute_query(context: QnAContext) -> Dict[str, List[Dict[str, Any]]]:
         "date_pattern_availability_general",
     }:
         rows = fetch_room_availability(
-            date_scope=eff["D"].value,
+            date_scope=_date_scope_payload(eff["D"], context.base_date),
             attendee_scope=eff["N"].value,
             room_filter=eff["R"].value,
             exclude_rooms=context.exclude_rooms,
@@ -289,6 +303,16 @@ def _attendee_min(variable: EffectiveVariable) -> Optional[int]:
         except (TypeError, ValueError):
             return None
     return None
+
+
+def _date_scope_payload(effective_date: EffectiveVariable, base_date: Optional[date]) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "value": effective_date.value,
+        "meta": effective_date.meta,
+        "source": effective_date.source,
+        "base_date": base_date.isoformat() if base_date else None,
+    }
+    return payload
 
 
 __all__ = ["build_structured_qna_result", "StructuredQnAResult"]

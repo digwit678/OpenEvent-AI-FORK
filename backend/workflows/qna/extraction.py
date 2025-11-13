@@ -140,11 +140,22 @@ def ensure_qna_extraction(
         extraction = _fallback_extraction(payload)
 
     normalized = _normalize_qna_extraction(extraction)
-    state.extras["qna_extraction"] = normalized
-    state.extras["qna_extraction_meta"] = {
+    meta = {
         "model": QNA_EXTRACTION_MODEL if _LLM_ENABLED else "fallback",
         "trigger": "borderline" if borderline and not likely_general else "general",
     }
+    state.extras["qna_extraction"] = normalized
+    state.extras["qna_extraction_meta"] = meta
+    state.extras["qna_last_message_text"] = text
+
+    event_entry = state.event_entry
+    if isinstance(event_entry, dict):
+        cache = event_entry.setdefault("qna_cache", {})
+        cache["extraction"] = normalized
+        cache["meta"] = meta
+        cache["last_message_text"] = text
+        state.extras["persist"] = True
+
     return normalized
 
 

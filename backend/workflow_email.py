@@ -197,6 +197,15 @@ def _ensure_general_qna_classification(state: WorkflowState, message_text: str) 
         state.extras["general_qna_scan"] = scan
 
     ensure_qna_extraction(state, message_text, scan)
+    extraction_payload = state.extras.get("qna_extraction")
+    if extraction_payload:
+        event_entry = state.event_entry or {}
+        cache = event_entry.setdefault("qna_cache", {})
+        cache["extraction"] = extraction_payload
+        cache["meta"] = state.extras.get("qna_extraction_meta")
+        cache["last_message_text"] = message_text
+        state.event_entry = event_entry
+        state.extras["persist"] = True
 
     classification = state.extras.get("_general_qna_classification")
     if classification:

@@ -18,8 +18,8 @@ from backend.debug.hooks import (
     trace_state,
     trace_step,
     trace_gate,
+    trace_general_qa_status,
 )
-from backend.workflows.common.catalog import list_free_dates
 from backend.workflows.common.datetime_parse import (
     build_window_iso,
     parse_first_date,
@@ -28,6 +28,7 @@ from backend.workflows.common.datetime_parse import (
     to_iso_date,
 )
 from backend.workflows.common.prompts import append_footer, format_sections_with_headers
+from backend.workflows.common.catalog import list_free_dates
 from backend.workflows.common.capture import capture_user_fields, promote_fields
 from backend.workflows.common.sorting import rank_rooms
 from backend.workflows.common.requirements import requirements_hash
@@ -35,6 +36,8 @@ from backend.workflows.common.gatekeeper import refresh_gatekeeper
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
 from backend.workflows.common.menu_options import build_menu_payload, format_menu_line
 from backend.workflows.common.general_qna import render_general_qna_reply, enrich_general_qna_step2
+from backend.workflows.qna.engine import build_structured_qna_result
+from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.groups.intake.condition.checks import suggest_dates
 from backend.workflows.groups.room_availability.condition.decide import room_status_on_date
@@ -1918,213 +1921,231 @@ def _present_general_room_qna(
     thread_id: Optional[str],
     qa_payload: Optional[Dict[str, Any]] = None,
 ) -> GroupResult:
-    requirements = event_entry.get("requirements") or {}
-    preferred_room = requirements.get("preferred_room") or "Room A"
     subloop_label = "general_q_a"
     state.extras["subloop"] = subloop_label
+    resolved_thread_id = thread_id or state.thread_id
+    constraints = classification.get("constraints") or {}
+    if not isinstance(constraints, dict):
+        constraints = {}
+    participants = _extract_participants_from_state(state)
+    user_preferences = {}
+    if isinstance(state.user_info, dict):
+        user_preferences = state.user_info.get("preferences") or {}
+    if not user_preferences and isinstance(event_entry, dict):
+        user_preferences = event_entry.get("preferences") or {}
+    if not isinstance(user_preferences, dict):
+        user_preferences = {}
+    requirements = event_entry.get("requirements") if isinstance(event_entry, dict) else None
+    preferred_room = None
+    if isinstance(state.user_info, dict):
+        preferred_room = state.user_info.get("preferred_room")
+    if not preferred_room and isinstance(requirements, dict):
+        preferred_room = requirements.get("preferred_room")
+    range_results = _search_range_availability(
+        state,
+        resolved_thread_id,
+        constraints,
+        participants,
+        user_preferences,
+        preferred_room,
+    )
+    range_lookup: Dict[str, str] = {}
+    for entry in range_results:
+        iso_value = entry.get("iso_date")
+        if not iso_value:
+            continue
+        try:
+            parsed = datetime.fromisoformat(iso_value)
+        except ValueError:
+            continue
+        label = parsed.strftime("%d.%m.%Y")
+        range_lookup.setdefault(label, parsed.date().isoformat())
+    range_candidate_dates = sorted(range_lookup.keys(), key=lambda lbl: range_lookup[lbl])[:5]
+    range_actions = [
+        {
+            "type": "select_date",
+            "label": f"Confirm {label}",
+            "date": label,
+            "iso_date": range_lookup[label],
+        }
+        for label in range_candidate_dates
+    ]
+    if qa_payload:
+        state.turn_notes["general_qa"] = qa_payload
+        trace_general_qa_status(
+            resolved_thread_id,
+            "payload_attached",
+            {"has_payload": True, "range_results": len(range_results)},
+        )
+    else:
+        trace_general_qa_status(
+            resolved_thread_id,
+            "payload_missing",
+            {"has_payload": False, "range_results": len(range_results)},
+        )
     if thread_id:
         set_subloop(thread_id, subloop_label)
 
-    participants = _extract_participants_from_state(state)
-    preferences = event_entry.get("preferences") or state.user_info.get("preferences") or {}
-    constraints = classification.get("constraints") or {}
-    window_hints = _resolve_window_hints(constraints, state)
-    month_hint, weekday_hint, time_of_day_hint = window_hints
-    strict_window = _has_window_constraints(window_hints)
+    extraction = state.extras.get("qna_extraction")
+    cache = event_entry.get("qna_cache") if isinstance(event_entry, dict) else {}
+    if extraction is None and isinstance(cache, dict):
+        cached_extraction = cache.get("extraction")
+        if cached_extraction:
+            extraction = cached_extraction
+            state.extras["qna_extraction"] = cached_extraction
+            if cache.get("meta"):
+                state.extras["qna_extraction_meta"] = cache["meta"]
+            if cache.get("last_message_text"):
+                state.extras["qna_last_message_text"] = cache["last_message_text"]
+    if extraction is None:
+        message_text = None
+        if isinstance(cache, dict):
+            message_text = cache.get("last_message_text")
+        if not message_text:
+            message = state.message
+            subject = (message.subject if message else "") or ""
+            body = (message.body if message else "") or ""
+            message_text = f"{subject}\n{body}".strip() or body or subject
+        scan = state.extras.get("general_qna_scan")
+        ensure_qna_extraction(state, message_text, scan)
+        extraction = state.extras.get("qna_extraction")
 
-    range_results: List[Dict[str, Any]] = []
-    if classification.get("is_general") and _is_hybrid_availability_request(classification, state):
-        range_results = _search_range_availability(
-            state,
-            thread_id,
-            constraints,
-            participants,
-            preferences,
-            preferred_room,
-        )
+    structured = build_structured_qna_result(state, extraction) if extraction else None
 
-    iso_by_candidate: Dict[str, str] = {}
-    candidate_dates: List[str] = []
-    if range_results:
-        seen_iso: set[str] = set()
-        for entry in range_results:
-            iso_value = entry.get("iso_date")
-            if not iso_value or iso_value in seen_iso:
+    if structured and structured.handled:
+        rooms = structured.action_payload.get("db_summary", {}).get("rooms", [])
+        date_lookup: Dict[str, str] = {}
+        for entry in rooms:
+            iso_date = entry.get("date") or entry.get("iso_date")
+            if not iso_date:
                 continue
-            seen_iso.add(iso_value)
-            ddmmyyyy = format_iso_date_to_ddmmyyyy(iso_value) or iso_value
-            iso_by_candidate[ddmmyyyy] = iso_value
-            candidate_dates.append(ddmmyyyy)
-        candidate_dates = candidate_dates[:5]
-
-    if len(candidate_dates) < 5:
-        fallback_iso = _candidate_dates_for_constraints(
-            state,
-            constraints,
-            window_hints=window_hints,
-            strict=strict_window,
-        )
-        for iso_value in fallback_iso:
-            ddmmyyyy = format_iso_date_to_ddmmyyyy(iso_value) or iso_value
-            if ddmmyyyy not in iso_by_candidate:
-                iso_by_candidate[ddmmyyyy] = iso_value
-                candidate_dates.append(ddmmyyyy)
-            if len(candidate_dates) >= 5:
-                break
-
-    if len(candidate_dates) < 5 and not strict_window:
-        fallback = list_free_dates(count=5, db=state.db, preferred_room=preferred_room)
-        for value in fallback:
-            ddmmyyyy = value.strip()
-            if not ddmmyyyy:
-                continue
-            if ddmmyyyy not in iso_by_candidate:
-                iso = to_iso_date(ddmmyyyy) or ddmmyyyy
-                iso_by_candidate[ddmmyyyy] = iso
-                candidate_dates.append(ddmmyyyy)
-            if len(candidate_dates) >= 5:
-                break
-
-    candidate_dates = candidate_dates[:5]
-
-    if thread_id:
-        trace_db_read(
-            thread_id,
-            "Step2_Date",
-            "db.dates.general_qna",
-            {
-                "count": len(candidate_dates),
-                "preferred_room": preferred_room,
-                "constraints": constraints,
-            },
-        )
-
-    state.intent_detail = "event_intake_with_question"
-    state.record_subloop(subloop_label)
-
-    qa_payload = qa_payload or _maybe_general_qa_payload(state)
-    if qa_payload:
-        state.turn_notes["general_qa"] = qa_payload
-
-    descriptor = _describe_constraints(month_hint, weekday_hint, time_of_day_hint)
-    sections: List[Tuple[str, List[str]]] = []
-    if qa_payload:
-        month_for_menu = qa_payload.get("month")
-        title = qa_payload.get("title") or "Menu options we can offer:"
-        qa_lines = [title]
-        for row in qa_payload.get("rows", []):
-            rendered = format_menu_line(row, month_hint=month_for_menu)
-            if rendered:
-                qa_lines.append(rendered)
-        if len(qa_lines) == 1:
-            qa_lines.append("Let me know if you'd like a detailed menu breakdown.")
-        sections.append(("General Q&A", qa_lines))
-    else:
-        overview_lines = _format_general_availability(range_results, participants)
-        qa_lines = overview_lines or ["I found availability that fits your group."]
-        sections.append(("General Q&A", qa_lines))
-
-    availability_lines: List[str] = []
-    iso_values_in_window = [iso_by_candidate.get(value) for value in candidate_dates if iso_by_candidate.get(value)]
-    day_list, year_value = _format_day_list([iso for iso in iso_values_in_window if iso])
-    if candidate_dates and month_hint and day_list and year_value:
-        plural_weekday = _pluralize_weekday_hint(weekday_hint)
-        label_text = plural_weekday or "Dates"
-        availability_lines.append(
-            f"{label_text} available in {str(month_hint).strip().capitalize()} {year_value}: {day_list}"
-        )
-    elif candidate_dates:
-        availability_lines.append("Here are the next dates that fit your window:")
-        for value in candidate_dates:
-            availability_lines.append(f"- {value}")
-    else:
-        descriptor = _describe_constraints(month_hint, weekday_hint, time_of_day_hint)
-        notice = descriptor if descriptor and descriptor != "for your requested window" else "your request"
-        availability_lines.append(f"I tried to match {notice}, but need a specific date to continue.")
-        availability_lines.append("Share one or two exact dates and I'll confirm them immediately.")
-
-    availability_lines.append("Next step: choose a date so I can move straight into Room Availability and hold the best-fitting room.")
-
-    sections.append((_date_header_label(month_hint), availability_lines))
-
-    products_requested = _user_requested_products(state, classification)
-    if products_requested:
-        sections.append(("Products & Catering", _compact_products_summary(preferences)[1:]))
-
-    body_text, headers = format_sections_with_headers(sections)
-    body_with_footer = append_footer(
-        body_text,
-        step=2,
-        next_step=3,
-        thread_state="Awaiting Client",
-    )
-
-    draft_message = {
-        "body": body_with_footer,
-        "body_markdown": body_text,
-        "step": 2,
-        "next_step": "Room Availability",
-        "thread_state": "Awaiting Client",
-        "topic": "general_room_qna",
-        "candidate_dates": candidate_dates,
-        "actions": [],
-        "subloop": subloop_label,
-        "headers": headers,
-    }
-
-    actions: List[Dict[str, Any]] = []
-    for ddmmyyyy in candidate_dates:
-        iso = iso_by_candidate.get(ddmmyyyy)
-        parsed = parse_ddmmyyyy(ddmmyyyy) if ddmmyyyy.count(".") == 2 else None
-        if not parsed and iso:
             try:
-                parsed = datetime.strptime(iso, "%Y-%m-%d").date()
+                parsed = datetime.fromisoformat(iso_date)
             except ValueError:
-                parsed = None
-        if parsed:
-            actions.append(_build_select_date_action(parsed, ddmmyyyy, None))
-    if actions:
-        draft_message["actions"] = actions
+                try:
+                    parsed = datetime.strptime(iso_date, "%Y-%m-%d")
+                except ValueError:
+                    continue
+            label = parsed.strftime("%d.%m.%Y")
+            date_lookup.setdefault(label, parsed.date().isoformat())
+
+        candidate_dates = sorted(date_lookup.keys(), key=lambda label: date_lookup[label])[:5]
+        actions = [
+            {
+                "type": "select_date",
+                "label": f"Confirm {label}",
+                "date": label,
+                "iso_date": date_lookup[label],
+            }
+            for label in candidate_dates
+        ]
+
+        body_markdown = (structured.body_markdown or _fallback_structured_body(structured.action_payload)).strip()
+        footer_body = append_footer(
+            body_markdown,
+            step=2,
+            next_step=3,
+            thread_state="Awaiting Client",
+        )
+
+        draft_message = {
+            "body": footer_body,
+            "body_markdown": body_markdown,
+            "step": 2,
+            "next_step": 3,
+            "thread_state": "Awaiting Client",
+            "topic": "general_room_qna",
+            "candidate_dates": candidate_dates,
+            "actions": actions,
+            "subloop": subloop_label,
+            "headers": ["General Q&A"],
+        }
+        if not candidate_dates and range_candidate_dates:
+            candidate_dates = range_candidate_dates
+            actions = range_actions
+            draft_message["candidate_dates"] = candidate_dates
+            draft_message["actions"] = actions
+        if range_results:
+            draft_message["range_results"] = range_results
+
+        state.add_draft_message(draft_message)
+        update_event_metadata(
+            event_entry,
+            thread_state="Awaiting Client",
+            current_step=2,
+            candidate_dates=candidate_dates,
+        )
+        state.set_thread_state("Awaiting Client")
+        state.record_subloop(subloop_label)
+        state.intent_detail = "event_intake_with_question"
+        state.extras["persist"] = True
+
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "candidate_dates": candidate_dates,
+            "draft_messages": state.draft_messages,
+            "thread_state": state.thread_state,
+            "context": state.context_snapshot,
+            "persisted": True,
+            "general_qna": True,
+            "structured_qna": structured.handled,
+            "qna_select_result": structured.action_payload,
+            "structured_qna_debug": structured.debug,
+            "actions": actions,
+        }
+        if extraction:
+            payload["qna_extraction"] = extraction
+        return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
+
+    fallback_prompt = "[STRUCTURED_QNA_FALLBACK]\nI couldn't load the structured Q&A context for this request. Please review extraction logs."
+    draft_message = {
+        "step": 2,
+        "topic": "general_room_qna",
+        "body": f"{fallback_prompt}\n\n---\nStep: 2 Date Confirmation · Next: 3 Room Availability · State: Awaiting Client",
+        "body_markdown": fallback_prompt,
+        "next_step": 3,
+        "thread_state": "Awaiting Client",
+        "headers": ["General Q&A"],
+        "requires_approval": False,
+        "subloop": subloop_label,
+        "actions": range_actions,
+        "candidate_dates": range_candidate_dates,
+    }
     if range_results:
         draft_message["range_results"] = range_results
-        if descriptor:
-            draft_message["range_descriptor"] = descriptor
-
     state.add_draft_message(draft_message)
     update_event_metadata(
         event_entry,
         thread_state="Awaiting Client",
         current_step=2,
-        candidate_dates=candidate_dates,
+        candidate_dates=[],
     )
     state.set_thread_state("Awaiting Client")
-    if thread_id:
-        trace_state(
-            thread_id,
-            "Step2_Date",
-            {
-                "thread_state": state.thread_state,
-                "candidate_dates": candidate_dates,
-                "subloop": subloop_label,
-            },
-        )
-        _trace_candidate_gate(thread_id, candidate_dates)
-    state.extras["persist"] = True
+    state.record_subloop(subloop_label)
+    state.intent_detail = "event_intake_with_question"
+    state.extras["structured_qna_fallback"] = True
+    structured_payload = structured.action_payload if structured else {}
+    structured_debug = structured.debug if structured else {"reason": "missing_structured_context"}
 
     payload = {
         "client_id": state.client_id,
         "event_id": event_entry.get("event_id"),
         "intent": state.intent.value if state.intent else None,
         "confidence": round(state.confidence or 0.0, 3),
-        "candidate_dates": candidate_dates,
+        "candidate_dates": range_candidate_dates,
         "draft_messages": state.draft_messages,
         "thread_state": state.thread_state,
         "context": state.context_snapshot,
         "persisted": True,
-        "general_room_constraints": classification.get("constraints"),
+        "general_qna": True,
+        "structured_qna": False,
+        "structured_qna_fallback": True,
+        "qna_select_result": structured_payload,
+        "structured_qna_debug": structured_debug,
     }
-    if range_results:
-        payload["range_results"] = range_results
-        if descriptor:
-            payload["range_descriptor"] = descriptor
+    if extraction:
+        payload["qna_extraction"] = extraction
     return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
