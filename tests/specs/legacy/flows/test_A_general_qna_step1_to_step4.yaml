@@ -37,24 +37,25 @@
           ]
         },
         "res": {
-          "general_qa": {
-            "select_expr": "SELECT menu_name, courses, vegetarian, wine_pairing, price",
-            "where_clauses": [
-              "courses=3",
-              "vegetarian=true",
-              "wine_pairing=true"
-            ],
-            "rows_min": 2
-          },
+        "general_qa": {
+          "select_expr": "SELECT menu_name, courses, vegetarian, wine_pairing, price",
+          "where_clauses": [
+            "courses=3",
+            "vegetarian=true",
+            "wine_pairing=true",
+            "available_month='February'"
+          ],
+          "rows_min": 2
+        },
         "assistant_draft": {
           "headers": [
-            "General Q&A",
-            "Date options for February",
-            "Products & Catering"
+            "General Q&A"
           ],
             "contains": [
               "Vegetarian three-course menus with wine pairings",
-              "Saturdays available in February 2026: 07, 14, 21, 28"
+              "| Room A | 07.02.2026, 14.02.2026, 21.02.2026, 28.02.2026 |",
+              "Status: Available; Evening",
+              "- Choose a date so I can move straight into Room Availability and hold the best-fitting room — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you."
             ]
           }
         }
@@ -74,9 +75,7 @@
         "res": {
           "assistant_draft": {
             "headers": [
-              "General Q&A",
-              "Date options for February",
-              "Products & Catering"
+              "General Q&A"
             ]
           }
         }
@@ -96,6 +95,18 @@
         "actions": [
           {
             "type": "send_reply"
+          },
+          {
+            "type": "room_options_enqueued",
+            "payload": {
+              "suggested_dates": [
+                "2026-02-07",
+                "2026-02-14",
+                "2026-02-21",
+                "2026-02-28"
+              ],
+              "event_id": "ANY"
+            }
           }
         ],
         "trace": {
@@ -114,7 +125,7 @@
             ],
             "contains": [
               "Noted: 30 guests and 21.02.2026.",
-              "We'll check room availability next and send the best-fitting rooms."
+              "I'll move straight into Room Availability and send the best-fitting rooms."
             ]
           }
         }
@@ -159,8 +170,8 @@
               "Rooms for 30 people on 21.02.2026"
             ],
             "contains": [
-              "Room A — capacity 40",
-              "Room B — capacity 32"
+              "Room A — Coffee — · Capacity ✓ (max 40)",
+              "Room B — Coffee — · Capacity ✓ (max 32)"
             ]
           }
         }
@@ -175,6 +186,9 @@
       "expect": {
         "intent": "room_choice",
         "actions": [
+          {
+            "type": "send_reply"
+          },
           {
             "type": "send_reply"
           }
@@ -197,7 +211,7 @@
               "Offer"
             ],
             "contains": [
-              "Offer for Room A on 21.02.2026 for 30 guests"
+              "Offer sent for Room A on 21.02.2026 for 30 guests"
             ]
           }
         }

@@ -20,7 +20,13 @@ from backend.workflows.groups.event_confirmation.trigger import process as proce
 from backend.workflows.io import database as db_io
 from backend.workflows.io import tasks as task_io
 from backend.workflows.llm import adapter as llm_adapter
+from backend.workflows.common.general_qna import maybe_handle_general_qna_for_step
 from backend.workflows.planner import maybe_run_smart_shortcuts
+from backend.workflows.nlu import (
+    detect_general_room_query,
+    empty_general_qna_detection,
+    quick_general_qna_scan,
+)
 from backend.utils.profiler import profile_step
 from backend.workflow.state import stage_payload
 from backend.debug.lifecycle import close_if_ended
@@ -30,6 +36,16 @@ from backend.workflow.guards import evaluate as evaluate_guards
 
 logger = logging.getLogger(__name__)
 WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"
+
+_ENTITY_LABELS = {
+    "client": "Client",
+    "assistant": "Agent",
+    "agent": "Agent",
+    "trigger": "Trigger",
+    "system": "System",
+    "qa": "Q&A",
+    "q&a": "Q&A",
+}
 
 
 def _debug_state(stage: str, state: WorkflowState, extra: Optional[Dict[str, Any]] = None) -> None:
@@ -53,6 +69,17 @@ def _debug_state(stage: str, state: WorkflowState, extra: Optional[Dict[str, Any
         "vague_weekday": event_entry.get("vague_weekday"),
         "vague_time": event_entry.get("vague_time_of_day"),
     }
+    general_flag = state.extras.get("general_qna_detected")
+    if general_flag is not None:
+        info["general_qna"] = bool(general_flag)
+    if extra and "entity" in extra:
+        entity_raw = extra["entity"]
+        if isinstance(entity_raw, str):
+            info.setdefault("entity", _ENTITY_LABELS.get(entity_raw.lower(), entity_raw))
+        else:
+            info.setdefault("entity", entity_raw)
+    elif stage == "init":
+        info.setdefault("entity", "Client")
     if extra:
         info.update(extra)
     if WF_DEBUG:
@@ -158,6 +185,46 @@ def _resolve_lock_path(path: Path) -> Path:
     if _same_default(path):
         return LOCK_PATH
     return db_io.lock_path_for(path)
+
+
+def _ensure_general_qna_classification(state: WorkflowState, message_text: str) -> Dict[str, Any]:
+    """Ensure the general Q&A classification is available on the workflow state."""
+
+    scan = state.extras.get("general_qna_scan")
+    if not scan:
+        scan = quick_general_qna_scan(message_text)
+        state.extras["general_qna_scan"] = scan
+
+    classification = state.extras.get("_general_qna_classification")
+    if classification:
+        state.extras["general_qna_detected"] = bool(classification.get("is_general"))
+        return classification
+
+    needs_detailed = bool(
+        scan.get("likely_general")
+        or (scan.get("heuristics") or {}).get("borderline")
+    )
+    if needs_detailed:
+        classification = detect_general_room_query(message_text, state)
+    else:
+        classification = empty_general_qna_detection()
+        classification["heuristics"] = scan.get("heuristics", classification["heuristics"])
+        classification["parsed"] = scan.get("parsed", classification["parsed"])
+        classification["constraints"] = {
+            "vague_month": classification["parsed"].get("vague_month"),
+            "weekday": classification["parsed"].get("weekday"),
+            "time_of_day": classification["parsed"].get("time_of_day"),
+            "pax": classification["parsed"].get("pax"),
+        }
+        classification["llm_called"] = False
+        classification["cached"] = False
+
+    classification.setdefault("primary", "general_qna")
+    if not classification.get("secondary"):
+        classification["secondary"] = ["general"]
+    state.extras["_general_qna_classification"] = classification
+    state.extras["general_qna_detected"] = bool(classification.get("is_general"))
+    return classification
 
 
 def load_db(path: Path = DB_PATH) -> Dict[str, Any]:
@@ -345,7 +412,12 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         or "unknown-thread"
     )
     state.thread_id = str(raw_thread_id)
-    _debug_state("init", state)
+    combined_text = "\n".join(
+        part for part in ((message.subject or "").strip(), (message.body or "").strip()) if part
+    )
+    state.extras["general_qna_scan"] = quick_general_qna_scan(combined_text)
+    classification = _ensure_general_qna_classification(state, combined_text)
+    _debug_state("init", state, extra={"entity": "client"})
     last_result = intake.process(state)
     _debug_state("post_intake", state, extra={"intent": state.intent.value if state.intent else None})
     _persist_if_needed(state, path, lock_path)
@@ -372,6 +444,10 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         if not event_entry:
             break
         step = event_entry.get("current_step")
+        general_result = maybe_handle_general_qna_for_step(state)
+        if general_result:
+            _debug_state("halt_general_qna", state, extra={"entity": "assistant"})
+            return _flush_and_finalize(general_result, state, path, lock_path)
         if step == 2:
             last_result = date_confirmation.process(state)
             _debug_state("post_step2", state)

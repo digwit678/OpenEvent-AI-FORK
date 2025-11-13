@@ -56,12 +56,13 @@ def test_general_room_qna_path(monkeypatch, tmp_path):
     assert draft["candidate_dates"] == free_dates
     assert draft["range_results"], "Hybrid queries should include concrete availability rows"
     body = draft["body"]
-    assert body.startswith("I checked availability")
-    assert "which date works best" in body.lower()
-    assert "Room A" not in body
-    assert "Room B" not in body
-    assert "01 Feb 2026" in body
-    assert "08 Feb 2026" in body
+    assert "General Q&A" in body
+    assert "| Room | Dates | Notes |" in body
+    assert "| Room A | 01.02.2026, 08.02.2026, 15.02.2026" in body
+    assert "Status: Available" in body
+    assert "- Choose a date so I can move straight into Room Availability and hold the best-fitting room — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you." in body
+    assert "- Room A" not in body
+    assert "- Room B" not in body
     assert draft["footer"].endswith("State: Awaiting Client")
 
     events = BUS.get(state.thread_id)  # type: ignore[attr-defined]

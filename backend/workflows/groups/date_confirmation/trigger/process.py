@@ -33,6 +33,8 @@ from backend.workflows.common.sorting import rank_rooms
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.gatekeeper import refresh_gatekeeper
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
+from backend.workflows.common.menu_options import build_menu_payload, format_menu_line
+from backend.workflows.common.general_qna import render_general_qna_reply, enrich_general_qna_step2
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.groups.intake.condition.checks import suggest_dates
 from backend.workflows.groups.room_availability.condition.decide import room_status_on_date
@@ -118,24 +120,6 @@ _WEEKDAY_NAME_TO_INDEX = {
     "sunday": 6,
     "sun": 6,
 }
-
-_GENERAL_QA_MENUS = [
-    {
-        "menu_name": "Seasonal Garden Trio",
-        "courses": 3,
-        "vegetarian": True,
-        "wine_pairing": True,
-        "price": "CHF 92",
-    },
-    {
-        "menu_name": "Alpine Roots Degustation",
-        "courses": 3,
-        "vegetarian": True,
-        "wine_pairing": True,
-        "price": "CHF 105",
-    },
-]
-
 
 def _thread_id(state: WorkflowState) -> str:
     if state.thread_id:
@@ -359,6 +343,11 @@ def process(state: WorkflowState) -> GroupResult:
 
     message_text = _message_text(state)
     classification = detect_general_room_query(message_text, state)
+    state.extras["_general_qna_classification"] = classification
+    state.extras["general_qna_detected"] = bool(classification.get("is_general"))
+    classification.setdefault("primary", "general_qna")
+    if not classification.get("secondary"):
+        classification["secondary"] = ["general"]
     thread_id = _thread_id(state)
     if thread_id:
         trace_marker(
@@ -376,13 +365,11 @@ def process(state: WorkflowState) -> GroupResult:
             owner_step="Step2_Date",
         )
     qa_payload = _maybe_general_qa_payload(state)
-    general_qna_applicable = (
-        classification["is_general"]
-        and not bool(event_entry.get("date_confirmed"))
-        and qa_payload is not None
-    )
+    general_qna_applicable = classification.get("is_general") and not bool(event_entry.get("date_confirmed"))
     if general_qna_applicable:
-        return _present_general_room_qna(state, event_entry, classification, thread_id, qa_payload)
+        result = _present_general_room_qna(state, event_entry, classification, thread_id, qa_payload)
+        enrich_general_qna_step2(state, classification)
+        return result
 
     pending_future_payload = event_entry.get("pending_future_confirmation")
     if pending_future_payload:
@@ -672,12 +659,12 @@ def _present_candidate_dates(
 
     next_step_lines = ["", "NEXT STEP:"]
     if future_display:
-        next_step_lines.append(f"Say yes if {future_display} works and I'll pencil it in.")
+        next_step_lines.append(f"Say yes if {future_display} works and I'll pencil it in so we can move straight into Room Availability.")
         next_step_lines.append("Prefer another option? Share a different day or time and I'll check availability.")
     elif week_scope:
-        next_step_lines.append("Tell me which date works best so I can continue with Date Confirmation.")
+        next_step_lines.append("Tell me which date works best so I can move to Room Availability and shortlist the best rooms.")
     else:
-        next_step_lines.append("Tell me which date works best so I can continue with Date Confirmation.")
+        next_step_lines.append("Tell me which date works best so I can move to Room Availability and shortlist the best rooms.")
         next_step_lines.append("Or share another day/time and I'll check availability.")
     message_lines.extend(next_step_lines)
     prompt = "\n".join(message_lines)
@@ -720,7 +707,7 @@ def _present_candidate_dates(
         "body": prompt,
         "body_markdown": prompt,
         "step": 2,
-        "next_step": "Confirm date",
+        "next_step": "Room Availability",
         "topic": "date_candidates",
         "candidate_dates": [format_iso_date_to_ddmmyyyy(iso) or iso for iso in formatted_dates[:5]],
         "table_blocks": [
@@ -1150,6 +1137,31 @@ def _finalize_confirmation(
 ) -> GroupResult:
     """Persist the requested window and trigger availability."""
 
+    if isinstance(window, str):
+        try:
+            parsed_date = datetime.strptime(window, "%Y-%m-%d")
+            display_date = parsed_date.strftime("%d.%m.%Y")
+            iso_date = window
+        except ValueError:
+            display_date = window
+            iso_date = to_iso_date(window) or window
+        fallback_window = event_entry.get("requested_window") or {}
+        start_time = fallback_window.get("start_time")
+        end_time = fallback_window.get("end_time")
+        start_iso = fallback_window.get("start")
+        end_iso = fallback_window.get("end")
+        window = ConfirmationWindow(
+            display_date=display_date,
+            iso_date=iso_date,
+            start_time=start_time,
+            end_time=end_time,
+            start_iso=start_iso,
+            end_iso=end_iso,
+            inherited_times=bool(start_time and end_time),
+            partial=not (start_time and end_time),
+            source_message_id=fallback_window.get("source_message_id"),
+        )
+
     state.event_id = event_entry.get("event_id")
     tag_message(event_entry, window.source_message_id)
     event_entry.setdefault("event_data", {})["Event Date"] = window.display_date
@@ -1231,6 +1243,26 @@ def _finalize_confirmation(
     state.subflow_group = default_subflow(next_stage)
     state.extras["persist"] = True
 
+    participants = _extract_participants_from_state(state)
+    noted_line = (
+        f"Noted: {participants} guests and {window.display_date}."
+        if participants
+        else f"Noted: {window.display_date} is confirmed."
+    )
+    follow_up_line = "I'll move straight into Room Availability and send the best-fitting rooms."
+    ack_body, ack_headers = format_sections_with_headers(
+        [("Next step", [noted_line, follow_up_line])]
+    )
+    state.add_draft_message(
+        {
+            "body": ack_body,
+            "body_markdown": ack_body,
+            "step": next_step,
+            "topic": "date_confirmed",
+            "headers": ack_headers,
+        }
+    )
+
     payload = {
         "client_id": state.client_id,
         "event_id": state.event_id,
@@ -1246,6 +1278,7 @@ def _finalize_confirmation(
         "persisted": True,
         "answered_question_first": True,
     }
+    payload["actions"] = [{"type": "send_reply"}]
     gatekeeper = refresh_gatekeeper(event_entry)
     state.telemetry.answered_question_first = True
     state.telemetry.gatekeeper_passed = dict(gatekeeper)
@@ -1593,16 +1626,11 @@ def _pluralize_weekday_hint(weekday_hint: Any) -> Optional[str]:
 
 
 def _maybe_general_qa_payload(state: WorkflowState) -> Optional[Dict[str, Any]]:
-    message_text = (_message_text(state) or "").lower()
-    if "vegetarian" in message_text and "wine" in message_text and (
-        "three-course" in message_text or "three course" in message_text
-    ):
-        return {
-            "select_expr": "SELECT menu_name, courses, vegetarian, wine_pairing, price",
-            "where_clauses": ["courses=3", "vegetarian=true", "wine_pairing=true"],
-            "rows": [dict(row) for row in _GENERAL_QA_MENUS],
-        }
-    return None
+    event_entry = state.event_entry or {}
+    user_info = state.user_info or {}
+    month_hint = user_info.get("vague_month") or event_entry.get("vague_month")
+    message_text = _message_text(state)
+    return build_menu_payload(message_text, context_month=month_hint)
 
 
 _TIME_HINT_DEFAULTS = {
@@ -1981,11 +2009,15 @@ def _present_general_room_qna(
     descriptor = _describe_constraints(month_hint, weekday_hint, time_of_day_hint)
     sections: List[Tuple[str, List[str]]] = []
     if qa_payload:
-        qa_lines = ["Vegetarian three-course menus with wine pairings:"]
-        for row in qa_payload["rows"]:
-            qa_lines.append(
-                f"- {row['menu_name']} — CHF {row['price']} per guest (wine pairings included)."
-            )
+        month_for_menu = qa_payload.get("month")
+        title = qa_payload.get("title") or "Menu options we can offer:"
+        qa_lines = [title]
+        for row in qa_payload.get("rows", []):
+            rendered = format_menu_line(row, month_hint=month_for_menu)
+            if rendered:
+                qa_lines.append(rendered)
+        if len(qa_lines) == 1:
+            qa_lines.append("Let me know if you'd like a detailed menu breakdown.")
         sections.append(("General Q&A", qa_lines))
     else:
         overview_lines = _format_general_availability(range_results, participants)
@@ -2011,7 +2043,7 @@ def _present_general_room_qna(
         availability_lines.append(f"I tried to match {notice}, but need a specific date to continue.")
         availability_lines.append("Share one or two exact dates and I'll confirm them immediately.")
 
-    availability_lines.append("Next step: confirm one date so I can lock the best room right away.")
+    availability_lines.append("Next step: choose a date so I can move straight into Room Availability and hold the best-fitting room.")
 
     sections.append((_date_header_label(month_hint), availability_lines))
 
@@ -2023,7 +2055,7 @@ def _present_general_room_qna(
     body_with_footer = append_footer(
         body_text,
         step=2,
-        next_step="Confirm date",
+        next_step=3,
         thread_state="Awaiting Client",
     )
 
@@ -2031,7 +2063,7 @@ def _present_general_room_qna(
         "body": body_with_footer,
         "body_markdown": body_text,
         "step": 2,
-        "next_step": "Confirm date",
+        "next_step": "Room Availability",
         "thread_state": "Awaiting Client",
         "topic": "general_room_qna",
         "candidate_dates": candidate_dates,
