@@ -192,6 +192,31 @@ def parse_constraints(msg_text: str) -> Dict[str, Any]:
     }
 
 
+def quick_general_qna_scan(msg_text: str) -> Dict[str, Any]:
+    """
+    Lightweight detector that flags potential general Q&A without LLM calls.
+
+    We keep this stage inexpensive by relying on regex/token checks (question marks,
+    interrogative starters, and availability keywords). The result steers whether the
+    expensive classifier should run downstream.
+    """
+
+    text = (msg_text or "").strip()
+    heuristics = heuristic_flags(text)
+    parsed = parse_constraints(text)
+    likely_general = bool(
+        heuristics.get("has_qmark")
+        or heuristics.get("starts_interrogative")
+        or heuristics.get("matched_patterns")
+        or heuristics.get("imperative_hint")
+    )
+    return {
+        "likely_general": likely_general,
+        "heuristics": heuristics,
+        "parsed": parsed,
+    }
+
+
 def should_call_llm(heuristics: Dict[str, Any], parsed: Dict[str, Any], message_text: str, state: WorkflowState) -> bool:
     if len(message_text or "") > 2000:
         return False
@@ -221,7 +246,13 @@ def llm_classify(msg_text: str) -> Dict[str, Any]:
                 "type": "object",
                 "properties": {
                     "vague_month": {"type": ["string", "null"]},
-                    "weekday": {"type": ["string", "array", "null"]},
+                    "weekday": {
+                        "anyOf": [
+                            {"type": "string"},
+                            {"type": "array", "items": {"type": "string"}},
+                            {"type": "null"},
+                        ]
+                    },
                     "time_of_day": {"type": ["string", "null"]},
                     "pax": {"type": ["number", "null"]},
                 },
@@ -403,10 +434,18 @@ def _empty_detection() -> Dict[str, Any]:
     }
 
 
+def empty_general_qna_detection() -> Dict[str, Any]:
+    """Public wrapper so callers can reuse the canonical empty payload."""
+
+    return dict(_empty_detection())
+
+
 __all__ = [
     "detect_general_room_query",
+    "empty_general_qna_detection",
     "heuristic_flags",
     "parse_constraints",
+    "quick_general_qna_scan",
     "should_call_llm",
     "reset_general_qna_cache",
 ]

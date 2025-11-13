@@ -38,16 +38,20 @@
         "res": {
           "assistant_draft": {
             "headers_subset": [
-              "General Q&A",
-              "Date options for February"
+              "General Q&A"
             ],
             "body_order": [
               "Vegetarian three-course menus with wine pairings",
-              "Saturdays available in February 2026: 07, 14, 21, 28"
+              "| Room | Dates | Notes |",
+              "Saturdays available in February 2026"
             ],
             "contains_all": [
+              "| Room | Dates | Notes |",
+              "| Room A | 07.02.2026, 14.02.2026, 21.02.2026, 28.02.2026 |",
               "Vegetarian three-course menus with wine pairings",
-              "Saturdays available in February 2026: 07, 14, 21, 28"
+              "Saturdays available in February 2026: 07, 14, 21, 28",
+              "Status: Available; Evening",
+              "- Choose a date so I can move straight into Room Availability and hold the best-fitting room — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you."
             ]
           }
         }
@@ -67,8 +71,7 @@
         "res": {
           "assistant_draft": {
             "headers_subset": [
-              "General Q&A",
-              "Date options for February"
+              "General Q&A"
             ]
           }
         }
@@ -85,7 +88,23 @@
           "date": "2026-02-21",
           "participants": 30
         },
-        "actions": [],
+        "actions": [
+          {
+            "type": "send_reply"
+          },
+          {
+            "type": "room_options_enqueued",
+            "payload": {
+              "suggested_dates": [
+                "07.02.2026",
+                "14.02.2026",
+                "21.02.2026",
+                "28.02.2026"
+              ],
+              "event_id": "ANY"
+            }
+          }
+        ],
         "db_assert": {
           "gatekeeping": {
             "attendees": 30,

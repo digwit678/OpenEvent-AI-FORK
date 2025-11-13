@@ -20,9 +20,10 @@
   --entity-condition: #f59e0b;
   --entity-hil: #0f766e;
   --entity-detour: #eab308;
-  --entity-qa: #475569;
+  --entity-qa: #1d4ed8;
   --entity-waiting: #94a3b8;
   --entity-draft: #a855f7;
+  --entity-client: #0ea5e9;
 }
 
 .sr-only {
@@ -633,9 +634,15 @@
 }
 
 .trace-entity--Q\&A {
-  background: rgba(71, 85, 105, 0.18);
-  color: #1f2937;
-  border-color: rgba(71, 85, 105, 0.35);
+  background: rgba(29, 78, 216, 0.18);
+  color: #0f172a;
+  border-color: rgba(29, 78, 216, 0.4);
+}
+
+.trace-entity--CLIENT {
+  background: rgba(14, 165, 233, 0.22);
+  color: #0f172a;
+  border-color: rgba(14, 165, 233, 0.45);
 }
 
 .trace-entity--WAITING {
@@ -1304,6 +1311,11 @@
 
 .entity-pill--agent {
   background: var(--entity-agent);
+}
+
+.entity-pill--client {
+  background: var(--entity-client);
+  color: #032b42;
 }
 
 .entity-pill--db {

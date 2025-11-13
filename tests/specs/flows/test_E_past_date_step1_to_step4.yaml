@@ -9,7 +9,7 @@
         "body": "Hello team,\nWe’d like to host a networking evening on Thu, May 8 2025 in Basel from 18:00 to 22:00 for about 60 guests.\nSetup: standing reception with bar tables, sound system, light catering.\nCould you suggest the best dates?\nThanks,\nJulia"
       },
       "expect": {
-        "intent": "event_intake",
+        "intent": "event_intake_with_question",
         "user_info": {
           "participants": 60,
           "start_time": "18:00",
@@ -33,10 +33,14 @@
         "res": {
           "assistant_draft": {
             "headers_subset": [
-              "Date options for May"
+              "General Q&A"
             ],
             "contains_all": [
-              "Thursdays available in May 2026: 07, 14, 21, 28"
+              "| Room | Dates | Notes |",
+              "07.05.2026, 14.05.2026, 21.05.2026, 28.05.2026",
+              "Status: Available",
+              "Coffee break service.",
+              "- Choose a date so I can move straight into Room Availability and hold the best-fitting room — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you."
             ]
           }
         }
@@ -56,7 +60,7 @@
         "res": {
           "assistant_draft": {
             "headers_subset": [
-              "Date options for May"
+              "General Q&A"
             ]
           }
         }
@@ -72,7 +76,23 @@
         "user_info": {
           "date": "2026-05-21"
         },
-        "actions": []
+        "actions": [
+          {
+            "type": "send_reply"
+          },
+          {
+            "type": "room_options_enqueued",
+            "payload": {
+              "suggested_dates": [
+                "2026-05-07",
+                "2026-05-14",
+                "2026-05-21",
+                "2026-05-28"
+              ],
+              "event_id": "ANY"
+            }
+          }
+        ]
       }
     },
     {
