@@ -19,6 +19,7 @@ TraceKind = Literal[
     "DETOUR",
     "QA_ENTER",
     "QA_EXIT",
+    "GENERAL_QA",
     "DRAFT_SEND",
     "STATE_SNAPSHOT",
     "AGENT_PROMPT_IN",
@@ -41,6 +42,7 @@ LANE_BY_KIND: Dict[TraceKind, Lane] = {
     "DETOUR": "detour",
     "QA_ENTER": "qa",
     "QA_EXIT": "qa",
+    "GENERAL_QA": "qa",
     "AGENT_PROMPT_IN": "prompt",
     "AGENT_PROMPT_OUT": "prompt",
 }

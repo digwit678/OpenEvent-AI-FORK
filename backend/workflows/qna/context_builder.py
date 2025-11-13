@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
+import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 EffectiveSource = str  # "Q", "C", "F", "UNUSED"
@@ -236,7 +237,11 @@ def _resolve_date(
 
     if subtype in {"room_list_for_us", "room_exclusion_followup"}:
         if q_date or q_range or q_pattern:
-            return EffectiveVariable(value=_select_date_value(q_date, q_range, q_pattern), source="Q"), None
+            meta = _pattern_meta(q_pattern)
+            value = _select_date_value(q_date, q_range, q_pattern)
+            if meta:
+                return EffectiveVariable(value=value, source="Q", meta=meta), None
+            return EffectiveVariable(value=value, source="Q"), None
         if captured_date:
             return EffectiveVariable(value=captured_date, source="C"), None
         return EffectiveVariable(value=None, source="UNUSED"), "date"
@@ -272,7 +277,12 @@ def _resolve_date(
             return EffectiveVariable(value=captured_date, source="C"), None
         return EffectiveVariable(value=None, source="UNUSED"), "date"
 
-    return EffectiveVariable(value=_select_date_value(q_date, q_range, q_pattern), source="Q"), None
+    selected = _select_date_value(q_date, q_range, q_pattern)
+    if q_pattern:
+        meta = _pattern_meta(q_pattern)
+        if meta:
+            return EffectiveVariable(value=selected, source="Q", meta=meta), None
+    return EffectiveVariable(value=selected, source="Q"), None
 
 
 def _resolve_room(
@@ -391,10 +401,39 @@ def _resolve_products(
 
 def _derive_base_date(effective_date: EffectiveVariable, now_fn: Callable[[], date]) -> Optional[date]:
     value = effective_date.value
+    meta = effective_date.meta or {}
     if isinstance(value, str):
         parsed = _parse_iso_date(value)
         if parsed:
             return parsed
+    if isinstance(value, dict):
+        start = value.get("start")
+        if isinstance(start, str):
+            parsed = _parse_iso_date(start)
+            if parsed:
+                return parsed
+        date_token = value.get("date")
+        if isinstance(date_token, str):
+            parsed = _parse_iso_date(date_token)
+            if parsed:
+                return parsed
+    if meta:
+        year = meta.get("year")
+        month_index = meta.get("month_index")
+        days_hint = meta.get("days_hint")
+        if not year:
+            year = now_fn().year
+        if month_index:
+            if days_hint:
+                for day in sorted({d for d in days_hint if isinstance(d, int)}):
+                    try:
+                        return date(year, month_index, day)
+                    except ValueError:
+                        continue
+            try:
+                return date(year, month_index, 1)
+            except ValueError:
+                pass
     if isinstance(value, dict):
         start = value.get("start")
         if isinstance(start, str):
@@ -525,6 +564,39 @@ def _pattern_meta(pattern: Optional[str]) -> Dict[str, Any]:
         if name in lowered:
             meta["weekday"] = name
             break
+    week_terms = {
+        "first": 1,
+        "1st": 1,
+        "second": 2,
+        "2nd": 2,
+        "third": 3,
+        "3rd": 3,
+        "fourth": 4,
+        "4th": 4,
+        "fifth": 5,
+        "5th": 5,
+    }
+    for token, index in week_terms.items():
+        if f"{token} week" in lowered:
+            meta["week_index"] = index
+            break
+    year_match = re.search(r"(20\d{2})", pattern)
+    if year_match:
+        try:
+            meta["year"] = int(year_match.group(1))
+        except ValueError:
+            pass
+    day_tokens = []
+    for candidate in re.findall(r"\b(\d{1,2})\b", pattern):
+        try:
+            day_value = int(candidate)
+        except ValueError:
+            continue
+        if day_value > 31:
+            continue
+        day_tokens.append(day_value)
+    if day_tokens:
+        meta["days_hint"] = sorted({day for day in day_tokens if day >= 1})
     return meta
 
 

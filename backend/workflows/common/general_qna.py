@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from backend.debug.hooks import trace_general_qa_status
 from backend.workflows.common.capacity import fits_capacity, layout_capacity
 from backend.workflows.common.catalog import list_catering, list_room_features
 from backend.workflows.common.menu_options import build_menu_payload, format_menu_line
@@ -591,10 +592,57 @@ def _build_table_content(
     return table_lines, table_rows
 
 
+def _range_intro_lines(range_results: Sequence[Dict[str, Any]]) -> List[str]:
+    if not range_results:
+        return []
+    iso_values: List[datetime] = []
+    for entry in range_results:
+        iso = entry.get("iso_date") or entry.get("date")
+        if not iso:
+            continue
+        try:
+            iso_values.append(datetime.fromisoformat(str(iso)))
+        except ValueError:
+            continue
+    if not iso_values:
+        return []
+    iso_values.sort()
+    month_label = iso_values[0].strftime("%B")
+    year_label = iso_values[0].strftime("%Y")
+    weekday_names = {value.strftime("%A") for value in iso_values}
+    weekday_label = f"{next(iter(weekday_names))}s" if len(weekday_names) == 1 else "Dates"
+    day_tokens: List[str] = []
+    for value in iso_values:
+        token = value.strftime("%d")
+        if token not in day_tokens:
+            day_tokens.append(token)
+        if len(day_tokens) >= 8:
+            break
+    header_line = f"Date options for {month_label}"
+    summary_line = f"{weekday_label} available in {month_label} {year_label}: {', '.join(day_tokens)}"
+    return [header_line, summary_line]
+
+
 def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any]) -> None:
+    thread_id = state.thread_id
     if not state.draft_messages:
+        trace_general_qa_status(thread_id, "skip:no_drafts", {"reason": "no_draft_messages"})
         return
     draft = state.draft_messages[-1]
+    if draft.get("subloop") != "general_q_a":
+        trace_general_qa_status(
+            thread_id,
+            "skip:subloop_mismatch",
+            {"topic": draft.get("topic"), "subloop": draft.get("subloop")},
+        )
+        return
+    if draft.get("topic") not in {"general_room_qna", "structured_qna"}:
+        trace_general_qa_status(
+            thread_id,
+            "skip:topic_mismatch",
+            {"topic": draft.get("topic"), "subloop": draft.get("subloop")},
+        )
+        return
     body_text = draft.get("body") or ""
     base_body, next_step_block, footer_tail = _split_body_footer(body_text)
 
@@ -610,6 +658,7 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
     candidate_dates = draft.get("candidate_dates") or []
     range_results = draft.get("range_results")
     table_lines, table_rows = _build_table_content(state, candidate_dates, range_results, room_recs, catering_lines)
+    range_intro_lines = _range_intro_lines(range_results or [])
 
     availability_lines = _extract_availability_lines(base_body)
     info_lines = _extract_info_lines(base_body)
@@ -622,6 +671,9 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
     body_segments: List[str] = ["General Q&A"]
     if menu_lines:
         body_segments.extend(menu_lines)
+    if range_intro_lines:
+        body_segments.append("")
+        body_segments.extend(range_intro_lines)
     if table_lines:
         body_segments.append("")
         body_segments.extend(table_lines)
@@ -637,11 +689,7 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
 
     body_markdown = "\n".join(segment for segment in body_segments if segment is not None).strip()
 
-    footer_text = draft.get("footer")
-    if not footer_text and footer_tail:
-        footer_text = footer_tail
-    else:
-        footer_text = footer_text or "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client"
+    footer_text = "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client"
 
     draft["body_markdown"] = body_markdown
     draft["body"] = f"{draft['body_markdown']}\n\n---\n{footer_text}"
@@ -655,167 +703,62 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
                 "rows": table_rows,
             }
         ]
+    trace_general_qa_status(
+        thread_id,
+        "applied",
+        {
+            "topic": draft.get("topic"),
+            "candidate_dates": len(candidate_dates),
+            "has_table": bool(table_rows),
+            "has_menu_payload": bool(menu_payload),
+            "range_results": len(range_results or []),
+        },
+    )
 
 
 def render_general_qna_reply(state: WorkflowState, classification: Dict[str, Any]) -> Optional[GroupResult]:
     if not classification or not classification.get("is_general"):
         return None
 
-    msg_payload = _qna_message_payload(state)
     event_entry_after = state.event_entry or {}
-
     extraction_payload = state.extras.get("qna_extraction")
     structured_result = build_structured_qna_result(state, extraction_payload) if extraction_payload else None
-    if structured_result:
-        raw_step = event_entry_after.get("current_step")
-        try:
-            current_step = int(raw_step) if raw_step is not None else 2
-        except (TypeError, ValueError):
-            current_step = 2
-        thread_state = event_entry_after.get("thread_state") or state.thread_state or "Awaiting Client"
-        if structured_result.handled and structured_result.body_markdown:
-            markdown = structured_result.body_markdown.strip()
-            footer_body = append_footer(
-                markdown,
-                step=current_step,
-                next_step=current_step,
-                thread_state=thread_state,
-            )
-            draft_message = {
-                "body": footer_body,
-                "body_markdown": markdown,
-                "step": current_step,
-                "topic": "structured_qna",
-                "next_step": current_step,
-                "thread_state": thread_state,
-                "headers": ["General Q&A"],
-                "requires_approval": False,
-                "subloop": "structured_qna",
-            }
-            state.record_subloop("structured_qna")
-            state.add_draft_message(draft_message)
-            state.set_thread_state(thread_state)
 
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry_after.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "draft_messages": state.draft_messages,
-            "thread_state": state.thread_state,
-            "context": state.context_snapshot,
-            "persisted": False,
-            "general_qna": True,
-            "structured_qna": True,
-            "qna_select_result": structured_result.action_payload,
-        }
-        return GroupResult(action="qna_select_result", payload=payload)
-
-    classification_payload = dict(classification)
-    classification_payload.setdefault("primary", "general_qna")
-    secondary = list(classification_payload.get("secondary") or [])
-    if "general" not in secondary and classification_payload.get("primary") == "general_qna":
-        secondary.insert(0, "general")
-    classification_payload["secondary"] = secondary
-
-    qna_result = route_general_qna(
-        msg_payload,
-        event_entry_after,
-        event_entry_after,
-        state.db,
-        classification_payload,
-    )
-    blocks = qna_result.get("post_step") or qna_result.get("pre_step") or []
-    if not blocks:
+    if structured_result is None:
         return None
-    block = blocks[0]
 
-    current_step = block.get("step") or qna_result.get("resume_step") or event_entry_after.get("current_step") or 2
+    raw_step = event_entry_after.get("current_step")
+    try:
+        current_step = int(raw_step) if raw_step is not None else 2
+    except (TypeError, ValueError):
+        current_step = 2
     thread_state = event_entry_after.get("thread_state") or state.thread_state or "Awaiting Client"
-    next_step_value = block.get("step") or current_step
-    next_step = next_step_value if next_step_value != current_step else 3
 
-    base_body_raw = block.get("body") or ""
-    base_body, next_step_block, _ = _split_body_footer(base_body_raw)
+    table_blocks = _structured_table_blocks(structured_result.action_payload.get("db_summary", {}))
+    body_markdown = (structured_result.body_markdown or _fallback_structured_body(structured_result.action_payload)).strip()
 
-    preferences = _preprocess_preferences(state)
-    _sections, _headers, room_recs, catering_lines = _build_room_and_catering_sections(state, preferences)
-    menu_payload = build_menu_payload(
-        msg_payload.get("body"),
-        context_month=event_entry_after.get("vague_month"),
-    )
-    if menu_payload:
-        state.turn_notes["general_qa"] = menu_payload
-
-    candidate_dates = block.get("candidate_dates") or []
-    range_results = block.get("range_results")
-    table_lines, table_rows = _build_table_content(state, candidate_dates, range_results, room_recs, catering_lines)
-    availability_lines = _extract_availability_lines(base_body)
-    info_lines = _extract_info_lines(base_body)
-    menu_lines = _menu_lines_from_payload(menu_payload)
-    if not candidate_dates and not availability_lines:
-        availability_lines = ["I need a specific date before I can confirm availability."]
-
-    default_line = DEFAULT_NEXT_STEP_LINE if current_step == 2 else DEFAULT_ROOM_NEXT_STEP_LINE
-    next_step_line = _normalise_next_step_line(next_step_block, default_line=default_line)
-
-    body_segments: List[str] = ["General Q&A"]
-    if menu_lines:
-        body_segments.extend(menu_lines)
-    if table_lines:
-        body_segments.append("")
-        body_segments.extend(table_lines)
-    if availability_lines:
-        body_segments.append("")
-        body_segments.extend(availability_lines)
-    if info_lines:
-        body_segments.append("")
-        body_segments.extend(info_lines)
-    body_segments.append("")
-    body_segments.append("NEXT STEP:")
-    body_segments.append(next_step_line)
-
-    final_body = "\n".join(segment for segment in body_segments if segment is not None).strip()
-    if not final_body:
-        return None
-
-    body_with_footer = append_footer(
-        final_body,
-        step=current_step,
-        next_step=next_step,
-        thread_state=thread_state,
-    )
-
-    table_blocks = []
-    if table_rows:
-        table_blocks.append(
-            {
-                "type": "dates",
-                "label": "Dates & Rooms",
-                "rows": table_rows,
-            }
+    if structured_result.handled and body_markdown:
+        footer_body = append_footer(
+            body_markdown,
+            step=current_step,
+            next_step=current_step,
+            thread_state=thread_state,
         )
-
-    draft_message = {
-        "body": body_with_footer,
-        "body_markdown": final_body,
-        "step": current_step,
-        "topic": block.get("topic") or "general_information",
-        "next_step": next_step,
-        "thread_state": thread_state,
-        "headers": ["General Q&A"],
-        "requires_approval": False,
-        "subloop": "general_q_a",
-        "candidate_dates": block.get("candidate_dates"),
-        "range_results": block.get("range_results"),
-        "range_descriptor": block.get("range_descriptor"),
-        "table_blocks": table_blocks,
-    }
-
-    state.record_subloop("general_q_a")
-    state.extras["subloop"] = "general_q_a"
-    state.add_draft_message(draft_message)
-    state.set_thread_state(thread_state)
+        draft_message = {
+            "body": footer_body,
+            "body_markdown": body_markdown,
+            "step": current_step,
+            "topic": "structured_qna",
+            "next_step": current_step,
+            "thread_state": thread_state,
+            "headers": ["General Q&A"],
+            "requires_approval": False,
+            "subloop": "structured_qna",
+            "table_blocks": table_blocks,
+        }
+        state.record_subloop("structured_qna")
+        state.add_draft_message(draft_message)
+        state.set_thread_state(thread_state)
 
     payload = {
         "client_id": state.client_id,
@@ -827,8 +770,113 @@ def render_general_qna_reply(state: WorkflowState, classification: Dict[str, Any
         "context": state.context_snapshot,
         "persisted": False,
         "general_qna": True,
+        "structured_qna": structured_result.handled,
+        "qna_select_result": structured_result.action_payload,
+        "structured_qna_debug": structured_result.debug,
+        "structured_qna_tables": table_blocks,
     }
-    return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
+    if extraction_payload:
+        payload["qna_extraction"] = extraction_payload
+
+    state.turn_notes["structured_qna_table"] = table_blocks
+    return GroupResult(action="qna_select_result", payload=payload)
+
+
+def _structured_table_blocks(db_summary: Dict[str, Any]) -> List[Dict[str, Any]]:
+    rooms = db_summary.get("rooms") or []
+    if not rooms:
+        return []
+
+    grouped: Dict[str, Dict[str, Any]] = {}
+    for entry in rooms:
+        name = str(entry.get("room_name") or entry.get("room_id") or "Room").strip()
+        bucket = grouped.setdefault(
+            name,
+            {"dates": set(), "notes": set()},
+        )
+        date_label = entry.get("date")
+        if date_label:
+            bucket["dates"].add(_format_display_date(str(date_label)))
+        status = entry.get("status")
+        if status:
+            bucket["notes"].add(f"Status: {status}")
+        capacity = entry.get("capacity_max")
+        if capacity:
+            bucket["notes"].add(f"Capacity up to {capacity}")
+        products = entry.get("products") or []
+        if products:
+            bucket["notes"].add(f"Products: {', '.join(products)}")
+
+    rows: List[Dict[str, Any]] = []
+    for name, payload in sorted(grouped.items(), key=lambda item: item[0].lower()):
+        rows.append(
+            {
+                "Room": name,
+                "Dates": ", ".join(sorted(payload["dates"])) if payload["dates"] else "—",
+                "Notes": "; ".join(sorted(payload["notes"])) if payload["notes"] else "—",
+            }
+        )
+    if not rows:
+        return []
+    return [
+        {
+            "type": "dates",
+            "label": "Dates & Rooms",
+            "rows": rows,
+        }
+    ]
+
+
+def _fallback_structured_body(action_payload: Dict[str, Any]) -> str:
+    lines = ["General Q&A"]
+    summary = action_payload.get("db_summary") or {}
+    rooms = summary.get("rooms") or []
+    products = summary.get("products") or []
+    dates = summary.get("dates") or []
+    notes = summary.get("notes") or []
+
+    if rooms:
+        lines.append("")
+        lines.append("Rooms:")
+        for entry in rooms[:5]:
+            name = entry.get("room_name") or entry.get("room_id")
+            date_label = entry.get("date")
+            capacity = entry.get("capacity_max")
+            status = entry.get("status")
+            descriptor = []
+            if capacity:
+                descriptor.append(f"up to {capacity} pax")
+            if status:
+                descriptor.append(status)
+            if date_label:
+                descriptor.append(_format_display_date(str(date_label)))
+            suffix = f" ({', '.join(descriptor)})" if descriptor else ""
+            lines.append(f"- {name}{suffix}")
+
+    if dates:
+        lines.append("")
+        lines.append("Dates:")
+        for entry in dates[:5]:
+            date_label = entry.get("date")
+            room_label = entry.get("room_name") or entry.get("room_id")
+            status = entry.get("status")
+            descriptor = " – ".join(filter(None, [room_label, status]))
+            lines.append(f"- {_format_display_date(str(date_label))} {descriptor}".strip())
+
+    if products:
+        lines.append("")
+        lines.append("Products:")
+        for entry in products[:5]:
+            name = entry.get("product")
+            availability = "available" if entry.get("available_today") else "not available today"
+            lines.append(f"- {name} ({availability})")
+
+    if notes:
+        lines.append("")
+        for entry in notes[:3]:
+            lines.append(f"- {entry}")
+
+    return "\n".join(lines).strip()
 
 
 def maybe_handle_general_qna_for_step(state: WorkflowState) -> Optional[GroupResult]:

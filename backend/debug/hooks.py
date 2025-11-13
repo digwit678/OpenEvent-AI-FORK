@@ -834,6 +834,26 @@ def trace_qa_exit(thread_id: str, detail: str, data: Optional[Dict[str, Any]] = 
     clear_subloop_context(thread_id)
 
 
+def trace_general_qa_status(thread_id: Optional[str], detail: str, data: Optional[Dict[str, Any]] = None) -> None:
+    if not thread_id:
+        return
+    emit(
+        thread_id,
+        "GENERAL_QA",
+        step="Step2_Date",
+        detail=detail,
+        data=data or {},
+        subject="General Q&A",
+        status="checked",
+        owner_step="Step2_Date",
+        granularity="logic",
+        entity_label="Q&A",
+        actor="Agent",
+        event_name="General Q&A",
+        details_label=detail,
+    )
+
+
 def trace_marker(
     thread_id: str,
     label: str,
