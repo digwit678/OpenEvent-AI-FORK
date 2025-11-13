@@ -12,6 +12,7 @@ interface TraceRowProps {
 
 const ENTITY_CLASS_MAP: Record<string, string> = {
   Trigger: 'entity-pill entity-pill--trigger',
+  Client: 'entity-pill entity-pill--client',
   Agent: 'entity-pill entity-pill--agent',
   'DB Action': 'entity-pill entity-pill--db',
   Condition: 'entity-pill entity-pill--condition',

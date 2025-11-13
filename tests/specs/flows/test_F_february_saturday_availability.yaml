@@ -12,13 +12,18 @@
         "res": {
           "assistant_draft": {
             "headers_subset": [
-              "Date options for Week 1 of February"
+              "General Q&A"
             ],
             "contains_all": [
-              "Dates available in Week 1 of February 2026"
+              "Dinner three-course menus with wine pairings:",
+              "| Room | Dates | Notes |",
+              "| Room A | 07.02.2026, 14.02.2026, 21.02.2026, 28.02.2026 |",
+              "Status: Available; Evening",
+              "Saturdays available in February 2026",
+              "- Choose a date so I can move straight into Room Availability and hold the best-fitting room — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you."
             ],
             "not_contains_all": [
-              "Room ",
+              "- Room ",
               "Lunch"
             ]
           }

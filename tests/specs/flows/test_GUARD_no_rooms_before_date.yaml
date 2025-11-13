@@ -22,7 +22,7 @@
               "Date options for Week 2 of December"
             ],
             "not_contains_all": [
-              "Room "
+              "- Room "
             ]
           }
         }

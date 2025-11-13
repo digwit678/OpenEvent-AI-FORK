@@ -2917,19 +2917,20 @@
       "event_id": "70734cfc-50f2-4c19-85c2-d46921d6b488",
       "created_at": "2025-10-31T01:09:41.245390",
       "status": "Lead",
-      "current_step": 3,
+      "current_step": 2,
       "caller_step": null,
-      "thread_state": "Awaiting Client Response",
-      "chosen_date": "05.06.2026",
-      "date_confirmed": true,
+      "thread_state": "Awaiting Client",
+      "chosen_date": null,
+      "date_confirmed": false,
       "locked_room_id": null,
       "requirements": {
-        "event_duration": {
-          "start": "14:00",
-          "end": "18:00"
-        }
+        "number_of_participants": 20,
+        "seating_layout": "U-shape",
+        "event_duration": {},
+        "special_requirements": "projector, coffee service",
+        "preferred_room": "Room S"
       },
-      "requirements_hash": "235eca9cc1a07d0df68c2de0190fe5ebe88dead82655381c240e7102f68b5744",
+      "requirements_hash": "4e8d1a151643119c19c5f924348953c593b8610a4b8fac77de4aa4a59ff55033",
       "room_eval_hash": null,
       "offer_id": null,
       "audit": [
@@ -2946,6 +2947,48 @@
           "from_step": 2,
           "to_step": 3,
           "reason": "date_confirmed"
+        },
+        {
+          "ts": "2025-11-12T23:02:26Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-11-12T23:02:26Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-12T23:04:47Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-11-12T23:04:47Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-13T00:06:27Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-11-13T00:06:27Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
         }
       ],
       "review_state": {
@@ -2954,38 +2997,52 @@
         "message": null
       },
       "event_data": {
-        "Date Email Received": "31.10.2025",
+        "Date Email Received": "13.11.2025",
         "Status": "Lead",
-        "Event Date": "05.06.2026",
+        "Event Date": "Not specified",
         "Name": "Client (GUI)",
         "Email": "elena.gruber@helix-analytics.ch",
-        "Phone": "Not specified",
+        "Phone": "+41449872345",
         "Company": "Not specified",
         "Billing Address": "Not specified",
         "Start Time": "14:00",
         "End Time": "18:00",
-        "Preferred Room": "Room B",
-        "Number of Participants": "Not specified",
-        "Type of Event": "Not specified",
-        "Catering Preference": "Not specified",
+        "Preferred Room": "Room S",
+        "Number of Participants": "20",
+        "Type of Event": "workshop",
+        "Catering Preference": "Coffee service",
         "Billing Amount": "none",
         "Deposit": "none",
         "Language": "Not specified",
-        "Additional Info": "Not specified"
+        "Additional Info": "projector, coffee service"
       },
       "msgs": [
         "664ed41f-6179-43f4-879e-ba30f160f512",
         "51951eb7-5b46-4867-a87f-1064dc5b5219",
         "12f17791-1be7-4a04-9830-e3d956507fcd",
         "e3e49492-f513-46f2-8e46-0c76b5420244",
-        "f0ab8871-8d9c-4946-b99a-ceb94c6d4fd8"
+        "f0ab8871-8d9c-4946-b99a-ceb94c6d4fd8",
+        "d104fbc3-8840-44d0-abac-1c1e6831a40a",
+        "31a2f1e4-3fa9-482d-940c-46e420ea9e14",
+        "f1a8f410-cbb3-4ab3-85e7-70214230bd18"
       ],
       "captured": {
         "date": "2026-06-05",
         "event_date": "05.06.2026",
         "start_time": "14:00",
         "end_time": "18:00",
-        "preferred_room": "Room B"
+        "preferred_room": "Room S",
+        "contact": {
+          "phone": "+41449872345"
+        },
+        "catering": [
+          "Light lunch",
+          "Coffee break service"
+        ],
+        "products": [
+          "Projector",
+          "Flip chart"
+        ]
       },
       "verified": {
         "date": "2026-06-05",
@@ -3001,12 +3058,21 @@
         "12f17791-1be7-4a04-9830-e3d956507fcd:start_time",
         "12f17791-1be7-4a04-9830-e3d956507fcd:end_time",
         "e3e49492-f513-46f2-8e46-0c76b5420244:preferred_room",
-        "f0ab8871-8d9c-4946-b99a-ceb94c6d4fd8:preferred_room"
+        "f0ab8871-8d9c-4946-b99a-ceb94c6d4fd8:preferred_room",
+        "d104fbc3-8840-44d0-abac-1c1e6831a40a:preferred_room",
+        "d104fbc3-8840-44d0-abac-1c1e6831a40a:contact.phone",
+        "31a2f1e4-3fa9-482d-940c-46e420ea9e14:preferred_room",
+        "31a2f1e4-3fa9-482d-940c-46e420ea9e14:contact.phone",
+        "f1a8f410-cbb3-4ab3-85e7-70214230bd18:preferred_room",
+        "f1a8f410-cbb3-4ab3-85e7-70214230bd18:contact.phone"
       ],
-      "deferred_intents": [],
-      "current_step_stage": "step_3",
+      "deferred_intents": [
+        "room_selection",
+        "contact_update"
+      ],
+      "current_step_stage": "step_2",
       "caller_step_stage": null,
-      "subflow_group": "room_availability",
+      "subflow_group": "date_confirmation",
       "requested_window": {
         "display_date": "05.06.2026",
         "date_iso": "2026-06-05",
@@ -3221,7 +3287,777 @@
           ]
         }
       },
-      "requested_products": []
+      "requested_products": [],
+      "wish_products": [
+        "projector, coffee service"
+      ],
+      "preferences": {
+        "wish_products": [
+          "projector, coffee service"
+        ],
+        "keywords": [
+          "projector",
+          "coffee",
+          "service",
+          "shape",
+          "workshop"
+        ],
+        "default_hint": "projector, coffee service",
+        "catering": [
+          "coffee service"
+        ],
+        "products": [
+          "projector",
+          "u-shape"
+        ],
+        "room_recommendations": [
+          {
+            "room": "Room A",
+            "score": 1.0,
+            "matched": [
+              "Coffee & Tea Bar"
+            ],
+            "missing": []
+          },
+          {
+            "room": "Room B",
+            "score": 1.0,
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          },
+          {
+            "room": "Room C",
+            "score": 1.0,
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          },
+          {
+            "room": "Room D",
+            "score": 1.0,
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          },
+          {
+            "room": "Room E",
+            "score": 1.0,
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          }
+        ],
+        "room_similarity": {
+          "Room A": 1.0,
+          "Room B": 1.0,
+          "Room C": 1.0,
+          "Room D": 1.0,
+          "Room E": 1.0
+        },
+        "room_match_breakdown": {
+          "Room A": {
+            "matched": [
+              "Coffee & Tea Bar"
+            ],
+            "missing": []
+          },
+          "Room B": {
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          },
+          "Room C": {
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          },
+          "Room D": {
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          },
+          "Room E": {
+            "matched": [
+              "Prosecco Service"
+            ],
+            "missing": []
+          }
+        }
+      },
+      "vague_weekday": "friday",
+      "weekdays_hint": [
+        18
+      ],
+      "window_scope": {
+        "weekdays_hint": [
+          18
+        ]
+      },
+      "range_query_detected": true,
+      "candidate_dates": [
+        "14.11.2025",
+        "21.11.2025",
+        "28.11.2025",
+        "05.12.2025",
+        "12.12.2025"
+      ],
+      "pending_hil_requests": [
+        {
+          "task_id": "8610351b-de04-47dc-ae98-3bf3484f2545",
+          "signature": "764e42b246dc7e1f655bd07deeb975893dc1ae335e2f23c2d94fc429bb509a24",
+          "step": 2,
+          "draft": {
+            "body": "General Q&A\n- Fri 14 Nov 2025 — Available for 20 guests\n- Fri 21 Nov 2025 — Available for 20 guests\n- Fri 28 Nov 2025 — Available for 20 guests\n- Fri 05 Dec 2025 — Available for 20 guests\n\nDate options for Late spring\nFridays available in Late spring 2025: 14, 21, 28, 05, 12\n\nRooms & Setup\nRooms that already cover your requested setup:\n- Room B — U-shape up to 20, Projector ✗\n- Room C — U-shape up to 30, Projector ✗\n\nRefreshments\n- Light lunch.\n- Coffee break service.\n\nNEXT STEP:\n- Choose a date so I can move straight into Room Availability and hold the best-fitting room.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+            "step": 2,
+            "next_step": "Room Availability",
+            "thread_state": "Awaiting Client",
+            "topic": "general_room_qna",
+            "candidate_dates": [
+              "14.11.2025",
+              "21.11.2025",
+              "28.11.2025",
+              "05.12.2025",
+              "12.12.2025"
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 14 Nov 2025",
+                "date": "14.11.2025",
+                "iso_date": "2025-11-14"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 21 Nov 2025",
+                "date": "21.11.2025",
+                "iso_date": "2025-11-21"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 28 Nov 2025",
+                "date": "28.11.2025",
+                "iso_date": "2025-11-28"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 05 Dec 2025",
+                "date": "05.12.2025",
+                "iso_date": "2025-12-05"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 12 Dec 2025",
+                "date": "12.12.2025",
+                "iso_date": "2025-12-12"
+              }
+            ],
+            "subloop": "general_q_a",
+            "headers": [
+              "General Q&A",
+              "Date options for Late spring",
+              "Rooms & Setup",
+              "Refreshments"
+            ],
+            "range_results": [
+              {
+                "iso_date": "2025-11-14",
+                "date_label": "Fri 14 Nov 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-11-14",
+                "date_label": "Fri 14 Nov 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-14",
+                "date_label": "Fri 14 Nov 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-21",
+                "date_label": "Fri 21 Nov 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-11-21",
+                "date_label": "Fri 21 Nov 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-21",
+                "date_label": "Fri 21 Nov 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-28",
+                "date_label": "Fri 28 Nov 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-11-28",
+                "date_label": "Fri 28 Nov 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-28",
+                "date_label": "Fri 28 Nov 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-12-05",
+                "date_label": "Fri 05 Dec 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-12-05",
+                "date_label": "Fri 05 Dec 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-12-05",
+                "date_label": "Fri 05 Dec 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-12-12",
+                "date_label": "Fri 12 Dec 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-12-12",
+                "date_label": "Fri 12 Dec 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-12-12",
+                "date_label": "Fri 12 Dec 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              }
+            ],
+            "range_descriptor": "Friday in Late spring",
+            "body_markdown": "General Q&A\n- Fri 14 Nov 2025 — Available for 20 guests\n- Fri 21 Nov 2025 — Available for 20 guests\n- Fri 28 Nov 2025 — Available for 20 guests\n- Fri 05 Dec 2025 — Available for 20 guests\n\nDate options for Late spring\nFridays available in Late spring 2025: 14, 21, 28, 05, 12\n\nRooms & Setup\nRooms that already cover your requested setup:\n- Room B — U-shape up to 20, Projector ✗\n- Room C — U-shape up to 30, Projector ✗\n\nRefreshments\n- Light lunch.\n- Coffee break service.\n\nNEXT STEP:\n- Choose a date so I can move straight into Room Availability and hold the best-fitting room.",
+            "footer": "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Dates & Rooms",
+                "rows": [
+                  {
+                    "date": "14.11.2025",
+                    "rooms": "Room B — U-shape up to 20, Projector ✗",
+                    "notes": "Light lunch.; Coffee break service."
+                  },
+                  {
+                    "date": "21.11.2025",
+                    "rooms": "Room C — U-shape up to 30, Projector ✗",
+                    "notes": "Light lunch.; Coffee break service."
+                  },
+                  {
+                    "date": "28.11.2025",
+                    "rooms": "Room B — U-shape up to 20, Projector ✗",
+                    "notes": "Light lunch.; Coffee break service."
+                  },
+                  {
+                    "date": "05.12.2025",
+                    "rooms": "Room C — U-shape up to 30, Projector ✗",
+                    "notes": "Light lunch.; Coffee break service."
+                  },
+                  {
+                    "date": "12.12.2025",
+                    "rooms": "Room B — U-shape up to 20, Projector ✗",
+                    "notes": "Light lunch.; Coffee break service."
+                  }
+                ]
+              }
+            ],
+            "requires_approval": true,
+            "created_at_step": 2
+          }
+        },
+        {
+          "task_id": "90a1a5f0-4379-46ce-9726-311476e9bde4",
+          "signature": "c05cccbb9a8ae7cecc7d02d3918c47142d0c3dc2d2dd737a901bc67b9b6aad3b",
+          "step": 2,
+          "draft": {
+            "body": "General Q&A\n- Fri 14 Nov 2025 — Available for 20 guests\n- Fri 21 Nov 2025 — Available for 20 guests\n- Fri 28 Nov 2025 — Available for 20 guests\n- Fri 05 Dec 2025 — Available for 20 guests\n\nDate options\nHere are the next dates that fit your window:\n- 14.11.2025\n- 21.11.2025\n- 28.11.2025\n- 05.12.2025\n- 12.12.2025\n\nRooms & Setup\nRooms that already cover your requested setup:\n- Room B — U-shape up to 20, Projector ✗\n- Room C — U-shape up to 30, Projector ✗\n\nRefreshments\n- Light lunch.\n- Coffee break service.\n\nNEXT STEP:\n- Choose a date so I can move straight into Room Availability and hold the best-fitting room.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+            "step": 2,
+            "next_step": "Room Availability",
+            "thread_state": "Awaiting Client",
+            "topic": "general_room_qna",
+            "candidate_dates": [
+              "14.11.2025",
+              "21.11.2025",
+              "28.11.2025",
+              "05.12.2025",
+              "12.12.2025"
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 14 Nov 2025",
+                "date": "14.11.2025",
+                "iso_date": "2025-11-14"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 21 Nov 2025",
+                "date": "21.11.2025",
+                "iso_date": "2025-11-21"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 28 Nov 2025",
+                "date": "28.11.2025",
+                "iso_date": "2025-11-28"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 05 Dec 2025",
+                "date": "05.12.2025",
+                "iso_date": "2025-12-05"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 12 Dec 2025",
+                "date": "12.12.2025",
+                "iso_date": "2025-12-12"
+              }
+            ],
+            "subloop": "general_q_a",
+            "headers": [
+              "General Q&A",
+              "Date options",
+              "Rooms & Setup",
+              "Refreshments"
+            ],
+            "range_results": [
+              {
+                "iso_date": "2025-11-14",
+                "date_label": "Fri 14 Nov 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-11-14",
+                "date_label": "Fri 14 Nov 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-14",
+                "date_label": "Fri 14 Nov 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-21",
+                "date_label": "Fri 21 Nov 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-11-21",
+                "date_label": "Fri 21 Nov 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-21",
+                "date_label": "Fri 21 Nov 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-28",
+                "date_label": "Fri 28 Nov 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-11-28",
+                "date_label": "Fri 28 Nov 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-28",
+                "date_label": "Fri 28 Nov 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-12-05",
+                "date_label": "Fri 05 Dec 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-12-05",
+                "date_label": "Fri 05 Dec 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-12-05",
+                "date_label": "Fri 05 Dec 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-12-12",
+                "date_label": "Fri 12 Dec 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-12-12",
+                "date_label": "Fri 12 Dec 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-12-12",
+                "date_label": "Fri 12 Dec 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              }
+            ],
+            "range_descriptor": "Friday",
+            "body_markdown": "General Q&A\n- Fri 14 Nov 2025 — Available for 20 guests\n- Fri 21 Nov 2025 — Available for 20 guests\n- Fri 28 Nov 2025 — Available for 20 guests\n- Fri 05 Dec 2025 — Available for 20 guests\n\nDate options\nHere are the next dates that fit your window:\n- 14.11.2025\n- 21.11.2025\n- 28.11.2025\n- 05.12.2025\n- 12.12.2025\n\nRooms & Setup\nRooms that already cover your requested setup:\n- Room B — U-shape up to 20, Projector ✗\n- Room C — U-shape up to 30, Projector ✗\n\nRefreshments\n- Light lunch.\n- Coffee break service.\n\nNEXT STEP:\n- Choose a date so I can move straight into Room Availability and hold the best-fitting room.",
+            "footer": "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Dates & Rooms",
+                "rows": [
+                  {
+                    "date": "14.11.2025",
+                    "rooms": "Room B — U-shape up to 20, Projector ✗",
+                    "notes": "Light lunch.; Coffee break service."
+                  },
+                  {
+                    "date": "21.11.2025",
+                    "rooms": "Room C — U-shape up to 30, Projector ✗",
+                    "notes": "Light lunch.; Coffee break service."
+                  },
+                  {
+                    "date": "28.11.2025",
+                    "rooms": "Room B — U-shape up to 20, Projector ✗",
+                    "notes": "Light lunch.; Coffee break service."
+                  },
+                  {
+                    "date": "05.12.2025",
+                    "rooms": "Room C — U-shape up to 30, Projector ✗",
+                    "notes": "Light lunch.; Coffee break service."
+                  },
+                  {
+                    "date": "12.12.2025",
+                    "rooms": "Room B — U-shape up to 20, Projector ✗",
+                    "notes": "Light lunch.; Coffee break service."
+                  }
+                ]
+              }
+            ],
+            "requires_approval": true,
+            "created_at_step": 2
+          }
+        },
+        {
+          "task_id": "1132b2fd-943e-4204-b257-b58c7ed8469c",
+          "signature": "bc9e40b44f9940b77622550f28e7e534e86ede8bcadc1bd0c3b9f9dcf2592351",
+          "step": 2,
+          "draft": {
+            "body": "General Q&A\n\n| Room | Dates | Notes |\n| --- | --- | --- |\n| Room A | 14.11.2025, 21.11.2025, 28.11.2025, 05.12.2025, 12.12.2025 | Status: Available; Light lunch.; Coffee break service. |\n| Room B | 14.11.2025, 21.11.2025, 28.11.2025, 05.12.2025, 12.12.2025 | U-shape up to 20, Projector ✗; Status: Available; Light lunch.; Coffee break service. |\n| Room D | 14.11.2025, 21.11.2025, 28.11.2025, 05.12.2025, 12.12.2025 | Status: Available; Light lunch.; Coffee break service. |\n\nFridays available in Late spring 2025: 14, 21, 28, 05, 12\n\nNEXT STEP:\n- Choose a date so I can move straight into Room Availability and hold the best-fitting room — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+            "step": 2,
+            "next_step": "Room Availability",
+            "thread_state": "Awaiting Client",
+            "topic": "general_room_qna",
+            "candidate_dates": [
+              "14.11.2025",
+              "21.11.2025",
+              "28.11.2025",
+              "05.12.2025",
+              "12.12.2025"
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 14 Nov 2025",
+                "date": "14.11.2025",
+                "iso_date": "2025-11-14"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 21 Nov 2025",
+                "date": "21.11.2025",
+                "iso_date": "2025-11-21"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 28 Nov 2025",
+                "date": "28.11.2025",
+                "iso_date": "2025-11-28"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 05 Dec 2025",
+                "date": "05.12.2025",
+                "iso_date": "2025-12-05"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm Fri 12 Dec 2025",
+                "date": "12.12.2025",
+                "iso_date": "2025-12-12"
+              }
+            ],
+            "subloop": "general_q_a",
+            "headers": [
+              "General Q&A"
+            ],
+            "range_results": [
+              {
+                "iso_date": "2025-11-14",
+                "date_label": "Fri 14 Nov 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-11-14",
+                "date_label": "Fri 14 Nov 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-14",
+                "date_label": "Fri 14 Nov 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-21",
+                "date_label": "Fri 21 Nov 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-11-21",
+                "date_label": "Fri 21 Nov 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-21",
+                "date_label": "Fri 21 Nov 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-28",
+                "date_label": "Fri 28 Nov 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-11-28",
+                "date_label": "Fri 28 Nov 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-11-28",
+                "date_label": "Fri 28 Nov 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-12-05",
+                "date_label": "Fri 05 Dec 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-12-05",
+                "date_label": "Fri 05 Dec 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-12-05",
+                "date_label": "Fri 05 Dec 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-12-12",
+                "date_label": "Fri 12 Dec 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "Coffee & Tea Bar"
+              },
+              {
+                "iso_date": "2025-12-12",
+                "date_label": "Fri 12 Dec 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              },
+              {
+                "iso_date": "2025-12-12",
+                "date_label": "Fri 12 Dec 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "Prosecco Service"
+              }
+            ],
+            "range_descriptor": "Friday in Late spring",
+            "body_markdown": "General Q&A\n\n| Room | Dates | Notes |\n| --- | --- | --- |\n| Room A | 14.11.2025, 21.11.2025, 28.11.2025, 05.12.2025, 12.12.2025 | Status: Available; Light lunch.; Coffee break service. |\n| Room B | 14.11.2025, 21.11.2025, 28.11.2025, 05.12.2025, 12.12.2025 | U-shape up to 20, Projector ✗; Status: Available; Light lunch.; Coffee break service. |\n| Room D | 14.11.2025, 21.11.2025, 28.11.2025, 05.12.2025, 12.12.2025 | Status: Available; Light lunch.; Coffee break service. |\n\nFridays available in Late spring 2025: 14, 21, 28, 05, 12\n\nNEXT STEP:\n- Choose a date so I can move straight into Room Availability and hold the best-fitting room — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you.",
+            "footer": "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Dates & Rooms",
+                "rows": [
+                  {
+                    "room": "Room A",
+                    "dates": [
+                      "14.11.2025",
+                      "21.11.2025",
+                      "28.11.2025",
+                      "05.12.2025",
+                      "12.12.2025"
+                    ],
+                    "notes": "Status: Available; Light lunch.; Coffee break service.",
+                    "iso_dates": [
+                      "2025-11-14",
+                      "2025-11-21",
+                      "2025-11-28",
+                      "2025-12-05",
+                      "2025-12-12"
+                    ],
+                    "iso_date": "2025-11-14",
+                    "statuses": [
+                      "Available"
+                    ]
+                  },
+                  {
+                    "room": "Room B",
+                    "dates": [
+                      "14.11.2025",
+                      "21.11.2025",
+                      "28.11.2025",
+                      "05.12.2025",
+                      "12.12.2025"
+                    ],
+                    "notes": "U-shape up to 20, Projector ✗; Status: Available; Light lunch.; Coffee break service.",
+                    "iso_dates": [
+                      "2025-11-14",
+                      "2025-11-21",
+                      "2025-11-28",
+                      "2025-12-05",
+                      "2025-12-12"
+                    ],
+                    "iso_date": "2025-11-14",
+                    "statuses": [
+                      "Available"
+                    ]
+                  },
+                  {
+                    "room": "Room D",
+                    "dates": [
+                      "14.11.2025",
+                      "21.11.2025",
+                      "28.11.2025",
+                      "05.12.2025",
+                      "12.12.2025"
+                    ],
+                    "notes": "Status: Available; Light lunch.; Coffee break service.",
+                    "iso_dates": [
+                      "2025-11-14",
+                      "2025-11-21",
+                      "2025-11-28",
+                      "2025-12-05",
+                      "2025-12-12"
+                    ],
+                    "iso_date": "2025-11-14",
+                    "statuses": [
+                      "Available"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "requires_approval": true,
+            "created_at_step": 2
+          }
+        }
+      ]
     },
     {
       "event_id": "8d7eae4c-b6b2-435f-ab0f-7bbc81299980",
@@ -9336,6 +10172,432 @@
             "room_feedback": null,
             "event_date": null
           }
+        },
+        {
+          "msg_id": "d104fbc3-8840-44d0-abac-1c1e6831a40a",
+          "ts": "2025-11-12T23:02:23.567819Z",
+          "subject": "3️⃣ Team Offsite – Late Spring",
+          "body_preview": "3️⃣ Team Offsite – Late Spring\n\nSubject: Team Offsite – Looking for Venue Options\n\nHi there,\n\nWe’re organizing our annual team offsite for around 18–20 people a",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 20,
+            "room": "Room S",
+            "layout": "U-shape",
+            "name": null,
+            "email": null,
+            "type": "workshop",
+            "catering": "Coffee service",
+            "phone": "+41449872345",
+            "company": null,
+            "language": null,
+            "notes": "projector, coffee service",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              18
+            ],
+            "window": {
+              "weekdays_hint": [
+                18
+              ]
+            },
+            "vague_weekday": "friday",
+            "preferences": {
+              "wish_products": [
+                "projector, coffee service"
+              ],
+              "keywords": [
+                "projector",
+                "coffee",
+                "service",
+                "shape",
+                "workshop"
+              ],
+              "default_hint": "projector, coffee service",
+              "catering": [
+                "coffee service"
+              ],
+              "products": [
+                "projector",
+                "u-shape"
+              ],
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 1.0,
+                  "matched": [
+                    "Coffee & Tea Bar"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room B",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room C",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room D",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room E",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                }
+              ],
+              "room_similarity": {
+                "Room A": 1.0,
+                "Room B": 1.0,
+                "Room C": 1.0,
+                "Room D": 1.0,
+                "Room E": 1.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [
+                    "Coffee & Tea Bar"
+                  ],
+                  "missing": []
+                },
+                "Room B": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                "Room C": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                "Room D": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                "Room E": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                }
+              }
+            }
+          }
+        },
+        {
+          "msg_id": "31a2f1e4-3fa9-482d-940c-46e420ea9e14",
+          "ts": "2025-11-12T23:04:45.197369Z",
+          "subject": "eam Offsite – Late Spring",
+          "body_preview": "eam Offsite – Late Spring\n\nSubject: Team Offsite – Looking for Venue Options\n\nHi there,\n\nWe’re organizing our annual team offsite for around 18–20 people and wo",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 20,
+            "room": "Room S",
+            "layout": "U-shape",
+            "name": null,
+            "email": null,
+            "type": "workshop",
+            "catering": "Coffee service",
+            "phone": "+41449872345",
+            "company": null,
+            "language": null,
+            "notes": "projector, coffee service",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              18
+            ],
+            "window": {
+              "weekdays_hint": [
+                18
+              ]
+            },
+            "vague_weekday": "friday",
+            "preferences": {
+              "wish_products": [
+                "projector, coffee service"
+              ],
+              "keywords": [
+                "projector",
+                "coffee",
+                "service",
+                "shape",
+                "workshop"
+              ],
+              "default_hint": "projector, coffee service",
+              "catering": [
+                "coffee service"
+              ],
+              "products": [
+                "projector",
+                "u-shape"
+              ],
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 1.0,
+                  "matched": [
+                    "Coffee & Tea Bar"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room B",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room C",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room D",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room E",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                }
+              ],
+              "room_similarity": {
+                "Room A": 1.0,
+                "Room B": 1.0,
+                "Room C": 1.0,
+                "Room D": 1.0,
+                "Room E": 1.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [
+                    "Coffee & Tea Bar"
+                  ],
+                  "missing": []
+                },
+                "Room B": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                "Room C": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                "Room D": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                "Room E": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                }
+              }
+            }
+          }
+        },
+        {
+          "msg_id": "f1a8f410-cbb3-4ab3-85e7-70214230bd18",
+          "ts": "2025-11-13T00:06:24.403440Z",
+          "subject": "3️⃣ Team Offsite – Late Spring",
+          "body_preview": "3️⃣ Team Offsite – Late Spring\n\nSubject: Team Offsite – Looking for Venue Options\n\nHi there,\n\nWe’re organizing our annual team offsite for around 18–20 people a",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 20,
+            "room": "Room S",
+            "layout": "U-shape",
+            "name": null,
+            "email": null,
+            "type": "workshop",
+            "catering": "Coffee service",
+            "phone": "+41449872345",
+            "company": null,
+            "language": null,
+            "notes": "projector, coffee service",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              18
+            ],
+            "window": {
+              "weekdays_hint": [
+                18
+              ]
+            },
+            "vague_weekday": "friday",
+            "preferences": {
+              "wish_products": [
+                "projector, coffee service"
+              ],
+              "keywords": [
+                "projector",
+                "coffee",
+                "service",
+                "shape",
+                "workshop"
+              ],
+              "default_hint": "projector, coffee service",
+              "catering": [
+                "coffee service"
+              ],
+              "products": [
+                "projector",
+                "u-shape"
+              ],
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 1.0,
+                  "matched": [
+                    "Coffee & Tea Bar"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room B",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room C",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room D",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                {
+                  "room": "Room E",
+                  "score": 1.0,
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                }
+              ],
+              "room_similarity": {
+                "Room A": 1.0,
+                "Room B": 1.0,
+                "Room C": 1.0,
+                "Room D": 1.0,
+                "Room E": 1.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [
+                    "Coffee & Tea Bar"
+                  ],
+                  "missing": []
+                },
+                "Room B": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                "Room C": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                "Room D": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                },
+                "Room E": {
+                  "matched": [
+                    "Prosecco Service"
+                  ],
+                  "missing": []
+                }
+              }
+            }
+          }
         }
       ],
       "event_ids": [
@@ -12300,6 +13562,63 @@
         "language": null,
         "caller_step": 3,
         "requirements_hash": "5ab1666b9bc9cbb12fac571bff9d126ea61ee86be164e4f36dc9a426b5246be3",
+        "room_eval_hash": null
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "8610351b-de04-47dc-ae98-3bf3484f2545",
+      "created_at": "2025-11-12T23:02:26.114158",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "elena.gruber@helix-analytics.ch",
+      "event_id": "70734cfc-50f2-4c19-85c2-d46921d6b488",
+      "payload": {
+        "step_id": 2,
+        "intent": "event_request",
+        "event_id": "70734cfc-50f2-4c19-85c2-d46921d6b488",
+        "draft_msg": "General Q&A\n- Fri 14 Nov 2025 — Available for 20 guests\n- Fri 21 Nov 2025 — Available for 20 guests\n- Fri 28 Nov 2025 — Available for 20 guests\n- Fri 05 Dec 2025 — Available for 20 guests\n\nDate options for Late spring\nFridays available in Late spring 2025: 14, 21, 28, 05, 12\n\nRooms & Setup\nRooms that already cover your requested setup:\n- Room B — U-shape up to 20, Projector ✗\n- Room C — U-shape up to 30, Projector ✗\n\nRefreshments\n- Light lunch.\n- Coffee break service.\n\nNEXT STEP:\n- Choose a date so I can move straight into Room Availability and hold the best-fitting room.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "4e8d1a151643119c19c5f924348953c593b8610a4b8fac77de4aa4a59ff55033",
+        "room_eval_hash": null
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "90a1a5f0-4379-46ce-9726-311476e9bde4",
+      "created_at": "2025-11-12T23:04:47.673779",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "elena.gruber@helix-analytics.ch",
+      "event_id": "70734cfc-50f2-4c19-85c2-d46921d6b488",
+      "payload": {
+        "step_id": 2,
+        "intent": "event_request",
+        "event_id": "70734cfc-50f2-4c19-85c2-d46921d6b488",
+        "draft_msg": "General Q&A\n- Fri 14 Nov 2025 — Available for 20 guests\n- Fri 21 Nov 2025 — Available for 20 guests\n- Fri 28 Nov 2025 — Available for 20 guests\n- Fri 05 Dec 2025 — Available for 20 guests\n\nDate options\nHere are the next dates that fit your window:\n- 14.11.2025\n- 21.11.2025\n- 28.11.2025\n- 05.12.2025\n- 12.12.2025\n\nRooms & Setup\nRooms that already cover your requested setup:\n- Room B — U-shape up to 20, Projector ✗\n- Room C — U-shape up to 30, Projector ✗\n\nRefreshments\n- Light lunch.\n- Coffee break service.\n\nNEXT STEP:\n- Choose a date so I can move straight into Room Availability and hold the best-fitting room.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "4e8d1a151643119c19c5f924348953c593b8610a4b8fac77de4aa4a59ff55033",
+        "room_eval_hash": null
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "1132b2fd-943e-4204-b257-b58c7ed8469c",
+      "created_at": "2025-11-13T00:06:27.934908",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "elena.gruber@helix-analytics.ch",
+      "event_id": "70734cfc-50f2-4c19-85c2-d46921d6b488",
+      "payload": {
+        "step_id": 2,
+        "intent": "event_request",
+        "event_id": "70734cfc-50f2-4c19-85c2-d46921d6b488",
+        "draft_msg": "General Q&A\n\n| Room | Dates | Notes |\n| --- | --- | --- |\n| Room A | 14.11.2025, 21.11.2025, 28.11.2025, 05.12.2025, 12.12.2025 | Status: Available; Light lunch.; Coffee break service. |\n| Room B | 14.11.2025, 21.11.2025, 28.11.2025, 05.12.2025, 12.12.2025 | U-shape up to 20, Projector ✗; Status: Available; Light lunch.; Coffee break service. |\n| Room D | 14.11.2025, 21.11.2025, 28.11.2025, 05.12.2025, 12.12.2025 | Status: Available; Light lunch.; Coffee break service. |\n\nFridays available in Late spring 2025: 14, 21, 28, 05, 12\n\nNEXT STEP:\n- Choose a date so I can move straight into Room Availability and hold the best-fitting room — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "4e8d1a151643119c19c5f924348953c593b8610a4b8fac77de4aa4a59ff55033",
         "room_eval_hash": null
       },
       "notes": ""
