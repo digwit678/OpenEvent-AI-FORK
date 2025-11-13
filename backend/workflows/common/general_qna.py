@@ -10,6 +10,7 @@ from backend.workflows.common.catalog import list_catering, list_room_features
 from backend.workflows.common.menu_options import build_menu_payload, format_menu_line
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.types import GroupResult, WorkflowState
+from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.router import route_general_qna
 
 # TODO(openevent-team): Move extended room descriptions to dedicated metadata instead of the products mapping workaround.
@@ -662,6 +663,54 @@ def render_general_qna_reply(state: WorkflowState, classification: Dict[str, Any
 
     msg_payload = _qna_message_payload(state)
     event_entry_after = state.event_entry or {}
+
+    extraction_payload = state.extras.get("qna_extraction")
+    structured_result = build_structured_qna_result(state, extraction_payload) if extraction_payload else None
+    if structured_result:
+        raw_step = event_entry_after.get("current_step")
+        try:
+            current_step = int(raw_step) if raw_step is not None else 2
+        except (TypeError, ValueError):
+            current_step = 2
+        thread_state = event_entry_after.get("thread_state") or state.thread_state or "Awaiting Client"
+        if structured_result.handled and structured_result.body_markdown:
+            markdown = structured_result.body_markdown.strip()
+            footer_body = append_footer(
+                markdown,
+                step=current_step,
+                next_step=current_step,
+                thread_state=thread_state,
+            )
+            draft_message = {
+                "body": footer_body,
+                "body_markdown": markdown,
+                "step": current_step,
+                "topic": "structured_qna",
+                "next_step": current_step,
+                "thread_state": thread_state,
+                "headers": ["General Q&A"],
+                "requires_approval": False,
+                "subloop": "structured_qna",
+            }
+            state.record_subloop("structured_qna")
+            state.add_draft_message(draft_message)
+            state.set_thread_state(thread_state)
+
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry_after.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "draft_messages": state.draft_messages,
+            "thread_state": state.thread_state,
+            "context": state.context_snapshot,
+            "persisted": False,
+            "general_qna": True,
+            "structured_qna": True,
+            "qna_select_result": structured_result.action_payload,
+        }
+        return GroupResult(action="qna_select_result", payload=payload)
+
     classification_payload = dict(classification)
     classification_payload.setdefault("primary", "general_qna")
     secondary = list(classification_payload.get("secondary") or [])

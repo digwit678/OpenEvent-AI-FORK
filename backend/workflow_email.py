@@ -27,6 +27,7 @@ from backend.workflows.nlu import (
     empty_general_qna_detection,
     quick_general_qna_scan,
 )
+from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.utils.profiler import profile_step
 from backend.workflow.state import stage_payload
 from backend.debug.lifecycle import close_if_ended
@@ -194,6 +195,8 @@ def _ensure_general_qna_classification(state: WorkflowState, message_text: str) 
     if not scan:
         scan = quick_general_qna_scan(message_text)
         state.extras["general_qna_scan"] = scan
+
+    ensure_qna_extraction(state, message_text, scan)
 
     classification = state.extras.get("_general_qna_classification")
     if classification:
