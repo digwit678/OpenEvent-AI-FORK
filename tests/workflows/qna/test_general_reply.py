@@ -7,7 +7,8 @@ import pytest
 import importlib
 
 from backend.workflows.common.types import GroupResult, IncomingMessage, WorkflowState
-from backend.workflows.common.general_qna import render_general_qna_reply
+from backend.workflows.common import general_qna
+from backend.workflows.common.general_qna import enrich_general_qna_step2, render_general_qna_reply
 from backend.workflows.groups.date_confirmation.trigger.process import _present_general_room_qna
 
 date_process_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
@@ -151,3 +152,111 @@ def test_present_general_room_qna_uses_cache_when_message_blank(monkeypatch, sta
     payload = result.payload
     assert payload["structured_qna"] is True
     assert not payload.get("structured_qna_fallback")
+
+
+def test_enrich_general_qna_step2_room_dates_column(monkeypatch, state):
+    monkeypatch.setattr(date_process_module, "update_event_metadata", lambda *args, **kwargs: None)
+    monkeypatch.setattr(date_process_module, "_search_range_availability", lambda *args, **kwargs: [
+        {"iso_date": "2026-02-07", "room": "Room A", "status": "Available"},
+        {"iso_date": "2026-02-14", "room": "Room B", "status": "Available"},
+    ])
+    monkeypatch.setattr(date_process_module, "_candidate_dates_for_constraints", lambda *_a, **_k: [
+        "2026-02-07",
+        "2026-02-14",
+    ])
+
+    state.event_entry = {
+        "event_id": "evt-room",
+        "current_step": 2,
+        "thread_state": "Awaiting Client",
+    }
+    classification = {"is_general": True}
+    date_process_module._present_general_room_qna(state, state.event_entry, classification, thread_id="THREAD-ROOM")
+    enrich_general_qna_step2(state, classification)
+    draft = state.draft_messages[-1]
+    body = draft["body_markdown"]
+    assert "| Room | Dates | Notes |" in body
+    assert draft["table_blocks"][0]["column_order"] == ["room", "dates", "notes"]
+
+
+def test_enrich_general_qna_step2_menu_table(monkeypatch, state):
+    monkeypatch.setattr(
+        general_qna,
+        "_load_structured_action_payload_for_general_qna",
+        lambda _state: {
+            "qna_subtype": "product_catalog",
+            "extraction": {"q_values": {}},
+            "effective": {
+                "D": {"value": None, "source": "Q", "meta": {}},
+                "N": {"value": 30, "source": "Q", "meta": {}},
+                "P": {"value": ["Menu A", "Menu B"], "source": "Q", "meta": {}},
+                "R": {"value": None, "source": "UNUSED", "meta": {}},
+            },
+            "db_summary": {
+                "rooms": [],
+                "products": [
+                    {"product": "Menu A", "rooms": ["Room A"], "available_today": True},
+                    {"product": "Menu B", "rooms": [], "available_today": False},
+                ],
+            },
+        },
+    )
+    state.event_entry = {"event_id": "evt-menu", "current_step": 2}
+    state.draft_messages.append({
+        "body": "",
+        "body_markdown": "",
+        "candidate_dates": ["01.02.2026"],
+        "range_results": [],
+        "subloop": "general_q_a",
+        "topic": "general_room_qna",
+        "step": 2,
+    })
+    classification = {"is_general": True}
+    enrich_general_qna_step2(state, classification)
+    draft = state.draft_messages[-1]
+    assert "| Menu | Dates | Notes |" in draft["body_markdown"]
+    assert draft["table_blocks"][0]["column_order"] == ["menu", "dates", "notes"]
+    assert "01.02.2026" in draft["table_blocks"][0]["rows"][0]["dates"]
+
+
+def test_enrich_general_qna_step2_room_menu_columns(monkeypatch, state):
+    monkeypatch.setattr(
+        general_qna,
+        "_load_structured_action_payload_for_general_qna",
+        lambda _state: {
+            "qna_subtype": "room_catalog_with_products",
+            "extraction": {"q_values": {}},
+            "effective": {
+                "D": {"value": None, "source": "Q", "meta": {}},
+                "N": {"value": 40, "source": "Q", "meta": {}},
+                "P": {"value": ["Menu A"], "source": "Q", "meta": {}},
+                "R": {"value": None, "source": "UNUSED", "meta": {}},
+            },
+            "db_summary": {
+                "rooms": [
+                    {
+                        "room_name": "Room A",
+                        "capacity_max": 40,
+                        "status": "Available",
+                        "products": ["Menu A"],
+                    }
+                ],
+                "products": [],
+            },
+        },
+    )
+    state.event_entry = {"event_id": "evt-room-menu", "current_step": 2}
+    state.draft_messages.append({
+        "body": "",
+        "body_markdown": "",
+        "candidate_dates": ["01.02.2026"],
+        "range_results": [],
+        "subloop": "general_q_a",
+        "topic": "general_room_qna",
+        "step": 2,
+    })
+    classification = {"is_general": True}
+    enrich_general_qna_step2(state, classification)
+    draft = state.draft_messages[-1]
+    assert "| Room | Menus | Dates | Notes |" in draft["body_markdown"]
+    assert draft["table_blocks"][0]["column_order"] == ["room", "menu", "dates", "notes"]

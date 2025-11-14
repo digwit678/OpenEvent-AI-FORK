@@ -15,12 +15,11 @@
               "General Q&A"
             ],
             "contains_all": [
-              "Dinner three-course menus with wine pairings:",
+              "All options below fit 30 guests.",
+              "They are available on",
               "| Room | Dates | Notes |",
-              "| Room A | 07.02.2026, 14.02.2026, 21.02.2026, 28.02.2026 |",
-              "Status: Available; Evening",
-              "Saturdays available in February 2026",
-              "- Choose a date so I can move straight into Room Availability and hold the best-fitting room — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you."
+              "Status: Available",
+              "- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you."
             ],
             "not_contains_all": [
               "- Room ",

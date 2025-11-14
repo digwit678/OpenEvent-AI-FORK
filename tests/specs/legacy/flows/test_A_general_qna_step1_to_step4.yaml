@@ -52,10 +52,10 @@
             "General Q&A"
           ],
             "contains": [
-              "Vegetarian three-course menus with wine pairings",
-              "| Room A | 07.02.2026, 14.02.2026, 21.02.2026, 28.02.2026 |",
-              "Status: Available; Evening",
-              "- Choose a date so I can move straight into Room Availability and hold the best-fitting room — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you."
+              "All options below fit",
+              "They are available on",
+              "| Room | Dates | Notes |",
+              "- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you."
             ]
           }
         }
