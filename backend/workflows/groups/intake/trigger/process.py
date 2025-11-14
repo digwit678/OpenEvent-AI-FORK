@@ -7,6 +7,7 @@ from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import build_requirements, merge_client_profile, requirements_hash
 from backend.workflows.common.timeutils import format_ts_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
+from backend.workflows.change_propagation import detect_change_type, route_change_on_updated_variable
 import json
 
 from backend.domain import IntentLabel
@@ -427,6 +428,10 @@ def process(state: WorkflowState) -> GroupResult:
     previous_step = state.current_step or 1
     detoured_to_step2 = False
 
+    # Use centralized change propagation system for systematic change detection and routing
+    message_text = (state.message.subject or "") + "\n" + (state.message.body or "")
+    change_type = detect_change_type(event_entry, user_info, message_text=message_text)
+
     if needs_vague_date_confirmation:
         event_entry["range_query_detected"] = True
         update_event_metadata(
@@ -443,7 +448,44 @@ def process(state: WorkflowState) -> GroupResult:
         detoured_to_step2 = True
         state.set_thread_state("Awaiting Client Response")
 
-    if new_date and new_date != event_entry.get("chosen_date"):
+    # Handle change routing using DAG-based change propagation
+    if change_type is not None and previous_step > 1:
+        decision = route_change_on_updated_variable(event_entry, change_type, from_step=previous_step)
+
+        # Apply the routing decision
+        if decision.updated_caller_step is not None and event_entry.get("caller_step") is None:
+            update_event_metadata(event_entry, caller_step=decision.updated_caller_step)
+            trace_marker(
+                _thread_id(state),
+                "CHANGE_DETECTED",
+                detail=f"change_type={change_type.value}",
+                data={
+                    "change_type": change_type.value,
+                    "from_step": previous_step,
+                    "to_step": decision.next_step,
+                    "caller_step": decision.updated_caller_step,
+                },
+                owner_step="Step1_Intake",
+            )
+
+        if decision.next_step != previous_step:
+            update_event_metadata(event_entry, current_step=decision.next_step)
+            audit_reason = f"{change_type.value}_change_detected"
+            append_audit_entry(event_entry, previous_step, decision.next_step, audit_reason)
+
+            # Clear room lock for date/requirements changes
+            if change_type.value in ("date", "requirements") and decision.next_step in (2, 3):
+                if decision.next_step == 2:
+                    update_event_metadata(
+                        event_entry,
+                        date_confirmed=False,
+                        room_eval_hash=None,
+                        locked_room_id=None,
+                    )
+                    detoured_to_step2 = True
+
+    # Fallback: legacy logic for cases not handled by change propagation
+    elif new_date and new_date != event_entry.get("chosen_date"):
         if (
             previous_step not in (None, 1, 2)
             and event_entry.get("caller_step") is None
@@ -474,9 +516,10 @@ def process(state: WorkflowState) -> GroupResult:
             append_audit_entry(event_entry, previous_step, 2, "date_updated")
             detoured_to_step2 = True
 
+    # Handle missing date (initial flow, not a change)
     if needs_vague_date_confirmation:
         new_date = None
-    if not new_date and not event_entry.get("chosen_date"):
+    if not new_date and not event_entry.get("chosen_date") and change_type is None:
         update_event_metadata(
             event_entry,
             chosen_date=None,
@@ -489,14 +532,16 @@ def process(state: WorkflowState) -> GroupResult:
         append_audit_entry(event_entry, previous_step, 2, "date_missing")
         detoured_to_step2 = True
 
-    if prev_req_hash is not None and prev_req_hash != new_req_hash and not detoured_to_step2:
+    # Fallback: requirements change detection (legacy)
+    if prev_req_hash is not None and prev_req_hash != new_req_hash and not detoured_to_step2 and change_type is None:
         target_step = 3
         if previous_step != target_step and event_entry.get("caller_step") is None:
             update_event_metadata(event_entry, caller_step=previous_step)
             update_event_metadata(event_entry, current_step=target_step)
             append_audit_entry(event_entry, previous_step, target_step, "requirements_updated")
 
-    if new_preferred_room and new_preferred_room != event_entry.get("locked_room_id"):
+    # Fallback: room change detection (legacy)
+    if new_preferred_room and new_preferred_room != event_entry.get("locked_room_id") and change_type is None:
         if not detoured_to_step2:
             prev_step_for_room = event_entry.get("current_step") or previous_step
             if prev_step_for_room != 3 and event_entry.get("caller_step") is None:
