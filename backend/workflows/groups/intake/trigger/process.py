@@ -27,6 +27,7 @@ from backend.workflows.io.database import (
     default_event_record,
     find_event_idx_by_id,
     last_event_for_email,
+    load_rooms,
     tag_message,
     update_event_entry,
     update_event_metadata,
@@ -35,8 +36,10 @@ from backend.workflows.io.database import (
 
 from ..db_pers.tasks import enqueue_manual_review_task
 from ..condition.checks import is_event_request
+import re
 from ..llm.analysis import classify_intent, extract_user_information
 from backend.workflows.nlu.preferences import extract_preferences
+from backend.workflows.groups.room_availability import handle_select_room_action
 from ..billing_flow import handle_billing_capture
 
 __workflow_role__ = "trigger"
@@ -63,6 +66,131 @@ def _has_same_turn_shortcut(user_info: Dict[str, Any]) -> bool:
     participants = user_info.get("participants") or user_info.get("number_of_participants")
     date_value = user_info.get("date") or user_info.get("event_date")
     return bool(participants and date_value)
+
+
+_DATE_TOKEN = re.compile(r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b")
+_MONTH_TOKENS = (
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+)
+_AFFIRMATIVE_TOKENS = (
+    "ok",
+    "okay",
+    "great",
+    "sounds good",
+    "lets do",
+    "let's do",
+    "we'll take",
+    "lock",
+    "confirm",
+    "go with",
+    "works",
+    "take",
+)
+
+
+def _looks_like_gate_confirmation(message_text: str, linked_event: Optional[Dict[str, Any]]) -> bool:
+    if not linked_event:
+        return False
+    if linked_event.get("current_step") != 2:
+        return False
+    if linked_event.get("thread_state", "").lower() != "awaiting client":
+        return False
+
+    text = (message_text or "").strip()
+    if not text:
+        return False
+    lowered = text.lower()
+
+    has_date_token = bool(_DATE_TOKEN.search(lowered))
+    if not has_date_token:
+        # handle formats like "07 feb" or "7 february"
+        month_hit = any(token in lowered for token in _MONTH_TOKENS)
+        day_hit = any(str(day) in lowered for day in range(1, 32))
+        has_date_token = month_hit and day_hit
+
+    if not has_date_token:
+        return False
+
+    if any(token in lowered for token in _AFFIRMATIVE_TOKENS):
+        return True
+
+    # plain date replies like "07.02.2026" or "2026-02-07"
+    stripped_digits = lowered.replace(" ", "")
+    if stripped_digits.replace(".", "").replace("-", "").replace("/", "").isdigit():
+        return True
+
+    # short replies with date plus punctuation
+    if len(lowered.split()) <= 6 and has_date_token:
+        return True
+
+    return False
+
+
+def _normalize_room_token(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.lower())
+
+
+def _detect_room_choice(message_text: str, linked_event: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not message_text or not linked_event:
+        return None
+    try:
+        current_step = int(linked_event.get("current_step") or 0)
+    except (TypeError, ValueError):
+        current_step = 0
+    if current_step != 3:
+        return None
+
+    rooms = load_rooms()
+    if not rooms:
+        return None
+
+    text = message_text.strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    condensed = _normalize_room_token(text)
+
+    # direct match against known room labels
+    for room in rooms:
+        room_lower = room.lower()
+        if room_lower in lowered:
+            return room
+        if _normalize_room_token(room) and _normalize_room_token(room) == condensed:
+            return room
+
+    # pattern like "room a" or "room-a"
+    match = re.search(r"\broom\s*([a-z0-9]+)\b", lowered)
+    if match:
+        token = match.group(1)
+        token_norm = _normalize_room_token(token)
+        for room in rooms:
+            room_tokens = room.split()
+            if room_tokens:
+                last_token = _normalize_room_token(room_tokens[-1])
+                if token_norm and token_norm == last_token:
+                    return room
+
+    # single token equals last token of room name (e.g., "A")
+    if len(lowered.split()) == 1:
+        token_norm = condensed
+        if token_norm:
+            for room in rooms:
+                last_token = _normalize_room_token(room.split()[-1])
+                if token_norm == last_token:
+                    return room
+
+    return None
 
 
 @trace_step("Step1_Intake")
@@ -133,72 +261,91 @@ def process(state: WorkflowState) -> GroupResult:
     )
     state.client = client
     state.client_id = (message_payload.get("from_email") or "").lower()
+    linked_event = last_event_for_email(state.db, state.client_id)
     append_history(client, message_payload, intent.value, confidence, user_info)
 
     context = context_snapshot(state.db, client, state.client_id)
     state.record_context(context)
 
     if not is_event_request(intent) or confidence < 0.85:
-        trace_marker(
-            thread_id,
-            "CONDITIONAL_HIL",
-            detail="manual_review_required",
-            data={"intent": intent.value, "confidence": round(confidence, 3)},
-            owner_step=owner_step,
-        )
-        linked_event = last_event_for_email(state.db, state.client_id)
-        linked_event_id = linked_event.get("event_id") if linked_event else None
-        task_payload: Dict[str, Any] = {
-            "subject": message_payload.get("subject"),
-            "snippet": (message_payload.get("body") or "")[:200],
-            "ts": message_payload.get("ts"),
-            "reason": "manual_review_required",
-        }
-        task_id = enqueue_manual_review_task(
-            state.db,
-            state.client_id,
-            linked_event_id,
-            task_payload,
-        )
-        state.extras.update({"task_id": task_id, "persist": True})
-        clarification = (
-            "Thanks for your message. A member of our team will review it shortly "
-            "to make sure it reaches the right place."
-        )
-        clarification = append_footer(
-            clarification,
-            step=1,
-            next_step="Team review (HIL)",
-            thread_state="Waiting on HIL",
-        )
-        state.add_draft_message(
-            {
-                "body": clarification,
-                "step": 1,
-                "topic": "manual_review",
-            }
-        )
-        state.set_thread_state("Waiting on HIL")
-        if os.getenv("OE_DEBUG") == "1":
-            print(
-                "[DEBUG] manual_review_enqueued:",
-                f"conf={confidence:.2f}",
-                f"parsed_date={user_info.get('date')}",
-                f"intent={intent.value}",
-            )
-        payload = {
-            "client_id": state.client_id,
-            "event_id": linked_event_id,
-            "intent": intent.value,
-            "confidence": round(confidence, 3),
-            "persisted": True,
-            "task_id": task_id,
-            "user_info": user_info,
-            "context": context,
-            "draft_messages": state.draft_messages,
-            "thread_state": state.thread_state,
-        }
-        return GroupResult(action="manual_review_enqueued", payload=payload, halt=True)
+        body_text = message_payload.get("body") or ""
+        if _looks_like_gate_confirmation(body_text, linked_event):
+            intent = IntentLabel.EVENT_REQUEST
+            confidence = max(confidence, 0.95)
+            state.intent = intent
+            state.confidence = confidence
+            state.intent_detail = "event_intake_followup"
+        else:
+            room_choice = _detect_room_choice(body_text, linked_event)
+            if room_choice:
+                intent = IntentLabel.EVENT_REQUEST
+                confidence = max(confidence, 0.96)
+                state.intent = intent
+                state.confidence = confidence
+                state.intent_detail = "event_intake_room_choice"
+                user_info["room"] = room_choice
+                state.extras["room_choice_selected"] = room_choice
+            else:
+                trace_marker(
+                    thread_id,
+                    "CONDITIONAL_HIL",
+                    detail="manual_review_required",
+                    data={"intent": intent.value, "confidence": round(confidence, 3)},
+                    owner_step=owner_step,
+                )
+                linked_event_id = linked_event.get("event_id") if linked_event else None
+                task_payload: Dict[str, Any] = {
+                    "subject": message_payload.get("subject"),
+                    "snippet": (message_payload.get("body") or "")[:200],
+                    "ts": message_payload.get("ts"),
+                    "reason": "manual_review_required",
+                    "thread_id": thread_id,
+                }
+                task_id = enqueue_manual_review_task(
+                    state.db,
+                    state.client_id,
+                    linked_event_id,
+                    task_payload,
+                )
+                state.extras.update({"task_id": task_id, "persist": True})
+                clarification = (
+                    "Thanks for your message. A member of our team will review it shortly "
+                    "to make sure it reaches the right place."
+                )
+                clarification = append_footer(
+                    clarification,
+                    step=1,
+                    next_step="Team review (HIL)",
+                    thread_state="Waiting on HIL",
+                )
+                state.add_draft_message(
+                    {
+                        "body": clarification,
+                        "step": 1,
+                        "topic": "manual_review",
+                    }
+                )
+                state.set_thread_state("Waiting on HIL")
+                if os.getenv("OE_DEBUG") == "1":
+                    print(
+                        "[DEBUG] manual_review_enqueued:",
+                        f"conf={confidence:.2f}",
+                        f"parsed_date={user_info.get('date')}",
+                        f"intent={intent.value}",
+                    )
+                payload = {
+                    "client_id": state.client_id,
+                    "event_id": linked_event_id,
+                    "intent": intent.value,
+                    "confidence": round(confidence, 3),
+                    "persisted": True,
+                    "task_id": task_id,
+                    "user_info": user_info,
+                    "context": context,
+                    "draft_messages": state.draft_messages,
+                    "thread_state": state.thread_state,
+                }
+                return GroupResult(action="manual_review_enqueued", payload=payload, halt=True)
 
     event_entry = _ensure_event_record(state, message_payload, user_info)
     if merge_client_profile(event_entry, user_info):
@@ -254,6 +401,25 @@ def process(state: WorkflowState) -> GroupResult:
         }
     if metadata_updates:
         update_event_metadata(event_entry, **metadata_updates)
+
+    room_choice_selected = state.extras.pop("room_choice_selected", None)
+    if room_choice_selected:
+        pending_info = event_entry.get("room_pending_decision") or {}
+        selected_status = None
+        if isinstance(pending_info, dict) and pending_info.get("selected_room") == room_choice_selected:
+            selected_status = pending_info.get("selected_status")
+        status_value = selected_status or "Available"
+        chosen_date = (
+            event_entry.get("chosen_date")
+            or user_info.get("event_date")
+            or user_info.get("date")
+        )
+        return handle_select_room_action(
+            state,
+            room=room_choice_selected,
+            status=status_value,
+            date=chosen_date,
+        )
 
     new_preferred_room = requirements.get("preferred_room")
 

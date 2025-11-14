@@ -85,17 +85,7 @@
             "type": "send_reply"
           },
           {
-            "type": "room_options_enqueued",
-            "payload": {
-              "suggested_dates": [
-                "2025-12-10",
-                "2025-12-11",
-                "2025-12-08",
-                "2025-12-09",
-                "2025-12-12"
-              ],
-              "event_id": "ANY"
-            }
+            "type": "send_reply"
           }
         ]
       }

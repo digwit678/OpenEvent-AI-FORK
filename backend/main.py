@@ -38,6 +38,8 @@ from backend.workflow_email import (
     save_db as wf_save_db,
     list_pending_tasks as wf_list_pending_tasks,
     update_task_status as wf_update_task_status,
+    approve_task_and_send as wf_approve_task_and_send,
+    cleanup_tasks as wf_cleanup_tasks,
 )
 from backend.api.debug import (
     debug_get_trace,
@@ -229,6 +231,10 @@ class SendMessageRequest(BaseModel):
 
 class TaskDecisionRequest(BaseModel):
     notes: Optional[str] = None
+
+
+class TaskCleanupRequest(BaseModel):
+    keep_thread_id: Optional[str] = None
 
 
 class ConfirmDateRequest(BaseModel):
@@ -682,6 +688,7 @@ async def get_pending_tasks():
                 "payload": {
                     "snippet": payload_data.get("snippet"),
                     "suggested_dates": payload_data.get("suggested_dates"),
+                    "thread_id": payload_data.get("thread_id"),
                 },
             }
         )
@@ -692,15 +699,21 @@ async def get_pending_tasks():
 async def approve_task(task_id: str, request: TaskDecisionRequest):
     """OpenEvent Action (light-blue): mark a task as approved from the GUI."""
     try:
-        db = wf_load_db()
-        wf_update_task_status(db, task_id, "approved", request.notes)
-        wf_save_db(db)
+        result = wf_approve_task_and_send(task_id, manager_notes=request.notes)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to approve task: {exc}") from exc
     print(f"[WF] task approved id={task_id}")
-    return {"task_id": task_id, "status": "approved"}
+    assistant_text = result.get("res", {}).get("assistant_draft_text")
+    return {
+        "task_id": task_id,
+        "task_status": "approved",
+        "assistant_reply": assistant_text,
+        "thread_id": result.get("thread_id"),
+        "event_id": result.get("event_id"),
+        "review_state": "approved",
+    }
 
 
 @app.post("/api/tasks/{task_id}/reject")
@@ -715,7 +728,20 @@ async def reject_task(task_id: str, request: TaskDecisionRequest):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to reject task: {exc}") from exc
     print(f"[WF] task rejected id={task_id}")
-    return {"task_id": task_id, "status": "rejected"}
+    return {"task_id": task_id, "task_status": "rejected", "review_state": "rejected"}
+
+
+@app.post("/api/tasks/cleanup")
+async def cleanup_tasks(request: TaskCleanupRequest):
+    """Remove resolved HIL tasks to declutter the task list."""
+    try:
+        db = wf_load_db()
+        removed = wf_cleanup_tasks(db, keep_thread_id=request.keep_thread_id)
+        wf_save_db(db)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup tasks: {exc}") from exc
+    print(f"[WF] tasks cleanup removed={removed}")
+    return {"removed": removed}
 
 
 if DEBUG_TRACE_ENABLED:

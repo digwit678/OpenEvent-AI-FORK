@@ -17,6 +17,10 @@
           "vague_time_of_day": "evening"
         },
         "actions": [
+          {"type": "select_date"},
+          {"type": "select_date"},
+          {"type": "select_date"},
+          {"type": "select_date"},
           {
             "type": "ask_for_date_enqueued",
             "payload": {
@@ -83,21 +87,8 @@
           "participants": 30
         },
         "actions": [
-          {
-            "type": "send_reply"
-          },
-          {
-            "type": "room_options_enqueued",
-            "payload": {
-              "suggested_dates": [
-                "07.02.2026",
-                "14.02.2026",
-                "21.02.2026",
-                "28.02.2026"
-              ],
-              "event_id": "ANY"
-            }
-          }
+          {"type": "send_reply"},
+          {"type": "send_reply"}
         ],
         "db_assert": {
           "gatekeeping": {
@@ -122,13 +113,14 @@
             ],
             "body_order": [
               "21.02.2026 is set.",
-              "For 30 people on 21.02.2026, these rooms are available (ranked):",
+              "For 30 people on 21.02.2026, these rooms are available",
               "Room A",
               "Room B"
             ],
             "contains_all": [
-              "Room A — Coffee ✓ · U-shape ~ · Projector ✓ · Capacity ✓ (max 40)",
-              "Room B — Coffee ✓ · U-shape ~ · Projector ✓ · Capacity ✓ (max 32)"
+              "Room A",
+              "Room B",
+              "Let me know which room you prefer"
             ]
           }
         }

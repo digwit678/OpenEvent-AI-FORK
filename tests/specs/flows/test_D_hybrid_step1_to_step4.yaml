@@ -15,7 +15,7 @@
         },
         "trace": {
           "subloops_contains": [
-            "general_q_a"
+            "structured_qna"
           ]
         },
         "db_assert": {
