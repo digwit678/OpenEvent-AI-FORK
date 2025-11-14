@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from datetime import datetime
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from backend.debug.hooks import trace_general_qa_status
 from backend.workflows.common.capacity import fits_capacity, layout_capacity
@@ -47,6 +48,33 @@ STATUS_PRIORITY = {
     "hold": 2,
     "waitlist": 3,
     "unavailable": 4,
+}
+
+MONTH_INDEX_TO_NAME = {
+    1: "January",
+    2: "February",
+    3: "March",
+    4: "April",
+    5: "May",
+    6: "June",
+    7: "July",
+    8: "August",
+    9: "September",
+    10: "October",
+    11: "November",
+    12: "December",
+}
+
+_MENU_ONLY_SUBTYPES = {
+    "product_catalog",
+    "product_truth",
+    "product_recommendation_for_us",
+    "repertoire_check",
+}
+
+_ROOM_MENU_SUBTYPES = {
+    "room_catalog_with_products",
+    "room_product_truth",
 }
 
 _DATE_PARSE_FORMATS = (
@@ -397,231 +425,598 @@ def _extract_info_lines(text: str) -> List[str]:
     return info_lines
 
 
-def _build_table_content(
-    state: WorkflowState,
-    candidate_dates: Sequence[str],
+
+def _dedup_preserve_order(items: Iterable[Any]) -> List[str]:
+    seen: Set[str] = set()
+    ordered: List[str] = []
+    for raw in items:
+        text = str(raw).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        ordered.append(text)
+    return ordered
+
+def _load_structured_action_payload_for_general_qna(state: WorkflowState) -> Optional[Dict[str, Any]]:
+    cached = state.turn_notes.get("_general_qna_structured_payload")
+    if isinstance(cached, dict):
+        return cached
+
+    extraction = state.extras.get("qna_extraction")
+    if not extraction:
+        cache = (state.event_entry or {}).get("qna_cache") or {}
+        extraction = cache.get("extraction")
+    if not extraction:
+        return None
+
+    result = build_structured_qna_result(state, extraction)
+    if not result:
+        return None
+
+    payload = result.action_payload
+    state.turn_notes["_general_qna_structured_payload"] = payload
+    return payload
+
+
+def _determine_select_and_where_fields(
+    qna_subtype: str,
+    q_values: Dict[str, Any],
+    effective: Dict[str, Any],
+    db_summary: Dict[str, Any],
+    menu_payload: Optional[Dict[str, Any]],
+) -> Tuple[List[str], List[str]]:
+    subtype = (qna_subtype or "").lower()
+    select_fields: List[str] = []
+    if subtype in _MENU_ONLY_SUBTYPES:
+        select_fields.append("menu")
+    elif subtype in _ROOM_MENU_SUBTYPES:
+        select_fields.extend(["room", "menu"])
+    else:
+        select_fields.append("room")
+
+    if (db_summary.get("products") or (menu_payload or {}).get("rows")) and "menu" not in select_fields:
+        if not db_summary.get("rooms"):
+            select_fields = ["menu"]
+        else:
+            select_fields.append("menu")
+
+    select_fields = _dedup_preserve_order(select_fields)
+
+    where_fields: List[str] = ["dates"]
+    date_meta = ((effective or {}).get("D") or {}).get("meta") or {}
+    if date_meta.get("month_index"):
+        where_fields.append("month")
+    if date_meta.get("weekday"):
+        where_fields.append("weekday")
+    time_hint = q_values.get("time_of_day") or q_values.get("time_hint") or q_values.get("day_part")
+    if time_hint:
+        where_fields.append("time_of_day")
+    if ((effective or {}).get("N") or {}).get("value") not in (None, "", []):
+        where_fields.append("guests")
+    if ((effective or {}).get("P") or {}).get("value"):
+        where_fields.append("products")
+
+    return select_fields, _dedup_preserve_order(where_fields)
+
+
+def _date_sort_key(label: str) -> str:
+    iso_label = _normalise_iso_date(label)
+    if iso_label:
+        return iso_label
+    return label
+
+
+def _collect_room_rows(
+    select_fields: Sequence[str],
+    db_summary: Dict[str, Any],
     range_results: Optional[Sequence[Dict[str, Any]]],
+    candidate_dates: Sequence[str],
     room_recs: Sequence[Dict[str, Any]],
     catering_lines: Sequence[str],
-) -> Tuple[List[str], List[Dict[str, Any]]]:
-    if not candidate_dates:
-        return [], []
-
-    time_hint = (state.user_info or {}).get("vague_time_of_day") or (state.event_entry or {}).get("vague_time_of_day")
-    time_note = str(time_hint).capitalize() if time_hint else ""
-    catering_summary = "; ".join(item.strip("- ") for item in catering_lines[:2]) if catering_lines else ""
-
-    range_map = _range_results_lookup(range_results)
+    menu_payload: Optional[Dict[str, Any]],
+) -> Tuple[List[Dict[str, str]], Dict[str, Set[Any]]]:
+    rooms_summary = db_summary.get("rooms") or []
+    products_summary = db_summary.get("products") or []
+    menu_rows = (menu_payload or {}).get("rows") or []
     summary_map = {
         str(rec.get("name")).strip(): rec.get("summary")
         for rec in room_recs
         if rec.get("name")
     }
+    catering_summary = (
+        "; ".join(item.strip("- ") for item in catering_lines[:2] if item)
+        if catering_lines
+        else ""
+    )
 
-    table_lines: List[str] = []
-    table_rows: List[Dict[str, Any]] = []
+    buckets: Dict[str, Dict[str, Any]] = {}
 
-    def _unique_notes(bits: Sequence[str]) -> str:
-        seen_local = set()
-        ordered = []
-        for item in bits:
-            if item and item not in seen_local:
-                ordered.append(item)
-                seen_local.add(item)
-        return "; ".join(ordered) if ordered else "—"
+    def _ensure_bucket(room_label: Any) -> Dict[str, Any]:
+        label = str(room_label or "").strip() or "Any matching room"
+        return buckets.setdefault(
+            label,
+            {
+                "dates": set(),
+                "sort_keys": set(),
+                "notes": [],
+                "notes_seen": set(),
+                "menus": set(),
+                "status_priority": 99,
+            },
+        )
 
-    use_room_first = bool(range_map)
+    def _add_note(payload: Dict[str, Any], text: Any) -> None:
+        clean = str(text or "").strip()
+        if not clean or clean in payload["notes_seen"]:
+            return
+        payload["notes"].append(clean)
+        payload["notes_seen"].add(clean)
 
-    if use_room_first:
-        room_rows: Dict[str, Dict[str, Any]] = {}
-        handled_iso: set[str] = set()
-
-        for raw_date in candidate_dates[:8]:
-            display_date, iso_date = _normalise_candidate_date(raw_date)
-            if iso_date:
-                handled_iso.add(iso_date)
-            entries = []
-            if iso_date:
-                entries = range_map.get(iso_date, [])
-            if not entries and iso_date:
-                entries = range_map.get(iso_date.split("T")[0], [])
-            if not entries:
-                continue
-            for entry in entries:
-                room_name = str(entry.get("room") or "").strip() or "Any matching room"
-                bucket = room_rows.setdefault(
-                    room_name,
-                    {
-                        "dates": [],
-                        "iso_dates": [],
-                        "statuses": set(),
-                        "summaries": set(),
-                        "min_status": 99,
-                    },
-                )
-                bucket["dates"].append((iso_date or display_date, display_date))
-                if iso_date:
-                    bucket["iso_dates"].append(iso_date)
-                status_text = str(entry.get("status") or "").strip()
-                if status_text:
-                    bucket["statuses"].add(status_text)
-                    bucket["min_status"] = min(bucket["min_status"], STATUS_PRIORITY.get(status_text.lower(), 99))
-                summary_text = str(entry.get("summary") or "").strip()
-                if summary_text:
-                    bucket["summaries"].add(summary_text)
-                mapped_summary = summary_map.get(room_name)
-                if mapped_summary:
-                    bucket["summaries"].add(mapped_summary)
-
-        # handle fallback rooms if candidate dates missing room info
-        remaining_dates: List[Tuple[str, str]] = []
-        for raw_date in candidate_dates[:8]:
-            display_date, iso_date = _normalise_candidate_date(raw_date)
-            if iso_date and iso_date in handled_iso:
-                continue
-            remaining_dates.append((iso_date or display_date, display_date))
-        if remaining_dates:
-            label = "Any matching room"
-            bucket = room_rows.setdefault(
-                label,
-                {
-                    "dates": [],
-                    "iso_dates": [],
-                    "statuses": set(),
-                    "summaries": set(),
-                    "min_status": 99,
-                },
+    for entry in rooms_summary:
+        room_name = entry.get("room_name") or entry.get("room_id") or "Room"
+        bucket = _ensure_bucket(room_name)
+        date_value = entry.get("date")
+        if date_value:
+            display_date = _format_display_date(str(date_value))
+            if display_date:
+                bucket["dates"].add(display_date)
+            iso_value = _normalise_iso_date(str(date_value))
+            if iso_value:
+                bucket["sort_keys"].add(iso_value)
+        status = entry.get("status")
+        if status:
+            _add_note(bucket, f"Status: {status}")
+            bucket["status_priority"] = min(
+                bucket["status_priority"],
+                STATUS_PRIORITY.get(str(status).lower(), 99),
             )
-            bucket["dates"].extend(remaining_dates[:5])
-            bucket["iso_dates"].extend([pair[0] for pair in remaining_dates if pair[0]])
+        capacity = entry.get("capacity_max")
+        if capacity:
+            _add_note(bucket, f"Capacity up to {capacity}")
+        for product in entry.get("products") or []:
+            name = str(product).strip()
+            if name:
+                bucket["menus"].add(name)
+        mapped_summary = summary_map.get(str(room_name).strip())
+        if mapped_summary:
+            _add_note(bucket, mapped_summary)
 
-        if not room_rows and candidate_dates:
-            # fallback to date-first table if no room data was captured
-            use_room_first = False
-        else:
-            table_lines.extend(["| Room | Dates | Notes |", "| --- | --- | --- |"])
-            for room_name, payload in sorted(
-                room_rows.items(),
-                key=lambda item: (
-                    item[1]["min_status"],
-                    min((pair[0] for pair in item[1]["dates"]), default=""),
-                ),
-            ):
-                date_cells = []
-                seen_dates = set()
-                for sort_key, label in sorted(payload["dates"], key=lambda pair: pair[0]):
-                    if label not in seen_dates:
-                        date_cells.append(label)
-                        seen_dates.add(label)
-                dates_text = ", ".join(date_cells[:5]) if date_cells else "—"
-                note_bits: List[str] = []
-                if payload["summaries"]:
-                    note_bits.append("; ".join(sorted(payload["summaries"])))
-                if payload["statuses"]:
-                    note_bits.append("Status: " + "/".join(sorted(payload["statuses"], key=str.lower)))
-                if catering_summary:
-                    note_bits.append(catering_summary)
-                if time_note:
-                    note_bits.append(time_note)
-                notes_cell = _unique_notes(note_bits)
+    handled_iso: Set[str] = set()
+    for entry in range_results or []:
+        room_name = entry.get("room") or entry.get("room_name")
+        if not room_name:
+            continue
+        bucket = _ensure_bucket(room_name)
+        iso_token = entry.get("iso_date") or entry.get("date") or entry.get("iso")
+        display_date = entry.get("date_label")
+        if iso_token:
+            iso_norm = _normalise_iso_date(str(iso_token))
+            if iso_norm:
+                handled_iso.add(iso_norm)
+                bucket["sort_keys"].add(iso_norm)
+                if not display_date:
+                    display_date = _format_display_date(iso_norm)
+        if display_date:
+            bucket["dates"].add(_format_display_date(str(display_date)))
+        status = entry.get("status")
+        if status:
+            _add_note(bucket, f"Status: {status}")
+            bucket["status_priority"] = min(
+                bucket["status_priority"],
+                STATUS_PRIORITY.get(str(status).lower(), 99),
+            )
+        summary = entry.get("summary")
+        if summary:
+            _add_note(bucket, summary)
+        mapped_summary = summary_map.get(str(room_name).strip())
+        if mapped_summary:
+            _add_note(bucket, mapped_summary)
 
-                table_lines.append(f"| {room_name} | {dates_text or '—'} | {notes_cell} |")
-                row_payload: Dict[str, Any] = {
-                    "room": room_name,
-                    "dates": date_cells,
-                    "notes": notes_cell,
-                }
-                if payload["iso_dates"]:
-                    row_payload["iso_dates"] = payload["iso_dates"]
-                    row_payload["iso_date"] = payload["iso_dates"][0]
-                if payload["statuses"]:
-                    row_payload["statuses"] = sorted(payload["statuses"], key=str.lower)
-                table_rows.append(row_payload)
-
-    if not use_room_first:
-        table_lines = ["| Date | Room | Notes |", "| --- | --- | --- |"]
-        table_rows = []
-        rec_count = len(room_recs)
-        rec_index = 0
-        for raw_date in candidate_dates[:5]:
-            display_date, iso_date = _normalise_candidate_date(raw_date)
-            status_note = None
-            room_label = None
-            summary_note = None
-            entries = []
-            if iso_date and range_map:
-                entries = range_map.get(iso_date, []) or range_map.get(iso_date.split("T")[0], [])
-            if entries:
-                entry = entries[0]
-                room_label = str(entry.get("room") or "").strip() or "Let me know your preferred setup"
-                status_note = entry.get("status")
-                summary_note = entry.get("summary") or summary_map.get(room_label)
-            elif rec_count:
-                rec = room_recs[rec_index % rec_count]
-                rec_index += 1
-                room_label = str(rec.get("name") or "Let me know your preferred setup").strip()
-                summary_note = rec.get("summary")
-            else:
-                room_label = "Let me know your preferred setup"
-
-            rooms_cell = room_label
-            if summary_note:
-                rooms_cell = f"{room_label} — {summary_note}"
-
-            notes_bits = []
-            if status_note:
-                notes_bits.append(str(status_note))
-            if catering_summary:
-                notes_bits.append(catering_summary)
-            if time_note:
-                notes_bits.append(time_note)
-
-            notes_cell = _unique_notes(notes_bits)
-            table_lines.append(f"| {display_date} | {rooms_cell} | {notes_cell} |")
-            row_payload: Dict[str, Any] = {
-                "date": display_date,
-                "rooms": rooms_cell,
-                "notes": notes_cell,
-            }
+    remaining_dates: List[Tuple[Optional[str], str]] = []
+    for raw_date in list(candidate_dates)[:8]:
+        display_date, iso_date = _normalise_candidate_date(raw_date)
+        if iso_date and iso_date in handled_iso:
+            continue
+        if display_date:
+            remaining_dates.append((iso_date, display_date))
+    if remaining_dates:
+        bucket = _ensure_bucket("Any matching room")
+        for iso_date, display_date in remaining_dates:
+            bucket["dates"].add(display_date)
             if iso_date:
-                row_payload["iso_date"] = iso_date
-            if status_note:
-                row_payload["status"] = status_note
-            table_rows.append(row_payload)
+                bucket["sort_keys"].add(iso_date)
 
-    return table_lines, table_rows
-
-
-def _range_intro_lines(range_results: Sequence[Dict[str, Any]]) -> List[str]:
-    if not range_results:
-        return []
-    iso_values: List[datetime] = []
-    for entry in range_results:
-        iso = entry.get("iso_date") or entry.get("date")
-        if not iso:
+    for entry in products_summary:
+        name = str(entry.get("product") or "").strip()
+        if not name:
             continue
+        rooms = entry.get("rooms") or []
+        if not rooms and select_fields == ["room"]:
+            continue
+        if not rooms:
+            for payload in buckets.values():
+                payload["menus"].add(name)
+            continue
+        for room_name in rooms:
+            bucket = _ensure_bucket(room_name)
+            bucket["menus"].add(name)
+
+    menu_names: List[str] = []
+    if menu_rows:
+        for entry in menu_rows:
+            name = str(entry.get("menu_name") or "").strip()
+            if not name:
+                continue
+            descriptor_bits: List[str] = []
+            if entry.get("vegetarian"):
+                descriptor_bits.append("vegetarian")
+            if entry.get("wine_pairing"):
+                descriptor_bits.append("wine pairing")
+            courses = entry.get("courses")
+            if courses:
+                descriptor_bits.append(f"{courses}-course")
+            season = entry.get("season_label")
+            if season:
+                descriptor_bits.append(str(season))
+            note = " (" + "; ".join(descriptor_bits) + ")" if descriptor_bits else ""
+            menu_names.append(f"{name}{note}" if note else name)
+        if "menu" in select_fields:
+            for payload in buckets.values():
+                for item in menu_names:
+                    payload["menus"].add(item)
+
+    if catering_summary:
+        for payload in buckets.values():
+            _add_note(payload, catering_summary)
+
+    rows: List[Dict[str, str]] = []
+    variation: Dict[str, Set[Any]] = defaultdict(set)
+
+    for room_name, payload in sorted(
+        buckets.items(),
+        key=lambda item: (
+            item[1]["status_priority"],
+            min(item[1]["sort_keys"]) if item[1]["sort_keys"] else "",
+            item[0].lower(),
+        ),
+    ):
+        row: Dict[str, str] = {}
+        if "room" in select_fields:
+            row["room"] = room_name
+        if "menu" in select_fields:
+            menus = sorted(payload["menus"])
+            row["menu"] = ", ".join(menus) if menus else "—"
+        dates_sorted = sorted(payload["dates"], key=_date_sort_key)
+        row["dates"] = ", ".join(dates_sorted) if dates_sorted else "—"
+        variation["dates"].add(tuple(dates_sorted))
+        notes_list = payload["notes"]
+        row["notes"] = "; ".join(notes_list) if notes_list else "—"
+        rows.append(row)
+
+    return rows, dict(variation)
+
+
+def _collect_menu_rows(
+    menu_payload: Optional[Dict[str, Any]],
+    products_summary: Sequence[Dict[str, Any]],
+    candidate_dates: Sequence[str],
+) -> Tuple[List[Dict[str, str]], Dict[str, Set[Any]]]:
+    rows: List[Dict[str, str]] = []
+    variation: Dict[str, Set[Any]] = defaultdict(set)
+    seen: Set[str] = set()
+
+    display_dates = _dedup_preserve_order([
+        _format_display_date(str(date)) for date in candidate_dates if str(date).strip()
+    ])
+    if display_dates:
+        variation["dates"].add(tuple(display_dates))
+
+    if menu_payload:
+        for entry in menu_payload.get("rows", []):
+            name = str(entry.get("menu_name") or "").strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            notes_bits: List[str] = []
+            price = entry.get("price")
+            if price:
+                price_text = str(price).strip()
+                if price_text:
+                    notes_bits.append(
+                        price_text if "per" in price_text.lower() else f"{price_text} per guest"
+                    )
+            if entry.get("vegetarian"):
+                notes_bits.append("Vegetarian")
+            if entry.get("wine_pairing"):
+                notes_bits.append("Wine pairing included")
+            notes_bits.extend(entry.get("notes") or [])
+            season = entry.get("season_label")
+            if season:
+                notes_bits.append(str(season))
+            notes = "; ".join(_dedup_preserve_order(notes_bits))
+            rows.append({
+                "menu": name,
+                "notes": notes or "—",
+                "dates": ", ".join(display_dates) if display_dates else "—",
+            })
+            seen.add(key)
+
+    for entry in products_summary:
+        name = str(entry.get("product") or "").strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        notes_bits: List[str] = []
+        rooms = _dedup_preserve_order(entry.get("rooms") or [])
+        if rooms:
+            notes_bits.append(f"Rooms: {', '.join(rooms)}")
+        if entry.get("available_today") is False:
+            notes_bits.append("Not available today")
+        notes = "; ".join(_dedup_preserve_order(notes_bits))
+        rows.append({
+            "menu": name,
+            "notes": notes or "—",
+            "dates": ", ".join(display_dates) if display_dates else "—",
+        })
+        seen.add(key)
+
+    for row in rows:
+        row.setdefault("notes", "—")
+        row.setdefault("dates", ", ".join(display_dates) if display_dates else "—")
+
+    return rows, dict(variation)
+
+
+def _compute_column_plan(
+    select_fields: Sequence[str],
+    where_fields: Sequence[str],
+    rows: Sequence[Dict[str, str]],
+    variation: Dict[str, Set[Any]],
+) -> Tuple[List[str], Dict[str, Any]]:
+    column_order: List[str] = []
+    constants: Dict[str, Any] = {}
+
+    for field in select_fields:
+        if any(row.get(field) not in (None, "", "—") for row in rows):
+            column_order.append(field)
+
+    has_dates = any(row.get("dates") not in (None, "", "—") for row in rows)
+    date_variations = {tuple(val) for val in variation.get("dates", set()) if val}
+    if date_variations or has_dates:
+        if "dates" not in column_order:
+            column_order.append("dates")
+        if len(date_variations) == 1:
+            constants["dates"] = list(next(iter(date_variations)))
+
+    if "notes" not in column_order:
+        column_order.append("notes")
+
+    return column_order, constants
+
+
+def _column_label(field: str, select_fields: Sequence[str]) -> str:
+    if field == "room":
+        return "Room"
+    if field == "menu":
+        return "Menus" if "room" in select_fields and len(select_fields) > 1 else "Menu"
+    if field == "dates":
+        return "Dates"
+    if field == "month":
+        return "Month"
+    if field == "weekday":
+        return "Weekday"
+    if field == "time_of_day":
+        return "Time"
+    if field == "guests":
+        return "Guests"
+    if field == "products":
+        return "Products"
+    if field == "notes":
+        return "Notes"
+    return field.capitalize()
+
+def _render_markdown_table(
+    rows: Sequence[Dict[str, str]],
+    column_order: Sequence[str],
+    select_fields: Sequence[str],
+) -> List[str]:
+    if not rows or not column_order:
+        return []
+    header_labels = [_column_label(field, select_fields) for field in column_order]
+    header = "| " + " | ".join(header_labels) + " |"
+    divider = "| " + " | ".join("---" for _ in column_order) + " |"
+    lines = [header, divider]
+    for row in rows:
+        cells: List[str] = []
+        for field in column_order:
+            value = row.get(field, "—")
+            cell = str(value if value not in (None, "") else "—")
+            cells.append(cell)
+        lines.append("| " + " | ".join(cells) + " |")
+    return lines
+
+
+def _time_hint_with_source(state: WorkflowState) -> Tuple[Optional[str], Optional[str]]:
+    user_info = state.user_info or {}
+    hint = user_info.get("vague_time_of_day")
+    if hint:
+        return str(hint), "Q"
+    event_entry = state.event_entry or {}
+    hint = event_entry.get("vague_time_of_day")
+    if hint:
+        return str(hint), "C"
+    return None, None
+
+
+def _attendee_phrase(variable: Dict[str, Any]) -> Optional[str]:
+    value = (variable or {}).get("value")
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        minimum = value.get("min")
+        maximum = value.get("max")
+        if minimum is not None and maximum is not None:
+            return f"{minimum}-{maximum} guests"
+        if minimum is not None:
+            return f"{minimum}+ guests"
+        if maximum is not None:
+            return f"up to {maximum} guests"
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        text = str(value).strip()
+        return f"{text} guests" if text else None
+    if numeric.is_integer():
+        return f"{int(numeric)} guests"
+    return f"{numeric} guests"
+
+
+def _products_phrase(variable: Dict[str, Any]) -> Optional[str]:
+    value = (variable or {}).get("value")
+    if not value:
+        return None
+    if isinstance(value, list):
+        entries = _dedup_preserve_order(value)
+        return _join_phrases(entries)
+    text = str(value).strip()
+    return text or None
+
+
+def _join_phrases(items: Sequence[str]) -> str:
+    entries = [item.strip() for item in items if item]
+    if not entries:
+        return ""
+    if len(entries) == 1:
+        return entries[0]
+    return ", ".join(entries[:-1]) + f" and {entries[-1]}"
+
+
+def _format_intro_paragraph(
+    select_fields: Sequence[str],
+    effective: Dict[str, Any],
+    q_values: Dict[str, Any],
+    constants: Dict[str, Any],
+    menu_payload: Optional[Dict[str, Any]],
+    state: WorkflowState,
+    column_order: Sequence[str],
+) -> str:
+    sentences: List[str] = []
+    assumed_filters: List[str] = []
+
+    date_var = effective.get("D") or {}
+    date_source = date_var.get("source")
+    meta = date_var.get("meta") or {}
+    month_index = meta.get("month_index")
+    year = meta.get("year")
+    month_label = MONTH_INDEX_TO_NAME.get(month_index) if month_index else None
+    if month_label and year:
+        month_label = f"{month_label} {year}"
+    elif month_label:
+        month_label = str(month_label)
+
+    weekday_token = meta.get("weekday")
+    weekday_label = None
+    if isinstance(weekday_token, str) and weekday_token:
+        weekday_label = weekday_token.capitalize()
+
+    time_hint, time_source = _time_hint_with_source(state)
+
+    attendee_var = effective.get("N") or {}
+    attendee_phrase = _attendee_phrase(attendee_var)
+    attendee_source = attendee_var.get("source")
+    if attendee_phrase is None:
+        requirements = (state.event_entry or {}).get("requirements") or {}
+        user_info = state.user_info or {}
+        fallback_value = (
+            requirements.get("number_of_participants")
+            or requirements.get("participants")
+            or user_info.get("participants")
+        )
         try:
-            iso_values.append(datetime.fromisoformat(str(iso)))
-        except ValueError:
-            continue
-    if not iso_values:
-        return []
-    iso_values.sort()
-    month_label = iso_values[0].strftime("%B")
-    year_label = iso_values[0].strftime("%Y")
-    weekday_names = {value.strftime("%A") for value in iso_values}
-    weekday_label = f"{next(iter(weekday_names))}s" if len(weekday_names) == 1 else "Dates"
-    day_tokens: List[str] = []
-    for value in iso_values:
-        token = value.strftime("%d")
-        if token not in day_tokens:
-            day_tokens.append(token)
-        if len(day_tokens) >= 8:
-            break
-    header_line = f"Date options for {month_label}"
-    summary_line = f"{weekday_label} available in {month_label} {year_label}: {', '.join(day_tokens)}"
-    return [header_line, summary_line]
+            fallback_value = int(fallback_value)
+        except (TypeError, ValueError):
+            pass
+        if fallback_value:
+            attendee_phrase = _attendee_phrase({"value": fallback_value})
+            attendee_source = "C"
+    if attendee_phrase:
+        sentences.append(f"All options below fit {attendee_phrase}.")
+        if attendee_source in {"C", "F"}:
+            assumed_filters.append(attendee_phrase)
 
+    dates_constant = constants.get("dates") or []
+    availability_bits: List[str] = []
+    if dates_constant:
+        availability_bits.append(f"available on {_join_phrases(dates_constant)}")
+        if date_source in {"C", "F"}:
+            assumed_filters.append(f"dates {_join_phrases(dates_constant)}")
+
+    schedule_phrase = None
+    if weekday_label and time_hint:
+        base = f"{weekday_label} {str(time_hint).lower()}s"
+        schedule_phrase = f"during {base}"
+        if time_source in {"C", "F"}:
+            assumed_filters.append(base)
+    elif weekday_label:
+        schedule_phrase = f"on {weekday_label}s"
+        if date_source in {"C", "F"}:
+            assumed_filters.append(f"{weekday_label}s")
+    elif time_hint:
+        label = str(time_hint).lower()
+        schedule_phrase = f"during the {label}"
+        if time_source in {"C", "F"}:
+            assumed_filters.append(f"{label}")
+    if schedule_phrase:
+        availability_bits.append(schedule_phrase)
+
+    if month_label:
+        availability_bits.append(f"in {month_label}")
+        if date_source in {"C", "F"}:
+            assumed_filters.append(month_label)
+
+    products_var = effective.get("P") or {}
+    products_phrase = _products_phrase(products_var)
+    preference_bits: List[str] = []
+    if products_phrase:
+        preference_bits.append(f"including {products_phrase}")
+        if products_var.get("source") in {"C", "F"}:
+            assumed_filters.append(products_phrase)
+
+    menu_request_phrases: List[str] = []
+    if menu_payload:
+        request = menu_payload.get("request") or {}
+        if request.get("vegetarian"):
+            menu_request_phrases.append("vegetarian menus")
+        if request.get("wine_pairing"):
+            menu_request_phrases.append("wine pairings")
+        if request.get("three_course"):
+            menu_request_phrases.append("three-course menus")
+        month_hint = menu_payload.get("month") or menu_payload.get("request_month")
+        if month_hint:
+            menu_request_phrases.append(f"{str(month_hint).capitalize()} menus")
+    if menu_request_phrases:
+        preference_bits.append(f"with {_join_phrases(menu_request_phrases)}")
+
+    detail_segments: List[str] = []
+    if availability_bits:
+        detail_segments.append(_join_phrases(availability_bits))
+    if preference_bits:
+        detail_segments.append(_join_phrases(preference_bits))
+
+    if detail_segments:
+        sentences.append(f"They are { ' and '.join(detail_segments) }.")
+
+    if assumed_filters:
+        assumed_sentence = _join_phrases(_dedup_preserve_order(assumed_filters))
+        sentences.append(f"I assumed {assumed_sentence} from your previous details.")
+
+    paragraph = " ".join(segment for segment in sentences if segment).strip()
+    return paragraph or "Here's what I can offer."
 
 def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any]) -> None:
     thread_id = state.thread_id
@@ -643,11 +1038,20 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
             {"topic": draft.get("topic"), "subloop": draft.get("subloop")},
         )
         return
+
     body_text = draft.get("body") or ""
-    base_body, next_step_block, footer_tail = _split_body_footer(body_text)
+    _, next_step_block, _ = _split_body_footer(body_text)
 
     preferences = _preprocess_preferences(state)
     _sections, _headers, room_recs, catering_lines = _build_room_and_catering_sections(state, preferences)
+
+    structured_payload = _load_structured_action_payload_for_general_qna(state)
+    db_summary = structured_payload.get("db_summary") if structured_payload else {}
+    extraction_payload = (structured_payload or {}).get("extraction") or {}
+    q_values = extraction_payload.get("q_values") or {}
+    effective = (structured_payload or {}).get("effective") or {}
+    qna_subtype = (structured_payload or {}).get("qna_subtype") or ""
+
     menu_payload = build_menu_payload(
         (state.message.body or "") if state.message else "",
         context_month=(state.event_entry or {}).get("vague_month"),
@@ -655,63 +1059,121 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
     if menu_payload:
         state.turn_notes["general_qa"] = menu_payload
 
-    candidate_dates = draft.get("candidate_dates") or []
-    range_results = draft.get("range_results")
-    table_lines, table_rows = _build_table_content(state, candidate_dates, range_results, room_recs, catering_lines)
-    range_intro_lines = _range_intro_lines(range_results or [])
+    select_fields, where_fields = _determine_select_and_where_fields(
+        qna_subtype,
+        q_values,
+        effective,
+        db_summary or {},
+        menu_payload,
+    )
 
-    availability_lines = _extract_availability_lines(base_body)
-    info_lines = _extract_info_lines(base_body)
-    menu_lines = _menu_lines_from_payload(menu_payload)
-    if not candidate_dates and not availability_lines:
-        availability_lines = ["I need a specific date before I can confirm availability."]
+    candidate_dates = draft.get("candidate_dates") or []
+    range_results = draft.get("range_results") or []
+
+    if "room" in select_fields or (db_summary or {}).get("rooms"):
+        table_rows, variation = _collect_room_rows(
+            select_fields,
+            db_summary or {},
+            range_results,
+            candidate_dates,
+            room_recs,
+            catering_lines,
+            menu_payload,
+        )
+    else:
+        table_rows, variation = _collect_menu_rows(
+            menu_payload,
+            (db_summary or {}).get("products") or [],
+            candidate_dates,
+        )
 
     next_step_line = _normalise_next_step_line(next_step_block, default_line=DEFAULT_NEXT_STEP_LINE)
 
-    body_segments: List[str] = ["General Q&A"]
-    if menu_lines:
-        body_segments.extend(menu_lines)
-    if range_intro_lines:
-        body_segments.append("")
-        body_segments.extend(range_intro_lines)
-    if table_lines:
-        body_segments.append("")
-        body_segments.extend(table_lines)
-    if availability_lines:
-        body_segments.append("")
-        body_segments.extend(availability_lines)
-    if info_lines:
-        body_segments.append("")
-        body_segments.extend(info_lines)
-    body_segments.append("")
-    body_segments.append("NEXT STEP:")
-    body_segments.append(next_step_line)
+    if not table_rows:
+        fallback_line = "I need a specific date before I can confirm availability."
+        body_lines = ["General Q&A", fallback_line, "", "NEXT STEP:", next_step_line]
+        body_markdown = "\n".join(body_lines).strip()
+        footer_text = "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client"
+        draft["body_markdown"] = body_markdown
+        draft["body"] = f"{body_markdown}\n\n---\n{footer_text}"
+        draft["footer"] = footer_text
+        draft["headers"] = ["General Q&A"]
+        draft.pop("table_blocks", None)
+        trace_general_qa_status(
+            thread_id,
+            "applied",
+            {
+                "topic": draft.get("topic"),
+                "candidate_dates": len(candidate_dates),
+                "has_table": False,
+                "has_menu_payload": bool(menu_payload),
+                "range_results": len(range_results),
+                "select_fields": select_fields,
+                "table_columns": [],
+            },
+        )
+        return
 
-    body_markdown = "\n".join(segment for segment in body_segments if segment is not None).strip()
+    column_order, constants = _compute_column_plan(select_fields, where_fields, table_rows, variation)
+
+    display_rows: List[Dict[str, str]] = []
+    for row in table_rows:
+        display_row: Dict[str, str] = {}
+        for field in column_order:
+            value = row.get(field, "—")
+            display_row[field] = str(value if value not in (None, "") else "—")
+        display_rows.append(display_row)
+
+    table_lines = _render_markdown_table(display_rows, column_order, select_fields)
+    intro_text = _format_intro_paragraph(select_fields, effective, q_values, constants, menu_payload, state, column_order)
+
+    body_lines = ["General Q&A"]
+    if intro_text:
+        body_lines.append(intro_text)
+    if table_lines:
+        body_lines.append("")
+        body_lines.extend(table_lines)
+    body_lines.extend(["", "NEXT STEP:", next_step_line])
+    body_markdown = "\n".join(body_lines).strip()
 
     footer_text = "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client"
-
     draft["body_markdown"] = body_markdown
-    draft["body"] = f"{draft['body_markdown']}\n\n---\n{footer_text}"
+    draft["body"] = f"{body_markdown}\n\n---\n{footer_text}"
     draft["footer"] = footer_text
     draft["headers"] = ["General Q&A"]
-    if table_rows:
-        draft["table_blocks"] = [
-            {
-                "type": "dates",
-                "label": "Dates & Rooms",
-                "rows": table_rows,
-            }
-        ]
+
+    columns_meta = [
+        {
+            "key": field,
+            "label": _column_label(field, select_fields),
+        }
+        for field in column_order
+    ]
+    table_block_rows = [
+        {field: row[field] for field in column_order}
+        for row in display_rows
+    ]
+    draft["table_blocks"] = [
+        {
+            "type": "table",
+            "label": "General Q&A Summary",
+            "columns": columns_meta,
+            "rows": table_block_rows,
+            "column_order": list(column_order),
+        }
+    ]
+
     trace_general_qa_status(
         thread_id,
         "applied",
         {
             "topic": draft.get("topic"),
             "candidate_dates": len(candidate_dates),
-            "has_table": bool(table_rows),
+            "has_table": True,
             "has_menu_payload": bool(menu_payload),
-            "range_results": len(range_results or []),
+            "range_results": len(range_results),
+            "select_fields": select_fields,
+            "table_columns": list(column_order),
         },
     )
 

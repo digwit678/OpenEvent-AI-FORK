@@ -29,7 +29,7 @@ def test_general_room_qna_path(monkeypatch, tmp_path):
     state = _state(tmp_path)
     event_entry = {
         "event_id": "EVT-GENERAL",
-        "requirements": {"preferred_room": "Room A"},
+        "requirements": {"preferred_room": "Room A", "number_of_participants": 30},
         "thread_state": "Awaiting Client",
         "current_step": 2,
         "date_confirmed": False,
@@ -57,13 +57,18 @@ def test_general_room_qna_path(monkeypatch, tmp_path):
     assert draft["range_results"], "Hybrid queries should include concrete availability rows"
     body = draft["body"]
     assert "General Q&A" in body
+    assert "All options below fit 30 guests." in body
+    assert "available on Sun 01 Feb 2026, Sun 08 Feb 2026 and Sun 15 Feb 2026" in body
     assert "| Room | Dates | Notes |" in body
-    assert "| Room A | 01.02.2026, 08.02.2026, 15.02.2026" in body
     assert "Status: Available" in body
-    assert "- Choose a date so I can move straight into Room Availability and hold the best-fitting room — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you." in body
     assert "- Room A" not in body
     assert "- Room B" not in body
     assert draft["footer"].endswith("State: Awaiting Client")
+
+    table_block = draft["table_blocks"][0]
+    assert table_block["column_order"] == ["room", "dates", "notes"]
+    assert table_block["rows"][0]["room"] == "Room A"
+    assert "Status: Available" in table_block["rows"][0]["notes"]
 
     events = BUS.get(state.thread_id)  # type: ignore[attr-defined]
     assert any(

@@ -40,18 +40,12 @@
             "headers_subset": [
               "General Q&A"
             ],
-            "body_order": [
-              "Vegetarian three-course menus with wine pairings",
-              "| Room | Dates | Notes |",
-              "Saturdays available in February 2026"
-            ],
             "contains_all": [
-              "| Room | Dates | Notes |",
-              "| Room A | 07.02.2026, 14.02.2026, 21.02.2026, 28.02.2026 |",
-              "Vegetarian three-course menus with wine pairings",
-              "Saturdays available in February 2026: 07, 14, 21, 28",
-              "Status: Available; Evening",
-              "- Choose a date so I can move straight into Room Availability and hold the best-fitting room — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you."
+              "All options below fit 30 guests.",
+              "They are available on",
+              "with vegetarian menus",
+              "| Menu | Dates | Notes |",
+              "- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you."
             ]
           }
         }

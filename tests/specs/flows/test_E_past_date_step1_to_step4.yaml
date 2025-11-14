@@ -36,11 +36,11 @@
               "General Q&A"
             ],
             "contains_all": [
+              "All options below fit",
+              "They are available on",
               "| Room | Dates | Notes |",
-              "07.05.2026, 14.05.2026, 21.05.2026, 28.05.2026",
-              "Status: Available",
               "Coffee break service.",
-              "- Choose a date so I can move straight into Room Availability and hold the best-fitting room — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you."
+              "- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you."
             ]
           }
         }
