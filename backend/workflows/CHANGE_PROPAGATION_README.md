@@ -283,20 +283,85 @@ All changes are backwards compatible:
 - No database schema changes
 - All new fields have safe defaults
 
-## Next Steps
+## Integration Status
 
-1. **Integrate with Step Implementations:**
-   - Call `detect_change_type()` in step process functions
-   - Use `route_change_on_updated_variable()` for routing decisions
+### ✅ Completed
 
-2. **Add Offer Hash Tracking:**
-   - Compute and store `offer_hash` when offer is sent
-   - Compare on offer changes to detect modifications
+1. **Intake Integration (backend/workflows/groups/intake/trigger/process.py)**
+   - `detect_change_type()` called at line 433 for all incoming messages
+   - `route_change_on_updated_variable()` used for routing decisions (line 453)
+   - Change detection active for messages to events in Step 2+
+   - Trace markers added for debugging ("CHANGE_DETECTED")
+   - Falls back to legacy logic when change_type is None (backwards compatible)
 
-3. **Enhanced UX Feedback:**
-   - Surface change type in debug/trace logs
+2. **Hash Guards Already Implemented**
+   - Step 3 already has `requirements_hash == room_eval_hash` fast-skip (line 119-139)
+   - Step 2 already returns to `caller_step` (line 1220-1232)
+   - Step 3 already sets/clears `caller_step` appropriately (lines 417-418, 477-491)
+
+3. **Test Coverage**
+   - 36 unit and E2E tests for change_propagation module (all passing)
+   - Integration tests created (some require full workflow mocking)
+
+### 🔄 In Progress
+
+1. **Full Integration Testing**
+   - Integration tests need proper workflow mocking
+   - Requires calendar data, room configs, etc.
+   - Unit tests of change_propagation logic are complete and passing
+
+2. **Offer Hash Tracking**
+   - `compute_offer_hash()` function ready
+   - Needs to be called when offers are sent/accepted
+   - Comparison logic needs to be added to Step 4/5
+
+### 📋 Remaining Work
+
+1. **Step 4 Products Integration:**
+   - Detect PRODUCTS changes in Step 4
+   - Use change routing to stay in Step 4 (no detours)
+   - Add offer_hash tracking
+
+2. **Step 5 Negotiation Integration:**
+   - Detect COMMERCIAL changes
+   - Route within Step 5 without structural re-checks
+
+3. **Step 7 Confirmation Integration:**
+   - Detect DEPOSIT/reservation changes
+   - Handle date changes from Step 7 (return to Step 7 after resolution)
+
+4. **Enhanced UX Feedback:**
+   - Surface change type in debug/trace logs (partially done)
    - Show "Rechecking availability due to date change" messages
 
-4. **Performance Optimization:**
+5. **Performance Optimization:**
    - Cache hash computations more aggressively
    - Batch multiple small changes before re-evaluation
+
+## How to Use (Current State)
+
+### For Developers Working on Steps 2-7
+
+The change propagation system is now **active in Intake** and will:
+- Detect DATE, ROOM, and REQUIREMENTS changes automatically
+- Route to appropriate steps (Step 2 for DATE, Step 3 for ROOM/REQUIREMENTS)
+- Set `caller_step` appropriately
+- Log changes via trace markers
+
+**No changes needed** for Steps 2-3 - they already handle `caller_step` correctly.
+
+**For Steps 4-7**: To add change detection:
+1. Import the module: `from backend.workflows.change_propagation import detect_change_type, route_change_on_updated_variable`
+2. Call `detect_change_type(event_entry, user_info, message_text=message_text)`
+3. Use the routing decision to set `current_step` and `caller_step`
+
+Example:
+```python
+change_type = detect_change_type(event_entry, user_info, message_text=message_text)
+if change_type is not None:
+    decision = route_change_on_updated_variable(event_entry, change_type, from_step=current_step)
+    if decision.updated_caller_step is not None:
+        update_event_metadata(event_entry, caller_step=decision.updated_caller_step)
+    if decision.next_step != current_step:
+        update_event_metadata(event_entry, current_step=decision.next_step)
+```
