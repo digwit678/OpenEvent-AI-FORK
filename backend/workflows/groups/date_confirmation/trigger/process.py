@@ -2014,29 +2014,25 @@ def _present_general_room_qna(
     if thread_id:
         set_subloop(thread_id, subloop_label)
 
+    # MULTI-TURN FIX: Always run fresh extraction for each general_room_qna message
+    # Store minimal "last_general_qna" context only for follow-up detection
+    last_qna_context = event_entry.get("last_general_qna") if isinstance(event_entry, dict) else {}
+
+    # Always extract fresh from current message
+    message = state.message
+    subject = (message.subject if message else "") or ""
+    body = (message.body if message else "") or ""
+    message_text = f"{subject}\n{body}".strip() or body or subject
+
+    scan = state.extras.get("general_qna_scan")
+    # Force fresh extraction (force_refresh=True) for multi-turn Q&A
+    ensure_qna_extraction(state, message_text, scan, force_refresh=True)
     extraction = state.extras.get("qna_extraction")
-    cache = event_entry.get("qna_cache") if isinstance(event_entry, dict) else {}
-    if extraction is None and isinstance(cache, dict):
-        cached_extraction = cache.get("extraction")
-        if cached_extraction:
-            extraction = cached_extraction
-            state.extras["qna_extraction"] = cached_extraction
-            if cache.get("meta"):
-                state.extras["qna_extraction_meta"] = cache["meta"]
-            if cache.get("last_message_text"):
-                state.extras["qna_last_message_text"] = cache["last_message_text"]
-    if extraction is None:
-        message_text = None
-        if isinstance(cache, dict):
-            message_text = cache.get("last_message_text")
-        if not message_text:
-            message = state.message
-            subject = (message.subject if message else "") or ""
-            body = (message.body if message else "") or ""
-            message_text = f"{subject}\n{body}".strip() or body or subject
-        scan = state.extras.get("general_qna_scan")
-        ensure_qna_extraction(state, message_text, scan)
-        extraction = state.extras.get("qna_extraction")
+
+    # Clear stale qna_cache AFTER extraction to prevent reuse of old extraction
+    # (force_refresh=True prevents new cache from being saved)
+    if isinstance(event_entry, dict):
+        event_entry.pop("qna_cache", None)
 
     structured = build_structured_qna_result(state, extraction) if extraction else None
 
@@ -2107,6 +2103,15 @@ def _present_general_room_qna(
         state.record_subloop(subloop_label)
         state.intent_detail = "event_intake_with_question"
         state.extras["persist"] = True
+
+        # Store minimal last_general_qna context for follow-up detection only
+        if extraction and isinstance(event_entry, dict):
+            q_values = extraction.get("q_values") or {}
+            event_entry["last_general_qna"] = {
+                "topic": structured.action_payload.get("qna_subtype"),
+                "date_pattern": q_values.get("date_pattern"),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            }
 
         payload = {
             "client_id": state.client_id,

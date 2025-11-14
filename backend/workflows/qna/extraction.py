@@ -89,13 +89,20 @@ def ensure_qna_extraction(
     state: WorkflowState,
     message_text: str,
     scan: Optional[Dict[str, Any]] = None,
+    force_refresh: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """
     Populate `state.extras['qna_extraction']` with the structured payload when we
     believe the message belongs to the general Q&A surface.
+
+    Args:
+        state: Current workflow state
+        message_text: Text to extract from
+        scan: Optional pre-computed scan result
+        force_refresh: If True, skip cache and always run fresh extraction (for multi-turn Q&A)
     """
 
-    if "qna_extraction" in state.extras:
+    if not force_refresh and "qna_extraction" in state.extras:
         cached = state.extras["qna_extraction"]
         if cached:
             return cached
@@ -148,8 +155,9 @@ def ensure_qna_extraction(
     state.extras["qna_extraction_meta"] = meta
     state.extras["qna_last_message_text"] = text
 
+    # Only save to qna_cache if NOT doing a forced refresh (multi-turn Q&A)
     event_entry = state.event_entry
-    if isinstance(event_entry, dict):
+    if isinstance(event_entry, dict) and not force_refresh:
         cache = event_entry.setdefault("qna_cache", {})
         cache["extraction"] = normalized
         cache["meta"] = meta
