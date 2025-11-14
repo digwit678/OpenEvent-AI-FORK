@@ -155,6 +155,7 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
   const [timeTravelLoading, setTimeTravelLoading] = useState(false);
   const [timeTravelError, setTimeTravelError] = useState<string | null>(null);
   const [managerToast, setManagerToast] = useState<{ tone: 'ok' | 'error'; message: string } | null>(null);
+  const [refreshCounter, setRefreshCounter] = useState(0);
 
   const tableScrollerRef = useRef<HTMLDivElement | null>(null);
   const bufferRef = useRef<ReturnType<typeof createBufferFlusher<RawTraceEvent[]>> | null>(null);
@@ -261,7 +262,7 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
       window.clearInterval(timer);
       controller.abort();
     };
-  }, [threadId, pollMs, granularity, timeTravelTs]);
+  }, [threadId, pollMs, granularity, timeTravelTs, refreshCounter]);
 
   useEffect(() => {
     if (timeTravelTs === null) {
@@ -323,7 +324,7 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
       cancelled = true;
       controller.abort();
     };
-  }, [timeTravelTs, threadId, granularity, liveState, liveSignals, liveSummary]);
+  }, [timeTravelTs, threadId, granularity, liveState, liveSignals, liveSummary, refreshCounter]);
 
   const stepProgress = useMemo(
     () => computeStepProgress({ state: stateSnapshot, summary: signals }),
@@ -515,6 +516,21 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
       node.scrollTop = memory.top;
     }
   }, [traceRows.length, paused]);
+
+  const handleRefresh = useCallback(() => {
+    setTimeTravelTs(null);
+    setTimeTravelMeta(null);
+    setTimeTravelError(null);
+    setRawEvents([]);
+    setStateSnapshot({});
+    setLiveState({});
+    setLiveSignals(undefined);
+    setLiveSummary(undefined);
+    setSignals(undefined);
+    setSummary(undefined);
+    setError(null);
+    setRefreshCounter((prev) => prev + 1);
+  }, []);
 
   const handleInspect = useCallback((row: TraceRowData) => {
     setInspectRow(row);
@@ -756,7 +772,18 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
   return (
     <div className="debug-panel">
       <div className="debug-panel__header">
-        <div className="debug-panel__thread">Thread: {threadId || '—'}</div>
+        <div className="debug-panel__thread">
+          <span>Thread: {threadId || '—'}</span>
+          <button
+            type="button"
+            className="debug-panel__refresh"
+            onClick={handleRefresh}
+            disabled={!threadId}
+            title="Refresh trace"
+          >
+            Refresh
+          </button>
+        </div>
         <div className="debug-panel__header-right">
           <div className="debug-panel__meta">
             <span>Current Step: {currentStepTitle}</span>

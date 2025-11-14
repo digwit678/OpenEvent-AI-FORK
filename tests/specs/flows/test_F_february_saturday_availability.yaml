@@ -9,6 +9,44 @@
         "body": "Hello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.\n\nWe’re flexible but are thinking sometime in February, preferably a Saturday evening.\n\nRequirements:\n– Long dining table setup\n– Three-course dinner menu with wine\n– Background music (live or playlist)\n\nCould you please let me know which dates in February you still have available and what menu options you can offer?\n\nMany thanks,\nLaura Meier\nlaura.meier@bluewin.ch\n\n+41 78 222 44 55"
       },
       "expect": {
+        "actions": [
+          {
+            "type": "select_date",
+            "label": "Confirm 07.02.2026",
+            "date": "07.02.2026",
+            "iso_date": "2026-02-07"
+          },
+          {
+            "type": "select_date",
+            "label": "Confirm 14.02.2026",
+            "date": "14.02.2026",
+            "iso_date": "2026-02-14"
+          },
+          {
+            "type": "select_date",
+            "label": "Confirm 21.02.2026",
+            "date": "21.02.2026",
+            "iso_date": "2026-02-21"
+          },
+          {
+            "type": "select_date",
+            "label": "Confirm 28.02.2026",
+            "date": "28.02.2026",
+            "iso_date": "2026-02-28"
+          },
+          {
+            "type": "ask_for_date_enqueued",
+            "payload": {
+              "suggested_dates": [
+                "07.02.2026",
+                "14.02.2026",
+                "21.02.2026",
+                "28.02.2026"
+              ],
+              "event_id": "ANY"
+            }
+          }
+        ],
         "res": {
           "assistant_draft": {
             "headers_subset": [
@@ -17,8 +55,7 @@
             "contains_all": [
               "All options below fit 30 guests.",
               "They are available on",
-              "| Room | Dates | Notes |",
-              "Status: Available",
+              "| Menu | Dates | Notes |",
               "- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you."
             ],
             "not_contains_all": [

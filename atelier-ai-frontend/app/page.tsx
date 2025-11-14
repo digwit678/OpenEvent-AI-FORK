@@ -30,6 +30,7 @@ interface EventInfo {
 interface PendingTaskPayload {
   snippet?: string | null;
   suggested_dates?: string[] | null;
+  thread_id?: string | null;
 }
 
 interface PendingTask {
@@ -164,6 +165,7 @@ export default function EmailThreadUI() {
   const [tasks, setTasks] = useState<PendingTask[]>([]);
   const [taskActionId, setTaskActionId] = useState<string | null>(null);
   const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
+  const [cleanupLoading, setCleanupLoading] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isUserNearBottom, setIsUserNearBottom] = useState(true);
   const [backendHealthy, setBackendHealthy] = useState<boolean | null>(null);
@@ -308,6 +310,22 @@ export default function EmailThreadUI() {
       }
     }
   }, []);
+
+  const clearResolvedTasks = useCallback(async () => {
+    setCleanupLoading(true);
+    try {
+      await requestJSON(`${API_BASE}/tasks/cleanup`, {
+        method: 'POST',
+        body: JSON.stringify({ keep_thread_id: sessionId ?? null }),
+      });
+      await refreshTasks();
+    } catch (error) {
+      console.error('Error clearing tasks:', error);
+      alert('Error clearing tasks. Please try again.');
+    } finally {
+      setCleanupLoading(false);
+    }
+  }, [refreshTasks, sessionId]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -474,21 +492,38 @@ export default function EmailThreadUI() {
       }
       setTaskActionId(task.task_id);
       try {
-        const notes = taskNotes[task.task_id] || undefined;
-        const result = await requestJSON<{
-          task_status: string;
-          review_state?: string;
-          thread_id?: string | null;
-          event_id?: string | null;
-          assistant_reply?: string;
-        }>(`${API_BASE}/tasks/${task.task_id}/${decision}`, {
+        const response = await fetch(`${API_BASE}/tasks/${task.task_id}/${decision}`, {
           method: 'POST',
-          body: JSON.stringify({ notes }),
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({ notes: taskNotes[task.task_id] || undefined }),
         });
-        if (sessionId && result?.thread_id === sessionId && result.assistant_reply) {
-          appendMessage({ role: 'assistant', content: result.assistant_reply, timestamp: new Date() });
+
+        if (response.status === 404) {
+          console.warn(`Task ${task.task_id} no longer pending; removing from list.`);
+          await refreshTasks();
+          return;
         }
-        refreshTasks().catch(() => undefined);
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || `Request failed with status ${response.status}`);
+        }
+
+        if (response.status !== 204) {
+          const result = (await response.json()) as {
+            task_status?: string;
+            review_state?: string;
+            thread_id?: string | null;
+            assistant_reply?: string;
+          };
+          if (sessionId && result?.thread_id === sessionId && result.assistant_reply) {
+            appendMessage({ role: 'assistant', content: result.assistant_reply, timestamp: new Date() });
+          }
+        }
+        await refreshTasks();
       } catch (error) {
         console.error(`Error updating task (${decision}):`, error);
         alert('Error updating task. Please try again.');
@@ -849,7 +884,16 @@ export default function EmailThreadUI() {
 
       <div className="mt-2 w-full">
         <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-          <h3 className="font-bold text-base mb-2">📝 Tasks</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-bold text-base">📝 Tasks</h3>
+            <button
+              onClick={() => clearResolvedTasks().catch(() => undefined)}
+              disabled={cleanupLoading || tasks.length === 0}
+              className="px-3 py-1 text-xs font-semibold rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
+            >
+              {cleanupLoading ? 'Clearing…' : 'Clear resolved'}
+            </button>
+          </div>
           {tasks.length === 0 ? (
             <p className="text-xs text-gray-500">No pending tasks.</p>
           ) : (
@@ -870,6 +914,9 @@ export default function EmailThreadUI() {
                     )}
                     {task.payload?.snippet && (
                       <div className="text-xs text-gray-600 mt-1 italic">"{task.payload.snippet}"</div>
+                    )}
+                    {task.payload?.thread_id && (
+                      <div className="text-xs text-gray-500 mt-1">Thread: {task.payload.thread_id}</div>
                     )}
                     {(task.type === 'ask_for_date' || task.type === 'manual_review') && (
                       <>

@@ -1140,6 +1140,7 @@ def _finalize_confirmation(
 ) -> GroupResult:
     """Persist the requested window and trigger availability."""
 
+    thread_id = _thread_id(state)
     if isinstance(window, str):
         try:
             parsed_date = datetime.strptime(window, "%Y-%m-%d")
@@ -1246,26 +1247,6 @@ def _finalize_confirmation(
     state.subflow_group = default_subflow(next_stage)
     state.extras["persist"] = True
 
-    participants = _extract_participants_from_state(state)
-    noted_line = (
-        f"Noted: {participants} guests and {window.display_date}."
-        if participants
-        else f"Noted: {window.display_date} is confirmed."
-    )
-    follow_up_line = "I'll move straight into Room Availability and send the best-fitting rooms."
-    ack_body, ack_headers = format_sections_with_headers(
-        [("Next step", [noted_line, follow_up_line])]
-    )
-    state.add_draft_message(
-        {
-            "body": ack_body,
-            "body_markdown": ack_body,
-            "step": next_step,
-            "topic": "date_confirmed",
-            "headers": ack_headers,
-        }
-    )
-
     payload = {
         "client_id": state.client_id,
         "event_id": state.event_id,
@@ -1299,6 +1280,53 @@ def _finalize_confirmation(
         },
         remove_deferred=["date_confirmation"],
     )
+
+    autorun_failed = False
+    if next_step == 3:
+        try:
+            from backend.workflows.groups.room_availability.trigger.process import process as room_process
+
+            room_result = room_process(state)
+            if isinstance(room_result.payload, dict):
+                room_result.payload.setdefault("confirmed_date", window.display_date)
+                room_result.payload.setdefault("gatekeeper_passed", dict(gatekeeper))
+            return room_result
+        except Exception as exc:  # pragma: no cover - defensive guard
+            autorun_failed = True
+            state.extras["room_autorun_failed"] = True
+            payload["room_autorun_failed"] = True
+            trace_marker(
+                thread_id,
+                "STEP3_AUTORUN_FAILED",
+                detail=str(exc),
+                data={
+                    "type": exc.__class__.__name__,
+                    "event_id": state.event_id,
+                },
+                owner_step="Step2_Date",
+            )
+
+    participants = _extract_participants_from_state(state)
+    noted_line = (
+        f"Noted: {participants} guests and {window.display_date}."
+        if participants
+        else f"Noted: {window.display_date} is confirmed."
+    )
+    follow_up_line = "I'll move straight into Room Availability and send the best-fitting rooms."
+    ack_body, ack_headers = format_sections_with_headers(
+        [("Next step", [noted_line, follow_up_line])]
+    )
+    state.add_draft_message(
+        {
+            "body": ack_body,
+            "body_markdown": ack_body,
+            "step": next_step,
+            "topic": "date_confirmed",
+            "headers": ack_headers,
+        }
+    )
+    if autorun_failed:
+        return GroupResult(action="date_confirmed", payload=payload, halt=False)
     return GroupResult(action="date_confirmed", payload=payload, halt=True)
 
 

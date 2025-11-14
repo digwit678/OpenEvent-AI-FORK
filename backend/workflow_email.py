@@ -5,7 +5,8 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
+from datetime import datetime
 import logging
 
 from backend.domain import TaskStatus, TaskType
@@ -18,6 +19,7 @@ from backend.workflows.groups.negotiation_close import process as process_negoti
 from backend.workflows.groups.transition_checkpoint import process as process_transition
 from backend.workflows.groups.event_confirmation.trigger import process as process_confirmation
 from backend.workflows.io import database as db_io
+from backend.workflows.io.database import update_event_metadata
 from backend.workflows.io import tasks as task_io
 from backend.workflows.llm import adapter as llm_adapter
 from backend.workflows.common.general_qna import maybe_handle_general_qna_for_step
@@ -29,7 +31,7 @@ from backend.workflows.nlu import (
 )
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.utils.profiler import profile_step
-from backend.workflow.state import stage_payload
+from backend.workflow.state import stage_payload, WorkflowStep, write_stage
 from backend.debug.lifecycle import close_if_ended
 from backend.debug.settings import is_trace_enabled
 from backend.debug.trace import set_hil_open
@@ -327,6 +329,7 @@ def _enqueue_hil_tasks(state: WorkflowState, event_entry: Dict[str, Any]) -> Non
             "caller_step": event_entry.get("caller_step"),
             "requirements_hash": event_entry.get("requirements_hash"),
             "room_eval_hash": event_entry.get("room_eval_hash"),
+            "thread_id": thread_id,
         }
 
         client_id = state.client_id or (state.message.from_email or "unknown@example.com").lower()
@@ -343,6 +346,7 @@ def _enqueue_hil_tasks(state: WorkflowState, event_entry: Dict[str, Any]) -> Non
                 "signature": signature,
                 "step": step_num,
                 "draft": dict(draft),
+                "thread_id": thread_id,
             }
         )
         seen_signatures.add(signature)
@@ -361,7 +365,12 @@ def _hil_action_type_for_step(step_id: Optional[int]) -> Optional[str]:
     return None
 
 
-def approve_task_and_send(task_id: str, db_path: Path = DB_PATH) -> Dict[str, Any]:
+def approve_task_and_send(
+    task_id: str,
+    db_path: Path = DB_PATH,
+    *,
+    manager_notes: Optional[str] = None,
+) -> Dict[str, Any]:
     """[OpenEvent Action] Approve a pending HIL task and emit the send_reply payload used in tests."""
 
     path = Path(db_path)
@@ -385,12 +394,43 @@ def approve_task_and_send(task_id: str, db_path: Path = DB_PATH) -> Dict[str, An
     if not target_event or not target_request:
         raise ValueError(f"Task {task_id} not found in pending approvals.")
 
+    thread_id = target_request.get("thread_id") or target_event.get("thread_id")
+
+    # Stamp HIL history for auditing.
+    target_event.setdefault("hil_history", []).append(
+        {
+            "task_id": task_id,
+            "approved_at": datetime.utcnow().isoformat() + "Z",
+            "notes": manager_notes,
+            "step": target_request.get("step"),
+        }
+    )
+
+    step_num = target_request.get("step")
+    if isinstance(step_num, int):
+        try:
+            workflow_step = WorkflowStep(f"step_{step_num}")
+            write_stage(target_event, current_step=workflow_step)
+            update_event_metadata(target_event, current_step=step_num)
+        except ValueError:
+            pass
+
     db_io.save_db(db, path, lock_path=lock_path)
 
     draft = target_request.get("draft") or {}
     body_text = draft.get("body_markdown") or draft.get("body") or ""
     headers = draft.get("headers") or []
-    assistant_draft = {"headers": headers, "body": body_text}
+    assistant_draft = {"headers": headers, "body": body_text, "body_markdown": body_text}
+
+    note_text = (manager_notes or "").strip()
+    if note_text:
+        appended = f"{body_text.rstrip()}\n\nManager note:\n{note_text}" if body_text.strip() else f"Manager note:\n{note_text}"
+        body_text = appended
+        assistant_draft["body"] = appended
+        assistant_draft["body_markdown"] = appended
+        draft = dict(draft)
+        draft["body_markdown"] = appended
+        draft["body"] = appended
 
     return {
         "action": "send_reply",
@@ -402,7 +442,55 @@ def approve_task_and_send(task_id: str, db_path: Path = DB_PATH) -> Dict[str, An
             "assistant_draft_text": body_text,
         },
         "actions": [{"type": "send_reply"}],
+        "thread_id": thread_id,
     }
+
+
+def cleanup_tasks(
+    db: Dict[str, Any],
+    *,
+    keep_thread_id: Optional[str] = None,
+) -> int:
+    """Remove resolved or stale HIL tasks, optionally keeping those tied to a specific thread."""
+
+    tasks = db.get("tasks") or []
+    if not tasks:
+        return 0
+
+    remaining: List[Dict[str, Any]] = []
+    removed_ids: set[str] = set()
+    keep_specified = keep_thread_id is not None
+
+    if not tasks:
+        return 0
+
+    if not keep_specified:
+        removed_ids = {task.get("task_id") for task in tasks if task.get("task_id")}
+        db["tasks"] = []
+    else:
+        removed_ids = set()
+        for task in tasks:
+            payload = task.get("payload") or {}
+            thread_id = payload.get("thread_id")
+            task_id = task.get("task_id")
+            if thread_id == keep_thread_id:
+                remaining.append(task)
+            else:
+                removed_ids.add(task_id)
+        db["tasks"] = remaining
+
+    if not removed_ids:
+        return 0
+
+    for event in db.get("events", []):
+        pending = event.get("pending_hil_requests") or []
+        if not pending:
+            continue
+        event["pending_hil_requests"] = [
+            entry for entry in pending if entry.get("task_id") not in removed_ids
+        ]
+
+    return len(removed_ids)
 
 
 @profile_step("workflow.router.process_msg")

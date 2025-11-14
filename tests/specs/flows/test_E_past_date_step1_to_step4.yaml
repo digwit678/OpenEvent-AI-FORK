@@ -19,6 +19,30 @@
         },
         "actions": [
           {
+            "type": "select_date",
+            "label": "Confirm 07.05.2026",
+            "date": "07.05.2026",
+            "iso_date": "2026-05-07"
+          },
+          {
+            "type": "select_date",
+            "label": "Confirm 14.05.2026",
+            "date": "14.05.2026",
+            "iso_date": "2026-05-14"
+          },
+          {
+            "type": "select_date",
+            "label": "Confirm 21.05.2026",
+            "date": "21.05.2026",
+            "iso_date": "2026-05-21"
+          },
+          {
+            "type": "select_date",
+            "label": "Confirm 28.05.2026",
+            "date": "28.05.2026",
+            "iso_date": "2026-05-28"
+          },
+          {
             "type": "ask_for_date_enqueued",
             "payload": {
               "suggested_dates": [
@@ -26,7 +50,8 @@
                 "2026-05-14",
                 "2026-05-21",
                 "2026-05-28"
-              ]
+              ],
+              "event_id": "ANY"
             }
           }
         ],
@@ -81,16 +106,7 @@
             "type": "send_reply"
           },
           {
-            "type": "room_options_enqueued",
-            "payload": {
-              "suggested_dates": [
-                "2026-05-07",
-                "2026-05-14",
-                "2026-05-21",
-                "2026-05-28"
-              ],
-              "event_id": "ANY"
-            }
+            "type": "send_reply"
           }
         ]
       }

@@ -16,6 +16,10 @@
           "vague_weekday": "Saturday"
         },
         "actions": [
+          {"type": "select_date"},
+          {"type": "select_date"},
+          {"type": "select_date"},
+          {"type": "select_date"},
           {
             "type": "ask_for_date_enqueued",
             "payload": {
@@ -75,21 +79,8 @@
           "date": "2026-02-07"
         },
         "actions": [
-          {
-            "type": "send_reply"
-          },
-          {
-            "type": "room_options_enqueued",
-            "payload": {
-              "suggested_dates": [
-                "07.02.2026",
-                "14.02.2026",
-                "21.02.2026",
-                "28.02.2026"
-              ],
-              "event_id": "ANY"
-            }
-          }
+          {"type": "send_reply"},
+          {"type": "send_reply"}
         ],
         "db_assert": {
           "gatekeeping": {
@@ -113,7 +104,7 @@
             ],
             "body_order": [
               "07.02.2026 is set.",
-              "For 30 people on 07.02.2026, these rooms are available (ranked):",
+              "For 30 people on 07.02.2026, these rooms are available",
               "Room A",
               "Room D"
             ],
