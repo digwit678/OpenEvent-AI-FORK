@@ -1158,9 +1158,15 @@ def handle_select_room_action(
         selected_room=room,
         status=status,
     )
+
+    # Get requirements_hash to lock the room with current requirements snapshot
+    requirements_hash = event_entry.get("requirements_hash")
+
     update_event_metadata(
         event_entry,
-        current_step=3,
+        locked_room_id=room,
+        room_eval_hash=requirements_hash,
+        current_step=4,
         thread_state="Awaiting Client",
     )
 
@@ -1200,7 +1206,7 @@ def handle_select_room_action(
     body_text = "\n\n".join(body_lines)
     body_with_footer = append_footer(
         body_text,
-        step=3,
+        step=4,
         next_step="Pick products",
         thread_state="Awaiting Client",
     )
@@ -1208,7 +1214,7 @@ def handle_select_room_action(
     state.draft_messages.clear()
     follow_up = {
         "body": body_with_footer,
-        "step": 3,
+        "step": 4,
         "next_step": "Pick products",
         "thread_state": "Awaiting Client",
         "topic": "room_selected_follow_up",
@@ -1230,7 +1236,7 @@ def handle_select_room_action(
     }
     state.add_draft_message(follow_up)
 
-    state.current_step = 3
+    state.current_step = 4
     state.set_thread_state("Awaiting Client")
     state.extras["persist"] = True
 
