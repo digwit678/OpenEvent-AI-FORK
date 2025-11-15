@@ -16,11 +16,16 @@ from backend.workflows.common.sorting import rank_rooms, RankedRoom
 from backend.workflows.common.room_rules import find_better_room_dates
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
+from backend.workflows.common.general_qna import render_general_qna_reply, enrich_general_qna_step2, _fallback_structured_body
+from backend.workflows.change_propagation import detect_change_type, route_change_on_updated_variable
+from backend.workflows.qna.engine import build_structured_qna_result
+from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
-from backend.debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate, trace_state, trace_step, set_subloop
+from backend.debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate, trace_state, trace_step, set_subloop, trace_marker, trace_general_qa_status
 from backend.utils.profiler import profile_step
 from backend.workflow_verbalizer_test_hooks import render_rooms
 from backend.workflows.groups.room_availability.db_pers import load_rooms_config
+from backend.workflows.nlu import detect_general_room_query
 from backend.rooms import rank as rank_rooms_profiles
 
 from ..condition.decide import room_status_on_date
@@ -98,6 +103,105 @@ def process(state: WorkflowState) -> GroupResult:
     if hil_step == 3:
         decision = state.user_info.get("hil_decision") or "approve"
         return _apply_hil_decision(state, event_entry, decision)
+
+    # [CHANGE DETECTION + Q&A] Tap incoming stream BEFORE room evaluation to detect client revisions
+    # ("actually we're 50 now") and route them back to dependent nodes while hashes stay valid.
+    message_text = _message_text(state)
+    user_info = state.user_info or {}
+
+    # Q&A classification
+    classification = detect_general_room_query(message_text, state)
+    state.extras["_general_qna_classification"] = classification
+    state.extras["general_qna_detected"] = bool(classification.get("is_general"))
+    classification.setdefault("primary", "general_qna")
+    if not classification.get("secondary"):
+        classification["secondary"] = ["general"]
+
+    if thread_id:
+        trace_marker(
+            thread_id,
+            "QNA_CLASSIFY",
+            detail="general_room_query" if classification["is_general"] else "not_general",
+            data={
+                "heuristics": classification.get("heuristics"),
+                "parsed": classification.get("parsed"),
+                "constraints": classification.get("constraints"),
+                "llm_called": classification.get("llm_called"),
+                "llm_result": classification.get("llm_result"),
+                "cached": classification.get("cached"),
+            },
+            owner_step="Step3_Room",
+        )
+
+    # [CHANGE DETECTION] Run BEFORE Q&A dispatch
+    change_type = detect_change_type(event_entry, user_info, message_text=message_text)
+
+    if change_type is not None:
+        # Change detected: route it per DAG rules and skip Q&A dispatch
+        decision = route_change_on_updated_variable(event_entry, change_type, from_step=3)
+
+        # Trace logging for parity with Step 2
+        if thread_id:
+            trace_marker(
+                thread_id,
+                "CHANGE_DETECTED",
+                detail=f"change_type={change_type.value}",
+                data={
+                    "change_type": change_type.value,
+                    "from_step": 3,
+                    "to_step": decision.next_step,
+                    "caller_step": decision.updated_caller_step,
+                    "needs_reeval": decision.needs_reeval,
+                    "skip_reason": decision.skip_reason,
+                },
+                owner_step="Step3_Room",
+            )
+
+        # Apply routing decision: update current_step and caller_step
+        if decision.updated_caller_step is not None:
+            update_event_metadata(event_entry, caller_step=decision.updated_caller_step)
+
+        if decision.next_step != 3:
+            update_event_metadata(event_entry, current_step=decision.next_step)
+
+            # Clear room lock for date/requirements changes
+            if change_type.value in ("date", "requirements") and decision.next_step in (2, 3):
+                if decision.next_step == 2:
+                    update_event_metadata(
+                        event_entry,
+                        date_confirmed=False,
+                        room_eval_hash=None,
+                        locked_room_id=None,
+                    )
+
+            append_audit_entry(event_entry, 3, decision.next_step, f"{change_type.value}_change_detected")
+
+            # Skip Q&A: return detour signal
+            state.current_step = decision.next_step
+            state.set_thread_state("In Progress")
+            state.extras["persist"] = True
+            state.extras["change_detour"] = True
+
+            payload = {
+                "client_id": state.client_id,
+                "event_id": event_entry.get("event_id"),
+                "intent": state.intent.value if state.intent else None,
+                "confidence": round(state.confidence or 0.0, 3),
+                "change_type": change_type.value,
+                "detour_to_step": decision.next_step,
+                "caller_step": decision.updated_caller_step,
+                "thread_state": state.thread_state,
+                "context": state.context_snapshot,
+                "persisted": True,
+            }
+            return GroupResult(action="change_detour", payload=payload, halt=False)
+
+    # No change detected: check if Q&A should be handled
+    locked_room_id = event_entry.get("locked_room_id")
+    general_qna_applicable = classification.get("is_general") and not bool(locked_room_id)
+    if general_qna_applicable:
+        result = _present_general_room_qna(state, event_entry, classification, thread_id)
+        return result
 
     chosen_date = event_entry.get("chosen_date")
     if not chosen_date:
@@ -1229,3 +1333,186 @@ def _format_alternative_dates_section(dates: List[str], more_available: bool) ->
     if more_available:
         lines.append("More options are available on request.")
     return "\n".join(lines)
+
+
+def _message_text(state: WorkflowState) -> str:
+    """Extract full message text from state."""
+    message = state.message
+    if not message:
+        return ""
+    subject = message.subject or ""
+    body = message.body or ""
+    if subject and body:
+        return f"{subject}\n{body}"
+    return subject or body
+
+
+def _present_general_room_qna(
+    state: WorkflowState,
+    event_entry: dict,
+    classification: Dict[str, Any],
+    thread_id: Optional[str],
+) -> GroupResult:
+    """Handle general Q&A at Step 3 using the same pattern as Step 2."""
+    subloop_label = "general_q_a"
+    state.extras["subloop"] = subloop_label
+    resolved_thread_id = thread_id or state.thread_id
+
+    if thread_id:
+        set_subloop(thread_id, subloop_label)
+
+    # Extract fresh from current message (multi-turn Q&A fix)
+    message = state.message
+    subject = (message.subject if message else "") or ""
+    body = (message.body if message else "") or ""
+    message_text = f"{subject}\n{body}".strip() or body or subject
+
+    scan = state.extras.get("general_qna_scan")
+    # Force fresh extraction for multi-turn Q&A
+    ensure_qna_extraction(state, message_text, scan, force_refresh=True)
+    extraction = state.extras.get("qna_extraction")
+
+    # Clear stale qna_cache AFTER extraction
+    if isinstance(event_entry, dict):
+        event_entry.pop("qna_cache", None)
+
+    structured = build_structured_qna_result(state, extraction) if extraction else None
+
+    if structured and structured.handled:
+        rooms = structured.action_payload.get("db_summary", {}).get("rooms", [])
+        date_lookup: Dict[str, str] = {}
+        for entry in rooms:
+            iso_date = entry.get("date") or entry.get("iso_date")
+            if not iso_date:
+                continue
+            try:
+                parsed = datetime.fromisoformat(iso_date)
+            except ValueError:
+                try:
+                    parsed = datetime.strptime(iso_date, "%Y-%m-%d")
+                except ValueError:
+                    continue
+            label = parsed.strftime("%d.%m.%Y")
+            date_lookup.setdefault(label, parsed.date().isoformat())
+
+        candidate_dates = sorted(date_lookup.keys(), key=lambda label: date_lookup[label])[:5]
+        actions = [
+            {
+                "type": "select_date",
+                "label": f"Confirm {label}",
+                "date": label,
+                "iso_date": date_lookup[label],
+            }
+            for label in candidate_dates
+        ]
+
+        body_markdown = (structured.body_markdown or _fallback_structured_body(structured.action_payload)).strip()
+        footer_body = append_footer(
+            body_markdown,
+            step=3,
+            next_step=3,
+            thread_state="Awaiting Client",
+        )
+
+        draft_message = {
+            "body": footer_body,
+            "body_markdown": body_markdown,
+            "step": 3,
+            "next_step": 3,
+            "thread_state": "Awaiting Client",
+            "topic": "general_room_qna",
+            "candidate_dates": candidate_dates,
+            "actions": actions,
+            "subloop": subloop_label,
+            "headers": ["General Q&A"],
+        }
+
+        state.add_draft_message(draft_message)
+        update_event_metadata(
+            event_entry,
+            thread_state="Awaiting Client",
+            current_step=3,
+            candidate_dates=candidate_dates,
+        )
+        state.set_thread_state("Awaiting Client")
+        state.record_subloop(subloop_label)
+        state.intent_detail = "event_intake_with_question"
+        state.extras["persist"] = True
+
+        # Store minimal last_general_qna context for follow-up detection only
+        if extraction and isinstance(event_entry, dict):
+            q_values = extraction.get("q_values") or {}
+            event_entry["last_general_qna"] = {
+                "topic": structured.action_payload.get("qna_subtype"),
+                "date_pattern": q_values.get("date_pattern"),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            }
+
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "candidate_dates": candidate_dates,
+            "draft_messages": state.draft_messages,
+            "thread_state": state.thread_state,
+            "context": state.context_snapshot,
+            "persisted": True,
+            "general_qna": True,
+            "structured_qna": structured.handled,
+            "qna_select_result": structured.action_payload,
+            "structured_qna_debug": structured.debug,
+            "actions": actions,
+        }
+        if extraction:
+            payload["qna_extraction"] = extraction
+        return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
+
+    # Fallback if structured Q&A failed
+    fallback_prompt = "[STRUCTURED_QNA_FALLBACK]\nI couldn't load the structured Q&A context for this request. Please review extraction logs."
+    draft_message = {
+        "step": 3,
+        "topic": "general_room_qna",
+        "body": f"{fallback_prompt}\n\n---\nStep: 3 Room Availability · Next: 3 Room Availability · State: Awaiting Client",
+        "body_markdown": fallback_prompt,
+        "next_step": 3,
+        "thread_state": "Awaiting Client",
+        "headers": ["General Q&A"],
+        "requires_approval": False,
+        "subloop": subloop_label,
+        "actions": [],
+        "candidate_dates": [],
+    }
+    state.add_draft_message(draft_message)
+    update_event_metadata(
+        event_entry,
+        thread_state="Awaiting Client",
+        current_step=3,
+        candidate_dates=[],
+    )
+    state.set_thread_state("Awaiting Client")
+    state.record_subloop(subloop_label)
+    state.intent_detail = "event_intake_with_question"
+    state.extras["structured_qna_fallback"] = True
+    structured_payload = structured.action_payload if structured else {}
+    structured_debug = structured.debug if structured else {"reason": "missing_structured_context"}
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "candidate_dates": [],
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+        "general_qna": True,
+        "structured_qna": False,
+        "structured_qna_fallback": True,
+        "qna_select_result": structured_payload,
+        "structured_qna_debug": structured_debug,
+    }
+    if extraction:
+        payload["qna_extraction"] = extraction
+    return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
