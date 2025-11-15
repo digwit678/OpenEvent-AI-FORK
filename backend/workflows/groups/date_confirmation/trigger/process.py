@@ -35,7 +35,8 @@ from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.gatekeeper import refresh_gatekeeper
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
 from backend.workflows.common.menu_options import build_menu_payload, format_menu_line
-from backend.workflows.common.general_qna import render_general_qna_reply, enrich_general_qna_step2
+from backend.workflows.common.general_qna import render_general_qna_reply, enrich_general_qna_step2, _fallback_structured_body
+from backend.workflows.change_propagation import detect_change_type, route_change_on_updated_variable
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.common.types import GroupResult, WorkflowState
@@ -368,6 +369,73 @@ def process(state: WorkflowState) -> GroupResult:
             owner_step="Step2_Date",
         )
     qa_payload = _maybe_general_qa_payload(state)
+
+    # [CHANGE DETECTION] Tap incoming stream BEFORE Q&A dispatch to detect client revisions
+    # ("actually we're 50 now") and route them back to dependent nodes while hashes stay valid.
+    user_info = state.user_info or {}
+    change_type = detect_change_type(event_entry, user_info, message_text=message_text)
+
+    if change_type is not None:
+        # Change detected: route it per DAG rules and skip Q&A dispatch
+        decision = route_change_on_updated_variable(event_entry, change_type, from_step=2)
+
+        # Trace logging for parity with Step 1
+        if thread_id:
+            trace_marker(
+                thread_id,
+                "CHANGE_DETECTED",
+                detail=f"change_type={change_type.value}",
+                data={
+                    "change_type": change_type.value,
+                    "from_step": 2,
+                    "to_step": decision.next_step,
+                    "caller_step": decision.updated_caller_step,
+                    "needs_reeval": decision.needs_reeval,
+                    "skip_reason": decision.skip_reason,
+                },
+                owner_step="Step2_Date",
+            )
+
+        # Apply routing decision: update current_step and caller_step
+        if decision.updated_caller_step is not None:
+            update_event_metadata(event_entry, caller_step=decision.updated_caller_step)
+
+        if decision.next_step != 2:
+            update_event_metadata(event_entry, current_step=decision.next_step)
+
+            # Clear room lock for date/requirements changes
+            if change_type.value in ("date", "requirements") and decision.next_step in (2, 3):
+                if decision.next_step == 2:
+                    update_event_metadata(
+                        event_entry,
+                        date_confirmed=False,
+                        room_eval_hash=None,
+                        locked_room_id=None,
+                    )
+
+            append_audit_entry(event_entry, 2, decision.next_step, f"{change_type.value}_change_detected")
+
+            # Skip Q&A: return detour signal
+            state.current_step = decision.next_step
+            state.set_thread_state("In Progress")
+            state.extras["persist"] = True
+            state.extras["change_detour"] = True
+
+            payload = {
+                "client_id": state.client_id,
+                "event_id": event_entry.get("event_id"),
+                "intent": state.intent.value if state.intent else None,
+                "confidence": round(state.confidence or 0.0, 3),
+                "change_type": change_type.value,
+                "detour_to_step": decision.next_step,
+                "caller_step": decision.updated_caller_step,
+                "thread_state": state.thread_state,
+                "context": state.context_snapshot,
+                "persisted": True,
+            }
+            return GroupResult(action="change_detour", payload=payload, halt=False)
+
+    # No change detected: proceed with Q&A dispatch as normal
     general_qna_applicable = classification.get("is_general") and not bool(event_entry.get("date_confirmed"))
     if general_qna_applicable:
         result = _present_general_room_qna(state, event_entry, classification, thread_id, qa_payload)
