@@ -4440,7 +4440,7 @@
       "status": "Lead",
       "current_step": 2,
       "caller_step": null,
-      "thread_state": "Awaiting Client",
+      "thread_state": "Waiting on HIL",
       "chosen_date": null,
       "date_confirmed": false,
       "locked_room_id": null,
@@ -4482,6 +4482,62 @@
           "from_step": 2,
           "to_step": 2,
           "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-17T16:05:44Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-11-17T16:05:44Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-17T16:25:45Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-11-17T16:25:45Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-17T16:27:20Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-11-17T16:27:20Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-17T16:47:43Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-11-17T16:47:43Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
         }
       ],
       "review_state": {
@@ -4511,7 +4567,11 @@
       },
       "msgs": [
         "05cfa0a8-02d5-447f-a45d-4674313a77dd",
-        "35003e46-dd1a-4e67-a3de-a984cc4bcd73"
+        "35003e46-dd1a-4e67-a3de-a984cc4bcd73",
+        "4a37ebdd-098a-41e2-98aa-abe5b8c93f1b",
+        "c714c063-4f35-4118-a38b-3650dc3e0644",
+        "06920acb-cbdc-42fc-8a95-51d20ac9d220",
+        "76bc048f-3c38-4cd4-8f35-2d79ef3f5c56"
       ],
       "captured": {
         "preferred_room": "Room Inquiry",
@@ -4524,7 +4584,15 @@
         "05cfa0a8-02d5-447f-a45d-4674313a77dd:preferred_room",
         "05cfa0a8-02d5-447f-a45d-4674313a77dd:contact.phone",
         "35003e46-dd1a-4e67-a3de-a984cc4bcd73:preferred_room",
-        "35003e46-dd1a-4e67-a3de-a984cc4bcd73:contact.phone"
+        "35003e46-dd1a-4e67-a3de-a984cc4bcd73:contact.phone",
+        "4a37ebdd-098a-41e2-98aa-abe5b8c93f1b:preferred_room",
+        "4a37ebdd-098a-41e2-98aa-abe5b8c93f1b:contact.phone",
+        "c714c063-4f35-4118-a38b-3650dc3e0644:preferred_room",
+        "c714c063-4f35-4118-a38b-3650dc3e0644:contact.phone",
+        "06920acb-cbdc-42fc-8a95-51d20ac9d220:preferred_room",
+        "06920acb-cbdc-42fc-8a95-51d20ac9d220:contact.phone",
+        "76bc048f-3c38-4cd4-8f35-2d79ef3f5c56:preferred_room",
+        "76bc048f-3c38-4cd4-8f35-2d79ef3f5c56:contact.phone"
       ],
       "deferred_intents": [
         "room_selection",
@@ -4682,13 +4750,15 @@
       "vague_time_of_day": "evening",
       "range_query_detected": true,
       "candidate_dates": [
-        "21.11.2025",
-        "28.11.2025"
+        "2026-12-10",
+        "2026-12-11",
+        "2026-12-17",
+        "2026-12-18"
       ],
       "last_general_qna": {
         "topic": "non_event_info",
         "date_pattern": null,
-        "timestamp": "2025-11-17T15:36:10.853845Z"
+        "timestamp": "2025-11-17T16:47:46.455495Z"
       },
       "pending_hil_requests": [
         {
@@ -4918,15 +4988,398 @@
             "created_at_step": 2
           },
           "thread_id": "44a52c54-fd30-4152-b47c-d016325badf3"
+        },
+        {
+          "task_id": "8c42bb4f-c42d-4baf-a50d-1ebf7ea1d419",
+          "signature": "8d857a708412163f4dfeb1623148f906d2d62189a16a23826bf700165b616dfd",
+          "step": 2,
+          "draft": {
+            "body": "Hello,\n\nI've expanded the search window so you get a fresh set of date options that might work better.\nSorry, we don't have free rooms on 20.11.2026, 12.11.2026, and 13.11.2026.\nWhat about one of the nearby options below?\n\nDates available in November 2026: 26, 27\n\n\nAVAILABLE DATES:\n- 2026-11-26 18:00–22:00\n- 2026-11-27 18:00–22:00\n- 2026-11-25 18:00–22:00\n- 2026-11-28 18:00–22:00\n- 2026-11-29 18:00–22:00\n\nNEXT STEP:\n- Let me know which date works best so I can lock it in and shortlist the best rooms.\n- Or share another day/time preference and I'll check availability right away.\n\nIt seems there is no specific information available related to your query at the moment. If you have any particular questions or need details on a certain topic, please let me know!\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+            "step": 2,
+            "next_step": "Room Availability",
+            "topic": "date_candidates",
+            "candidate_dates": [
+              "26.11.2026",
+              "27.11.2026",
+              "25.11.2026",
+              "28.11.2026",
+              "29.11.2026"
+            ],
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Dates in November (Evening)",
+                "rows": [
+                  {
+                    "iso_date": "2026-11-26",
+                    "display_date": "26.11.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-11-27",
+                    "display_date": "27.11.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-11-25",
+                    "display_date": "25.11.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-11-28",
+                    "display_date": "28.11.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-11-29",
+                    "display_date": "29.11.2026",
+                    "time_of_day": "Evening"
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "26.11.2026 (Evening)",
+                "date": "2026-11-26",
+                "display_date": "26.11.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "27.11.2026 (Evening)",
+                "date": "2026-11-27",
+                "display_date": "27.11.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "25.11.2026 (Evening)",
+                "date": "2026-11-25",
+                "display_date": "25.11.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "28.11.2026 (Evening)",
+                "date": "2026-11-28",
+                "display_date": "28.11.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "29.11.2026 (Evening)",
+                "date": "2026-11-29",
+                "display_date": "29.11.2026"
+              }
+            ],
+            "headers": [
+              "Date options for November",
+              "Availability overview"
+            ],
+            "thread_state": "Awaiting Client Response",
+            "requires_approval": true,
+            "body_markdown": "Hello,\n\nI've expanded the search window so you get a fresh set of date options that might work better.\nSorry, we don't have free rooms on 20.11.2026, 12.11.2026, and 13.11.2026.\nWhat about one of the nearby options below?\n\nDates available in November 2026: 26, 27\n\n\nAVAILABLE DATES:\n- 2026-11-26 18:00–22:00\n- 2026-11-27 18:00–22:00\n- 2026-11-25 18:00–22:00\n- 2026-11-28 18:00–22:00\n- 2026-11-29 18:00–22:00\n\nNEXT STEP:\n- Let me know which date works best so I can lock it in and shortlist the best rooms.\n- Or share another day/time preference and I'll check availability right away.\n\nIt seems there is no specific information available related to your query at the moment. If you have any particular questions or need details on a certain topic, please let me know!",
+            "footer": "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+            "created_at_step": 2
+          },
+          "thread_id": "2b3bc65a-26f2-4100-87d6-afb181447870"
+        },
+        {
+          "task_id": "9d5a8840-aae4-46e8-a410-ae492c19e5d9",
+          "signature": "9032986eb342638feedf753301af82f1287a5ce229e871e9aec735814c7e5aef",
+          "step": 2,
+          "draft": {
+            "body": "Hello,\n\nI've expanded the search window so you get a fresh set of date options that might work better.\nSorry, we don't have free rooms on 20.11.2026, 12.11.2026, and 13.11.2026.\nWhat about one of the nearby options below?\n\nDates available in November 2026: 03, 04\n\n\nAVAILABLE DATES:\n- 2026-12-03 18:00–22:00\n- 2026-12-04 18:00–22:00\n- 2026-11-30 18:00–22:00\n- 2026-12-01 18:00–22:00\n- 2026-12-02 18:00–22:00\n\nNEXT STEP:\n- Let me know which date works best so I can lock it in and shortlist the best rooms.\n- Or share another day/time preference and I'll check availability right away.\n\nThere is no available information related to your query at this time. If you have a specific question or need details about an event or topic, please provide more details so I can assist you better.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Waiting on HIL",
+            "step": 2,
+            "next_step": "Room Availability",
+            "topic": "date_candidates",
+            "candidate_dates": [
+              "03.12.2026",
+              "04.12.2026",
+              "30.11.2026",
+              "01.12.2026",
+              "02.12.2026"
+            ],
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Dates in November (Evening)",
+                "rows": [
+                  {
+                    "iso_date": "2026-12-03",
+                    "display_date": "03.12.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-12-04",
+                    "display_date": "04.12.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-11-30",
+                    "display_date": "30.11.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-12-01",
+                    "display_date": "01.12.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-12-02",
+                    "display_date": "02.12.2026",
+                    "time_of_day": "Evening"
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "03.12.2026 (Evening)",
+                "date": "2026-12-03",
+                "display_date": "03.12.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "04.12.2026 (Evening)",
+                "date": "2026-12-04",
+                "display_date": "04.12.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "30.11.2026 (Evening)",
+                "date": "2026-11-30",
+                "display_date": "30.11.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "01.12.2026 (Evening)",
+                "date": "2026-12-01",
+                "display_date": "01.12.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "02.12.2026 (Evening)",
+                "date": "2026-12-02",
+                "display_date": "02.12.2026"
+              }
+            ],
+            "headers": [
+              "Date options for November",
+              "Manual follow-up required",
+              "Availability overview"
+            ],
+            "thread_state": "Waiting on HIL",
+            "requires_approval": true,
+            "hil_reason": "Client can't find suitable date, needs manual help",
+            "body_markdown": "Hello,\n\nI've expanded the search window so you get a fresh set of date options that might work better.\nSorry, we don't have free rooms on 20.11.2026, 12.11.2026, and 13.11.2026.\nWhat about one of the nearby options below?\n\nDates available in November 2026: 03, 04\n\n\nAVAILABLE DATES:\n- 2026-12-03 18:00–22:00\n- 2026-12-04 18:00–22:00\n- 2026-11-30 18:00–22:00\n- 2026-12-01 18:00–22:00\n- 2026-12-02 18:00–22:00\n\nNEXT STEP:\n- Let me know which date works best so I can lock it in and shortlist the best rooms.\n- Or share another day/time preference and I'll check availability right away.\n\nThere is no available information related to your query at this time. If you have a specific question or need details about an event or topic, please provide more details so I can assist you better.",
+            "footer": "Step: 2 Date Confirmation · Next: Room Availability · State: Waiting on HIL",
+            "created_at_step": 2
+          },
+          "thread_id": "546f9101-050b-49fe-bf8b-27371b2061b1"
+        },
+        {
+          "task_id": "3968969c-c1a7-4c3c-857f-423a1a99c44d",
+          "signature": "3d9958637c64e07e995cfddabc9e079ecc2431cb7ccf0a0234b259e50c28a9e8",
+          "step": 2,
+          "draft": {
+            "body": "Hello,\n\nI've expanded the search window so you get a fresh set of date options that might work better.\nSorry, we don't have free rooms on 20.11.2026, 12.11.2026, and 13.11.2026.\nWhat about one of the nearby options below?\n\nDates available in November 2026: 05, 06, 07, 08\n\n\nAVAILABLE DATES:\n- 2026-12-05 18:00–22:00\n- 2026-12-06 18:00–22:00\n- 2026-12-07 18:00–22:00\n- 2026-12-08 18:00–22:00\n- 2026-12-09 18:00–22:00\n\nNEXT STEP:\n- Let me know which date works best so I can lock it in and shortlist the best rooms.\n- Or share another day/time preference and I'll check availability right away.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Waiting on HIL",
+            "step": 2,
+            "next_step": "Room Availability",
+            "topic": "date_candidates",
+            "candidate_dates": [
+              "05.12.2026",
+              "06.12.2026",
+              "07.12.2026",
+              "08.12.2026",
+              "09.12.2026"
+            ],
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Dates in November (Evening)",
+                "rows": [
+                  {
+                    "iso_date": "2026-12-05",
+                    "display_date": "05.12.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-12-06",
+                    "display_date": "06.12.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-12-07",
+                    "display_date": "07.12.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-12-08",
+                    "display_date": "08.12.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-12-09",
+                    "display_date": "09.12.2026",
+                    "time_of_day": "Evening"
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "05.12.2026 (Evening)",
+                "date": "2026-12-05",
+                "display_date": "05.12.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "06.12.2026 (Evening)",
+                "date": "2026-12-06",
+                "display_date": "06.12.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "07.12.2026 (Evening)",
+                "date": "2026-12-07",
+                "display_date": "07.12.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "08.12.2026 (Evening)",
+                "date": "2026-12-08",
+                "display_date": "08.12.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "09.12.2026 (Evening)",
+                "date": "2026-12-09",
+                "display_date": "09.12.2026"
+              }
+            ],
+            "headers": [
+              "Date options for November",
+              "Manual follow-up required"
+            ],
+            "thread_state": "Waiting on HIL",
+            "requires_approval": true,
+            "hil_reason": "Client can't find suitable date, needs manual help",
+            "body_markdown": "Hello,\n\nI've expanded the search window so you get a fresh set of date options that might work better.\nSorry, we don't have free rooms on 20.11.2026, 12.11.2026, and 13.11.2026.\nWhat about one of the nearby options below?\n\nDates available in November 2026: 05, 06, 07, 08\n\n\nAVAILABLE DATES:\n- 2026-12-05 18:00–22:00\n- 2026-12-06 18:00–22:00\n- 2026-12-07 18:00–22:00\n- 2026-12-08 18:00–22:00\n- 2026-12-09 18:00–22:00\n\nNEXT STEP:\n- Let me know which date works best so I can lock it in and shortlist the best rooms.\n- Or share another day/time preference and I'll check availability right away.",
+            "footer": "Step: 2 Date Confirmation · Next: Room Availability · State: Waiting on HIL",
+            "created_at_step": 2
+          },
+          "thread_id": "b30e4f10-f2e5-4aec-ab50-c7e9f349728f"
+        },
+        {
+          "task_id": "644c911e-9ca7-484e-a468-d15ffb6f0b59",
+          "signature": "d55737fad6871c5ffb091de886328fb94a7fafe074dc6eb1aaf1b49658daa18e",
+          "step": 2,
+          "draft": {
+            "body": "Hello,\n\nI've expanded the search window so you get a fresh set of date options that might work better.\nSorry, we don't have free rooms on 20.11.2026, 12.11.2026, and 13.11.2026.\nWhat about one of the nearby options below?\n\nThursdays & Fridays available in December 2026: 10, 11, 17, 18\n\n\nAVAILABLE DATES:\n- 2026-12-10 18:00–22:00\n- 2026-12-11 18:00–22:00\n- 2026-12-17 18:00–22:00\n- 2026-12-18 18:00–22:00\n\nNEXT STEP:\n- Let me know which date works best so I can lock it in and shortlist the best rooms.\n- Or share another day/time preference and I'll check availability right away.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Waiting on HIL",
+            "step": 2,
+            "next_step": "Room Availability",
+            "topic": "date_candidates",
+            "candidate_dates": [
+              "10.12.2026",
+              "11.12.2026",
+              "17.12.2026",
+              "18.12.2026"
+            ],
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Thursdays & Fridays in December (Evening)",
+                "rows": [
+                  {
+                    "iso_date": "2026-12-10",
+                    "display_date": "10.12.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-12-11",
+                    "display_date": "11.12.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-12-17",
+                    "display_date": "17.12.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-12-18",
+                    "display_date": "18.12.2026",
+                    "time_of_day": "Evening"
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "10.12.2026 (Evening)",
+                "date": "2026-12-10",
+                "display_date": "10.12.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "11.12.2026 (Evening)",
+                "date": "2026-12-11",
+                "display_date": "11.12.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "17.12.2026 (Evening)",
+                "date": "2026-12-17",
+                "display_date": "17.12.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "18.12.2026 (Evening)",
+                "date": "2026-12-18",
+                "display_date": "18.12.2026"
+              }
+            ],
+            "headers": [
+              "Date options for November",
+              "Manual follow-up required"
+            ],
+            "thread_state": "Waiting on HIL",
+            "requires_approval": true,
+            "hil_reason": "Client can't find suitable date, needs manual help",
+            "body_markdown": "Hello,\n\nI've expanded the search window so you get a fresh set of date options that might work better.\nSorry, we don't have free rooms on 20.11.2026, 12.11.2026, and 13.11.2026.\nWhat about one of the nearby options below?\n\nThursdays & Fridays available in December 2026: 10, 11, 17, 18\n\n\nAVAILABLE DATES:\n- 2026-12-10 18:00–22:00\n- 2026-12-11 18:00–22:00\n- 2026-12-17 18:00–22:00\n- 2026-12-18 18:00–22:00\n\nNEXT STEP:\n- Let me know which date works best so I can lock it in and shortlist the best rooms.\n- Or share another day/time preference and I'll check availability right away.",
+            "footer": "Step: 2 Date Confirmation · Next: Room Availability · State: Waiting on HIL",
+            "created_at_step": 2
+          },
+          "thread_id": "2ba58383-7f23-4b0f-b05b-cff0a894e859"
         }
       ],
-      "date_proposal_attempts": 1,
+      "date_proposal_attempts": 5,
       "date_proposal_history": [
         "2026-11-20",
         "2026-11-21",
         "2026-11-22",
         "2026-11-23",
-        "2026-11-24"
+        "2026-11-24",
+        "2026-11-26",
+        "2026-11-27",
+        "2026-11-25",
+        "2026-11-28",
+        "2026-11-29",
+        "2026-12-03",
+        "2026-12-04",
+        "2026-11-30",
+        "2026-12-01",
+        "2026-12-02",
+        "2026-12-05",
+        "2026-12-06",
+        "2026-12-07",
+        "2026-12-08",
+        "2026-12-09",
+        "2026-12-10",
+        "2026-12-11",
+        "2026-12-17",
+        "2026-12-18"
       ],
       "gatekeeper_explain": {
         "ready": false,
@@ -14070,6 +14523,526 @@
               }
             }
           }
+        },
+        {
+          "msg_id": "4a37ebdd-098a-41e2-98aa-abe5b8c93f1b",
+          "ts": "2025-11-17T16:05:43.036293Z",
+          "subject": "Client Appreciation Event – November 2026",
+          "body_preview": "Client Appreciation Event – November 2026\n\nSubject: Client Appreciation Event – Room Inquiry for November 2026\n\nHello,\n\nWe’re planning our annual client appreci",
+          "intent": "confirm_date_partial",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": 80,
+            "room": "Room Inquiry",
+            "layout": "Standing reception",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41793338722",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "vague_month": "november",
+            "vague_weekday": "thursday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "sound system"
+              ],
+              "keywords": [
+                "sound",
+                "system",
+                "standing",
+                "reception"
+              ],
+              "default_hint": "sound system",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.0,
+                "Room B": 0.0,
+                "Room C": 0.0,
+                "Room D": 0.0,
+                "Room E": 0.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "msg_id": "c714c063-4f35-4118-a38b-3650dc3e0644",
+          "ts": "2025-11-17T16:25:45.186292Z",
+          "subject": "Client Appreciation Event – November 2026",
+          "body_preview": "Client Appreciation Event – November 2026\n\nSubject: Client Appreciation Event – Room Inquiry for November 2026\n\nHello,\n\nWe’re planning our annual client appreci",
+          "intent": "confirm_date_partial",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": 80,
+            "room": "Room Inquiry",
+            "layout": "Standing reception",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41793338722",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "vague_month": "november",
+            "vague_weekday": "thursday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "sound system"
+              ],
+              "keywords": [
+                "sound",
+                "system",
+                "standing",
+                "reception"
+              ],
+              "default_hint": "sound system",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.0,
+                "Room B": 0.0,
+                "Room C": 0.0,
+                "Room D": 0.0,
+                "Room E": 0.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "msg_id": "06920acb-cbdc-42fc-8a95-51d20ac9d220",
+          "ts": "2025-11-17T16:27:19.432822Z",
+          "subject": "Client Appreciation Event – November 2026",
+          "body_preview": "Client Appreciation Event – November 2026\n\nSubject: Client Appreciation Event – Room Inquiry for November 2026\n\nHello,\n\nWe’re planning our annual client appreci",
+          "intent": "confirm_date_partial",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": 80,
+            "room": "Room Inquiry",
+            "layout": "Standing reception",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41793338722",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "vague_month": "november",
+            "vague_weekday": "thursday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "sound system"
+              ],
+              "keywords": [
+                "sound",
+                "system",
+                "standing",
+                "reception"
+              ],
+              "default_hint": "sound system",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.0,
+                "Room B": 0.0,
+                "Room C": 0.0,
+                "Room D": 0.0,
+                "Room E": 0.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "msg_id": "76bc048f-3c38-4cd4-8f35-2d79ef3f5c56",
+          "ts": "2025-11-17T16:47:42.911750Z",
+          "subject": "Client Appreciation Event – November 2026",
+          "body_preview": "Client Appreciation Event – November 2026\n\nSubject: Client Appreciation Event – Room Inquiry for November 2026\n\nHello,\n\nWe’re planning our annual client appreci",
+          "intent": "confirm_date_partial",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": 80,
+            "room": "Room Inquiry",
+            "layout": "Standing reception",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41793338722",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "vague_month": "november",
+            "vague_weekday": "thursday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "sound system"
+              ],
+              "keywords": [
+                "sound",
+                "system",
+                "standing",
+                "reception"
+              ],
+              "default_hint": "sound system",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.0,
+                "Room B": 0.0,
+                "Room C": 0.0,
+                "Room D": 0.0,
+                "Room E": 0.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              }
+            }
+          }
         }
       ],
       "event_ids": []
@@ -14113,6 +15086,89 @@
         "requirements_hash": "97f6834a30d39dbffdb94fe19343a31d81baad3f024b8b9edf56c3bd25792b3d",
         "room_eval_hash": null,
         "thread_id": "44a52c54-fd30-4152-b47c-d016325badf3"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "8c42bb4f-c42d-4baf-a50d-1ebf7ea1d419",
+      "created_at": "2025-11-17T16:05:47.197699",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "patrick.keller@veritas-advisors.ch",
+      "event_id": "9fad8594-1d7e-4ac4-ad06-2068d4381e63",
+      "payload": {
+        "step_id": 2,
+        "intent": "confirm_date_partial",
+        "event_id": "9fad8594-1d7e-4ac4-ad06-2068d4381e63",
+        "draft_msg": "Hello,\n\nI've expanded the search window so you get a fresh set of date options that might work better.\nSorry, we don't have free rooms on 20.11.2026, 12.11.2026, and 13.11.2026.\nWhat about one of the nearby options below?\n\nDates available in November 2026: 26, 27\n\n\nAVAILABLE DATES:\n- 2026-11-26 18:00–22:00\n- 2026-11-27 18:00–22:00\n- 2026-11-25 18:00–22:00\n- 2026-11-28 18:00–22:00\n- 2026-11-29 18:00–22:00\n\nNEXT STEP:\n- Let me know which date works best so I can lock it in and shortlist the best rooms.\n- Or share another day/time preference and I'll check availability right away.\n\nIt seems there is no specific information available related to your query at the moment. If you have any particular questions or need details on a certain topic, please let me know!\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "97f6834a30d39dbffdb94fe19343a31d81baad3f024b8b9edf56c3bd25792b3d",
+        "room_eval_hash": null,
+        "thread_id": "2b3bc65a-26f2-4100-87d6-afb181447870"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "9d5a8840-aae4-46e8-a410-ae492c19e5d9",
+      "created_at": "2025-11-17T16:25:49.852854",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "patrick.keller@veritas-advisors.ch",
+      "event_id": "9fad8594-1d7e-4ac4-ad06-2068d4381e63",
+      "payload": {
+        "step_id": 2,
+        "intent": "confirm_date_partial",
+        "event_id": "9fad8594-1d7e-4ac4-ad06-2068d4381e63",
+        "draft_msg": "Hello,\n\nI've expanded the search window so you get a fresh set of date options that might work better.\nSorry, we don't have free rooms on 20.11.2026, 12.11.2026, and 13.11.2026.\nWhat about one of the nearby options below?\n\nDates available in November 2026: 03, 04\n\n\nAVAILABLE DATES:\n- 2026-12-03 18:00–22:00\n- 2026-12-04 18:00–22:00\n- 2026-11-30 18:00–22:00\n- 2026-12-01 18:00–22:00\n- 2026-12-02 18:00–22:00\n\nNEXT STEP:\n- Let me know which date works best so I can lock it in and shortlist the best rooms.\n- Or share another day/time preference and I'll check availability right away.\n\nThere is no available information related to your query at this time. If you have a specific question or need details about an event or topic, please provide more details so I can assist you better.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Waiting on HIL",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "97f6834a30d39dbffdb94fe19343a31d81baad3f024b8b9edf56c3bd25792b3d",
+        "room_eval_hash": null,
+        "thread_id": "546f9101-050b-49fe-bf8b-27371b2061b1",
+        "reason": "Client can't find suitable date, needs manual help"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "3968969c-c1a7-4c3c-857f-423a1a99c44d",
+      "created_at": "2025-11-17T16:27:23.131230",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "patrick.keller@veritas-advisors.ch",
+      "event_id": "9fad8594-1d7e-4ac4-ad06-2068d4381e63",
+      "payload": {
+        "step_id": 2,
+        "intent": "confirm_date_partial",
+        "event_id": "9fad8594-1d7e-4ac4-ad06-2068d4381e63",
+        "draft_msg": "Hello,\n\nI've expanded the search window so you get a fresh set of date options that might work better.\nSorry, we don't have free rooms on 20.11.2026, 12.11.2026, and 13.11.2026.\nWhat about one of the nearby options below?\n\nDates available in November 2026: 05, 06, 07, 08\n\n\nAVAILABLE DATES:\n- 2026-12-05 18:00–22:00\n- 2026-12-06 18:00–22:00\n- 2026-12-07 18:00–22:00\n- 2026-12-08 18:00–22:00\n- 2026-12-09 18:00–22:00\n\nNEXT STEP:\n- Let me know which date works best so I can lock it in and shortlist the best rooms.\n- Or share another day/time preference and I'll check availability right away.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Waiting on HIL",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "97f6834a30d39dbffdb94fe19343a31d81baad3f024b8b9edf56c3bd25792b3d",
+        "room_eval_hash": null,
+        "thread_id": "b30e4f10-f2e5-4aec-ab50-c7e9f349728f",
+        "reason": "Client can't find suitable date, needs manual help"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "644c911e-9ca7-484e-a468-d15ffb6f0b59",
+      "created_at": "2025-11-17T16:47:46.456674",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "patrick.keller@veritas-advisors.ch",
+      "event_id": "9fad8594-1d7e-4ac4-ad06-2068d4381e63",
+      "payload": {
+        "step_id": 2,
+        "intent": "confirm_date_partial",
+        "event_id": "9fad8594-1d7e-4ac4-ad06-2068d4381e63",
+        "draft_msg": "Hello,\n\nI've expanded the search window so you get a fresh set of date options that might work better.\nSorry, we don't have free rooms on 20.11.2026, 12.11.2026, and 13.11.2026.\nWhat about one of the nearby options below?\n\nThursdays & Fridays available in December 2026: 10, 11, 17, 18\n\n\nAVAILABLE DATES:\n- 2026-12-10 18:00–22:00\n- 2026-12-11 18:00–22:00\n- 2026-12-17 18:00–22:00\n- 2026-12-18 18:00–22:00\n\nNEXT STEP:\n- Let me know which date works best so I can lock it in and shortlist the best rooms.\n- Or share another day/time preference and I'll check availability right away.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Waiting on HIL",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "97f6834a30d39dbffdb94fe19343a31d81baad3f024b8b9edf56c3bd25792b3d",
+        "room_eval_hash": null,
+        "thread_id": "2ba58383-7f23-4b0f-b05b-cff0a894e859",
+        "reason": "Client can't find suitable date, needs manual help"
       },
       "notes": ""
     }
