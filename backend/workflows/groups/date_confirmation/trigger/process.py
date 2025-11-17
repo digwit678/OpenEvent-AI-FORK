@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import datetime as dt
 import re
 
+from backend.domain import TaskStatus, TaskType
 from backend.debug.hooks import (
     set_subloop,
     trace_db_read,
@@ -620,6 +621,11 @@ def process(state: WorkflowState) -> GroupResult:
     write_stage(event_entry, current_step=WorkflowStep.STEP_2, subflow_group="date_confirmation")
 
     capture_user_fields(state, current_step=2, source=state.message.msg_id if state.message else None)
+
+    hil_step = state.user_info.get("hil_approve_step")
+    if hil_step == 2:
+        decision = state.user_info.get("hil_decision") or "approve"
+        return _apply_step2_hil_decision(state, event_entry, decision)
 
     message_text = _message_text(state)
     classification = detect_general_room_query(message_text, state)
@@ -1465,6 +1471,12 @@ def _message_signals_confirmation(text: str) -> bool:
             if "?" in normalized and any(prefix in normalized for prefix in ("can you", "could you")):
                 continue
             return True
+    # Treat bare mentions of supported dates/times as confirmations.
+    tokens = _extract_candidate_tokens(text or "")
+    if tokens:
+        parsed = parse_first_date(tokens)
+        if parsed:
+            return True
     return False
 
 
@@ -1518,25 +1530,122 @@ def _resolve_confirmation_window(state: WorkflowState, event_entry: dict) -> Opt
     end_time = _normalize_time_value(user_info.get("end_time"))
 
     inherited_times = False
+    start_obj: Optional[time] = None
+    end_obj: Optional[time] = None
+
+    if start_time:
+        try:
+            start_obj = _to_time(start_time)
+        except ValueError:
+            start_time = None
+            start_obj = None
+    if end_time:
+        try:
+            end_obj = _to_time(end_time)
+        except ValueError:
+            end_time = None
+            end_obj = None
+
+    if start_obj and end_obj and start_obj >= end_obj:
+        end_time = None
+        end_obj = None
 
     if not (start_time and end_time):
         parsed_start, parsed_end, matched = parse_time_range(body_text)
         if parsed_start and parsed_end:
+            start_obj = parsed_start
+            end_obj = parsed_end
             start_time = f"{parsed_start.hour:02d}:{parsed_start.minute:02d}"
             end_time = f"{parsed_end.hour:02d}:{parsed_end.minute:02d}"
         elif matched and not start_time:
             start_time = None
+
+    if start_time and not end_time and (body_text or subject_text):
+        combined_text = " ".join(value for value in (subject_text, body_text) if value)
+        time_tokens: List[str] = []
+        for match in re.findall(r"\b(\d{1,2}:\d{2})\b", combined_text):
+            normalized_token = _normalize_time_value(match)
+            if normalized_token and normalized_token not in time_tokens:
+                time_tokens.append(normalized_token)
+        if time_tokens:
+            if start_time and not start_obj:
+                try:
+                    start_obj = _to_time(start_time)
+                except ValueError:
+                    start_obj = None
+            chosen_token: Optional[str] = None
+            chosen_obj: Optional[time] = None
+            for token in time_tokens:
+                if start_time and token == start_time:
+                    continue
+                try:
+                    candidate_obj = _to_time(token)
+                except ValueError:
+                    continue
+                if start_obj and candidate_obj <= start_obj:
+                    continue
+                chosen_token = token
+                chosen_obj = candidate_obj
+                break
+            if chosen_obj is None:
+                for token in time_tokens:
+                    if start_time and token == start_time:
+                        continue
+                    try:
+                        candidate_obj = _to_time(token)
+                    except ValueError:
+                        continue
+                    chosen_token = token
+                    chosen_obj = candidate_obj
+                    break
+            if chosen_token and chosen_obj:
+                end_time = chosen_token
+                end_obj = chosen_obj
 
     if not (start_time and end_time):
         fallback = _existing_time_window(event_entry, iso_date)
         if fallback:
             start_time, end_time = fallback
             inherited_times = True
+            try:
+                start_obj = _to_time(start_time)
+            except (TypeError, ValueError):
+                start_obj = None
+            try:
+                end_obj = _to_time(end_time)
+            except (TypeError, ValueError):
+                end_obj = None
+
+    if start_obj and end_obj and start_obj >= end_obj:
+        end_time = None
+        end_obj = None
+
+    if start_time and not start_obj:
+        try:
+            start_obj = _to_time(start_time)
+        except ValueError:
+            start_obj = None
+            start_time = None
+    if end_time and not end_obj:
+        try:
+            end_obj = _to_time(end_time)
+        except ValueError:
+            end_obj = None
+            end_time = None
+
+    if start_time:
+        user_info["start_time"] = start_time
+    elif "start_time" in user_info:
+        user_info.pop("start_time", None)
+    if end_time:
+        user_info["end_time"] = end_time
+    elif "end_time" in user_info:
+        user_info.pop("end_time", None)
 
     partial = not (start_time and end_time)
     start_iso = end_iso = None
-    if start_time and end_time:
-        start_iso, end_iso = build_window_iso(iso_date, _to_time(start_time), _to_time(end_time))
+    if start_obj and end_obj:
+        start_iso, end_iso = build_window_iso(iso_date, start_obj, end_obj)
 
     return ConfirmationWindow(
         display_date=display_date,
@@ -1798,6 +1907,7 @@ def _finalize_confirmation(
         )
 
     state.event_id = event_entry.get("event_id")
+    _clear_step2_hil_tasks(state, event_entry)
     tag_message(event_entry, window.source_message_id)
     event_entry.setdefault("event_data", {})["Event Date"] = window.display_date
     event_entry["event_data"]["Start Time"] = window.start_time
@@ -2315,6 +2425,82 @@ def _collect_preferred_weekday_alternatives(
         if len(results) >= limit:
             break
     return results
+
+
+def _clear_step2_hil_tasks(state: WorkflowState, event_entry: dict) -> None:
+    """Remove pending Step 2 HIL artifacts once a date is confirmed."""
+
+    pending = event_entry.get("pending_hil_requests") or []
+    filtered = [entry for entry in pending if entry.get("step") != 2]
+    if len(filtered) != len(pending):
+        event_entry["pending_hil_requests"] = filtered
+        state.extras["persist"] = True
+
+    tasks = state.db.get("tasks") if state.db else None
+    if not tasks:
+        return
+    changed = False
+    for task in tasks:
+        if (
+            task.get("event_id") == event_entry.get("event_id")
+            and task.get("type") == TaskType.DATE_CONFIRMATION_MESSAGE.value
+            and task.get("status") == TaskStatus.PENDING.value
+        ):
+            task["status"] = TaskStatus.DONE.value
+            changed = True
+    if changed:
+        state.extras["persist"] = True
+
+
+def _apply_step2_hil_decision(state: WorkflowState, event_entry: dict, decision: str) -> GroupResult:
+    """Handle HIL approval or rejection for pending date confirmation."""
+
+    pending_window = _window_from_payload(event_entry.get("pending_date_confirmation") or {})
+    if not pending_window:
+        pending_window = _window_from_payload(event_entry.get("pending_future_confirmation") or {})
+
+    normalized_decision = (decision or "").strip().lower() or "approve"
+    if normalized_decision != "approve":
+        event_entry.pop("pending_date_confirmation", None)
+        event_entry.pop("pending_future_confirmation", None)
+        _clear_step2_hil_tasks(state, event_entry)
+        draft_message = {
+            "body": "Manual review declined — please advise which alternative dates to offer next.",
+            "step": 2,
+            "topic": "date_hil_reject",
+            "requires_approval": True,
+        }
+        state.add_draft_message(draft_message)
+        update_event_metadata(event_entry, current_step=2, thread_state="Waiting on HIL")
+        state.set_thread_state("Waiting on HIL")
+        state.extras["persist"] = True
+        append_audit_entry(event_entry, 2, 2, "date_hil_rejected")
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "draft_messages": state.draft_messages,
+            "thread_state": state.thread_state,
+            "context": state.context_snapshot,
+            "persisted": True,
+        }
+        return GroupResult(action="date_hil_rejected", payload=payload, halt=True)
+
+    if not pending_window:
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "reason": "no_pending_date_decision",
+            "context": state.context_snapshot,
+        }
+        return GroupResult(action="date_hil_missing", payload=payload, halt=True)
+
+    event_entry.pop("pending_date_confirmation", None)
+    event_entry.pop("pending_future_confirmation", None)
+    return _finalize_confirmation(state, event_entry, pending_window)
 
 
 def _preferred_weekday_label(
@@ -2880,3 +3066,15 @@ def _present_general_room_qna(
     if extraction:
         payload["qna_extraction"] = extraction
     return GroupResult(action="general_rooms_qna_fallback", payload=payload, halt=False)
+def _extract_candidate_tokens(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return cleaned
+    # Strip greetings or closings when the message is short.
+    parts = cleaned.splitlines()
+    if len(parts) == 1:
+        token = parts[0].strip()
+        return token
+    # Prefer the longest non-empty line (often the date).
+    longest = max((line.strip() for line in parts), key=len, default="")
+    return longest or cleaned

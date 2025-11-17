@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict
+from datetime import datetime, time
+from typing import Any, Dict, Optional, Tuple
 
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import build_requirements, merge_client_profile, requirements_hash
-from backend.workflows.common.timeutils import format_ts_to_ddmmyyyy
+from backend.workflows.common.timeutils import format_ts_to_ddmmyyyy, format_iso_date_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.change_propagation import detect_change_type, route_change_on_updated_variable
 import json
@@ -42,6 +43,7 @@ from ..llm.analysis import classify_intent, extract_user_information
 from backend.workflows.nlu.preferences import extract_preferences
 from backend.workflows.groups.room_availability import handle_select_room_action
 from ..billing_flow import handle_billing_capture
+from backend.workflows.common.datetime_parse import parse_first_date, parse_time_range
 
 __workflow_role__ = "trigger"
 
@@ -99,13 +101,34 @@ _AFFIRMATIVE_TOKENS = (
     "take",
 )
 
+def _fallback_year_from_ts(ts: Optional[str]) -> int:
+    if not ts:
+        return datetime.utcnow().year
+    try:
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).year
+    except ValueError:
+        return datetime.utcnow().year
+
+
+def _extract_confirmation_details(text: str, fallback_year: int) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    parsed = parse_first_date(text, fallback_year=fallback_year)
+    iso_date = parsed.isoformat() if parsed else None
+    start, end, _ = parse_time_range(text)
+
+    def _fmt(value: Optional[time]) -> Optional[str]:
+        if not value:
+            return None
+        return f"{value.hour:02d}:{value.minute:02d}"
+
+    return iso_date, _fmt(start), _fmt(end)
 
 def _looks_like_gate_confirmation(message_text: str, linked_event: Optional[Dict[str, Any]]) -> bool:
     if not linked_event:
         return False
     if linked_event.get("current_step") != 2:
         return False
-    if linked_event.get("thread_state", "").lower() != "awaiting client":
+    thread_state = (linked_event.get("thread_state") or "").lower()
+    if thread_state not in {"awaiting client", "waiting on hil"}:
         return False
 
     text = (message_text or "").strip()
@@ -276,6 +299,15 @@ def process(state: WorkflowState) -> GroupResult:
             state.intent = intent
             state.confidence = confidence
             state.intent_detail = "event_intake_followup"
+            fallback_year = _fallback_year_from_ts(message_payload.get("ts"))
+            iso_date, start_time, end_time = _extract_confirmation_details(body_text, fallback_year)
+            if iso_date:
+                user_info["date"] = iso_date
+                user_info["event_date"] = format_iso_date_to_ddmmyyyy(iso_date)
+            if start_time:
+                user_info["start_time"] = start_time
+            if end_time:
+                user_info["end_time"] = end_time
         else:
             room_choice = _detect_room_choice(body_text, linked_event)
             if room_choice:
