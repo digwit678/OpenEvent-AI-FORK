@@ -341,15 +341,59 @@ def _maybe_append_general_qna(
         return result
 
     pre_count = len(state.draft_messages)
+    original_candidate_dates = list(event_entry.get("candidate_dates") or [])
+    original_thread_state = event_entry.get("thread_state")
+    original_current_step = event_entry.get("current_step")
+    original_state_thread = state.thread_state
+
     qa_result = _present_general_room_qna(state, event_entry, classification, thread_id, qa_payload)
     if qa_result is None or len(state.draft_messages) <= pre_count:
+        event_entry["candidate_dates"] = list(original_candidate_dates)
+        update_event_metadata(
+            event_entry,
+            candidate_dates=event_entry.get("candidate_dates"),
+            current_step=original_current_step,
+            thread_state=original_thread_state,
+        )
+        state.thread_state = original_state_thread
+        return result
+
+    structured_ok = bool(qa_result.payload.get("structured_qna"))
+    if not structured_ok:
+        while len(state.draft_messages) > pre_count:
+            state.draft_messages.pop()
+        event_entry["candidate_dates"] = list(original_candidate_dates)
+        update_event_metadata(
+            event_entry,
+            candidate_dates=event_entry.get("candidate_dates"),
+            current_step=original_current_step,
+            thread_state=original_thread_state,
+        )
+        state.thread_state = original_state_thread
         return result
 
     attached = append_general_qna_to_primary(state)
     if not attached:
-        # If attach failed, ensure drafts list mirrors previous state.
         while len(state.draft_messages) > pre_count:
             state.draft_messages.pop()
+        event_entry["candidate_dates"] = list(original_candidate_dates)
+        update_event_metadata(
+            event_entry,
+            candidate_dates=event_entry.get("candidate_dates"),
+            current_step=original_current_step,
+            thread_state=original_thread_state,
+        )
+        state.thread_state = original_state_thread
+        return result
+
+    event_entry["candidate_dates"] = list(original_candidate_dates)
+    update_event_metadata(
+        event_entry,
+        candidate_dates=event_entry.get("candidate_dates"),
+        current_step=original_current_step,
+        thread_state=original_thread_state,
+    )
+    state.thread_state = original_state_thread
 
     return result
 
@@ -851,6 +895,7 @@ def _present_candidate_dates(
     limit = 4 if reason and "past" in (reason or "").lower() else 5
     if attempt > 1 and limit < 5:
         limit = 5
+    collection_cap = limit if not preferred_weekdays else max(limit * 3, limit + 5)
     event_entry.pop("pending_future_confirmation", None)
 
     week_scope = None if attempt > 1 else _resolve_week_scope(state, reference_day)
@@ -1017,9 +1062,12 @@ def _present_candidate_dates(
                     continue
                 seen_iso.add(iso_candidate)
                 formatted_dates.append(iso_candidate)
-                if len(formatted_dates) >= limit:
+                if len(formatted_dates) >= collection_cap:
                     break
 
+    prioritized_dates: List[str] = []
+    weekday_shortfall = False
+    preferred_weekday_list = sorted(preferred_weekdays)
     if preferred_weekdays:
         weekday_cache: Dict[str, Optional[int]] = {}
 
@@ -1036,6 +1084,44 @@ def _present_candidate_dates(
                 iso,
             ),
         )
+        prioritized_matches = [iso for iso in formatted_dates if _weekday_for(iso) in preferred_weekdays]
+        prioritized_rest = [iso for iso in formatted_dates if _weekday_for(iso) not in preferred_weekdays]
+        if not prioritized_matches:
+            supplemental_matches = _collect_preferred_weekday_alternatives(
+                start_from=min_requested_date or reference_day,
+                preferred_weekdays=preferred_weekday_list,
+                preferred_room=preferred_room,
+                start_time=start_time_obj,
+                end_time=end_time_obj,
+                skip_dates=skip_set.union(busy_skipped),
+                existing=seen_iso,
+                limit=collection_cap,
+            )
+            if supplemental_matches:
+                for iso_value in supplemental_matches:
+                    if iso_value in seen_iso:
+                        continue
+                    seen_iso.add(iso_value)
+                    formatted_dates.append(iso_value)
+                formatted_dates = sorted(
+                    formatted_dates,
+                    key=lambda iso: (
+                        0 if (_weekday_for(iso) in preferred_weekdays) else 1,
+                        iso,
+                    ),
+                )
+                prioritized_matches = [iso for iso in formatted_dates if _weekday_for(iso) in preferred_weekdays]
+                prioritized_rest = [iso for iso in formatted_dates if _weekday_for(iso) not in preferred_weekdays]
+        if prioritized_matches:
+            formatted_dates = prioritized_matches
+            prioritized_dates = prioritized_matches
+        else:
+            formatted_dates = prioritized_rest
+            prioritized_dates = prioritized_rest
+            weekday_shortfall = bool(formatted_dates)
+    else:
+        formatted_dates = sorted(formatted_dates)
+        prioritized_dates = list(formatted_dates)
 
     if fuzzy_candidates:
         formatted_dates = formatted_dates[:4]
@@ -1112,6 +1198,10 @@ def _present_candidate_dates(
         joined = _human_join(unavailable_display)
         message_lines.append(f"Sorry, we don't have free rooms on {joined}.")
         message_lines.append("What about one of the nearby options below?")
+    if weekday_shortfall and formatted_dates:
+        message_lines.append(
+            "I couldn't find a free Thursday or Friday in that range—these are the closest available slots right now."
+        )
 
     if future_suggestion:
         target_month = future_suggestion.strftime("%Y-%m")
@@ -1119,7 +1209,7 @@ def _present_candidate_dates(
         if filtered_dates:
             formatted_dates = filtered_dates[:4]
 
-    sample_dates = formatted_dates[:4]
+    sample_dates = prioritized_dates[:4] if prioritized_dates else formatted_dates[:4]
     if week_scope:
         sample_dates = list(formatted_dates)
     day_line, day_year = _format_day_list(sample_dates)
@@ -1128,22 +1218,46 @@ def _present_candidate_dates(
         if week_scope
         else user_info.get("vague_month") or event_entry.get("vague_month")
     )
-    month_for_line = week_label_value or month_hint_value or _month_label_from_dates(sample_dates, "February")
     date_header_label = _date_header_label(month_hint_value, week_label_value)
     weekday_hint_value = user_info.get("vague_weekday") or event_entry.get("vague_weekday")
-    weekday_label = _weekday_label_from_dates(sample_dates, _pluralize_weekday_hint(weekday_hint_value))
-    if week_scope:
-        weekday_label = None
-    if day_line and month_for_line and day_year:
-        message_lines.append("")
-        if week_scope:
-            message_lines.append(
-                f"Dates available in {_format_label_text(week_scope['label'])} {day_year}: {day_line}"
-            )
-        else:
+    weekday_label = None
+    if not week_scope:
+        preferred_label = _preferred_weekday_label(preferred_weekday_list, sample_dates)
+        if preferred_label:
+            weekday_label = preferred_label
+        elif len(preferred_weekdays) == 1:
+            weekday_label = _weekday_label_from_dates(sample_dates, _pluralize_weekday_hint(weekday_hint_value))
+    parsed_sample_dates = [_safe_parse_iso_date(iso_value) for iso_value in sample_dates]
+    sample_month_pairs = {(value.year, value.month) for value in parsed_sample_dates if value}
+    sample_years = {value.year for value in parsed_sample_dates if value}
+    multi_month = len(sample_month_pairs) > 1 or len(sample_years) > 1
+    month_for_line: Optional[str] = None
+    if parsed_sample_dates and multi_month:
+        formatted_labels = [
+            value.strftime("%d %b %Y") for value in parsed_sample_dates if value
+        ]
+        if formatted_labels:
+            message_lines.append("")
             label_prefix = weekday_label or "Dates"
-            message_lines.append(f"{label_prefix} available in {_format_label_text(month_for_line)} {day_year}: {day_line}")
-        message_lines.append("")
+            message_lines.append(f"{label_prefix} coming up: {', '.join(formatted_labels)}")
+            message_lines.append("")
+            date_header_label = f"{label_prefix} coming up"
+    else:
+        month_for_line = week_scope["label"] if week_scope else _month_label_from_dates(
+            sample_dates, month_hint_value
+        )
+        if day_line and month_for_line and day_year:
+            message_lines.append("")
+            if week_scope:
+                message_lines.append(
+                    f"Dates available in {_format_label_text(week_scope['label'])} {day_year}: {day_line}"
+                )
+            else:
+                label_prefix = weekday_label or "Dates"
+                message_lines.append(
+                    f"{label_prefix} available in {_format_label_text(month_for_line)} {day_year}: {day_line}"
+                )
+            message_lines.append("")
 
     message_lines.extend(["", "AVAILABLE DATES:"])
     if not formatted_dates:
@@ -1157,9 +1271,8 @@ def _present_candidate_dates(
     next_step_lines = ["", "NEXT STEP:"]
     if future_display:
         next_step_lines.append(f"Say yes if {future_display} works, or share another option you'd like me to check.")
-    next_step_lines.append("- Tell me which date works best so I can move to Room Availability and shortlist the best rooms.")
-    next_step_lines.append("- Or share another day/time and I'll check availability.")
-    next_step_lines.append("- Do you have any preferred dates or times I should prioritise?")
+    next_step_lines.append("- Let me know which date works best so I can lock it in and shortlist the best rooms.")
+    next_step_lines.append("- Or share another day/time preference and I'll check availability right away.")
     message_lines.extend(next_step_lines)
     prompt = "\n".join(message_lines)
 
@@ -1191,7 +1304,7 @@ def _present_candidate_dates(
     elif month_for_line:
         label_base = f"Dates in {_format_label_text(month_for_line)}"
     else:
-        label_base = "Candidate dates"
+        label_base = date_header_label or "Candidate dates"
     if time_hint:
         label_base = f"{label_base} ({time_display})"
 
@@ -2165,6 +2278,81 @@ def _month_label_from_dates(
     return fallback
 
 
+def _collect_preferred_weekday_alternatives(
+    *,
+    start_from: date,
+    preferred_weekdays: Sequence[int],
+    preferred_room: Optional[str],
+    start_time: Optional[time],
+    end_time: Optional[time],
+    skip_dates: Sequence[str],
+    existing: set[str],
+    limit: int,
+) -> List[str]:
+    if not preferred_weekdays:
+        return []
+    if limit <= 0:
+        return []
+    skip_lookup = set(skip_dates or [])
+    skip_lookup.update(existing)
+    results: List[str] = []
+    max_days = max(90, limit * 14)
+    for offset in range(max_days):
+        candidate = start_from + timedelta(days=offset)
+        weekday_idx = candidate.weekday()
+        if weekday_idx not in preferred_weekdays:
+            continue
+        iso_value = candidate.isoformat()
+        if iso_value in skip_lookup:
+            continue
+        if _iso_date_is_past(iso_value):
+            continue
+        if not _candidate_is_calendar_free(preferred_room, iso_value, start_time, end_time):
+            skip_lookup.add(iso_value)
+            continue
+        results.append(iso_value)
+        skip_lookup.add(iso_value)
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _preferred_weekday_label(
+    preferred_weekdays: Sequence[int],
+    sample_dates: Sequence[str],
+) -> Optional[str]:
+    if not preferred_weekdays or not sample_dates:
+        return None
+    valid_indices = [idx for idx in preferred_weekdays if 0 <= idx <= 6]
+    if not valid_indices:
+        return None
+    requested_set = set(valid_indices)
+    sample_set: set[int] = set()
+    for iso_value in sample_dates:
+        try:
+            parsed = datetime.fromisoformat(iso_value)
+        except ValueError:
+            continue
+        weekday_idx = parsed.weekday()
+        if weekday_idx in requested_set:
+            sample_set.add(weekday_idx)
+    if not sample_set:
+        return None
+    if not sample_set.issubset(requested_set):
+        return None
+    ordered_indices = [idx for idx in valid_indices if idx in sample_set]
+    if not ordered_indices:
+        ordered_indices = sorted(sample_set)
+    labels = [f"{_WEEKDAY_LABELS[idx]}s" for idx in ordered_indices]
+    if not labels:
+        return None
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) == 2:
+        return f"{labels[0]} & {labels[1]}"
+    return ", ".join(labels[:-1]) + f", & {labels[-1]}"
+
+
 def _pluralize_weekday_hint(weekday_hint: Any) -> Optional[str]:
     if isinstance(weekday_hint, str):
         token = weekday_hint.strip()
@@ -2309,12 +2497,27 @@ def _candidate_dates_for_constraints(
     rules: Dict[str, Any] = {"timezone": "Europe/Zurich"}
     if month_hint:
         rules["month"] = month_hint
-    if isinstance(weekday_hint, list) and weekday_hint:
-        rules["weekday"] = weekday_hint[0]
-    elif isinstance(weekday_hint, str):
-        rules["weekday"] = weekday_hint
+    weekday_tokens: List[Any] = []
+    if isinstance(weekday_hint, (list, tuple, set)):
+        seen_tokens: set[str] = set()
+        for token in weekday_hint:
+            text = str(token).strip().lower()
+            if not text or text in seen_tokens:
+                continue
+            seen_tokens.add(text)
+            weekday_tokens.append(token)
+    elif weekday_hint not in (None, ""):
+        weekday_tokens.append(weekday_hint)
 
-    dates = next5(state.message.ts if state.message else None, rules)
+    candidate_dates: List[date] = []
+    if weekday_tokens:
+        for token in weekday_tokens:
+            scoped_rules = dict(rules)
+            scoped_rules["weekday"] = token
+            candidate_dates.extend(next5(state.message.ts if state.message else None, scoped_rules))
+    else:
+        candidate_dates = next5(state.message.ts if state.message else None, rules)
+    dates = sorted(candidate_dates)
     match_only = strict and _has_window_constraints(hints)
     iso_values: List[str] = []
     seen: set[str] = set()
@@ -2651,32 +2854,6 @@ def _present_general_room_qna(
             payload["qna_extraction"] = extraction
         return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
 
-    fallback_prompt = "[STRUCTURED_QNA_FALLBACK]\nI couldn't load the structured Q&A context for this request. Please review extraction logs."
-    draft_message = {
-        "step": 2,
-        "topic": "general_room_qna",
-        "body": f"{fallback_prompt}\n\n---\nStep: 2 Date Confirmation · Next: 3 Room Availability · State: Awaiting Client",
-        "body_markdown": fallback_prompt,
-        "next_step": 3,
-        "thread_state": "Awaiting Client",
-        "headers": ["Availability overview"],
-        "requires_approval": False,
-        "subloop": subloop_label,
-        "actions": range_actions,
-        "candidate_dates": range_candidate_dates,
-    }
-    if range_results:
-        draft_message["range_results"] = range_results
-    state.add_draft_message(draft_message)
-    update_event_metadata(
-        event_entry,
-        thread_state="Awaiting Client",
-        current_step=2,
-        candidate_dates=[],
-    )
-    state.set_thread_state("Awaiting Client")
-    state.record_subloop(subloop_label)
-    state.intent_detail = "event_intake_with_question"
     state.extras["structured_qna_fallback"] = True
     structured_payload = structured.action_payload if structured else {}
     structured_debug = structured.debug if structured else {"reason": "missing_structured_context"}
@@ -2696,7 +2873,10 @@ def _present_general_room_qna(
         "structured_qna_fallback": True,
         "qna_select_result": structured_payload,
         "structured_qna_debug": structured_debug,
+        "candidate_dates_range": range_candidate_dates,
+        "actions": range_actions,
+        "range_results": range_results,
     }
     if extraction:
         payload["qna_extraction"] = extraction
-    return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
+    return GroupResult(action="general_rooms_qna_fallback", payload=payload, halt=False)

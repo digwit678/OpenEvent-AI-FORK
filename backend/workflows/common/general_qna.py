@@ -1364,6 +1364,14 @@ def append_general_qna_to_primary(state: WorkflowState) -> bool:
         drafts.append(qa_draft)
         return False
 
+    lowered_body = qa_body.lower()
+    if (
+        "no specific information available" in lowered_body
+        or "[structured_qna_fallback" in lowered_body
+    ):
+        drafts.append(qa_draft)
+        return False
+
     primary = drafts[-1]
     primary_body = (primary.get("body_markdown") or primary.get("body") or "").strip()
     combined_body = f"{primary_body}\n\n{qa_body}" if primary_body else qa_body
