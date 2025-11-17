@@ -6,6 +6,8 @@ import re
 from datetime import date, datetime, time, timedelta
 from typing import List, Optional, Tuple
 
+from backend.workflows.common.relative_dates import resolve_relative_date
+
 from zoneinfo import ZoneInfo
 
 TZ_ZURICH = ZoneInfo("Europe/Zurich")
@@ -85,6 +87,8 @@ def parse_all_dates(
     *,
     fallback_year: Optional[int] = None,
     limit: Optional[int] = None,
+    reference: Optional[date] = None,
+    allow_relative: bool = True,
 ) -> List[date]:
     """Return all recognizable dates within ``text`` ordered by appearance."""
 
@@ -142,15 +146,33 @@ def parse_all_dates(
 
     matches.sort(key=lambda item: item[0])
     ordered = [item[1] for item in matches]
+    if not ordered and allow_relative:
+        reference_day = reference or date.today()
+        relative_candidate = resolve_relative_date(text, reference_day)
+        if relative_candidate:
+            ordered.append(relative_candidate)
+
     if limit is not None:
         return ordered[:limit]
     return ordered
 
 
-def parse_first_date(text: str, *, fallback_year: Optional[int] = None) -> Optional[date]:
+def parse_first_date(
+    text: str,
+    *,
+    fallback_year: Optional[int] = None,
+    reference: Optional[date] = None,
+    allow_relative: bool = True,
+) -> Optional[date]:
     """Parse the first recognizable date within ``text``."""
 
-    results = parse_all_dates(text, fallback_year=fallback_year, limit=1)
+    results = parse_all_dates(
+        text,
+        fallback_year=fallback_year,
+        limit=1,
+        reference=reference,
+        allow_relative=allow_relative,
+    )
     return results[0] if results else None
 
 
