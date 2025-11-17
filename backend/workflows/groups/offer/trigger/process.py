@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from backend.workflows.common.requirements import merge_client_profile, requirements_hash
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.general_qna import _fallback_structured_body
+from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
 from backend.workflows.change_propagation import detect_change_type, route_change_on_updated_variable
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
@@ -139,7 +139,12 @@ def process(state: WorkflowState) -> GroupResult:
             return GroupResult(action="change_detour", payload=payload, halt=False)
 
     # No change detected: check if Q&A should be handled
+    has_offer_update = _has_offer_update(user_info)
+    deferred_general_qna = False
     general_qna_applicable = classification.get("is_general")
+    if general_qna_applicable and has_offer_update:
+        deferred_general_qna = True
+        general_qna_applicable = False
     if general_qna_applicable:
         result = _present_general_room_qna(state, event_entry, classification, thread_id)
         return result
@@ -254,7 +259,10 @@ def process(state: WorkflowState) -> GroupResult:
         "context": state.context_snapshot,
         "persisted": True,
     }
-    return GroupResult(action="offer_draft_prepared", payload=payload, halt=True)
+    result = GroupResult(action="offer_draft_prepared", payload=payload, halt=True)
+    if deferred_general_qna:
+        _append_deferred_general_qna(state, event_entry, classification, thread_id)
+    return result
 
 
 def build_offer(event_id: str, room_id: str, date_iso: str, pax: int) -> Dict[str, Any]:
@@ -445,6 +453,20 @@ def _ensure_products_container(event_entry: Dict[str, Any]) -> None:
         event_entry["products"] = []
 
 
+def _has_offer_update(user_info: Dict[str, Any]) -> bool:
+    update_keys = (
+        "products_add",
+        "products_remove",
+        "products_skip",
+        "skip_products",
+        "products_none",
+        "offer_total_override",
+        "room_rate",
+        "offer_id",
+    )
+    return any(bool(user_info.get(key)) for key in update_keys)
+
+
 def _apply_product_operations(event_entry: Dict[str, Any], user_info: Dict[str, Any]) -> bool:
     additions = _normalise_products(user_info.get("products_add"))
     removals = _normalise_product_names(user_info.get("products_remove"))
@@ -607,7 +629,10 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> 
     room = event_entry.get("locked_room_id") or "Room TBD"
     products = event_entry.get("products") or []
 
+    intro_room = room if room != "Room TBD" else "your preferred room"
+    intro_date = chosen_date if chosen_date != "Date TBD" else "your requested date"
     lines = [
+        f"Great — {intro_room} on {intro_date} is ready for review.",
         f"Offer draft for {chosen_date} · {room}",
         f"Total: CHF {total_amount:,.2f}",
     ]
@@ -736,7 +761,7 @@ def _present_general_room_qna(
             "candidate_dates": candidate_dates,
             "actions": actions,
             "subloop": subloop_label,
-            "headers": ["General Q&A"],
+            "headers": ["Availability overview"],
         }
 
         state.add_draft_message(draft_message)
@@ -789,7 +814,7 @@ def _present_general_room_qna(
         "body_markdown": fallback_prompt,
         "next_step": 4,
         "thread_state": "Awaiting Client",
-        "headers": ["General Q&A"],
+        "headers": ["Availability overview"],
         "requires_approval": False,
         "subloop": subloop_label,
         "actions": [],
@@ -828,3 +853,19 @@ def _present_general_room_qna(
     if extraction:
         payload["qna_extraction"] = extraction
     return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
+
+
+def _append_deferred_general_qna(
+    state: WorkflowState,
+    event_entry: dict,
+    classification: Dict[str, Any],
+    thread_id: Optional[str],
+) -> None:
+    pre_count = len(state.draft_messages)
+    qa_result = _present_general_room_qna(state, event_entry, classification, thread_id)
+    if qa_result is None or len(state.draft_messages) <= pre_count:
+        return
+    appended = append_general_qna_to_primary(state)
+    if not appended:
+        while len(state.draft_messages) > pre_count:
+            state.draft_messages.pop()

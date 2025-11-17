@@ -190,7 +190,7 @@ class FlowHarness:
                     combined_body = "\n".join(qa_lines + ["", body_text]) if body_text else "\n".join(qa_lines)
                     assistant["body"] = combined_body
                     headers = assistant.get("headers") or []
-                    assistant["headers"] = ["General Q&A"] + [header for header in headers if header]
+                    assistant["headers"] = ["Availability overview"] + [header for header in headers if header]
                     payload["assistant_draft_text"] = combined_body
             if "assistant_draft" not in payload:
                 payload["assistant_draft"] = assistant

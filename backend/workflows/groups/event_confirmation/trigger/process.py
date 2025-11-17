@@ -9,7 +9,7 @@ from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.room_rules import site_visit_allowed
 from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.common.general_qna import _fallback_structured_body
+from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
@@ -102,29 +102,39 @@ def process(state: WorkflowState) -> GroupResult:
             owner_step="Step7_Confirmation",
         )
 
-    # Handle Q&A if detected (after change detection, before confirmation classification)
+    classification = _classify_message(message_text, event_entry)
+    conf_state["last_response_type"] = classification
     general_qna_applicable = qna_classification.get("is_general")
-    if general_qna_applicable:
+    deferred_general_qna = general_qna_applicable and classification in {
+        "confirm",
+        "deposit_paid",
+        "reserve",
+        "site_visit",
+        "decline",
+        "change",
+    }
+    if general_qna_applicable and not deferred_general_qna:
         result = _present_general_room_qna(state, event_entry, qna_classification, thread_id)
         return result
 
-    classification = _classify_message(message_text, event_entry)
-    conf_state["last_response_type"] = classification
-
     if classification == "confirm":
-        return _prepare_confirmation(state, event_entry)
-    if classification == "deposit_paid":
-        return _handle_deposit_paid(state, event_entry)
-    if classification == "reserve":
-        return _handle_reserve(state, event_entry)
-    if classification == "site_visit":
-        return _handle_site_visit(state, event_entry)
-    if classification == "decline":
-        return _handle_decline(state, event_entry)
-    if classification == "change":
-        # No structured change detected; fall back to clarification.
-        return _handle_question(state)
-    return _handle_question(state)
+        result = _prepare_confirmation(state, event_entry)
+    elif classification == "deposit_paid":
+        result = _handle_deposit_paid(state, event_entry)
+    elif classification == "reserve":
+        result = _handle_reserve(state, event_entry)
+    elif classification == "site_visit":
+        result = _handle_site_visit(state, event_entry)
+    elif classification == "decline":
+        result = _handle_decline(state, event_entry)
+    elif classification == "change":
+        result = _handle_question(state)
+    else:
+        result = _handle_question(state)
+
+    if deferred_general_qna:
+        _append_deferred_general_qna(state, event_entry, qna_classification, thread_id)
+    return result
 
 
 def _classify_message(message_text: str, event_entry: Dict[str, Any]) -> str:
@@ -625,7 +635,7 @@ def _present_general_room_qna(
             "candidate_dates": candidate_dates,
             "actions": actions,
             "subloop": subloop_label,
-            "headers": ["General Q&A"],
+            "headers": ["Availability overview"],
         }
 
         state.add_draft_message(draft_message)
@@ -678,7 +688,7 @@ def _present_general_room_qna(
         "body_markdown": fallback_prompt,
         "next_step": 7,
         "thread_state": "Awaiting Client",
-        "headers": ["General Q&A"],
+        "headers": ["Availability overview"],
         "requires_approval": False,
         "subloop": subloop_label,
         "actions": [],
@@ -717,3 +727,19 @@ def _present_general_room_qna(
     if extraction:
         payload["qna_extraction"] = extraction
     return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
+
+
+def _append_deferred_general_qna(
+    state: WorkflowState,
+    event_entry: dict,
+    classification: Dict[str, Any],
+    thread_id: Optional[str],
+) -> None:
+    pre_count = len(state.draft_messages)
+    qa_result = _present_general_room_qna(state, event_entry, classification, thread_id)
+    if qa_result is None or len(state.draft_messages) <= pre_count:
+        return
+    appended = append_general_qna_to_primary(state)
+    if not appended:
+        while len(state.draft_messages) > pre_count:
+            state.draft_messages.pop()

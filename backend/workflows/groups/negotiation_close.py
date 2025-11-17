@@ -8,7 +8,7 @@ from backend.domain import TaskType
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.common.general_qna import _fallback_structured_body
+from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
@@ -104,13 +104,14 @@ def process(state: WorkflowState) -> GroupResult:
             owner_step="Step5_Negotiation",
         )
 
+    classification = _classify_message(message_text)
+
     # Handle Q&A if detected (after change detection, before negotiation classification)
     general_qna_applicable = qna_classification.get("is_general")
-    if general_qna_applicable:
+    deferred_general_qna = general_qna_applicable and classification in {"accept", "decline", "counter"}
+    if general_qna_applicable and not deferred_general_qna:
         result = _present_general_room_qna(state, event_entry, qna_classification, thread_id)
         return result
-
-    classification = _classify_message(message_text)
 
     if classification == "accept":
         response = _handle_accept(event_entry)
@@ -132,7 +133,10 @@ def process(state: WorkflowState) -> GroupResult:
             "context": state.context_snapshot,
             "persisted": True,
         }
-        return GroupResult(action="negotiation_accept", payload=payload, halt=False)
+        result = GroupResult(action="negotiation_accept", payload=payload, halt=False)
+        if deferred_general_qna:
+            _append_deferred_general_qna(state, event_entry, qna_classification, thread_id)
+        return result
 
     if classification == "decline":
         response = _handle_decline(event_entry)
@@ -153,7 +157,10 @@ def process(state: WorkflowState) -> GroupResult:
             "context": state.context_snapshot,
             "persisted": True,
         }
-        return GroupResult(action="negotiation_decline", payload=payload, halt=False)
+        result = GroupResult(action="negotiation_decline", payload=payload, halt=False)
+        if deferred_general_qna:
+            _append_deferred_general_qna(state, event_entry, qna_classification, thread_id)
+        return result
 
     if classification == "counter":
         negotiation_state["counter_count"] = int(negotiation_state.get("counter_count") or 0) + 1
@@ -199,7 +206,10 @@ def process(state: WorkflowState) -> GroupResult:
                 "persisted": True,
                 "manual_review_task_id": manual_id,
             }
-            return GroupResult(action="negotiation_manual_review", payload=payload, halt=True)
+            result = GroupResult(action="negotiation_manual_review", payload=payload, halt=True)
+            if deferred_general_qna:
+                _append_deferred_general_qna(state, event_entry, qna_classification, thread_id)
+            return result
 
         update_event_metadata(event_entry, caller_step=5, current_step=4)
         append_audit_entry(event_entry, 5, 4, "negotiation_counter")
@@ -216,7 +226,10 @@ def process(state: WorkflowState) -> GroupResult:
             "context": state.context_snapshot,
             "persisted": True,
         }
-        return GroupResult(action="negotiation_counter", payload=payload, halt=False)
+        result = GroupResult(action="negotiation_counter", payload=payload, halt=False)
+        if deferred_general_qna:
+            _append_deferred_general_qna(state, event_entry, qna_classification, thread_id)
+        return result
 
     # Clarification by default.
     clarification = {
@@ -244,7 +257,10 @@ def process(state: WorkflowState) -> GroupResult:
         "context": state.context_snapshot,
         "persisted": True,
     }
-    return GroupResult(action="negotiation_clarification", payload=payload, halt=True)
+    result = GroupResult(action="negotiation_clarification", payload=payload, halt=True)
+    if deferred_general_qna:
+        _append_deferred_general_qna(state, event_entry, qna_classification, thread_id)
+    return result
 
 
 def _classify_message(message_text: str) -> str:
@@ -430,7 +446,7 @@ def _present_general_room_qna(
             "candidate_dates": candidate_dates,
             "actions": actions,
             "subloop": subloop_label,
-            "headers": ["General Q&A"],
+            "headers": ["Availability overview"],
         }
 
         state.add_draft_message(draft_message)
@@ -483,7 +499,7 @@ def _present_general_room_qna(
         "body_markdown": fallback_prompt,
         "next_step": 5,
         "thread_state": "Awaiting Client",
-        "headers": ["General Q&A"],
+        "headers": ["Availability overview"],
         "requires_approval": False,
         "subloop": subloop_label,
         "actions": [],
@@ -522,3 +538,19 @@ def _present_general_room_qna(
     if extraction:
         payload["qna_extraction"] = extraction
     return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
+
+
+def _append_deferred_general_qna(
+    state: WorkflowState,
+    event_entry: dict,
+    classification: Dict[str, Any],
+    thread_id: Optional[str],
+) -> None:
+    pre_count = len(state.draft_messages)
+    qa_result = _present_general_room_qna(state, event_entry, classification, thread_id)
+    if qa_result is None or len(state.draft_messages) <= pre_count:
+        return
+    appended = append_general_qna_to_primary(state)
+    if not appended:
+        while len(state.draft_messages) > pre_count:
+            state.draft_messages.pop()

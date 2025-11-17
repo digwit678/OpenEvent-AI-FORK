@@ -44,7 +44,7 @@ class FlowSpecItem(pytest.Item):
 def pytest_collection_modifyitems(config, items):
     for item in items:
         path = str(item.fspath)
-        if "tests/_legacy" in path:
+        if "tests/_legacy" in path or "tests/specs/legacy" in path:
             item.add_marker(pytest.mark.legacy)
             item.add_marker(
                 pytest.mark.xfail(

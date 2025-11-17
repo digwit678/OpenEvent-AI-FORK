@@ -15,7 +15,7 @@
         },
         "trace": {
           "subloops_contains": [
-            "structured_qna"
+            "general_q_a"
           ]
         },
         "db_assert": {
@@ -37,7 +37,7 @@
         "res": {
           "assistant_draft": {
             "headers": [
-              "General Q&A",
+              "Availability overview",
               "Rooms for 30 people on 21.02.2026"
             ],
             "body_order": [

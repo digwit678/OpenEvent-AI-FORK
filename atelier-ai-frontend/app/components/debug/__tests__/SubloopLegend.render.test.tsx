@@ -8,7 +8,7 @@ describe('SubloopLegend', () => {
   it('renders legend entries with swatches', () => {
     render(<SubloopLegend />);
 
-    const general = screen.getByText('General Q&A');
+    const general = screen.getByText('Availability overview');
     const shortcut = screen.getByText('Shortcut');
 
     expect(general).toBeInTheDocument();

@@ -4433,6 +4433,510 @@
         ]
       },
       "week_index": 1
+    },
+    {
+      "event_id": "9fad8594-1d7e-4ac4-ad06-2068d4381e63",
+      "created_at": "2025-11-17T13:26:20.376383",
+      "status": "Lead",
+      "current_step": 2,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": null,
+      "date_confirmed": false,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 80,
+        "seating_layout": "Standing reception",
+        "event_duration": {},
+        "special_requirements": "sound system",
+        "preferred_room": "Room Inquiry"
+      },
+      "requirements_hash": "97f6834a30d39dbffdb94fe19343a31d81baad3f024b8b9edf56c3bd25792b3d",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2025-11-17T13:26:20Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-11-17T13:26:20Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-17T15:36:08Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-11-17T15:36:08Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "17.11.2025",
+        "Status": "Lead",
+        "Event Date": "Not specified",
+        "Name": "Not specified",
+        "Email": "patrick.keller@veritas-advisors.ch",
+        "Phone": "+41793338722",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Room Inquiry",
+        "Number of Participants": "80",
+        "Type of Event": "Not specified",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "sound system"
+      },
+      "msgs": [
+        "05cfa0a8-02d5-447f-a45d-4674313a77dd",
+        "35003e46-dd1a-4e67-a3de-a984cc4bcd73"
+      ],
+      "captured": {
+        "preferred_room": "Room Inquiry",
+        "contact": {
+          "phone": "+41793338722"
+        }
+      },
+      "verified": {},
+      "captured_sources": [
+        "05cfa0a8-02d5-447f-a45d-4674313a77dd:preferred_room",
+        "05cfa0a8-02d5-447f-a45d-4674313a77dd:contact.phone",
+        "35003e46-dd1a-4e67-a3de-a984cc4bcd73:preferred_room",
+        "35003e46-dd1a-4e67-a3de-a984cc4bcd73:contact.phone"
+      ],
+      "deferred_intents": [
+        "room_selection",
+        "contact_update"
+      ],
+      "current_step_stage": "step_2",
+      "caller_step_stage": null,
+      "subflow_group": "date_confirmation",
+      "requested_window": {},
+      "offer_hash": null,
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "wish_products": [
+        "sound system"
+      ],
+      "preferences": {
+        "wish_products": [
+          "sound system"
+        ],
+        "keywords": [
+          "sound",
+          "system",
+          "standing",
+          "reception"
+        ],
+        "default_hint": "sound system",
+        "room_recommendations": [
+          {
+            "room": "Room A",
+            "score": 0.0,
+            "matched": [],
+            "missing": [
+              "sound system"
+            ]
+          },
+          {
+            "room": "Room B",
+            "score": 0.0,
+            "matched": [],
+            "missing": [
+              "sound system"
+            ]
+          },
+          {
+            "room": "Room C",
+            "score": 0.0,
+            "matched": [],
+            "missing": [
+              "sound system"
+            ]
+          },
+          {
+            "room": "Room D",
+            "score": 0.0,
+            "matched": [],
+            "missing": [
+              "sound system"
+            ]
+          },
+          {
+            "room": "Room E",
+            "score": 0.0,
+            "matched": [],
+            "missing": [
+              "sound system"
+            ]
+          }
+        ],
+        "room_similarity": {
+          "Room A": 0.0,
+          "Room B": 0.0,
+          "Room C": 0.0,
+          "Room D": 0.0,
+          "Room E": 0.0
+        },
+        "room_match_breakdown": {
+          "Room A": {
+            "matched": [],
+            "missing": [
+              "sound system"
+            ]
+          },
+          "Room B": {
+            "matched": [],
+            "missing": [
+              "sound system"
+            ]
+          },
+          "Room C": {
+            "matched": [],
+            "missing": [
+              "sound system"
+            ]
+          },
+          "Room D": {
+            "matched": [],
+            "missing": [
+              "sound system"
+            ]
+          },
+          "Room E": {
+            "matched": [],
+            "missing": [
+              "sound system"
+            ]
+          }
+        }
+      },
+      "vague_month": "november",
+      "vague_weekday": "thursday",
+      "vague_time_of_day": "evening",
+      "range_query_detected": true,
+      "candidate_dates": [
+        "21.11.2025",
+        "28.11.2025"
+      ],
+      "last_general_qna": {
+        "topic": "non_event_info",
+        "date_pattern": null,
+        "timestamp": "2025-11-17T15:36:10.853845Z"
+      },
+      "pending_hil_requests": [
+        {
+          "task_id": "5436a31d-be6d-40f3-b727-17e81ee6185f",
+          "signature": "1bdf6f2583058cc382017e163c226811b3f75d34b55e6016e3ff39c69cd29a84",
+          "step": 2,
+          "draft": {
+            "body": "Availability overview\nAll options below fit 80 guests. They are available on Fri 21 Nov 2025 and Fri 28 Nov 2025 and during the evening. I assumed 80 guests from your previous details.\n\n| Room | Dates | Notes |\n| --- | --- | --- |\n| Room B | Fri 21 Nov 2025, Fri 28 Nov 2025 | Status: Available |\n| Room C | Fri 21 Nov 2025, Fri 28 Nov 2025 | Status: Available |\n| Room E | Fri 21 Nov 2025, Fri 28 Nov 2025 | Status: Available |\n\nNEXT STEP:\n- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+            "step": 2,
+            "next_step": 3,
+            "thread_state": "Awaiting Client",
+            "topic": "general_room_qna",
+            "candidate_dates": [
+              "21.11.2025",
+              "28.11.2025"
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "Confirm 21.11.2025",
+                "date": "21.11.2025",
+                "iso_date": "2025-11-21"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm 28.11.2025",
+                "date": "28.11.2025",
+                "iso_date": "2025-11-28"
+              },
+              {
+                "type": "ask_for_date_enqueued",
+                "payload": {
+                  "event_id": "9fad8594-1d7e-4ac4-ad06-2068d4381e63",
+                  "suggested_dates": [
+                    "21.11.2025",
+                    "28.11.2025"
+                  ]
+                }
+              }
+            ],
+            "subloop": "general_q_a",
+            "headers": [
+              "Availability overview"
+            ],
+            "range_results": [
+              {
+                "iso_date": "2025-11-21",
+                "date_label": "Fri 21 Nov 2025",
+                "room": "Room C",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-11-21",
+                "date_label": "Fri 21 Nov 2025",
+                "room": "Room E",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-11-21",
+                "date_label": "Fri 21 Nov 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-11-28",
+                "date_label": "Fri 28 Nov 2025",
+                "room": "Room C",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-11-28",
+                "date_label": "Fri 28 Nov 2025",
+                "room": "Room E",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-11-28",
+                "date_label": "Fri 28 Nov 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "sound system"
+              }
+            ],
+            "body_markdown": "Availability overview\nAll options below fit 80 guests. They are available on Fri 21 Nov 2025 and Fri 28 Nov 2025 and during the evening. I assumed 80 guests from your previous details.\n\n| Room | Dates | Notes |\n| --- | --- | --- |\n| Room B | Fri 21 Nov 2025, Fri 28 Nov 2025 | Status: Available |\n| Room C | Fri 21 Nov 2025, Fri 28 Nov 2025 | Status: Available |\n| Room E | Fri 21 Nov 2025, Fri 28 Nov 2025 | Status: Available |\n\nNEXT STEP:\n- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you.",
+            "footer": "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+            "table_blocks": [
+              {
+                "type": "table",
+                "label": "Availability overview Summary",
+                "columns": [
+                  {
+                    "key": "room",
+                    "label": "Room"
+                  },
+                  {
+                    "key": "dates",
+                    "label": "Dates"
+                  },
+                  {
+                    "key": "notes",
+                    "label": "Notes"
+                  }
+                ],
+                "rows": [
+                  {
+                    "room": "Room B",
+                    "dates": "Fri 21 Nov 2025, Fri 28 Nov 2025",
+                    "notes": "Status: Available"
+                  },
+                  {
+                    "room": "Room C",
+                    "dates": "Fri 21 Nov 2025, Fri 28 Nov 2025",
+                    "notes": "Status: Available"
+                  },
+                  {
+                    "room": "Room E",
+                    "dates": "Fri 21 Nov 2025, Fri 28 Nov 2025",
+                    "notes": "Status: Available"
+                  }
+                ],
+                "column_order": [
+                  "room",
+                  "dates",
+                  "notes"
+                ]
+              }
+            ],
+            "requires_approval": true,
+            "created_at_step": 2
+          },
+          "thread_id": "0c21e6b9-7d7a-407a-a8c5-742795bc431d"
+        },
+        {
+          "task_id": "6e6c538f-3379-4a59-9027-43c08483371e",
+          "signature": "7ce471b772f1d25024f57619cdf29ec4d13cf0ade7ef4900c0ffff7a7f9b2934",
+          "step": 2,
+          "draft": {
+            "body": "Hello,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\nSorry, we don't have free rooms on 12.11.2026 and 13.11.2026.\nWhat about one of the nearby options below?\n\nFridays available in November 2026: 20, 21, 22, 23\n\n\nAVAILABLE DATES:\n- 2026-11-20 18:00–22:00\n- 2026-11-21 18:00–22:00\n- 2026-11-22 18:00–22:00\n- 2026-11-23 18:00–22:00\n- 2026-11-24 18:00–22:00\n\nNEXT STEP:\n- Tell me which date works best so I can move to Room Availability and shortlist the best rooms.\n- Or share another day/time and I'll check availability.\n- Do you have any preferred dates or times I should prioritise?\n\nIt seems there is no specific information available related to your query at the moment. If you have any particular questions or need details on a certain topic, please let me know!\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+            "step": 2,
+            "next_step": "Room Availability",
+            "topic": "date_candidates",
+            "candidate_dates": [
+              "20.11.2026",
+              "21.11.2026",
+              "22.11.2026",
+              "23.11.2026",
+              "24.11.2026"
+            ],
+            "table_blocks": [
+              {
+                "type": "dates",
+                "label": "Fridays in November (Evening)",
+                "rows": [
+                  {
+                    "iso_date": "2026-11-20",
+                    "display_date": "20.11.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-11-21",
+                    "display_date": "21.11.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-11-22",
+                    "display_date": "22.11.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-11-23",
+                    "display_date": "23.11.2026",
+                    "time_of_day": "Evening"
+                  },
+                  {
+                    "iso_date": "2026-11-24",
+                    "display_date": "24.11.2026",
+                    "time_of_day": "Evening"
+                  }
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "20.11.2026 (Evening)",
+                "date": "2026-11-20",
+                "display_date": "20.11.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "21.11.2026 (Evening)",
+                "date": "2026-11-21",
+                "display_date": "21.11.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "22.11.2026 (Evening)",
+                "date": "2026-11-22",
+                "display_date": "22.11.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "23.11.2026 (Evening)",
+                "date": "2026-11-23",
+                "display_date": "23.11.2026"
+              },
+              {
+                "type": "select_date",
+                "label": "24.11.2026 (Evening)",
+                "date": "2026-11-24",
+                "display_date": "24.11.2026"
+              }
+            ],
+            "headers": [
+              "Date options for November",
+              "Availability overview"
+            ],
+            "thread_state": "Awaiting Client Response",
+            "requires_approval": true,
+            "body_markdown": "Hello,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\nSorry, we don't have free rooms on 12.11.2026 and 13.11.2026.\nWhat about one of the nearby options below?\n\nFridays available in November 2026: 20, 21, 22, 23\n\n\nAVAILABLE DATES:\n- 2026-11-20 18:00–22:00\n- 2026-11-21 18:00–22:00\n- 2026-11-22 18:00–22:00\n- 2026-11-23 18:00–22:00\n- 2026-11-24 18:00–22:00\n\nNEXT STEP:\n- Tell me which date works best so I can move to Room Availability and shortlist the best rooms.\n- Or share another day/time and I'll check availability.\n- Do you have any preferred dates or times I should prioritise?\n\nIt seems there is no specific information available related to your query at the moment. If you have any particular questions or need details on a certain topic, please let me know!",
+            "footer": "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+            "created_at_step": 2
+          },
+          "thread_id": "44a52c54-fd30-4152-b47c-d016325badf3"
+        }
+      ],
+      "date_proposal_attempts": 1,
+      "date_proposal_history": [
+        "2026-11-20",
+        "2026-11-21",
+        "2026-11-22",
+        "2026-11-23",
+        "2026-11-24"
+      ],
+      "gatekeeper_explain": {
+        "ready": false,
+        "missing_now": [
+          "date_confirmed",
+          "locked_room_id",
+          "offer_status"
+        ],
+        "reason": "date_confirmed"
+      }
     }
   ],
   "clients": {
@@ -13299,7 +13803,318 @@
       "event_ids": [
         "45f63dce-8805-43e5-acc8-449ce23f46d1"
       ]
+    },
+    "patrick.keller@veritas-advisors.ch": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "05cfa0a8-02d5-447f-a45d-4674313a77dd",
+          "ts": "2025-11-17T13:26:19.206887Z",
+          "subject": "Client Appreciation Event – November 2026",
+          "body_preview": "Client Appreciation Event – November 2026\n\nSubject: Client Appreciation Event – Room Inquiry for November 2026\n\nHello,\n\nWe’re planning our annual client appreci",
+          "intent": "confirm_date_partial",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": 80,
+            "room": "Room Inquiry",
+            "layout": "Standing reception",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41793338722",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "vague_month": "november",
+            "vague_weekday": "thursday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "sound system"
+              ],
+              "keywords": [
+                "sound",
+                "system",
+                "standing",
+                "reception"
+              ],
+              "default_hint": "sound system",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.0,
+                "Room B": 0.0,
+                "Room C": 0.0,
+                "Room D": 0.0,
+                "Room E": 0.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "msg_id": "35003e46-dd1a-4e67-a3de-a984cc4bcd73",
+          "ts": "2025-11-17T15:36:06.342103Z",
+          "subject": "Client Appreciation Event – November 2026",
+          "body_preview": "Client Appreciation Event – November 2026\n\nSubject: Client Appreciation Event – Room Inquiry for November 2026\n\nHello,\n\nWe’re planning our annual client appreci",
+          "intent": "confirm_date_partial",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": 80,
+            "room": "Room Inquiry",
+            "layout": "Standing reception",
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41793338722",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "vague_month": "november",
+            "vague_weekday": "thursday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "sound system"
+              ],
+              "keywords": [
+                "sound",
+                "system",
+                "standing",
+                "reception"
+              ],
+              "default_hint": "sound system",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.0,
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.0,
+                "Room B": 0.0,
+                "Room C": 0.0,
+                "Room D": 0.0,
+                "Room E": 0.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "missing": [
+                    "sound system"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "event_ids": []
     }
   },
-  "tasks": []
+  "tasks": [
+    {
+      "task_id": "5436a31d-be6d-40f3-b727-17e81ee6185f",
+      "created_at": "2025-11-17T13:26:24.998916",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "patrick.keller@veritas-advisors.ch",
+      "event_id": "9fad8594-1d7e-4ac4-ad06-2068d4381e63",
+      "payload": {
+        "step_id": 2,
+        "intent": "confirm_date_partial",
+        "event_id": "9fad8594-1d7e-4ac4-ad06-2068d4381e63",
+        "draft_msg": "Availability overview\nAll options below fit 80 guests. They are available on Fri 21 Nov 2025 and Fri 28 Nov 2025 and during the evening. I assumed 80 guests from your previous details.\n\n| Room | Dates | Notes |\n| --- | --- | --- |\n| Room B | Fri 21 Nov 2025, Fri 28 Nov 2025 | Status: Available |\n| Room C | Fri 21 Nov 2025, Fri 28 Nov 2025 | Status: Available |\n| Room E | Fri 21 Nov 2025, Fri 28 Nov 2025 | Status: Available |\n\nNEXT STEP:\n- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "97f6834a30d39dbffdb94fe19343a31d81baad3f024b8b9edf56c3bd25792b3d",
+        "room_eval_hash": null,
+        "thread_id": "0c21e6b9-7d7a-407a-a8c5-742795bc431d"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "6e6c538f-3379-4a59-9027-43c08483371e",
+      "created_at": "2025-11-17T15:36:10.855111",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "patrick.keller@veritas-advisors.ch",
+      "event_id": "9fad8594-1d7e-4ac4-ad06-2068d4381e63",
+      "payload": {
+        "step_id": 2,
+        "intent": "confirm_date_partial",
+        "event_id": "9fad8594-1d7e-4ac4-ad06-2068d4381e63",
+        "draft_msg": "Hello,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\nSorry, we don't have free rooms on 12.11.2026 and 13.11.2026.\nWhat about one of the nearby options below?\n\nFridays available in November 2026: 20, 21, 22, 23\n\n\nAVAILABLE DATES:\n- 2026-11-20 18:00–22:00\n- 2026-11-21 18:00–22:00\n- 2026-11-22 18:00–22:00\n- 2026-11-23 18:00–22:00\n- 2026-11-24 18:00–22:00\n\nNEXT STEP:\n- Tell me which date works best so I can move to Room Availability and shortlist the best rooms.\n- Or share another day/time and I'll check availability.\n- Do you have any preferred dates or times I should prioritise?\n\nIt seems there is no specific information available related to your query at the moment. If you have any particular questions or need details on a certain topic, please let me know!\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "97f6834a30d39dbffdb94fe19343a31d81baad3f024b8b9edf56c3bd25792b3d",
+        "room_eval_hash": null,
+        "thread_id": "44a52c54-fd30-4152-b47c-d016325badf3"
+      },
+      "notes": ""
+    }
+  ]
 }

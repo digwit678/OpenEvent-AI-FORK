@@ -22,7 +22,6 @@ from backend.workflows.io import database as db_io
 from backend.workflows.io.database import update_event_metadata
 from backend.workflows.io import tasks as task_io
 from backend.workflows.llm import adapter as llm_adapter
-from backend.workflows.common.general_qna import maybe_handle_general_qna_for_step
 from backend.workflows.planner import maybe_run_smart_shortcuts
 from backend.workflows.nlu import (
     detect_general_room_query,
@@ -331,6 +330,9 @@ def _enqueue_hil_tasks(state: WorkflowState, event_entry: Dict[str, Any]) -> Non
             "room_eval_hash": event_entry.get("room_eval_hash"),
             "thread_id": thread_id,
         }
+        hil_reason = draft.get("hil_reason")
+        if hil_reason:
+            task_payload["reason"] = hil_reason
 
         client_id = state.client_id or (state.message.from_email or "unknown@example.com").lower()
         task_id = enqueue_task(
@@ -544,10 +546,6 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         if not event_entry:
             break
         step = event_entry.get("current_step")
-        general_result = maybe_handle_general_qna_for_step(state)
-        if general_result:
-            _debug_state("halt_general_qna", state, extra={"entity": "assistant"})
-            return _flush_and_finalize(general_result, state, path, lock_path)
         if step == 2:
             last_result = date_confirmation.process(state)
             _debug_state("post_step2", state)
@@ -731,7 +729,10 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
     else:
         payload.setdefault("draft_messages", [])
     if state.draft_messages:
-        latest_draft = state.draft_messages[-1]
+        latest_draft = next(
+            (draft for draft in reversed(state.draft_messages) if draft.get("requires_approval")),
+            state.draft_messages[-1],
+        )
         draft_body = latest_draft.get("body_markdown") or latest_draft.get("body") or ""
         draft_headers = list(latest_draft.get("headers") or [])
         res_meta["assistant_draft"] = {"headers": draft_headers, "body": draft_body}

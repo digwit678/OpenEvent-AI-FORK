@@ -80,14 +80,30 @@ _TIME_RANGE = re.compile(
 _TIME_24H = re.compile(r"\b([01]?\d|2[0-3]):([0-5]\d)\b")
 
 
-def parse_first_date(text: str, *, fallback_year: Optional[int] = None) -> Optional[date]:
-    """Parse the first recognizable date within ``text``."""
+def parse_all_dates(
+    text: str,
+    *,
+    fallback_year: Optional[int] = None,
+    limit: Optional[int] = None,
+) -> List[date]:
+    """Return all recognizable dates within ``text`` ordered by appearance."""
 
-    for pattern in (_DATE_NUMERIC, _DATE_ISO):
-        match = pattern.search(text)
-        if not match:
-            continue
-        parts = match.groupdict()
+    if not text:
+        return []
+
+    matches: List[Tuple[int, date]] = []
+    seen: set[str] = set()
+
+    def _record(match_index: int, candidate: Optional[date]) -> None:
+        if not candidate:
+            return
+        iso = candidate.isoformat()
+        if iso in seen:
+            return
+        seen.add(iso)
+        matches.append((match_index, candidate))
+
+    def _parse_numeric(parts: dict[str, str]) -> Optional[date]:
         year = int(parts["year"])
         if year < 100:
             year += 2000
@@ -96,16 +112,20 @@ def parse_first_date(text: str, *, fallback_year: Optional[int] = None) -> Optio
         try:
             return date(year, month, day)
         except ValueError:
-            continue
+            return None
+
+    for pattern in (_DATE_NUMERIC, _DATE_ISO):
+        for match in pattern.finditer(text):
+            candidate = _parse_numeric(match.groupdict())
+            _record(match.start(), candidate)
 
     for pattern in (_DATE_TEXTUAL_DMY, _DATE_TEXTUAL_MDY):
-        match = pattern.search(text)
-        if not match:
-            continue
-        parts = match.groupdict()
-        month_token = parts["month"].lower()
-        month = _MONTHS.get(month_token)
-        if month:
+        for match in pattern.finditer(text):
+            parts = match.groupdict()
+            month_token = parts["month"].lower()
+            month = _MONTHS.get(month_token)
+            if not month:
+                continue
             try:
                 year_str = parts.get("year")
                 if year_str:
@@ -115,10 +135,23 @@ def parse_first_date(text: str, *, fallback_year: Optional[int] = None) -> Optio
                 else:
                     year = datetime.utcnow().year
                 day = int(parts["day"])
-                return date(year, month, day)
+                candidate = date(year, month, day)
             except ValueError:
-                return None
-    return None
+                continue
+            _record(match.start(), candidate)
+
+    matches.sort(key=lambda item: item[0])
+    ordered = [item[1] for item in matches]
+    if limit is not None:
+        return ordered[:limit]
+    return ordered
+
+
+def parse_first_date(text: str, *, fallback_year: Optional[int] = None) -> Optional[date]:
+    """Parse the first recognizable date within ``text``."""
+
+    results = parse_all_dates(text, fallback_year=fallback_year, limit=1)
+    return results[0] if results else None
 
 
 def to_ddmmyyyy(value: date | str) -> Optional[str]:

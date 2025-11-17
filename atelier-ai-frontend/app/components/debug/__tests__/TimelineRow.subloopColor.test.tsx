@@ -44,7 +44,7 @@ function buildRow(): TraceRowData {
     lane: 'entity',
     raw,
     subloop: 'general_q_a',
-    subloopLabel: 'General Q&A',
+    subloopLabel: 'Availability overview',
     subloopColor: '#2E77D0',
   };
 }
@@ -71,7 +71,7 @@ describe('TraceTable subloop styling', () => {
       />,
     );
 
-    const badge = screen.getByText('General Q&A');
+    const badge = screen.getByText('Availability overview');
     expect(badge).toBeInTheDocument();
 
     const rowElement = badge.closest('.trace-table__row');
