@@ -56,7 +56,7 @@ def test_general_room_qna_path(monkeypatch, tmp_path):
     assert draft["candidate_dates"] == free_dates
     assert draft["range_results"], "Hybrid queries should include concrete availability rows"
     body = draft["body"]
-    assert "General Q&A" in body
+    assert "Availability overview" in body
     assert "All options below fit 30 guests." in body
     assert "available on Sun 01 Feb 2026, Sun 08 Feb 2026 and Sun 15 Feb 2026" in body
     assert "| Room | Dates | Notes |" in body

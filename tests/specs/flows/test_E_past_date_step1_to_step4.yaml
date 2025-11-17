@@ -57,15 +57,13 @@
         ],
         "res": {
           "assistant_draft": {
-            "headers_subset": [
-              "General Q&A"
-            ],
             "contains_all": [
-              "All options below fit",
-              "They are available on",
-              "| Room | Dates | Notes |",
-              "Coffee break service.",
-              "- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you."
+              "Thanks for the briefing",
+              "Sorry, we don't have free rooms on",
+              "What about one of the nearby options below?",
+              "Tell me which date works best so I can move to Room Availability and shortlist the best rooms.",
+              "Or share another day/time and I'll check availability.",
+              "Do you have any preferred dates or times I should prioritise?"
             ]
           }
         }
@@ -84,8 +82,9 @@
         ],
         "res": {
           "assistant_draft": {
-            "headers_subset": [
-              "General Q&A"
+            "contains_all": [
+              "Sorry, we don't have free rooms on",
+              "Tell me which date works best so I can move to Room Availability and shortlist the best rooms."
             ]
           }
         }

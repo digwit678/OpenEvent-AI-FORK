@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import hashlib
 from dataclasses import dataclass
 from collections import Counter
@@ -22,6 +21,7 @@ from backend.debug.hooks import (
 )
 from backend.workflows.common.datetime_parse import (
     build_window_iso,
+    parse_all_dates,
     parse_first_date,
     parse_time_range,
     to_ddmmyyyy,
@@ -35,7 +35,12 @@ from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.gatekeeper import refresh_gatekeeper
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
 from backend.workflows.common.menu_options import build_menu_payload, format_menu_line
-from backend.workflows.common.general_qna import render_general_qna_reply, enrich_general_qna_step2, _fallback_structured_body
+from backend.workflows.common.general_qna import (
+    append_general_qna_to_primary,
+    render_general_qna_reply,
+    enrich_general_qna_step2,
+    _fallback_structured_body,
+)
 from backend.workflows.change_propagation import detect_change_type, route_change_on_updated_variable
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
@@ -52,7 +57,7 @@ from backend.workflows.io.database import (
 )
 from backend.workflows.nlu import detect_general_room_query
 from backend.utils.profiler import profile_step
-from backend.services.availability import next_five_venue_dates, validate_window
+from backend.services.availability import calendar_free, next_five_venue_dates, validate_window
 from backend.utils.dates import MONTH_INDEX_TO_NAME, from_hints
 from backend.workflow.state import WorkflowStep, default_subflow, write_stage
 
@@ -125,6 +130,8 @@ _WEEKDAY_NAME_TO_INDEX = {
     "sun": 6,
 }
 
+_PLACEHOLDER_NAMES = {"not", "na", "n/a", "unspecified", "unknown", "client"}
+
 def _thread_id(state: WorkflowState) -> str:
     if state.thread_id:
         return str(state.thread_id)
@@ -176,6 +183,9 @@ def _extract_first_name(raw: Optional[str]) -> Optional[str]:
     if not candidate:
         return None
     token = candidate.split()[0].strip(",. ")
+    lowered = token.lower()
+    if lowered in _PLACEHOLDER_NAMES:
+        return None
     return token or None
 
 
@@ -258,6 +268,228 @@ def _emit_step2_snapshot(
     if extra:
         snapshot.update(extra)
     trace_state(thread_id, "Step2_Date", snapshot)
+
+
+def _client_requested_dates(state: WorkflowState) -> List[str]:
+    """Extract explicit dates mentioned by the client in the current message."""
+
+    cache_key = "_client_requested_dates"
+    cached = state.extras.get(cache_key)
+    if isinstance(cached, list):
+        return list(cached)
+
+    text = _message_text(state)
+    reference_day = _reference_date_from_state(state)
+    iso_values: List[str] = []
+    if text:
+        seen: set[str] = set()
+        for value in parse_all_dates(text, fallback_year=reference_day.year):
+            iso = value.isoformat()
+            if iso in seen:
+                continue
+            seen.add(iso)
+            iso_values.append(iso)
+    state.extras[cache_key] = list(iso_values)
+    return iso_values
+
+
+def _format_display_dates(iso_dates: Sequence[str]) -> List[str]:
+    labels: List[str] = []
+    for iso_value in iso_dates:
+        labels.append(format_iso_date_to_ddmmyyyy(iso_value) or iso_value)
+    return labels
+
+
+def _human_join(values: Sequence[str]) -> str:
+    values = [value for value in values if value]
+    if not values:
+        return ""
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f"{values[0]} and {values[1]}"
+    return ", ".join(values[:-1]) + f", and {values[-1]}"
+
+
+def _preface_with_apology(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return text
+    stripped = text.strip()
+    if not stripped:
+        return text
+    lowered = stripped.lower()
+    if lowered.startswith(("sorry", "unfortunately", "apologies")):
+        return stripped
+    first = stripped[0]
+    softened = stripped
+    if first.isalpha() and first.isupper():
+        softened = first.lower() + stripped[1:]
+    return f"Sorry, {softened}"
+
+
+def _maybe_append_general_qna(
+    result: GroupResult,
+    state: WorkflowState,
+    event_entry: dict,
+    classification: Dict[str, Any],
+    thread_id: str,
+    qa_payload: Optional[Dict[str, Any]],
+    requested_client_dates: Sequence[str],
+    deferred_general_qna: bool,
+) -> GroupResult:
+    if not deferred_general_qna or not requested_client_dates or not classification.get("is_general"):
+        return result
+
+    pre_count = len(state.draft_messages)
+    qa_result = _present_general_room_qna(state, event_entry, classification, thread_id, qa_payload)
+    if qa_result is None or len(state.draft_messages) <= pre_count:
+        return result
+
+    attached = append_general_qna_to_primary(state)
+    if not attached:
+        # If attach failed, ensure drafts list mirrors previous state.
+        while len(state.draft_messages) > pre_count:
+            state.draft_messages.pop()
+
+    return result
+
+
+def _parse_weekday_mentions(text: str) -> set[int]:
+    result: set[int] = set()
+    if not text:
+        return result
+    lowered = text.lower()
+    for token, index in _WEEKDAY_NAME_TO_INDEX.items():
+        if token in lowered:
+            result.add(index)
+    return result
+
+
+def _weekday_indices_from_hint(hint: Any) -> set[int]:
+    result: set[int] = set()
+    if hint is None:
+        return result
+    if isinstance(hint, (list, tuple, set)):
+        for item in hint:
+            result.update(_weekday_indices_from_hint(item))
+        return result
+    token = str(hint).strip().lower()
+    if not token:
+        return result
+    if token in _WEEKDAY_NAME_TO_INDEX:
+        result.add(_WEEKDAY_NAME_TO_INDEX[token])
+    return result
+
+
+def _increment_date_attempt(event_entry: dict) -> int:
+    """Increment and persist the count of date proposal attempts."""
+
+    try:
+        current = int(event_entry.get("date_proposal_attempts") or 0)
+    except (TypeError, ValueError):
+        current = 0
+    updated = current + 1
+    event_entry["date_proposal_attempts"] = updated
+    update_event_metadata(event_entry, date_proposal_attempts=updated)
+    return updated
+
+
+def _collect_proposal_history(event_entry: dict) -> List[str]:
+    history = event_entry.get("date_proposal_history")
+    if isinstance(history, list):
+        return [str(entry) for entry in history if entry]
+    return []
+
+
+def _proposal_skip_dates(
+    event_entry: dict,
+    attempt: int,
+    extra: Optional[Sequence[str]] = None,
+) -> set[str]:
+    skip: set[str] = set()
+    if extra:
+        skip.update(str(value) for value in extra if value)
+    if attempt > 1:
+        skip.update(_collect_proposal_history(event_entry))
+    return skip
+
+
+def _update_proposal_history(event_entry: dict, iso_dates: Sequence[str]) -> List[str]:
+    history = _collect_proposal_history(event_entry)
+    for iso_value in iso_dates:
+        if iso_value and iso_value not in history:
+            history.append(iso_value)
+    event_entry["date_proposal_history"] = history
+    update_event_metadata(event_entry, date_proposal_history=list(history))
+    return history
+
+
+def _reset_date_attempts(event_entry: dict) -> None:
+    """Clear attempt counters after a successful confirmation."""
+
+    event_entry["date_proposal_attempts"] = 0
+    event_entry.pop("date_proposal_history", None)
+    update_event_metadata(
+        event_entry,
+        date_proposal_attempts=0,
+        date_proposal_history=[],
+    )
+
+
+def _candidate_is_calendar_free(
+    preferred_room: Optional[str],
+    iso_date: str,
+    start_time: Optional[time],
+    end_time: Optional[time],
+) -> bool:
+    if not preferred_room:
+        return True
+    normalized = preferred_room.strip().lower()
+    if not normalized or normalized == "not specified":
+        return True
+    if not (start_time and end_time):
+        return True
+    try:
+        start_iso, end_iso = build_window_iso(iso_date, start_time, end_time)
+    except ValueError:
+        return True
+    return calendar_free(preferred_room, {"start": start_iso, "end": end_iso})
+
+
+def _calendar_conflict_reason(event_entry: dict, window: ConfirmationWindow) -> Optional[str]:
+    preferred_room = _preferred_room(event_entry)
+    if not preferred_room:
+        return None
+    normalized = preferred_room.strip().lower()
+    if not normalized or normalized == "not specified":
+        return None
+    if not (window.start_time and window.end_time):
+        return None
+    start_iso = window.start_iso
+    end_iso = window.end_iso
+    if not (start_iso and end_iso):
+        try:
+            start_obj = _to_time(window.start_time)
+            end_obj = _to_time(window.end_time)
+            start_iso, end_iso = build_window_iso(window.iso_date, start_obj, end_obj)
+        except ValueError:
+            return None
+    is_free = calendar_free(preferred_room, {"start": start_iso, "end": end_iso})
+    if is_free:
+        return None
+    slot_text = f"{window.start_time}–{window.end_time}"
+    conflicts = event_entry.setdefault("calendar_conflicts", [])
+    conflict_record = {
+        "iso_date": window.iso_date,
+        "display_date": window.display_date,
+        "start": start_iso,
+        "end": end_iso,
+        "room": preferred_room,
+    }
+    if conflict_record not in conflicts:
+        conflicts.append(conflict_record)
+    update_event_metadata(event_entry, calendar_conflicts=conflicts)
+    return f"Sorry, {preferred_room} is already booked on {window.display_date} ({slot_text}). Let me look for nearby alternatives right away."
 
 
 def _compose_greeting(state: WorkflowState) -> str:
@@ -436,7 +668,12 @@ def process(state: WorkflowState) -> GroupResult:
             return GroupResult(action="change_detour", payload=payload, halt=False)
 
     # No change detected: proceed with Q&A dispatch as normal
+    requested_client_dates = _client_requested_dates(state)
+    deferred_general_qna = False
     general_qna_applicable = classification.get("is_general") and not bool(event_entry.get("date_confirmed"))
+    if general_qna_applicable and requested_client_dates:
+        deferred_general_qna = True
+        general_qna_applicable = False
     if general_qna_applicable:
         result = _present_general_room_qna(state, event_entry, classification, thread_id, qa_payload)
         enrich_general_qna_step2(state, classification)
@@ -458,7 +695,21 @@ def process(state: WorkflowState) -> GroupResult:
 
     window = None if range_pending else _resolve_confirmation_window(state, event_entry)
     if window is None:
-        return _present_candidate_dates(state, event_entry)
+        result = _present_candidate_dates(
+            state,
+            event_entry,
+            requested_client_dates=requested_client_dates,
+        )
+        return _maybe_append_general_qna(
+            result,
+            state,
+            event_entry,
+            classification,
+            thread_id,
+            qa_payload,
+            requested_client_dates,
+            deferred_general_qna,
+        )
 
     if window.partial:
         filled = _maybe_complete_from_time_hint(window, state, event_entry)
@@ -487,7 +738,44 @@ def process(state: WorkflowState) -> GroupResult:
     reference_day = _reference_date_from_state(state)
     feasible, reason = validate_window(window.iso_date, window.start_time, window.end_time, reference=reference_day)
     if not feasible:
-        return _present_candidate_dates(state, event_entry, reason)
+        result = _present_candidate_dates(
+            state,
+            event_entry,
+            reason,
+            requested_client_dates=requested_client_dates,
+        )
+        return _maybe_append_general_qna(
+            result,
+            state,
+            event_entry,
+            classification,
+            thread_id,
+            qa_payload,
+            requested_client_dates,
+            deferred_general_qna,
+        )
+
+    conflict_reason = _calendar_conflict_reason(event_entry, window)
+    if conflict_reason:
+        event_entry.pop("pending_date_confirmation", None)
+        result = _present_candidate_dates(
+            state,
+            event_entry,
+            conflict_reason,
+            skip_dates=[window.iso_date],
+            focus_iso=window.iso_date,
+            requested_client_dates=requested_client_dates,
+        )
+        return _maybe_append_general_qna(
+            result,
+            state,
+            event_entry,
+            classification,
+            thread_id,
+            qa_payload,
+            requested_client_dates,
+            deferred_general_qna,
+        )
 
     auto_accept = _should_auto_accept_first_date(event_entry) and not range_pending
     if user_info.get("date") or user_info.get("event_date"):
@@ -504,32 +792,89 @@ def _present_candidate_dates(
     state: WorkflowState,
     event_entry: dict,
     reason: Optional[str] = None,
+    *,
+    skip_dates: Optional[Sequence[str]] = None,
+    focus_iso: Optional[str] = None,
+    requested_client_dates: Optional[Sequence[str]] = None,
 ) -> GroupResult:
     """[Trigger] Provide five deterministic candidate dates to the client."""
 
+    requested_dates = list(requested_client_dates or _client_requested_dates(state))
+    requested_date_objs = [_safe_parse_iso_date(value) for value in requested_dates]
+    requested_date_objs = [value for value in requested_date_objs if value]
+    min_requested_date = min(requested_date_objs) if requested_date_objs else None
+    preferred_weekdays: set[int] = {value.weekday() for value in requested_date_objs}
+    attempt = _increment_date_attempt(event_entry)
+    skip_set = _proposal_skip_dates(event_entry, attempt, skip_dates)
+    escalate_to_hil = attempt >= 3
+    user_info = state.user_info or {}
+
     user_text = f"{state.message.subject or ''} {state.message.body or ''}".strip()
+    if not preferred_weekdays:
+        preferred_weekdays = _parse_weekday_mentions(user_text)
+    if not preferred_weekdays:
+        preferred_weekdays = _weekday_indices_from_hint(
+            user_info.get("vague_weekday") or event_entry.get("vague_weekday")
+        )
     reference_day = _reference_date_from_state(state)
     fuzzy_candidates = _maybe_fuzzy_friday_candidates(user_text, reference_day)
 
     requirements = event_entry.get("requirements") or {}
     preferred_room = requirements.get("preferred_room") or "Not specified"
+    start_hint = _normalize_time_value(user_info.get("start_time"))
+    end_hint = _normalize_time_value(user_info.get("end_time"))
+    start_pref = start_hint or "18:00"
+    end_pref = end_hint or "22:00"
+    try:
+        start_time_obj = _to_time(start_pref)
+        end_time_obj = _to_time(end_pref)
+    except ValueError:
+        start_time_obj = None
+        end_time_obj = None
+
     anchor = parse_first_date(user_text, fallback_year=reference_day.year)
+    if not anchor and requested_dates:
+        try:
+            anchor = datetime.fromisoformat(requested_dates[0]).date()
+        except ValueError:
+            anchor = None
+    if focus_iso:
+        try:
+            anchor = datetime.fromisoformat(focus_iso).date()
+        except ValueError:
+            pass
     anchor_dt = datetime.combine(anchor, time(hour=12)) if anchor else None
 
     formatted_dates: List[str] = []
     seen_iso: set[str] = set()
-    limit = 4 if reason and "past" in reason.lower() else 5
+    busy_skipped: set[str] = set()
+    limit = 4 if reason and "past" in (reason or "").lower() else 5
+    if attempt > 1 and limit < 5:
+        limit = 5
     event_entry.pop("pending_future_confirmation", None)
 
-    week_scope = _resolve_week_scope(state, reference_day)
+    week_scope = None if attempt > 1 else _resolve_week_scope(state, reference_day)
     week_label_value: Optional[str] = None
+    if not preferred_weekdays and week_scope:
+        preferred_weekdays = _weekday_indices_from_hint(week_scope.get("weekdays_hint"))
 
     if week_scope:
-        limit = min(len(week_scope["dates"]), 7)
+        limit = min(len(week_scope["dates"]), max(limit, 5))
 
     if week_scope:
         for iso_value in week_scope["dates"]:
-            if iso_value in seen_iso or _iso_date_is_past(iso_value):
+            if (
+                not iso_value
+                or iso_value in seen_iso
+                or iso_value in skip_set
+                or _iso_date_is_past(iso_value)
+            ):
+                continue
+            candidate_dt = _safe_parse_iso_date(iso_value)
+            if min_requested_date and candidate_dt and candidate_dt < min_requested_date:
+                continue
+            if not _candidate_is_calendar_free(preferred_room, iso_value, start_time_obj, end_time_obj):
+                busy_skipped.add(iso_value)
                 continue
             seen_iso.add(iso_value)
             formatted_dates.append(iso_value)
@@ -549,15 +894,26 @@ def _present_candidate_dates(
         )
     elif fuzzy_candidates:
         for iso_value in fuzzy_candidates:
-            if iso_value in seen_iso or _iso_date_is_past(iso_value):
+            if (
+                not iso_value
+                or iso_value in seen_iso
+                or iso_value in skip_set
+                or _iso_date_is_past(iso_value)
+            ):
+                continue
+            candidate_dt = _safe_parse_iso_date(iso_value)
+            if min_requested_date and candidate_dt and candidate_dt < min_requested_date:
+                continue
+            if not _candidate_is_calendar_free(preferred_room, iso_value, start_time_obj, end_time_obj):
+                busy_skipped.add(iso_value)
                 continue
             seen_iso.add(iso_value)
             formatted_dates.append(iso_value)
     else:
         constraints_for_window = {
-            "vague_month": state.user_info.get("vague_month") or event_entry.get("vague_month"),
-            "weekday": state.user_info.get("vague_weekday") or event_entry.get("vague_weekday"),
-            "time_of_day": state.user_info.get("vague_time_of_day") or event_entry.get("vague_time_of_day"),
+            "vague_month": user_info.get("vague_month") or event_entry.get("vague_month"),
+            "weekday": user_info.get("vague_weekday") or event_entry.get("vague_weekday"),
+            "time_of_day": user_info.get("vague_time_of_day") or event_entry.get("vague_time_of_day"),
         }
         window_hints = _resolve_window_hints(constraints_for_window, state)
         strict_window = _has_window_constraints(window_hints)
@@ -567,20 +923,34 @@ def _present_candidate_dates(
                 constraints_for_window,
                 limit=limit,
                 window_hints=window_hints,
-                strict=True,
+                strict=attempt == 1,
             )
             for iso_value in hinted_dates:
-                if not iso_value or iso_value in seen_iso or _iso_date_is_past(iso_value):
+                if (
+                    not iso_value
+                    or iso_value in seen_iso
+                    or iso_value in skip_set
+                    or _iso_date_is_past(iso_value)
+                ):
+                    continue
+                candidate_dt = _safe_parse_iso_date(iso_value)
+                if min_requested_date and candidate_dt and candidate_dt < min_requested_date:
+                    continue
+                if not _candidate_is_calendar_free(preferred_room, iso_value, start_time_obj, end_time_obj):
+                    busy_skipped.add(iso_value)
                     continue
                 seen_iso.add(iso_value)
                 formatted_dates.append(iso_value)
+
+        days_ahead = min(180, 45 + (attempt - 1) * 30)
+        max_results = 5 if attempt <= 2 else 7
 
         candidate_dates_ddmmyyyy: List[str] = suggest_dates(
             state.db,
             preferred_room=preferred_room,
             start_from_iso=anchor_dt.isoformat() if anchor_dt else state.message.ts,
-            days_ahead=45,
-            max_results=5,
+            days_ahead=days_ahead,
+            max_results=max_results,
         )
         trace_db_read(
             _thread_id(state),
@@ -590,6 +960,7 @@ def _present_candidate_dates(
                 "preferred_room": preferred_room,
                 "anchor": anchor_dt.isoformat() if anchor_dt else state.message.ts,
                 "result_count": len(candidate_dates_ddmmyyyy),
+                "days_ahead": days_ahead,
             },
         )
 
@@ -597,14 +968,28 @@ def _present_candidate_dates(
             iso_value = to_iso_date(raw)
             if not iso_value:
                 continue
-            if _iso_date_is_past(iso_value) or iso_value in seen_iso:
+            if (
+                _iso_date_is_past(iso_value)
+                or iso_value in seen_iso
+                or iso_value in skip_set
+            ):
+                continue
+            candidate_dt = _safe_parse_iso_date(iso_value)
+            if min_requested_date and candidate_dt and candidate_dt < min_requested_date:
+                continue
+            if not _candidate_is_calendar_free(preferred_room, iso_value, start_time_obj, end_time_obj):
+                busy_skipped.add(iso_value)
                 continue
             seen_iso.add(iso_value)
             formatted_dates.append(iso_value)
 
         if len(formatted_dates) < limit:
-            skip = {_safe_parse_iso_date(iso) for iso in seen_iso}
-            supplemental = next_five_venue_dates(anchor_dt, skip_dates={dt for dt in skip if dt is not None})
+            skip_dates_for_next = {_safe_parse_iso_date(iso) for iso in seen_iso.union(skip_set)}
+            supplemental = next_five_venue_dates(
+                anchor_dt,
+                skip_dates={dt for dt in skip_dates_for_next if dt is not None},
+                count=max(limit * 2, 10 if attempt > 1 else 5),
+            )
             trace_db_read(
                 _thread_id(state),
                 "Step2_Date",
@@ -613,25 +998,50 @@ def _present_candidate_dates(
                     "preferred_room": preferred_room,
                     "anchor": anchor_dt.isoformat() if anchor_dt else state.message.ts,
                     "result_count": len(supplemental),
+                    "days_ahead": days_ahead,
                 },
             )
             for candidate in supplemental:
                 iso_candidate = candidate if isinstance(candidate, str) else candidate.isoformat()
-                if iso_candidate in seen_iso:
+                if (
+                    iso_candidate in seen_iso
+                    or iso_candidate in skip_set
+                    or _iso_date_is_past(iso_candidate)
+                ):
+                    continue
+                candidate_dt = _safe_parse_iso_date(iso_candidate)
+                if min_requested_date and candidate_dt and candidate_dt < min_requested_date:
+                    continue
+                if not _candidate_is_calendar_free(preferred_room, iso_candidate, start_time_obj, end_time_obj):
+                    busy_skipped.add(iso_candidate)
                     continue
                 seen_iso.add(iso_candidate)
                 formatted_dates.append(iso_candidate)
                 if len(formatted_dates) >= limit:
                     break
 
+    if preferred_weekdays:
+        weekday_cache: Dict[str, Optional[int]] = {}
+
+        def _weekday_for(iso_value: str) -> Optional[int]:
+            if iso_value not in weekday_cache:
+                parsed = _safe_parse_iso_date(iso_value)
+                weekday_cache[iso_value] = parsed.weekday() if parsed else None
+            return weekday_cache[iso_value]
+
+        formatted_dates = sorted(
+            formatted_dates,
+            key=lambda iso: (
+                0 if (_weekday_for(iso) in preferred_weekdays) else 1,
+                iso,
+            ),
+        )
+
     if fuzzy_candidates:
         formatted_dates = formatted_dates[:4]
     formatted_dates = formatted_dates[:limit]
+    unavailable_requested = [iso for iso in requested_dates if iso not in seen_iso]
 
-    start_hint = _normalize_time_value(state.user_info.get("start_time"))
-    end_hint = _normalize_time_value(state.user_info.get("end_time"))
-    start_pref = start_hint or "18:00"
-    end_pref = end_hint or "22:00"
     if start_pref and end_pref:
         slot_text = f"{start_pref}–{end_pref}"
     elif start_pref:
@@ -659,7 +1069,7 @@ def _present_candidate_dates(
             format_iso_date_to_ddmmyyyy(future_suggestion.isoformat())
             or future_suggestion.strftime("%d.%m.%Y")
         )
-        message_lines.append(f"It looks like {original_display} has already passed. Would {future_display} work for you instead?")
+        message_lines.append(f"Sorry, it looks like {original_display} has already passed. Would {future_display} work for you instead?")
 
         future_iso = future_suggestion.isoformat()
         start_iso_val = end_iso_val = None
@@ -684,10 +1094,24 @@ def _present_candidate_dates(
             source_message_id=state.message.msg_id,
         )
         event_entry["pending_future_confirmation"] = _window_payload(pending_window)
-    elif reason:
-        message_lines.append(reason)
-    else:
         message_lines.append("Thanks for the briefing — here are the next available slots that fit your preferred window.")
+    elif reason:
+        message_lines.append(_preface_with_apology(reason) or reason)
+        message_lines.append("I know that makes planning trickier—I'm checking a wider range of dates for you now.")
+        if attempt > 1:
+            message_lines.append("I've widened the search to include a broader range of upcoming dates as well.")
+        message_lines.append("Thanks for the briefing — here are the next available slots that fit your preferred window.")
+    else:
+        if attempt > 1:
+            message_lines.append("I've expanded the search window so you get a fresh set of date options that might work better.")
+        else:
+            message_lines.append("Thanks for the briefing — here are the next available slots that fit your preferred window.")
+
+    if unavailable_requested:
+        unavailable_display = _format_display_dates(unavailable_requested)
+        joined = _human_join(unavailable_display)
+        message_lines.append(f"Sorry, we don't have free rooms on {joined}.")
+        message_lines.append("What about one of the nearby options below?")
 
     if future_suggestion:
         target_month = future_suggestion.strftime("%Y-%m")
@@ -702,11 +1126,11 @@ def _present_candidate_dates(
     month_hint_value = (
         week_scope["month_label"]
         if week_scope
-        else state.user_info.get("vague_month") or event_entry.get("vague_month")
+        else user_info.get("vague_month") or event_entry.get("vague_month")
     )
     month_for_line = week_label_value or month_hint_value or _month_label_from_dates(sample_dates, "February")
     date_header_label = _date_header_label(month_hint_value, week_label_value)
-    weekday_hint_value = state.user_info.get("vague_weekday") or event_entry.get("vague_weekday")
+    weekday_hint_value = user_info.get("vague_weekday") or event_entry.get("vague_weekday")
     weekday_label = _weekday_label_from_dates(sample_dates, _pluralize_weekday_hint(weekday_hint_value))
     if week_scope:
         weekday_label = None
@@ -722,26 +1146,25 @@ def _present_candidate_dates(
         message_lines.append("")
 
     message_lines.extend(["", "AVAILABLE DATES:"])
+    if not formatted_dates:
+        message_lines.append("Sorry, none of the nearby slots are free at the moment—here's the broader set I'm monitoring:")
     if formatted_dates:
         for iso_value in formatted_dates[:5]:
             message_lines.append(f"- {iso_value} {slot_text}")
     else:
-        message_lines.append("- No suitable slots within the next 45 days.")
+        message_lines.append("- No suitable slots within the next 60 days, but I'm continuing to expand the search.")
 
     next_step_lines = ["", "NEXT STEP:"]
     if future_display:
-        next_step_lines.append(f"Say yes if {future_display} works and I'll pencil it in so we can move straight into Room Availability.")
-        next_step_lines.append("Prefer another option? Share a different day or time and I'll check availability.")
-    elif week_scope:
-        next_step_lines.append("Tell me which date works best so I can move to Room Availability and shortlist the best rooms.")
-    else:
-        next_step_lines.append("Tell me which date works best so I can move to Room Availability and shortlist the best rooms.")
-        next_step_lines.append("Or share another day/time and I'll check availability.")
+        next_step_lines.append(f"Say yes if {future_display} works, or share another option you'd like me to check.")
+    next_step_lines.append("- Tell me which date works best so I can move to Room Availability and shortlist the best rooms.")
+    next_step_lines.append("- Or share another day/time and I'll check availability.")
+    next_step_lines.append("- Do you have any preferred dates or times I should prioritise?")
     message_lines.extend(next_step_lines)
     prompt = "\n".join(message_lines)
 
     weekday_hint = weekday_hint_value
-    time_hint = state.user_info.get("vague_time_of_day") or event_entry.get("vague_time_of_day")
+    time_hint = user_info.get("vague_time_of_day") or event_entry.get("vague_time_of_day")
     time_display = str(time_hint).strip().capitalize() if time_hint else slot_text
     table_rows: List[Dict[str, Any]] = []
     actions_payload: List[Dict[str, Any]] = []
@@ -774,6 +1197,9 @@ def _present_candidate_dates(
 
     _trace_candidate_gate(_thread_id(state), formatted_dates[:5])
 
+    headers = [date_header_label]
+    if escalate_to_hil:
+        headers.append("Manual follow-up required")
     draft_message = {
         "body": prompt,
         "body_markdown": prompt,
@@ -789,15 +1215,28 @@ def _present_candidate_dates(
             }
         ] if table_rows else [],
         "actions": actions_payload,
-        "headers": [date_header_label],
+        "headers": headers,
     }
+    thread_state_label = "Waiting on HIL" if escalate_to_hil else "Awaiting Client Response"
+    draft_message["thread_state"] = thread_state_label
+    draft_message["requires_approval"] = True
+    if escalate_to_hil:
+        draft_message["hil_reason"] = "Client can't find suitable date, needs manual help"
     if actions_payload:
         event_entry["candidate_dates"] = [action["date"] for action in actions_payload]
+    history = _update_proposal_history(event_entry, event_entry.get("candidate_dates") or formatted_dates[:5])
     state.add_draft_message(draft_message)
 
-    update_event_metadata(event_entry, thread_state="Awaiting Client Response", current_step=2)
+    update_event_metadata(
+        event_entry,
+        thread_state=thread_state_label,
+        current_step=2,
+        candidate_dates=event_entry.get("candidate_dates"),
+        date_proposal_attempts=attempt,
+        date_proposal_history=history,
+    )
     write_stage(event_entry, current_step=WorkflowStep.STEP_2, subflow_group="date_confirmation")
-    state.set_thread_state("Awaiting Client Response")
+    state.set_thread_state(thread_state_label)
     state.extras["persist"] = True
     _emit_step2_snapshot(
         state,
@@ -805,6 +1244,9 @@ def _present_candidate_dates(
         extra={
             "candidate_dates": formatted_dates[:5],
             "slot_text": slot_text,
+            "attempt": attempt,
+            "hil_escalated": escalate_to_hil,
+            "calendar_omitted": sorted(busy_skipped),
         },
     )
 
@@ -818,8 +1260,12 @@ def _present_candidate_dates(
         "thread_state": state.thread_state,
         "context": state.context_snapshot,
         "persisted": True,
+        "date_proposal_attempts": attempt,
+        "hil_escalated": escalate_to_hil,
+        "calendar_skipped": sorted(busy_skipped),
         "answered_question_first": True,
     }
+    payload["actions"] = list(actions_payload) if actions_payload else [{"type": "send_reply"}]
     gatekeeper = refresh_gatekeeper(event_entry)
     state.telemetry.answered_question_first = True
     state.telemetry.gatekeeper_passed = dict(gatekeeper)
@@ -1086,6 +1532,8 @@ def _handle_partial_confirmation(
 ) -> GroupResult:
     """Persist the date and request a time clarification without stalling the flow."""
 
+    _reset_date_attempts(event_entry)
+
     event_entry.setdefault("event_data", {})["Event Date"] = window.display_date
     _set_pending_time_state(event_entry, window)
 
@@ -1207,6 +1655,8 @@ def _finalize_confirmation(
     window: ConfirmationWindow,
 ) -> GroupResult:
     """Persist the requested window and trigger availability."""
+
+    _reset_date_attempts(event_entry)
 
     thread_id = _thread_id(state)
     if isinstance(window, str):
@@ -2150,7 +2600,7 @@ def _present_general_room_qna(
             "candidate_dates": candidate_dates,
             "actions": actions,
             "subloop": subloop_label,
-            "headers": ["General Q&A"],
+            "headers": ["Availability overview"],
         }
         if not candidate_dates and range_candidate_dates:
             candidate_dates = range_candidate_dates
@@ -2209,7 +2659,7 @@ def _present_general_room_qna(
         "body_markdown": fallback_prompt,
         "next_step": 3,
         "thread_state": "Awaiting Client",
-        "headers": ["General Q&A"],
+        "headers": ["Availability overview"],
         "requires_approval": False,
         "subloop": subloop_label,
         "actions": range_actions,

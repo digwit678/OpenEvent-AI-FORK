@@ -6,6 +6,6 @@ export const SUBLOOP_COLORS = {
 export type SubloopKey = keyof typeof SUBLOOP_COLORS;
 
 export const SUBLOOP_LABELS: Record<SubloopKey, string> = {
-  general_q_a: 'General Q&A',
+  general_q_a: 'Availability overview',
   shortcut: 'Shortcut',
 };

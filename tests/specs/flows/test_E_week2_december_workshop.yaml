@@ -25,6 +25,36 @@
         },
         "actions": [
           {
+            "type": "select_date",
+            "label": "10.12.2025 (09:00–17:00)",
+            "date": "2025-12-10",
+            "display_date": "10.12.2025"
+          },
+          {
+            "type": "select_date",
+            "label": "11.12.2025 (09:00–17:00)",
+            "date": "2025-12-11",
+            "display_date": "11.12.2025"
+          },
+          {
+            "type": "select_date",
+            "label": "08.12.2025 (09:00–17:00)",
+            "date": "2025-12-08",
+            "display_date": "08.12.2025"
+          },
+          {
+            "type": "select_date",
+            "label": "09.12.2025 (09:00–17:00)",
+            "date": "2025-12-09",
+            "display_date": "09.12.2025"
+          },
+          {
+            "type": "select_date",
+            "label": "12.12.2025 (09:00–17:00)",
+            "date": "2025-12-12",
+            "display_date": "12.12.2025"
+          },
+          {
             "type": "ask_for_date_enqueued",
             "payload": {
               "suggested_dates": [

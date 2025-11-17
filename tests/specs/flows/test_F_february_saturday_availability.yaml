@@ -50,7 +50,7 @@
         "res": {
           "assistant_draft": {
             "headers_subset": [
-              "General Q&A"
+              "Availability overview"
             ],
             "contains_all": [
               "All options below fit 30 guests.",

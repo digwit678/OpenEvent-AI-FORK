@@ -843,13 +843,13 @@ def trace_general_qa_status(thread_id: Optional[str], detail: str, data: Optiona
         step="Step2_Date",
         detail=detail,
         data=data or {},
-        subject="General Q&A",
+        subject="Availability overview",
         status="checked",
         owner_step="Step2_Date",
         granularity="logic",
         entity_label="Q&A",
         actor="Agent",
-        event_name="General Q&A",
+        event_name="Availability overview",
         details_label=detail,
     )
 

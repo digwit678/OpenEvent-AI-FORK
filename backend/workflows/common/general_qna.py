@@ -17,6 +17,8 @@ from backend.workflows.qna.router import route_general_qna
 
 # TODO(openevent-team): Move extended room descriptions to dedicated metadata instead of the products mapping workaround.
 
+CLIENT_AVAILABILITY_HEADER = "Availability overview"
+
 ROOM_IDS = ["Room A", "Room B", "Room C"]
 LAYOUT_KEYWORDS = {
     "u-shape": "U-shape",
@@ -1091,13 +1093,13 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
 
     if not table_rows:
         fallback_line = "I need a specific date before I can confirm availability."
-        body_lines = ["General Q&A", fallback_line, "", "NEXT STEP:", next_step_line]
+        body_lines = [CLIENT_AVAILABILITY_HEADER, fallback_line, "", "NEXT STEP:", next_step_line]
         body_markdown = "\n".join(body_lines).strip()
         footer_text = "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client"
         draft["body_markdown"] = body_markdown
         draft["body"] = f"{body_markdown}\n\n---\n{footer_text}"
         draft["footer"] = footer_text
-        draft["headers"] = ["General Q&A"]
+        draft["headers"] = [CLIENT_AVAILABILITY_HEADER]
         draft.pop("table_blocks", None)
         trace_general_qa_status(
             thread_id,
@@ -1127,7 +1129,7 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
     table_lines = _render_markdown_table(display_rows, column_order, select_fields)
     intro_text = _format_intro_paragraph(select_fields, effective, q_values, constants, menu_payload, state, column_order)
 
-    body_lines = ["General Q&A"]
+    body_lines = [CLIENT_AVAILABILITY_HEADER]
     if intro_text:
         body_lines.append(intro_text)
     if table_lines:
@@ -1140,7 +1142,7 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
     draft["body_markdown"] = body_markdown
     draft["body"] = f"{body_markdown}\n\n---\n{footer_text}"
     draft["footer"] = footer_text
-    draft["headers"] = ["General Q&A"]
+    draft["headers"] = [CLIENT_AVAILABILITY_HEADER]
 
     columns_meta = [
         {
@@ -1156,7 +1158,7 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
     draft["table_blocks"] = [
         {
             "type": "table",
-            "label": "General Q&A Summary",
+            "label": f"{CLIENT_AVAILABILITY_HEADER} Summary",
             "columns": columns_meta,
             "rows": table_block_rows,
             "column_order": list(column_order),
@@ -1213,7 +1215,7 @@ def render_general_qna_reply(state: WorkflowState, classification: Dict[str, Any
             "topic": "structured_qna",
             "next_step": current_step,
             "thread_state": thread_state,
-            "headers": ["General Q&A"],
+            "headers": [CLIENT_AVAILABILITY_HEADER],
             "requires_approval": False,
             "subloop": "structured_qna",
             "table_blocks": table_blocks,
@@ -1290,7 +1292,7 @@ def _structured_table_blocks(db_summary: Dict[str, Any]) -> List[Dict[str, Any]]
 
 
 def _fallback_structured_body(action_payload: Dict[str, Any]) -> str:
-    lines = ["General Q&A"]
+    lines = [CLIENT_AVAILABILITY_HEADER]
     summary = action_payload.get("db_summary") or {}
     rooms = summary.get("rooms") or []
     products = summary.get("products") or []
@@ -1341,17 +1343,49 @@ def _fallback_structured_body(action_payload: Dict[str, Any]) -> str:
     return "\n".join(lines).strip()
 
 
-def maybe_handle_general_qna_for_step(state: WorkflowState) -> Optional[GroupResult]:
-    event_entry = state.event_entry or {}
-    current_step = event_entry.get("current_step")
-    if current_step == 2:
-        return None
+def append_general_qna_to_primary(state: WorkflowState) -> bool:
+    """
+    Attach the most recent general Q&A draft to the current primary draft message.
 
-    classification = state.extras.get("_general_qna_classification")
-    if not classification or not classification.get("is_general"):
-        return None
+    Returns True if the merge succeeded (and the Q&A draft was consumed), False otherwise.
+    """
 
-    return render_general_qna_reply(state, classification)
+    drafts = state.draft_messages
+    if not drafts:
+        return False
+
+    qa_draft = drafts.pop()
+    if not drafts:
+        drafts.append(qa_draft)
+        return False
+
+    qa_body = (qa_draft.get("body_markdown") or qa_draft.get("body") or "").strip()
+    if not qa_body:
+        drafts.append(qa_draft)
+        return False
+
+    primary = drafts[-1]
+    primary_body = (primary.get("body_markdown") or primary.get("body") or "").strip()
+    combined_body = f"{primary_body}\n\n{qa_body}" if primary_body else qa_body
+    primary["body_markdown"] = combined_body
+
+    footer = primary.get("footer") or ""
+    if footer:
+        primary["body"] = f"{combined_body}\n\n---\n{footer}"
+    else:
+        primary["body"] = combined_body
+
+    primary.setdefault("table_blocks", [])
+    primary["table_blocks"].extend(qa_draft.get("table_blocks") or [])
+
+    headers = list(primary.get("headers") or [])
+    for header in qa_draft.get("headers") or []:
+        if header not in headers:
+            headers.append(header)
+    if headers:
+        primary["headers"] = headers
+
+    return True
 
 
-__all__ = ["maybe_handle_general_qna_for_step", "render_general_qna_reply", "enrich_general_qna_step2"]
+__all__ = ["append_general_qna_to_primary", "render_general_qna_reply", "enrich_general_qna_step2"]

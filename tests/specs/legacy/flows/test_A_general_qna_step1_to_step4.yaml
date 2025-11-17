@@ -16,20 +16,6 @@
           "vague_weekday": "Saturday",
           "vague_time_of_day": "evening"
         },
-        "actions": [
-          {
-            "type": "ask_for_date_enqueued",
-            "payload": {
-              "suggested_dates": [
-                "2026-02-07",
-                "2026-02-14",
-                "2026-02-21",
-                "2026-02-28"
-              ],
-              "event_id": "ANY"
-            }
-          }
-        ],
         "status": "Lead",
         "trace": {
           "subloops": [
@@ -49,12 +35,12 @@
         },
         "assistant_draft": {
           "headers": [
-            "General Q&A"
+            "Availability overview"
           ],
             "contains": [
               "All options below fit",
               "They are available on",
-              "| Room | Dates | Notes |",
+              "| Menu | Dates | Notes |",
               "- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you."
             ]
           }
@@ -75,7 +61,7 @@
         "res": {
           "assistant_draft": {
             "headers": [
-              "General Q&A"
+              "Availability overview"
             ]
           }
         }
@@ -97,16 +83,7 @@
             "type": "send_reply"
           },
           {
-            "type": "room_options_enqueued",
-            "payload": {
-              "suggested_dates": [
-                "2026-02-07",
-                "2026-02-14",
-                "2026-02-21",
-                "2026-02-28"
-              ],
-              "event_id": "ANY"
-            }
+            "type": "send_reply"
           }
         ],
         "trace": {

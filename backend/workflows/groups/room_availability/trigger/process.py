@@ -16,7 +16,7 @@ from backend.workflows.common.sorting import rank_rooms, RankedRoom
 from backend.workflows.common.room_rules import find_better_room_dates
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
-from backend.workflows.common.general_qna import render_general_qna_reply, enrich_general_qna_step2, _fallback_structured_body
+from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
 from backend.workflows.change_propagation import detect_change_type, route_change_on_updated_variable
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
@@ -44,6 +44,8 @@ ROOM_SIZE_ORDER = {
     "Room C": 3,
     "Punkt.Null": 4,
 }
+
+ROOM_PROPOSAL_HIL_THRESHOLD = 3  # TODO(openevent-team): make this configurable per venue
 
 
 @trace_step("Step3_Room")
@@ -197,8 +199,13 @@ def process(state: WorkflowState) -> GroupResult:
             return GroupResult(action="change_detour", payload=payload, halt=False)
 
     # No change detected: check if Q&A should be handled
+    user_requested_room = state.user_info.get("room")
     locked_room_id = event_entry.get("locked_room_id")
+    deferred_general_qna = False
     general_qna_applicable = classification.get("is_general") and not bool(locked_room_id)
+    if general_qna_applicable and user_requested_room:
+        deferred_general_qna = True
+        general_qna_applicable = False
     if general_qna_applicable:
         result = _present_general_room_qna(state, event_entry, classification, thread_id)
         return result
@@ -207,7 +214,6 @@ def process(state: WorkflowState) -> GroupResult:
     if not chosen_date:
         return _detour_to_date(state, event_entry)
 
-    user_requested_room = state.user_info.get("room")
     locked_room_id = event_entry.get("locked_room_id")
     room_eval_hash = event_entry.get("room_eval_hash")
 
@@ -374,13 +380,36 @@ def process(state: WorkflowState) -> GroupResult:
     if not actions_payload:
         actions_payload = actions or [{"type": "send_reply"}]
 
+    intro_lines: List[str] = []
+    if user_requested_room and user_requested_room != selected_room:
+        intro_lines.append(
+            f"Sorry, {user_requested_room} isn't free on {display_chosen_date or 'your date'}."
+        )
+        intro_lines.append("Here are the closest alternatives I'm holding for you:")
+    elif selected_room and outcome in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}:
+        descriptor = "available" if outcome == ROOM_OUTCOME_AVAILABLE else "on option"
+        intro_lines.append(
+            f"Great — {selected_room} is {descriptor.lower()} on {display_chosen_date or 'your requested date'}."
+        )
+        intro_lines.append("I've highlighted the best matches below.")
+    else:
+        intro_lines.append(
+            f"Sorry, none of the rooms are open on {display_chosen_date or 'your requested date'} without adjustments."
+        )
+        intro_lines.append("I'm expanding the search window and monitoring these alternatives for you:")
+
+    if intro_lines:
+        segments = intro_lines + (["", body_markdown] if body_markdown else [])
+        body_markdown = "\n".join(segment for segment in segments if segment)
+
     qa_lines = _general_qna_lines(state)
     if qa_lines:
-        if body_markdown:
-            body_markdown = "\n".join(qa_lines + ["", body_markdown])
-        else:
-            body_markdown = "\n".join(qa_lines)
-        headers = ["General Q&A"] + [header for header in headers if header]
+        sections = [body_markdown] if body_markdown else []
+        if sections:
+            sections.append("")
+        sections.extend(qa_lines)
+        body_markdown = "\n".join(sections) if sections else "\n".join(qa_lines)
+        headers = ["Availability overview"] + [header for header in headers if header]
         state.record_subloop("general_q_a")
         state.extras["subloop"] = "general_q_a"
 
@@ -398,7 +427,13 @@ def process(state: WorkflowState) -> GroupResult:
         "actions": actions_payload,
         "headers": headers,
     }
-    draft_message["requires_approval"] = False
+    attempt = _increment_room_attempt(event_entry)
+    hil_required = attempt >= ROOM_PROPOSAL_HIL_THRESHOLD
+    thread_state_label = "Waiting on HIL" if hil_required else "Awaiting Client"
+    draft_message["thread_state"] = thread_state_label
+    draft_message["requires_approval"] = hil_required
+    if hil_required:
+        draft_message["hil_reason"] = "Client can't find suitable room, needs manual help"
     draft_message["rooms_summary"] = verbalizer_rooms
     state.add_draft_message(draft_message)
 
@@ -415,11 +450,11 @@ def process(state: WorkflowState) -> GroupResult:
 
     update_event_metadata(
         event_entry,
-        thread_state="Awaiting Client",
+        thread_state=thread_state_label,
         current_step=3,
     )
 
-    state.set_thread_state("Awaiting Client")
+    state.set_thread_state(thread_state_label)
     state.caller_step = event_entry.get("caller_step")
     state.current_step = 3
     state.extras["persist"] = True
@@ -458,9 +493,14 @@ def process(state: WorkflowState) -> GroupResult:
         "persisted": True,
         "available_dates": available_dates_map,
     }
+    payload["room_proposal_attempts"] = attempt
+    payload["hil_escalated"] = hil_required
     if capacity_shortcut:
         payload["shortcut_capacity_ok"] = True
-    return GroupResult(action="room_avail_result", payload=payload, halt=True)
+    result = GroupResult(action="room_avail_result", payload=payload, halt=True)
+    if deferred_general_qna:
+        _append_deferred_general_qna(state, event_entry, classification, thread_id)
+    return result
 
 
 def evaluate_room_statuses(db: Dict[str, Any], target_date: str | None) -> List[Dict[str, str]]:
@@ -624,6 +664,24 @@ def _flatten_statuses(statuses: List[Dict[str, str]]) -> Dict[str, str]:
     return result
 
 
+def _increment_room_attempt(event_entry: dict) -> int:
+    try:
+        current = int(event_entry.get("room_proposal_attempts") or 0)
+    except (TypeError, ValueError):
+        current = 0
+    updated = current + 1
+    event_entry["room_proposal_attempts"] = updated
+    update_event_metadata(event_entry, room_proposal_attempts=updated)
+    return updated
+
+
+def _reset_room_attempts(event_entry: dict) -> None:
+    if not event_entry.get("room_proposal_attempts"):
+        return
+    event_entry["room_proposal_attempts"] = 0
+    update_event_metadata(event_entry, room_proposal_attempts=0)
+
+
 def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decision: str) -> GroupResult:
     """Handle HIL approval or rejection for the latest room evaluation."""
 
@@ -675,6 +733,7 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
         current_step=4,
         thread_state="Waiting on HIL",
     )
+    _reset_room_attempts(event_entry)
     trace_gate(
         thread_id,
         "Step3_Room",
@@ -1169,6 +1228,7 @@ def handle_select_room_action(
         current_step=4,
         thread_state="Awaiting Client",
     )
+    _reset_room_attempts(event_entry)
 
     event_entry["selected_room"] = room
     event_entry["selected_room_status"] = status
@@ -1430,7 +1490,7 @@ def _present_general_room_qna(
             "candidate_dates": candidate_dates,
             "actions": actions,
             "subloop": subloop_label,
-            "headers": ["General Q&A"],
+            "headers": ["Availability overview"],
         }
 
         state.add_draft_message(draft_message)
@@ -1483,7 +1543,7 @@ def _present_general_room_qna(
         "body_markdown": fallback_prompt,
         "next_step": 3,
         "thread_state": "Awaiting Client",
-        "headers": ["General Q&A"],
+        "headers": ["Availability overview"],
         "requires_approval": False,
         "subloop": subloop_label,
         "actions": [],
@@ -1522,3 +1582,20 @@ def _present_general_room_qna(
     if extraction:
         payload["qna_extraction"] = extraction
     return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
+
+
+def _append_deferred_general_qna(
+    state: WorkflowState,
+    event_entry: dict,
+    classification: Dict[str, Any],
+    thread_id: Optional[str],
+) -> None:
+    pre_count = len(state.draft_messages)
+    qa_result = _present_general_room_qna(state, event_entry, classification, thread_id)
+    if qa_result is None or len(state.draft_messages) <= pre_count:
+        return
+    appended = append_general_qna_to_primary(state)
+    if not appended:
+        # Restore drafts to their previous count to avoid leaking the standalone Q&A draft.
+        while len(state.draft_messages) > pre_count:
+            state.draft_messages.pop()
