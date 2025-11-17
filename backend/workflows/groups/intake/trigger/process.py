@@ -128,7 +128,7 @@ def _looks_like_gate_confirmation(message_text: str, linked_event: Optional[Dict
     if linked_event.get("current_step") != 2:
         return False
     thread_state = (linked_event.get("thread_state") or "").lower()
-    if thread_state not in {"awaiting client", "waiting on hil"}:
+    if thread_state not in {"awaiting client", "awaiting client response", "waiting on hil"}:
         return False
 
     text = (message_text or "").strip()

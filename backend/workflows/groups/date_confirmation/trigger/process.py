@@ -47,6 +47,7 @@ from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.groups.intake.condition.checks import suggest_dates
+from backend.workflows.common.relative_dates import resolve_relative_date
 from backend.workflows.groups.room_availability.condition.decide import room_status_on_date
 from backend.workflows.io.dates import next5
 from backend.workflows.io.database import (
@@ -882,7 +883,11 @@ def _present_candidate_dates(
         start_time_obj = None
         end_time_obj = None
 
-    anchor = parse_first_date(user_text, fallback_year=reference_day.year)
+    anchor = parse_first_date(
+        user_text,
+        fallback_year=reference_day.year,
+        reference=reference_day,
+    )
     if not anchor and requested_dates:
         try:
             anchor = datetime.fromisoformat(requested_dates[0]).date()
@@ -1146,7 +1151,11 @@ def _present_candidate_dates(
     greeting = _compose_greeting(state)
     message_lines: List[str] = [greeting, ""]
 
-    original_requested = parse_first_date(user_text, fallback_year=reference_day.year)
+    original_requested = parse_first_date(
+        user_text,
+        fallback_year=reference_day.year,
+        reference=reference_day,
+    )
     future_suggestion = None
     future_display: Optional[str] = None
     if original_requested and original_requested < reference_day:
@@ -1522,7 +1531,14 @@ def _resolve_confirmation_window(state: WorkflowState, event_entry: dict) -> Opt
     body_text = state.message.body or ""
     subject_text = state.message.subject or ""
 
-    display_date, iso_date = _determine_date(user_info, body_text, subject_text, event_entry)
+    reference_day = _reference_date_from_state(state)
+    display_date, iso_date = _determine_date(
+        user_info,
+        body_text,
+        subject_text,
+        event_entry,
+        reference_day,
+    )
     if not display_date or not iso_date:
         return None
 
@@ -1665,6 +1681,7 @@ def _determine_date(
     body_text: str,
     subject_text: str,
     event_entry: dict,
+    reference_day: date,
 ) -> Tuple[Optional[str], Optional[str]]:
     """Determine the DD.MM.YYYY and ISO representations for the confirmed date."""
 
@@ -1680,9 +1697,20 @@ def _determine_date(
         if ddmmyyyy and is_valid_ddmmyyyy(ddmmyyyy):
             return ddmmyyyy, iso_candidate
 
-    parsed = parse_first_date(body_text) or parse_first_date(subject_text)
+    parsed = parse_first_date(body_text, reference=reference_day, allow_relative=False) or parse_first_date(
+        subject_text, reference=reference_day, allow_relative=False
+    )
     if parsed:
         return parsed.strftime("%d.%m.%Y"), parsed.isoformat()
+
+    combined_text = " ".join(value for value in (subject_text, body_text) if value)
+    candidate_isos = _candidate_iso_list(event_entry)
+    relative_candidates = candidate_isos if candidate_isos else None
+    relative_date = resolve_relative_date(combined_text, reference_day, candidates=relative_candidates)
+    if relative_date:
+        relative_iso = relative_date.isoformat()
+        display_value = format_iso_date_to_ddmmyyyy(relative_iso) or relative_iso
+        return display_value, relative_iso
 
     pending = event_entry.get("pending_time_request") or {}
     if pending.get("display_date") and pending.get("iso_date"):
@@ -1745,6 +1773,59 @@ def _existing_time_window(event_entry: dict, iso_date: str) -> Optional[Tuple[st
         if start and end:
             return start, end
     return None
+
+
+def _normalize_iso_candidate(value: Any) -> Optional[str]:
+    if not value:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized).date().isoformat()
+    except ValueError:
+        pass
+    iso_match = re.match(r"(\d{4}-\d{2}-\d{2})", text)
+    if iso_match:
+        return iso_match.group(1)
+    converted = to_iso_date(text)
+    if converted:
+        return converted
+    return None
+
+
+def _candidate_iso_list(event_entry: dict) -> List[str]:
+    seen: List[str] = []
+
+    def _add(value: Any) -> None:
+        iso = _normalize_iso_candidate(value)
+        if iso and iso not in seen:
+            seen.append(iso)
+
+    for source in (
+        event_entry.get("candidate_dates"),
+        event_entry.get("date_proposal_history"),
+    ):
+        if not source:
+            continue
+        for entry in source:
+            _add(entry)
+
+    pending = event_entry.get("pending_date_confirmation") or {}
+    _add(pending.get("iso_date") or pending.get("date"))
+
+    pending_future = event_entry.get("pending_future_confirmation") or {}
+    _add(pending_future.get("iso_date") or pending_future.get("date"))
+
+    requested = event_entry.get("requested_window") or {}
+    _add(requested.get("date_iso") or requested.get("iso_date"))
+
+    _add(event_entry.get("chosen_date"))
+
+    return seen
+
+
 
 
 def _handle_partial_confirmation(

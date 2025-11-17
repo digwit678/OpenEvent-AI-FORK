@@ -61,3 +61,58 @@ def test_followup_date_confirmation_stays_in_automation(monkeypatch: pytest.Monk
     assert state.event_entry is not None
     assert state.event_entry["event_id"] == "EVT-FOLLOWUP"
     assert not state.draft_messages, "Follow-up confirmations should stay in automation without HIL drafts"
+
+
+def test_followup_confirmation_with_awaiting_client_response_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    intake_module = importlib.import_module("backend.workflows.groups.intake.trigger.process")
+
+    monkeypatch.setattr(intake_module, "classify_intent", lambda _payload: (IntentLabel.NON_EVENT, 0.2))
+    monkeypatch.setattr(
+        intake_module,
+        "extract_user_information",
+        lambda _payload: {"event_date": "20.11.2026", "start_time": "18:00", "end_time": "22:00"},
+    )
+
+    existing_event = {
+        "event_id": "EVT-FOLLOWUP",
+        "client_id": "patrick.keller@veritas-advisors.ch",
+        "current_step": 2,
+        "thread_state": "Awaiting Client Response",
+        "date_confirmed": False,
+        "candidate_dates": ["2026-11-20"],
+        "requirements": {"number_of_participants": 80},
+        "event_data": {"Email": "patrick.keller@veritas-advisors.ch"},
+    }
+    db = {
+        "events": [existing_event],
+        "clients": {
+            "patrick.keller@veritas-advisors.ch": {
+                "profile": {"name": None, "org": None, "phone": None},
+                "history": [],
+                "event_ids": [existing_event["event_id"]],
+            }
+        },
+        "tasks": [],
+    }
+
+    message = IncomingMessage(
+        msg_id="msg-followup-response",
+        from_name="Patrick Keller",
+        from_email="patrick.keller@veritas-advisors.ch",
+        subject="Re: Client Appreciation Event – Date options",
+        body="2026-11-20 18:00–22:00",
+        ts="2025-11-17T20:11:00Z",
+    )
+
+    state = _state(tmp_path, db, message)
+
+    intake_module.process(state)
+
+    assert state.intent == IntentLabel.EVENT_REQUEST
+    assert state.confidence >= 0.95
+    assert state.event_entry is not None
+    assert state.event_entry["event_id"] == "EVT-FOLLOWUP"
+    assert not state.draft_messages
