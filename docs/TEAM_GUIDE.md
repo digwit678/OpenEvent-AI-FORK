@@ -20,6 +20,8 @@ Each step applies an entry guard, deterministic actions, and explicit exits/deto
 ### Step 2 — Date Confirmation
 - **Entry guard:** Requires an event record; otherwise halts with `date_invalid`. If no confirmed date, proposes deterministic slots via `suggest_dates`.【F:backend/workflows/groups/date_confirmation/trigger/process.py†L21-L90】
 - **Actions:** Resolve the confirmed date from user info (ISO or DD.MM.YYYY), tag the source message, update `chosen_date/date_confirmed`, and link the event back to the client profile.【F:backend/workflows/groups/date_confirmation/trigger/process.py†L92-L158】
+- **Reminder:** Clients often reply with just a timestamp (e.g. `2027-01-28 18:00–22:00`) when a thread is already escalated. `_message_signals_confirmation` explicitly treats these bare date/time strings as confirmations; keep this heuristic in place whenever adjusting Step 2 detection so we don’t re-open manual-review loops for simple confirmations.【F:backend/workflows/groups/date_confirmation/trigger/process.py†L1417-L1449】
+- **Guardrail:** `_resolve_confirmation_window` normalizes parsed times, drops invalid `end <= start`, and backfills a missing end-time by scanning the message before falling back to stored windows. Preserve this cleanup so that confirmations mentioning `18:00–22:00` don’t regress into “end time before start time” loops or re-trigger HIL drafts.【F:backend/workflows/groups/date_confirmation/trigger/process.py†L1518-L1660】
 - **Exits:** Returns to caller if invoked from a detour, otherwise advances to Step 3 with in-progress thread state and an approval-ready confirmation draft.【F:backend/workflows/groups/date_confirmation/trigger/process.py†L125-L159】
 
 ### Step 3 — Room Availability & HIL Gate
@@ -84,4 +86,3 @@ Each step applies an entry guard, deterministic actions, and explicit exits/deto
 | “Can you lower the price?” (4th time) | Manual review escalation, draft escalation note | Counter threshold triggers task creation.【F:backend/workflows/groups/negotiation_close.py†L118-L159】 |
 | “Please confirm the booking” | Confirmation draft queued; awaits HIL sign-off | Deposit/site-visit logic handled before final send.【F:backend/workflows/groups/event_confirmation/trigger/process.py†L75-L318】 |
 | “Deposit has been paid” | Deposit marked paid, confirmation draft regenerated | Ensures status before final confirmation.【F:backend/workflows/groups/event_confirmation/trigger/process.py†L175-L238】 |
-
