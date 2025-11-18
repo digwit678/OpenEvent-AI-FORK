@@ -9,7 +9,7 @@ from backend.debug import timeline
 from backend.debug.trace import BUS, REQUIREMENTS_MATCH_HELP, get_trace_summary
 from backend.workflow.state import get_thread_state
 
-REPORT_ROOT = Path(__file__).resolve().parents[2] / "tmp-debug-reports"
+REPORT_ROOT = Path(__file__).resolve().parents[2] / "tmp-debug" / "reports"
 
 MAX_FUNCTION_ARGS = 5
 MAX_ARG_VALUE_LENGTH = 80

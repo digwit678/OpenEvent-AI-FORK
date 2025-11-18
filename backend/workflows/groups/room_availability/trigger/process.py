@@ -437,7 +437,7 @@ def process(state: WorkflowState) -> GroupResult:
     draft_message["rooms_summary"] = verbalizer_rooms
     state.add_draft_message(draft_message)
 
-    pending_hint = _format_hint(selected_entry.hint if (selected_entry and explicit_preferences) else None)
+    pending_hint = _derive_hint(selected_entry, preferences, explicit_preferences) if selected_entry else None
 
     event_entry["room_pending_decision"] = {
         "selected_room": selected_room,
@@ -885,6 +885,26 @@ def _room_requirements_payload(entry: RankedRoom) -> Dict[str, List[str]]:
     }
 
 
+def _derive_hint(entry: Optional[RankedRoom], preferences: Optional[Dict[str, Any]], explicit: bool) -> str:
+    if not entry:
+        return "No room selected"
+    matched = [item for item in entry.matched if item]
+    if matched:
+        return ", ".join(matched[:3])
+    if explicit:
+        missing = [item for item in entry.missing if item]
+        if missing:
+            return f"Missing: {', '.join(missing[:3])}"
+        base_hint = (entry.hint or "").strip()
+        if base_hint and base_hint.lower() != "products available":
+            return base_hint[0].upper() + base_hint[1:]
+        return "No preference match"
+    base_hint = (entry.hint or "").strip()
+    if base_hint and base_hint.lower() != "products available":
+        return base_hint[0].upper() + base_hint[1:]
+    return "Available"
+
+
 def _verbalizer_rooms_payload(
     ranked: List[RankedRoom],
     profiles: Dict[str, Dict[str, Any]],
@@ -920,6 +940,7 @@ def _verbalizer_rooms_payload(
             format_iso_date_to_ddmmyyyy(value) or value
             for value in available_dates_map.get(entry.room, [])
         ]
+        hint_label = _derive_hint(entry, None, bool(entry.matched or entry.missing))
         payload.append(
             {
                 "id": entry.room,
@@ -931,6 +952,11 @@ def _verbalizer_rooms_payload(
                     "u-shape": badges_map.get("u-shape") if "u-shape" in normalized_products else badges_map.get("u-shape"),
                     "projector": badges_map.get("projector") if "projector" in normalized_products else badges_map.get("projector"),
                 },
+                "requirements": {
+                    "matched": list(entry.matched),
+                    "missing": list(entry.missing),
+                },
+                "hint": hint_label,
                 "alternatives": alt_dates,
             }
         )
@@ -979,8 +1005,7 @@ def _build_ranked_rows(
     explicit_prefs = _has_explicit_preferences(preferences)
 
     for entry in ranked:
-        raw_hint = entry.hint if (explicit_prefs and entry.hint) else None
-        hint_label = _format_hint(raw_hint)
+        hint_label = _derive_hint(entry, preferences, explicit_prefs)
         available_dates = available_dates_map.get(entry.room, [])
         requirements_info = _room_requirements_payload(entry) if explicit_prefs else {"matched": [], "missing": []}
         profile = room_profiles.get(entry.room, {})
@@ -1013,13 +1038,6 @@ def _build_ranked_rows(
             )
 
     return rows, actions
-
-
-def _format_hint(raw: Optional[str]) -> str:
-    text = (raw or "").strip()
-    if not text or text.lower() == "catering available":
-        return "Products available"
-    return text[0].upper() + text[1:]
 
 
 def _dates_in_month_weekday_wrapper(

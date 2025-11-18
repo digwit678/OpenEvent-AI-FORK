@@ -2104,6 +2104,8 @@ def _finalize_confirmation(
     )
 
     autorun_failed = False
+    autorun_result: Optional[GroupResult] = None
+    autorun_error: Optional[Dict[str, Any]] = None
     if next_step == 3:
         try:
             from backend.workflows.groups.room_availability.trigger.process import process as room_process
@@ -2112,11 +2114,14 @@ def _finalize_confirmation(
             if isinstance(room_result.payload, dict):
                 room_result.payload.setdefault("confirmed_date", window.display_date)
                 room_result.payload.setdefault("gatekeeper_passed", dict(gatekeeper))
-            return room_result
+            autorun_result = room_result
         except Exception as exc:  # pragma: no cover - defensive guard
             autorun_failed = True
             state.extras["room_autorun_failed"] = True
-            payload["room_autorun_failed"] = True
+            autorun_error = {
+                "type": exc.__class__.__name__,
+                "message": str(exc),
+            }
             trace_marker(
                 thread_id,
                 "STEP3_AUTORUN_FAILED",
@@ -2138,17 +2143,28 @@ def _finalize_confirmation(
     ack_body, ack_headers = format_sections_with_headers(
         [("Next step", [noted_line, follow_up_line])]
     )
-    state.add_draft_message(
-        {
-            "body": ack_body,
-            "body_markdown": ack_body,
-            "step": next_step,
-            "topic": "date_confirmed",
-            "headers": ack_headers,
-        }
-    )
+    if not autorun_result:
+        state.add_draft_message(
+            {
+                "body": ack_body,
+                "body_markdown": ack_body,
+                "step": next_step,
+                "topic": "date_confirmed",
+                "headers": ack_headers,
+            }
+        )
     if autorun_failed:
+        payload["room_autorun_failed"] = True
+        if autorun_error:
+            payload["room_autorun_error"] = autorun_error
         return GroupResult(action="date_confirmed", payload=payload, halt=False)
+    if autorun_result:
+        if isinstance(autorun_result.payload, dict):
+            autorun_result.payload.setdefault("confirmed_date", window.display_date)
+            autorun_result.payload.setdefault("gatekeeper_passed", dict(gatekeeper))
+            autorun_result.payload.setdefault("room_autorun", True)
+        state.extras["room_autorun_action"] = autorun_result.action
+        return autorun_result
     return GroupResult(action="date_confirmed", payload=payload, halt=True)
 
 

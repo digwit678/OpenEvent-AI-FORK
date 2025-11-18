@@ -61,7 +61,19 @@ def render_rooms(
         projector_badge = badges.get("projector")
         capacity_badge = badges.get("capacity") or ("✓" if capacity != "?" else "—")
         alternatives = [str(value).strip() for value in room.get("alternatives") or [] if str(value).strip()]
-        segments = [f"Coffee {coffee_badge}"]
+        requirements = room.get("requirements") or {}
+        matched = requirements.get("matched") or []
+        segments: List[str] = []
+        hint = room.get("hint")
+        if matched:
+            segments.append(f"Matches: {', '.join(matched)}")
+        elif hint:
+            segments.append(hint)
+        missing = [item for item in (requirements.get("missing") or []) if item]
+        if missing:
+            segments.append(f"Missing: {', '.join(missing)}")
+        if not matched and coffee_badge in {"✓", "✗"}:
+            segments.append(f"Coffee {coffee_badge}")
         if u_shape_badge:
             segments.append(f"U-shape {u_shape_badge}")
         if projector_badge:

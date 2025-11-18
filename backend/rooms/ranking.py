@@ -68,10 +68,7 @@ def rank(
 
         coffee_available = _supports_coffee(config)
         coffee_badge = "✓" if coffee_available else "✗"
-        if requested_coffee:
-            coffee_score = 1 if coffee_available else 0
-        else:
-            coffee_score = 1 if coffee_available else 0
+        coffee_score = 1 if coffee_available else 0
 
         requirements_badges, requirements_score = _requirements_badges(config, requested_products, pax)
 

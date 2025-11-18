@@ -38,11 +38,10 @@
               "Availability overview"
             ],
             "contains_all": [
-              "All options below fit 30 guests.",
-              "They are available on",
-              "| Room | Dates | Notes |",
-              "Status: Available",
-              "- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you."
+              "Thanks for the briefing — here are the next available slots that fit your preferred window.",
+              "Saturdays available in February 2026",
+              "AVAILABLE DATES:",
+              "Let me know which date works best so I can lock it in and shortlist the best rooms."
             ]
           }
         }

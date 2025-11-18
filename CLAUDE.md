@@ -421,8 +421,8 @@ export WF_DEBUG_STATE=1  # Prints state transitions to console
 ```
 
 **Debug Artifacts:**
-- `tmp-debug-sessions/` - Session traces
-- `tmp-debug-reports/` - Generated reports
+- `tmp-debug/sessions/` - Session traces
+- `tmp-debug/reports/` - Generated reports
 - `backend-uvicorn.log` - Backend server logs
 
 **Debug API Endpoints** (`backend/api/debug.py`):

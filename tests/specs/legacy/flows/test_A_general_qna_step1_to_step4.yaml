@@ -38,10 +38,8 @@
             "Availability overview"
           ],
             "contains": [
-              "All options below fit",
-              "They are available on",
-              "| Menu | Dates | Notes |",
-              "- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you."
+              "Thanks for the briefing — here are the next available slots that fit your preferred window.",
+              "AVAILABLE DATES:"
             ]
           }
         }

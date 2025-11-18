@@ -35,6 +35,7 @@ from backend.debug.lifecycle import close_if_ended
 from backend.debug.settings import is_trace_enabled
 from backend.debug.trace import set_hil_open
 from backend.workflow.guards import evaluate as evaluate_guards
+from backend.debug.state_store import STATE_STORE
 
 logger = logging.getLogger(__name__)
 WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"
@@ -514,6 +515,7 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         or "unknown-thread"
     )
     state.thread_id = str(raw_thread_id)
+    STATE_STORE.clear(state.thread_id)
     combined_text = "\n".join(
         part for part in ((message.subject or "").strip(), (message.body or "").strip()) if part
     )

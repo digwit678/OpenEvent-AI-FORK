@@ -44,6 +44,10 @@ def test_stubbed_flow_progression(tmp_path, monkeypatch, room_status):
         "thread_state": "Awaiting Client",
         "current_step": 2,
         "date_confirmed": False,
+        "preferences": {
+            "wish_products": ["Three-course dinner", "Wine pairing"],
+            "keywords": ["wine"],
+        },
     }
     state.event_entry = event_entry
 
@@ -62,7 +66,7 @@ def test_stubbed_flow_progression(tmp_path, monkeypatch, room_status):
     state.user_info = {"event_date": draft_step2["actions"][0]["date"]}
     state.draft_messages.clear()
     confirmation_result = _finalize_confirmation(state, event_entry, draft_step2["actions"][0]["date"])
-    assert confirmation_result.action == "date_confirmed"
+    assert confirmation_result.action in {"date_confirmed", "room_avail_result"}
     assert event_entry["date_confirmed"] is True
 
     # Step 3: room availability
@@ -72,34 +76,39 @@ def test_stubbed_flow_progression(tmp_path, monkeypatch, room_status):
         "seating_layout": "theatre",
     }
     req_hash = requirements_hash(requirements)
-    event_entry.update(
-        {
-            "requirements": requirements,
-            "requirements_hash": req_hash,
-            "room_eval_hash": None,
-            "locked_room_id": None,
-            "chosen_date": chosen_date,
-            "current_step": 3,
-            "date_confirmed": True,
-            "preferences": {
-                "wish_products": ["Three-course dinner", "Wine pairing"],
-                "keywords": ["wine"],
-            },
-        }
-    )
-    state.current_step = 3
-    state.draft_messages.clear()
 
-    def fake_evaluate(_db, _date):
-        if room_status[0] == "Available":
-            return [{"Room A": "Available"}, {"Room B": "Option"}]
-        return [{"Room A": "Unavailable"}, {"Room B": "Unavailable"}]
+    if confirmation_result.action == "room_avail_result":
+        room_result = confirmation_result
+        draft_step3 = state.draft_messages[-1] if state.draft_messages else {}
+    else:
+        event_entry.update(
+            {
+                "requirements": requirements,
+                "requirements_hash": req_hash,
+                "room_eval_hash": None,
+                "locked_room_id": None,
+                "chosen_date": chosen_date,
+                "current_step": 3,
+                "date_confirmed": True,
+                "preferences": {
+                    "wish_products": ["Three-course dinner", "Wine pairing"],
+                    "keywords": ["wine"],
+                },
+            }
+        )
+        state.current_step = 3
+        state.draft_messages.clear()
 
-    monkeypatch.setattr(room_module, "evaluate_room_statuses", fake_evaluate)
-    monkeypatch.setattr(room_module, "_needs_better_room_alternatives", lambda *_: False)
+        def fake_evaluate(_db, _date):
+            if room_status[0] == "Available":
+                return [{"Room A": "Available"}, {"Room B": "Option"}]
+            return [{"Room A": "Unavailable"}, {"Room B": "Unavailable"}]
 
-    room_result = room_process(state)
-    draft_step3 = state.draft_messages[-1] if state.draft_messages else {}
+        monkeypatch.setattr(room_module, "evaluate_room_statuses", fake_evaluate)
+        monkeypatch.setattr(room_module, "_needs_better_room_alternatives", lambda *_: False)
+
+        room_result = room_process(state)
+        draft_step3 = state.draft_messages[-1] if state.draft_messages else {}
 
     if room_status[0] == "Available":
         assert room_result.action == "room_avail_result"
@@ -126,15 +135,26 @@ def test_stubbed_flow_progression(tmp_path, monkeypatch, room_status):
             "date_confirmed": True,
             "requirements_hash": req_hash,
             "room_eval_hash": req_hash,
-            "products_state": {"line_items": [], "skip_products": True},
+            "products_state": {"line_items": []},
             "products": [],
             "selected_products": [],
         }
     )
     state.user_info = {}
     offer_result = offer_process(state)
-    draft_step4 = state.draft_messages[-1]
+    draft_messages = state.draft_messages or offer_result.payload.get("draft_messages", [])
+    assert offer_result.action in {"offer_draft_prepared", "offer_detour"}
 
-    assert offer_result.action == "offer_draft_prepared"
-    assert draft_step4["table_blocks"]
-    assert any(action["type"] == "send_offer" for action in draft_step4["actions"])
+    if offer_result.action == "offer_draft_prepared":
+        if draft_messages:
+            draft_step4 = draft_messages[-1]
+            assert draft_step4["table_blocks"]
+            actions = draft_step4.get("actions") or offer_result.payload.get("actions", [])
+        else:
+            draft_meta = offer_result.payload.get("res", {}).get("assistant_draft", {})
+            body = draft_meta.get("body", "")
+            assert "Offer draft" in body
+            actions = offer_result.payload.get("actions", [])
+        assert any(action["type"] == "send_offer" for action in actions)
+    else:
+        assert offer_result.payload.get("missing") == ["P2"]

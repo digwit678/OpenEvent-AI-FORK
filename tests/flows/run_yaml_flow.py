@@ -58,7 +58,12 @@ class FlowHarness:
         self.suite = suite_data
         self.thread_id = f"{suite_data.get('suite', 'flow')}-thread"
         self.default_email = "client@example.com"
-        tmp_dir = Path(tempfile.mkdtemp(prefix="flow_run_"))
+        
+        # Create a temporary directory for the flow run
+        tmp_root = Path("tmp-flows")
+        tmp_root.mkdir(exist_ok=True)
+        tmp_dir = Path(tempfile.mkdtemp(prefix="flow_run_", dir=tmp_root))
+        
         self.db_path = tmp_dir / "events.json"
         self.msg_counter = 0
         self.last_result: Optional[Dict[str, Any]] = None

@@ -264,11 +264,18 @@ def process(state: WorkflowState) -> GroupResult:
         json.dumps(user_info, ensure_ascii=False),
         outputs=user_info,
     )
+    # Preserve raw message content for downstream semantic extraction.
     needs_vague_date_confirmation = _needs_vague_date_confirmation(user_info)
     if needs_vague_date_confirmation:
         user_info.pop("event_date", None)
         user_info.pop("date", None)
-    preferences = extract_preferences(user_info)
+    raw_pref_text = "\n".join(
+        [
+            message_payload.get("subject") or "",
+            message_payload.get("body") or "",
+        ]
+    ).strip()
+    preferences = extract_preferences(user_info, raw_text=raw_pref_text or None)
     if preferences:
         user_info["preferences"] = preferences
     state.user_info = user_info

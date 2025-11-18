@@ -20,6 +20,17 @@ CATERING_SYNONYMS = {
         "hot beverages",
         "coffee station",
         "filter coffee",
+    ],
+    "finger food catering": [
+        "finger food",
+        "finger-food",
+        "standing reception",
+        "standing reception style",
+        "standing cocktail",
+        "apero",
+        "apéro",
+        "cocktail reception",
+        "apero riche"
     ]
 }
 
@@ -36,6 +47,24 @@ PRODUCTS_SYNONYMS = {
         "beamer",
         "projection",
         "projection screen",
+    ],
+    "cocktail bar": [
+        "cocktail bar",
+        "cocktail setup",
+        "cocktail station",
+        "cocktail reception",
+        "mixology station",
+        "bar area",
+        "signature cocktails"
+    ],
+    "background music": [
+        "background music",
+        "ambient music",
+        "music package",
+        "dj set",
+        "sound system",
+        "music playback",
+        "music playlist"
     ],
 }
 
