@@ -15,6 +15,7 @@ from ...utils.timezone import freeze_time
 
 room_module = importlib.import_module("backend.workflows.groups.room_availability.trigger.process")
 from backend.workflows.groups.room_availability.trigger.process import process as room_process
+from backend.workflows.common.types import GroupResult
 
 
 def _mk_state(tmp_path: Path, step: int, thread_state: str = "Awaiting Client") -> WorkflowState:
@@ -137,3 +138,36 @@ def test_hygiene_across_steps(tmp_path, monkeypatch):
         if actions:
             assert actions[0].get("label"), "CTA should include a human-readable label"
         assert len((draft.get("body_markdown") or "").splitlines()) <= 20
+
+
+def test_finalize_confirmation_always_autoruns_room_step(tmp_path, monkeypatch):
+    step2_state = _mk_state(tmp_path, step=2)
+    requirements = {"number_of_participants": 80}
+    event_entry = {
+        "event_id": "EVT-DET",
+        "requirements": requirements,
+        "requested_window": {"hash": "old"},
+        "thread_state": "Awaiting Client",
+        "current_step": 5,
+        "caller_step": 5,
+    }
+    step2_state.event_entry = event_entry
+    step2_state.user_info = {
+        "participants": 80,
+    }
+
+    stub_called = {"value": False}
+
+    def _room_stub(state):
+        stub_called["value"] = True
+        return GroupResult(action="room_stub", payload={"stub": True}, halt=False)
+
+    monkeypatch.setattr(room_module, "process", _room_stub)
+
+    _finalize_confirmation(step2_state, event_entry, "20.11.2026")
+
+    # Step 2 must always hand off to Step 3 after confirming the date,
+    # regardless of any existing caller_step; Step 3 is responsible for
+    # deciding whether to skip evaluation and route back.
+    assert stub_called["value"], "Step 3 should autorun after date confirmation"
+    assert event_entry.get("current_step") == 3

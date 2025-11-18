@@ -84,15 +84,49 @@ def has_requirement_update(event_state: Dict[str, Any], user_info: Dict[str, Any
         user_info: Extracted user information
 
     Returns:
-        True if any requirement field is present in user_info
+        True if any requirement field differs from the current event_state
     """
+    requirements = event_state.get("requirements") or {}
+    duration_snapshot = requirements.get("event_duration") or {}
     requirement_fields = [
         "participants", "number_of_participants",
         "layout", "type", "seating_layout",
         "start_time", "end_time", "duration",
         "notes", "special_requirements"
     ]
-    return any(user_info.get(field) is not None for field in requirement_fields)
+    for field in requirement_fields:
+        value = user_info.get(field)
+        if value is None:
+            continue
+
+        # Map incoming user_info fields onto canonical requirement keys
+        if field in ("participants", "number_of_participants"):
+            current = requirements.get("number_of_participants")
+        elif field in ("layout", "type", "seating_layout"):
+            current = requirements.get("seating_layout")
+        elif field in ("notes", "special_requirements"):
+            current = requirements.get("special_requirements")
+        elif field in ("start_time", "end_time", "duration"):
+            new_start = user_info.get("start_time")
+            new_end = user_info.get("end_time")
+            current_start = duration_snapshot.get("start")
+            current_end = duration_snapshot.get("end")
+
+            # Treat any explicit change to start/end as a requirement update
+            if new_start is not None and str(new_start) != str(current_start):
+                return True
+            if new_end is not None and str(new_end) != str(current_end):
+                return True
+            continue
+        else:
+            current = None
+
+        if current is None and value not in (None, ""):
+            return True
+        if current is not None and str(current) != str(value):
+            return True
+
+    return False
 
 
 def has_product_update(user_info: Dict[str, Any]) -> bool:

@@ -18,7 +18,7 @@ from backend.debug.hooks import trace_db_write, trace_detour, trace_gate, trace_
 from backend.debug.trace import set_hil_open
 from backend.utils.profiler import profile_step
 from backend.workflow.state import WorkflowStep, write_stage
-from backend.services.products import find_product
+from backend.services.products import find_product, normalise_product_payload
 from backend.services.rooms import load_room_catalog
 
 from ..llm.send_offer_llm import ComposeOffer
@@ -161,15 +161,15 @@ def process(state: WorkflowState) -> GroupResult:
         state.extras["persist"] = True
 
     _ensure_products_container(event_entry)
+    products_changed = _apply_product_operations(event_entry, state.user_info or {})
+    if products_changed:
+        state.extras["persist"] = True
     autofilled = _autofill_products_from_preferences(
         event_entry,
         state.user_info or {},
         min_score=0.5,  # TODO(openevent): expose as configurable threshold
     )
     if autofilled:
-        state.extras["persist"] = True
-    products_changed = _apply_product_operations(event_entry, state.user_info or {})
-    if products_changed:
         state.extras["persist"] = True
 
     precondition = _evaluate_preconditions(event_entry, current_req_hash, thread_id)
@@ -487,6 +487,10 @@ def _autofill_products_from_preferences(
     if products_state.get("autofill_applied"):
         return False
 
+    # Prevent autofill if products were already manually selected or modified.
+    if _has_offer_update(user_info):
+        return False
+
     existing_products = event_entry.get("products") or []
     if existing_products:
         products_state["autofill_applied"] = True
@@ -569,7 +573,11 @@ def _autofill_products_from_preferences(
 
 
 def _apply_product_operations(event_entry: Dict[str, Any], user_info: Dict[str, Any]) -> bool:
-    additions = _normalise_products(user_info.get("products_add"))
+    participant_count = _infer_participant_count(event_entry)
+    additions = _normalise_products(
+        user_info.get("products_add"),
+        participant_count=participant_count,
+    )
     removals = _normalise_product_names(user_info.get("products_remove"))
     changes = False
 
@@ -591,46 +599,40 @@ def _apply_product_operations(event_entry: Dict[str, Any], user_info: Dict[str, 
     if changes:
         products_state = event_entry.setdefault("products_state", {})
         products_state.pop("awaiting_client_products", None)
+        summary = products_state.get("autofill_summary")
+        if summary is not None:
+            # Clear matched entries so the offer summary reflects the explicit product list.
+            summary["matched"] = []
 
     return changes
 
 
-def _normalise_products(payload: Any) -> List[Dict[str, Any]]:
-    if not payload:
-        return []
-    normalised: List[Dict[str, Any]] = []
-    items = payload if isinstance(payload, list) else [payload]
-    for entry in items:
-        if not isinstance(entry, dict):
-            continue
-        name = str(entry.get("name") or "").strip()
-        if not name:
-            continue
-        try:
-            quantity = int(entry.get("quantity") or 0)
-        except (TypeError, ValueError):
-            quantity = 0
-        try:
-            unit_price = float(entry.get("unit_price") or 0.0)
-        except (TypeError, ValueError):
-            unit_price = 0.0
-        if quantity <= 0 and unit_price <= 0:
-            continue
-        normalised.append({"name": name, "quantity": max(1, quantity), "unit_price": max(0.0, unit_price)})
-    return normalised
+def _normalise_products(payload: Any, *, participant_count: Optional[int] = None) -> List[Dict[str, Any]]:
+    return normalise_product_payload(payload, participant_count=participant_count)
 
 
 def _normalise_product_names(payload: Any) -> List[str]:
     if not payload:
         return []
-    names = payload if isinstance(payload, list) else [payload]
-    return [str(name).strip().lower() for name in names if str(name).strip()]
+    items = payload if isinstance(payload, list) else [payload]
+    names: List[str] = []
+    for raw in items:
+        if isinstance(raw, dict):
+            name = raw.get("name")
+        else:
+            name = raw
+        text = str(name or "").strip()
+        if text:
+            names.append(text.lower())
+    return names
 
 
 def _upsert_product(products: List[Dict[str, Any]], item: Dict[str, Any]) -> None:
+    """Add or update product in the products list. For existing products, increments quantity."""
     for existing in products:
         if existing["name"].lower() == item["name"].lower():
-            existing["quantity"] = item["quantity"]
+            # Increment quantity instead of replacing it
+            existing["quantity"] = existing.get("quantity", 0) + item.get("quantity", 1)
             existing["unit_price"] = item["unit_price"]
             return
     products.append(item)
@@ -915,10 +917,12 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> 
     else:
         lines.append("No optional products selected yet.")
 
+    display_total = _determine_offer_total(event_entry, total_amount)
+
     lines.extend([
         "",
         "---",
-        f"**Total: CHF {total_amount:,.2f}**",
+        f"**Total: CHF {display_total:,.2f}**",
         "---",
         "",
     ])
@@ -976,6 +980,37 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> 
 
     lines.append("Please review and approve before sending to the client.")
     return lines
+
+
+def _determine_offer_total(event_entry: Dict[str, Any], fallback_total: float) -> float:
+    """Compute the total amount directly from products for consistency."""
+
+    try:
+        display_total = float(fallback_total)
+    except (TypeError, ValueError):
+        display_total = 0.0
+
+    computed_total = 0.0
+
+    pricing_inputs = event_entry.get("pricing_inputs") or {}
+    base_rate = pricing_inputs.get("base_rate")
+    if base_rate not in (None, ""):
+        try:
+            computed_total += float(base_rate)
+        except (TypeError, ValueError):
+            pass
+
+    for product in event_entry.get("products", []):
+        try:
+            quantity = float(product.get("quantity") or 0)
+            unit_price = float(product.get("unit_price") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        computed_total += quantity * unit_price
+
+    if computed_total > 0:
+        return round(computed_total, 2)
+    return round(display_total, 2)
 
 
 def _step_name(step: int) -> str:
