@@ -719,6 +719,16 @@ def process(state: WorkflowState) -> GroupResult:
             return GroupResult(action="change_detour", payload=payload, halt=False)
 
     # No change detected: proceed with Q&A dispatch as normal
+    explicit_confirmation = bool(
+        user_info.get("date")
+        or user_info.get("event_date")
+        or _message_signals_confirmation(message_text)
+    )
+    if classification.get("is_general") and explicit_confirmation:
+        classification["is_general"] = False
+        state.extras["general_qna_detected"] = False
+        state.extras["_general_qna_classification"] = classification
+
     requested_client_dates = _client_requested_dates(state)
     deferred_general_qna = False
     general_qna_applicable = classification.get("is_general") and not bool(event_entry.get("date_confirmed"))
@@ -2039,8 +2049,14 @@ def _finalize_confirmation(
             locked_room_id=None,
         )
 
-    caller_step = event_entry.get("caller_step")
-    next_step = caller_step if caller_step else 3
+    # Always proceed to Step 3 (Room Availability) after confirming a date.
+    #
+    # If a previous step (e.g. Step 5) triggered a detour and the window is
+    # unchanged, Step 3's own hash + caller_step guards will immediately skip
+    # reevaluation and route control back to the caller. This keeps the
+    # detour semantics intact while avoiding stale caller_step values causing
+    # Step 2 to jump directly to unrelated steps.
+    next_step = 3
 
     _emit_step2_snapshot(
         state,
@@ -2051,7 +2067,7 @@ def _finalize_confirmation(
         },
     )
     append_audit_entry(event_entry, 2, next_step, "date_confirmed")
-    update_event_metadata(event_entry, current_step=next_step, caller_step=None)
+    update_event_metadata(event_entry, current_step=next_step)
     try:
         next_stage = WorkflowStep(f"step_{next_step}")
     except ValueError:
@@ -2065,7 +2081,8 @@ def _finalize_confirmation(
 
     state.set_thread_state("In Progress")
     state.current_step = next_step
-    state.caller_step = None
+    # Preserve caller_step so Step 3 can optionally hand control back.
+    state.caller_step = event_entry.get("caller_step")
     state.subflow_group = default_subflow(next_stage)
     state.extras["persist"] = True
 

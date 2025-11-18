@@ -7,7 +7,7 @@ from typing import Dict, Any
 import pytest
 
 from backend.domain import IntentLabel
-from backend.workflows.common.types import IncomingMessage, WorkflowState
+from backend.workflows.common.types import GroupResult, IncomingMessage, WorkflowState
 
 
 def _initial_event() -> Dict[str, Any]:
@@ -118,3 +118,44 @@ def test_date_confirmation_falls_back_to_workflow_when_room_autorun_fails(
     assert state.current_step == 3
     assert state.draft_messages, "fallback acknowledgement should still be drafted"
     assert state.draft_messages[0]["body_markdown"].startswith("Next step")
+
+
+def test_general_qna_skipped_when_explicit_date_followup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    intake_module = importlib.import_module("backend.workflows.groups.intake.trigger.process")
+    date_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
+    room_module = importlib.import_module("backend.workflows.groups.room_availability.trigger.process")
+
+    def _force_general(_message_text, _state):
+        return {"is_general": True, "heuristics": {}, "parsed": {}, "constraints": {}}
+
+    monkeypatch.setattr(date_module, "detect_general_room_query", _force_general)
+
+    def _rooms_stub(_state: WorkflowState) -> GroupResult:
+        return GroupResult(action="room_autorun_success", payload={"rooms": []}, halt=True)
+
+    monkeypatch.setattr(room_module, "process", _rooms_stub)
+
+    state = _build_state(tmp_path)
+    intake_module.process(state)
+
+    state.user_info.update(
+        {
+            "date": "2026-02-07",
+            "event_date": "07.02.2026",
+            "start_time": "18:00",
+            "end_time": "22:00",
+        }
+    )
+
+    result = date_module.process(state)
+
+    assert result.action == "room_autorun_success"
+    assert state.current_step == 3
+    assert not state.extras.get("general_qna_detected")
+    assert all(
+        "no specific information available" not in (draft.get("body") or draft.get("body_markdown") or "").lower()
+        for draft in state.draft_messages
+    )

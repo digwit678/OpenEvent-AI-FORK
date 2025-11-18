@@ -239,7 +239,9 @@ class OpenAIAgentAdapter(AgentAdapter):
     _ENTITY_PROMPT = (
         "Extract booking details from the email. Return JSON with keys: date (YYYY-MM-DD or null), "
         "start_time, end_time, city, participants, room, name, email, type, catering, phone, company, "
-        "language, notes, billing_address. Use null when unknown."
+        "language, notes, billing_address, products_add (array of {name, quantity} for items to add), "
+        "products_remove (array of product names to remove). Use null when unknown. "
+        "For 'add another X' or 'one more X', include {\"name\": \"X\", \"quantity\": 1} in products_add."
     )
 
     _ENTITY_KEYS = [
@@ -258,6 +260,8 @@ class OpenAIAgentAdapter(AgentAdapter):
         "language",
         "notes",
         "billing_address",
+        "products_add",
+        "products_remove",
     ]
 
     def __init__(self) -> None:

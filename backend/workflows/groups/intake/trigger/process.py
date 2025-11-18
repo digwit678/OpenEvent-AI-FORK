@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import build_requirements, merge_client_profile, requirements_hash
@@ -44,6 +44,7 @@ from backend.workflows.nlu.preferences import extract_preferences
 from backend.workflows.groups.room_availability import handle_select_room_action
 from ..billing_flow import handle_billing_capture
 from backend.workflows.common.datetime_parse import parse_first_date, parse_time_range
+from backend.services.products import list_product_records, normalise_product_payload
 
 __workflow_role__ = "trigger"
 
@@ -100,6 +101,31 @@ _AFFIRMATIVE_TOKENS = (
     "works",
     "take",
 )
+
+_PRODUCT_ADD_KEYWORDS = (
+    "add",
+    "include",
+    "plus",
+    "extra",
+    "another",
+    "additional",
+    "also add",
+    "bring",
+    "upgrade",
+)
+_PRODUCT_REMOVE_KEYWORDS = (
+    "remove",
+    "without",
+    "drop",
+    "exclude",
+    "skip",
+    "no ",
+    "minus",
+    "cut",
+)
+
+_KEYWORD_REGEX_CACHE: Dict[str, re.Pattern[str]] = {}
+_PRODUCT_TOKEN_REGEX_CACHE: Dict[str, re.Pattern[str]] = {}
 
 def _fallback_year_from_ts(ts: Optional[str]) -> int:
     if not ts:
@@ -217,6 +243,186 @@ def _detect_room_choice(message_text: str, linked_event: Optional[Dict[str, Any]
     return None
 
 
+def _participants_from_event(event_entry: Optional[Dict[str, Any]]) -> Optional[int]:
+    if not event_entry:
+        return None
+    requirements = event_entry.get("requirements") or {}
+    candidates = [
+        requirements.get("number_of_participants"),
+        (event_entry.get("event_data") or {}).get("Number of Participants"),
+        (event_entry.get("captured") or {}).get("participants"),
+    ]
+    for value in candidates:
+        if value is None:
+            continue
+        try:
+            return int(str(value).strip())
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _keyword_regex(keyword: str) -> re.Pattern[str]:
+    cached = _KEYWORD_REGEX_CACHE.get(keyword)
+    if cached:
+        return cached
+    pattern = re.escape(keyword.strip())
+    pattern = pattern.replace(r"\ ", r"\s+")
+    regex = re.compile(rf"\b{pattern}\b")
+    _KEYWORD_REGEX_CACHE[keyword] = regex
+    return regex
+
+
+def _contains_keyword(window: str, keywords: Tuple[str, ...]) -> bool:
+    normalized = window.lower()
+    for keyword in keywords:
+        token = keyword.strip()
+        if not token:
+            continue
+        if _keyword_regex(token).search(normalized):
+            return True
+    return False
+
+
+def _product_token_regex(token: str) -> re.Pattern[str]:
+    cached = _PRODUCT_TOKEN_REGEX_CACHE.get(token)
+    if cached:
+        return cached
+    parts = re.split(r"[\s\-]+", token.strip())
+    escaped_parts = [re.escape(part) for part in parts if part]
+    if not escaped_parts:
+        pattern = re.escape(token.strip())
+    else:
+        pattern = r"[\s\-]+".join(escaped_parts)
+    regex = re.compile(rf"\b{pattern}\b")
+    _PRODUCT_TOKEN_REGEX_CACHE[token] = regex
+    return regex
+
+
+def _match_product_token(text: str, token: str) -> Optional[int]:
+    regex = _product_token_regex(token)
+    match = regex.search(text)
+    if match:
+        return match.start()
+    return None
+
+
+def _extract_quantity_from_window(window: str, token: str) -> Optional[int]:
+    escaped_token = re.escape(token.strip())
+    pattern = re.compile(
+        rf"(\d{{1,3}})\s*(?:x|times|pcs|pieces|units)?\s*(?:of\s+)?{escaped_token}s?",
+        re.IGNORECASE,
+    )
+    match = pattern.search(window)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+def _detect_product_update_request(
+    message_payload: Dict[str, Any],
+    user_info: Dict[str, Any],
+    linked_event: Optional[Dict[str, Any]],
+) -> bool:
+    subject = message_payload.get("subject") or ""
+    body = message_payload.get("body") or ""
+    text = f"{subject}\n{body}".strip().lower()
+    if not text:
+        return False
+
+    participant_count = _participants_from_event(linked_event)
+    additions: List[Dict[str, Any]] = []
+    removals: List[str] = []
+    catalog = list_product_records()
+
+    for record in catalog:
+        tokens: List[str] = []
+        primary = (record.name or "").strip().lower()
+        if primary:
+            tokens.append(primary)
+            if not primary.endswith("s"):
+                tokens.append(f"{primary}s")
+            # Also match the last word of the product name (e.g., "mic", "microphone")
+            primary_parts = primary.split()
+            if primary_parts:
+                last_primary = primary_parts[-1]
+                if len(last_primary) >= 3:
+                    tokens.append(last_primary)
+                    if not last_primary.endswith("s"):
+                        tokens.append(f"{last_primary}s")
+        for synonym in record.synonyms or []:
+            synonym_token = str(synonym or "").strip().lower()
+            if not synonym_token:
+                continue
+            tokens.append(synonym_token)
+            if not synonym_token.endswith("s"):
+                tokens.append(f"{synonym_token}s")
+            # And the last word of each synonym (e.g., "mic")
+            synonym_parts = synonym_token.split()
+            if synonym_parts:
+                last_syn = synonym_parts[-1]
+                if len(last_syn) >= 3:
+                    tokens.append(last_syn)
+                    if not last_syn.endswith("s"):
+                        tokens.append(f"{last_syn}s")
+        matched_idx: Optional[int] = None
+        matched_token: Optional[str] = None
+        for token_candidate in tokens:
+            idx = _match_product_token(text, token_candidate)
+            if idx is not None:
+                matched_idx = idx
+                matched_token = token_candidate
+                break
+        if matched_idx is None or matched_token is None:
+            continue
+        # Skip matches that occur inside parentheses; these are often explanatory
+        # fragments (e.g., `covers "background music"`) rather than explicit
+        # product selection signals.
+        before = text[:matched_idx]
+        if before.count("(") > before.count(")"):
+            continue
+        window_start = max(0, matched_idx - 80)
+        window_end = min(len(text), matched_idx + len(matched_token) + 80)
+        window = text[window_start:window_end]
+        if _contains_keyword(window, _PRODUCT_REMOVE_KEYWORDS):
+            removals.append(record.name)
+            continue
+        quantity = _extract_quantity_from_window(window, matched_token)
+        add_signal = _contains_keyword(window, _PRODUCT_ADD_KEYWORDS)
+        if add_signal or quantity:
+            payload: Dict[str, Any] = {"name": record.name}
+            if quantity:
+                payload["quantity"] = quantity
+            elif linked_event:
+                existing_products = linked_event.get("products") or []
+                for existing in existing_products:
+                    existing_name = str(existing.get("name") or "").strip().lower()
+                    if not existing_name:
+                        continue
+                    if existing_name != primary:
+                        continue
+                    try:
+                        base_qty = int(str(existing.get("quantity") or 0).strip())
+                    except (TypeError, ValueError):
+                        base_qty = 0
+                    if base_qty > 0:
+                        payload["quantity"] = base_qty + 1
+                    break
+            additions.append(payload)
+
+    if additions:
+        normalised = normalise_product_payload(additions, participant_count=participant_count)
+        if normalised:
+            user_info["products_add"] = normalised
+    if removals:
+        user_info["products_remove"] = removals
+
+    return bool(additions or removals)
+
+
 @trace_step("Step1_Intake")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Entry point for Group A — intake and data capture."""
@@ -293,6 +499,25 @@ def process(state: WorkflowState) -> GroupResult:
     state.client = client
     state.client_id = (message_payload.get("from_email") or "").lower()
     linked_event = last_event_for_email(state.db, state.client_id)
+    body_text = message_payload.get("body") or ""
+    fallback_year = _fallback_year_from_ts(message_payload.get("ts"))
+
+    confirmation_detected = False
+    if (
+        linked_event
+        and not user_info.get("date")
+        and not user_info.get("event_date")
+        and _looks_like_gate_confirmation(body_text, linked_event)
+    ):
+        iso_date, start_time, end_time = _extract_confirmation_details(body_text, fallback_year)
+        if iso_date:
+            user_info["date"] = iso_date
+            user_info["event_date"] = format_iso_date_to_ddmmyyyy(iso_date)
+            confirmation_detected = True
+        if start_time and "start_time" not in user_info:
+            user_info["start_time"] = start_time
+        if end_time and "end_time" not in user_info:
+            user_info["end_time"] = end_time
     append_history(client, message_payload, intent.value, confidence, user_info)
 
     context = context_snapshot(state.db, client, state.client_id)
@@ -325,6 +550,13 @@ def process(state: WorkflowState) -> GroupResult:
                 state.intent_detail = "event_intake_room_choice"
                 user_info["room"] = room_choice
                 state.extras["room_choice_selected"] = room_choice
+            elif _detect_product_update_request(message_payload, user_info, linked_event):
+                intent = IntentLabel.EVENT_REQUEST
+                confidence = max(confidence, 0.9)
+                state.intent = intent
+                state.confidence = confidence
+                state.intent_detail = "event_intake_product_update"
+                state.extras["product_update_detected"] = True
             else:
                 trace_marker(
                     thread_id,
@@ -398,8 +630,40 @@ def process(state: WorkflowState) -> GroupResult:
     state.thread_state = event_entry.get("thread_state")
 
     requirements_snapshot = event_entry.get("requirements") or {}
-    if not user_info.get("participants") and requirements_snapshot.get("number_of_participants"):
+
+    def _needs_fallback(value: Any) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return not value.strip()
+        if isinstance(value, (list, tuple, dict)):
+            return len(value) == 0
+        return False
+
+    if _needs_fallback(user_info.get("participants")) and requirements_snapshot.get("number_of_participants") is not None:
         user_info["participants"] = requirements_snapshot.get("number_of_participants")
+
+    snapshot_layout = requirements_snapshot.get("seating_layout")
+    if snapshot_layout:
+        if _needs_fallback(user_info.get("layout")):
+            user_info["layout"] = snapshot_layout
+        if _needs_fallback(user_info.get("type")):
+            user_info["type"] = snapshot_layout
+
+    duration_snapshot = requirements_snapshot.get("event_duration")
+    if isinstance(duration_snapshot, dict):
+        if _needs_fallback(user_info.get("start_time")) and duration_snapshot.get("start"):
+            user_info["start_time"] = duration_snapshot.get("start")
+        if _needs_fallback(user_info.get("end_time")) and duration_snapshot.get("end"):
+            user_info["end_time"] = duration_snapshot.get("end")
+
+    snapshot_notes = requirements_snapshot.get("special_requirements")
+    if snapshot_notes and _needs_fallback(user_info.get("notes")):
+        user_info["notes"] = snapshot_notes
+
+    snapshot_room = requirements_snapshot.get("preferred_room")
+    if snapshot_room and _needs_fallback(user_info.get("room")):
+        user_info["room"] = snapshot_room
 
     requirements = build_requirements(user_info)
     new_req_hash = requirements_hash(requirements)
