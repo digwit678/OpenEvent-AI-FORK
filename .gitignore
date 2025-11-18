@@ -45,5 +45,5 @@ htmlcov/
 # repo tmp
 tmp/
 **/.DS_Store
-tmp-debug-sessions/
-tmp-debug-reports/
+tmp-debug/
+tmp-flows/

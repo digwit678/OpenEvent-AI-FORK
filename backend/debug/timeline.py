@@ -12,7 +12,7 @@ def _root_dir() -> Path:
     custom = os.getenv("DEBUG_TRACE_DIR")
     if custom:
         return Path(custom).expanduser().resolve()
-    return Path(__file__).resolve().parents[2] / "tmp-debug-sessions"
+    return Path(__file__).resolve().parents[2] / "tmp-debug" / "sessions"
 
 
 ROOT = _root_dir()

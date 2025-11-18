@@ -5,7 +5,7 @@ import json
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from backend.services.products import list_product_records
 from backend.prefs.semantics import normalize_catering, normalize_products
@@ -13,7 +13,7 @@ from backend.prefs.semantics import normalize_catering, normalize_products
 PreferencePayload = Dict[str, Any]
 
 
-def extract_preferences(user_info: Dict[str, Any]) -> Optional[PreferencePayload]:
+def extract_preferences(user_info: Dict[str, Any], raw_text: Optional[str] = None) -> Optional[PreferencePayload]:
     """
     Normalise structured product/menu preferences captured during intake and
     derive quick room recommendations so downstream steps can reuse them.
@@ -23,6 +23,11 @@ def extract_preferences(user_info: Dict[str, Any]) -> Optional[PreferencePayload
         return None
 
     raw_wish_products = _collect_wish_products(user_info)
+    raw_detected = _detect_raw_text_preferences(raw_text)
+    if raw_detected:
+        for item in raw_detected:
+            if item not in raw_wish_products:
+                raw_wish_products.append(item)
     catering_sources: List[str] = []
     catering_pref = user_info.get("catering")
     if isinstance(catering_pref, str) and catering_pref.strip():
@@ -64,14 +69,34 @@ def extract_preferences(user_info: Dict[str, Any]) -> Optional[PreferencePayload
     if product_tokens:
         preferences["products"] = product_tokens
 
-    scoring_wishes = wish_products or [token.title() for token in product_tokens]
+    scoring_wishes: List[str] = []
+    scoring_wishes.extend(wish_products)
+    scoring_wishes.extend(
+        token.title()
+        for token in product_tokens
+        if token and token.title() not in scoring_wishes
+    )
+    scoring_wishes.extend(
+        token.title()
+        for token in catering_tokens
+        if token and token.title() not in scoring_wishes
+    )
+    if not scoring_wishes:
+        scoring_wishes = [token.title() for token in product_tokens]
+    if not scoring_wishes and catering_tokens:
+        scoring_wishes = [token.title() for token in catering_tokens]
     if scoring_wishes:
         recommendations = _score_rooms_by_products(scoring_wishes)
         if recommendations:
             preferences["room_recommendations"] = recommendations
             preferences["room_similarity"] = {entry["room"]: entry["score"] for entry in recommendations}
             preferences["room_match_breakdown"] = {
-                entry["room"]: {"matched": entry["matched"], "missing": entry["missing"]}
+                entry["room"]: {
+                    "matched": entry["matched"],
+                    "missing": entry["missing"],
+                    "matches_detail": entry.get("matches_detail", []),
+                    "alternatives": entry.get("alternatives", []),
+                }
                 for entry in recommendations
             }
 
@@ -110,7 +135,39 @@ def _collect_wish_products(user_info: Dict[str, Any]) -> List[str]:
         cleaned = [fragment.strip(" .") for fragment in fragments if fragment and fragment.strip()]
         _append(cleaned)
 
+    layout_pref = user_info.get("layout")
+    if isinstance(layout_pref, str) and layout_pref.strip():
+        _append([layout_pref])
+
+    event_type = user_info.get("type")
+    if isinstance(event_type, str) and event_type.strip():
+        _append([event_type])
+
     return result[:10]
+
+
+def _detect_raw_text_preferences(raw_text: Optional[str]) -> List[str]:
+    """Heuristically extract missing preference hints from the raw message."""
+
+    if not raw_text:
+        return []
+    text = raw_text.lower()
+    detected: List[str] = []
+
+    def _mark(flag: bool, label: str) -> None:
+        if flag and label not in detected:
+            detected.append(label)
+
+    _mark("finger-food" in text or "finger food" in text, "finger food catering")
+    _mark("standing reception" in text, "standing reception")
+    has_cocktail = "cocktail" in text
+    cocktail_context = has_cocktail and any(token in text for token in ("setup", "bar", "reception", "evening"))
+    _mark(cocktail_context or "bar area" in text, "cocktail bar")
+    _mark("bar area" in text, "bar area")
+    _mark("background music" in text, "background music")
+    _mark("live music" in text, "background music")
+    _mark("sound system" in text, "sound system")
+    return detected[:10]
 
 
 def _collect_keywords(user_info: Dict[str, Any], wish_products: Sequence[str]) -> List[str]:
@@ -153,25 +210,67 @@ def _score_rooms_by_products(wish_products: Sequence[str]) -> List[Dict[str, Any
 
     for room, data in catalog.items():
         phrases = data["phrases"]
+        variants_map = data.get("product_variants") or {}
         score = 0.0
         matched: List[str] = []
         missing: List[str] = []
+        matches_detail: List[Dict[str, Any]] = []
+        alternatives_detail: List[Dict[str, Any]] = []
+        matched_lower: Set[str] = set()
+        alternatives_seen: Set[Tuple[str, str]] = set()
         for wish in wish_products:
-            ratio, label = _best_phrase_match(wish, phrases)
-            if ratio >= 0.85:
+            top_matches = _top_product_matches(wish, variants_map)
+            if not top_matches:
+                ratio, label = _best_phrase_match(wish, phrases)
+                if ratio >= 0.65 and label:
+                    score += 0.5
+                    if label.lower() not in matched_lower:
+                        matched.append(label)
+                        matched_lower.add(label.lower())
+                    matches_detail.append(_make_match_entry(wish, label, ratio))
+                else:
+                    missing.append(wish)
+                continue
+
+            best_ratio, best_product = top_matches[0]
+            if best_ratio >= 0.85:
                 score += 1.0
-                matched.append(label or wish)
-            elif ratio >= 0.65:
+                if best_product.lower() not in matched_lower:
+                    matched.append(best_product)
+                    matched_lower.add(best_product.lower())
+                matches_detail.append(_make_match_entry(wish, best_product, best_ratio))
+            elif best_ratio >= 0.65:
                 score += 0.5
-                matched.append(label or wish)
+                if best_product.lower() not in matched_lower:
+                    matched.append(best_product)
+                    matched_lower.add(best_product.lower())
+                matches_detail.append(_make_match_entry(wish, best_product, best_ratio))
+            elif best_ratio >= 0.5:
+                missing.append(wish)
+                entry = _make_match_entry(wish, best_product, best_ratio)
+                key = (entry["wish"], entry["product"].lower())
+                if key not in alternatives_seen:
+                    alternatives_detail.append(entry)
+                    alternatives_seen.add(key)
             else:
                 missing.append(wish)
+
+            for ratio, product_name in top_matches[1:]:
+                if ratio < 0.5:
+                    continue
+                key = (wish, product_name.lower())
+                if product_name.lower() in matched_lower or key in alternatives_seen:
+                    continue
+                alternatives_detail.append(_make_match_entry(wish, product_name, ratio))
+                alternatives_seen.add(key)
         recommendations.append(
             {
                 "room": room,
                 "score": round(score, 3),
                 "matched": matched,
                 "missing": missing,
+                "matches_detail": matches_detail,
+                "alternatives": alternatives_detail,
             }
         )
 
@@ -202,6 +301,44 @@ def _best_phrase_match(needle: str, phrases: Dict[str, str]) -> Tuple[float, Opt
     return best_ratio, best_label
 
 
+def _top_product_matches(
+    wish: str,
+    variants_map: Dict[str, Sequence[str]],
+    *,
+    limit: int = 3,
+) -> List[Tuple[float, str]]:
+    needle = _normalise_phrase(wish)
+    if not needle:
+        return []
+    scored: List[Tuple[float, str]] = []
+    for product, variants in variants_map.items():
+        ratios = [_similarity_ratio(needle, variant) for variant in variants if variant]
+        if not ratios:
+            continue
+        best_ratio = max(ratios)
+        scored.append((best_ratio, product))
+    scored.sort(key=lambda entry: entry[0], reverse=True)
+    return scored[:limit]
+
+
+def _similarity_ratio(a: str, b: str) -> float:
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    if a in b or b in a:
+        return 0.92
+    return difflib.SequenceMatcher(a=a, b=b).ratio()
+
+
+def _make_match_entry(wish: str, product: str, ratio: float) -> Dict[str, Any]:
+    return {
+        "wish": wish,
+        "product": product,
+        "score": round(float(ratio), 3),
+    }
+
+
 def _normalise_phrase(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
 
@@ -209,7 +346,14 @@ def _normalise_phrase(value: str) -> str:
 @lru_cache(maxsize=1)
 def _room_catalog() -> Dict[str, Dict[str, Any]]:
     rooms = _load_rooms()
-    room_products = {room["name"]: {"phrases": {}, "features": room.get("features") or []} for room in rooms}
+    room_products = {
+        room["name"]: {
+            "phrases": {},
+            "features": room.get("features") or [],
+            "product_variants": {},
+        }
+        for room in rooms
+    }
     room_ids = {room.get("id", "").strip().lower(): room["name"] for room in rooms if room.get("id")}
     room_aliases = {room["name"].strip().lower(): room["name"] for room in rooms}
     product_records = list_product_records()
@@ -232,13 +376,21 @@ def _room_catalog() -> Dict[str, Dict[str, Any]]:
 
         for room in available_rooms:
             phrases = room_products[room]["phrases"]
+            variants_map = room_products[room]["product_variants"]
             for variant in variants:
                 normalized = _normalise_phrase(variant)
                 if normalized:
                     phrases.setdefault(normalized, record.name)
+                    variants_map.setdefault(record.name, set()).add(normalized)
             for token in base_tokens:
                 if len(token) >= 3:
                     phrases.setdefault(token, record.name)
+                    variants_map.setdefault(record.name, set()).add(token)
+
+    for entry in room_products.values():
+        variants_map = entry.get("product_variants") or {}
+        for product_name, variants in list(variants_map.items()):
+            variants_map[product_name] = sorted(variants)
 
     return room_products
 

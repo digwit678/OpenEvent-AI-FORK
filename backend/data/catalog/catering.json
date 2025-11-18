@@ -6,7 +6,15 @@
       "category": "Catering",
       "unit": "per_person",
       "unit_price": 18.0,
-      "unavailable_in": []
+      "unavailable_in": [],
+      "synonyms": [
+        "classic apero",
+        "finger food",
+        "finger-food",
+        "standing reception",
+        "cocktail bites",
+        "apero classique"
+      ]
     },
     {
       "id": "catering-premium-apero",
@@ -14,7 +22,14 @@
       "category": "Catering",
       "unit": "per_person",
       "unit_price": 28.0,
-      "unavailable_in": []
+      "unavailable_in": [],
+      "synonyms": [
+        "premium apero",
+        "gourmet finger food",
+        "finger food deluxe",
+        "standing reception premium",
+        "apero riche"
+      ]
     },
     {
       "id": "beverage-prosecco",
@@ -22,7 +37,13 @@
       "category": "Beverages",
       "unit": "per_bottle",
       "unit_price": 35.0,
-      "unavailable_in": ["atelier-room-a"]
+      "unavailable_in": ["atelier-room-a"],
+      "synonyms": [
+        "prosecco",
+        "sparkling wine",
+        "bubbly",
+        "prosecco bar"
+      ]
     },
     {
       "id": "beverage-coffee-bar",
@@ -30,7 +51,14 @@
       "category": "Beverages",
       "unit": "per_person",
       "unit_price": 7.5,
-      "unavailable_in": []
+      "unavailable_in": [],
+      "synonyms": [
+        "coffee service",
+        "coffee bar",
+        "coffee & tea",
+        "coffee station",
+        "beverage station"
+      ]
     },
     {
       "id": "equipment-hybrid-kit",
@@ -38,7 +66,13 @@
       "category": "Equipment",
       "unit": "per_event",
       "unit_price": 420.0,
-      "unavailable_in": ["atelier-room-d"]
+      "unavailable_in": ["atelier-room-d"],
+      "synonyms": [
+        "hybrid streaming",
+        "streaming kit",
+        "video conference",
+        "hybrid setup"
+      ]
     },
     {
       "id": "equipment-wireless-mics",
@@ -46,7 +80,43 @@
       "category": "Equipment",
       "unit": "per_unit",
       "unit_price": 25.0,
-      "unavailable_in": []
+      "unavailable_in": [],
+      "synonyms": [
+        "wireless mic",
+        "handheld mic",
+        "cordless microphone"
+      ]
+    },
+    {
+      "id": "beverage-cocktail-bar",
+      "name": "Cocktail Bar Setup",
+      "category": "Beverages",
+      "unit": "per_event",
+      "unit_price": 320.0,
+      "unavailable_in": [],
+      "synonyms": [
+        "cocktail setup",
+        "cocktail bar",
+        "mixology station",
+        "bar area",
+        "signature cocktails"
+      ]
+    },
+    {
+      "id": "entertainment-background-music",
+      "name": "Background Music Package",
+      "category": "Entertainment",
+      "unit": "per_event",
+      "unit_price": 180.0,
+      "unavailable_in": [],
+      "synonyms": [
+        "background music",
+        "ambient music",
+        "music package",
+        "sound system",
+        "dj set",
+        "music playlist"
+      ]
     }
   ]
 }

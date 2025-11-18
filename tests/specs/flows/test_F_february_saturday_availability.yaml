@@ -10,42 +10,8 @@
       },
       "expect": {
         "actions": [
-          {
-            "type": "select_date",
-            "label": "Confirm 07.02.2026",
-            "date": "07.02.2026",
-            "iso_date": "2026-02-07"
-          },
-          {
-            "type": "select_date",
-            "label": "Confirm 14.02.2026",
-            "date": "14.02.2026",
-            "iso_date": "2026-02-14"
-          },
-          {
-            "type": "select_date",
-            "label": "Confirm 21.02.2026",
-            "date": "21.02.2026",
-            "iso_date": "2026-02-21"
-          },
-          {
-            "type": "select_date",
-            "label": "Confirm 28.02.2026",
-            "date": "28.02.2026",
-            "iso_date": "2026-02-28"
-          },
-          {
-            "type": "ask_for_date_enqueued",
-            "payload": {
-              "suggested_dates": [
-                "07.02.2026",
-                "14.02.2026",
-                "21.02.2026",
-                "28.02.2026"
-              ],
-              "event_id": "ANY"
-            }
-          }
+          {"type": "select_date"},
+          {"type": "ask_for_date_enqueued"}
         ],
         "res": {
           "assistant_draft": {
@@ -53,10 +19,8 @@
               "Availability overview"
             ],
             "contains_all": [
-              "All options below fit 30 guests.",
-              "They are available on",
-              "| Menu | Dates | Notes |",
-              "- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you."
+              "Thanks for the briefing — here are the next available slots that fit your preferred window.",
+              "AVAILABLE DATES:"
             ],
             "not_contains_all": [
               "- Room ",

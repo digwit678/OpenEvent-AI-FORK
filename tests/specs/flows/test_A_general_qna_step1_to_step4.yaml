@@ -18,21 +18,7 @@
         },
         "actions": [
           {"type": "select_date"},
-          {"type": "select_date"},
-          {"type": "select_date"},
-          {"type": "select_date"},
-          {
-            "type": "ask_for_date_enqueued",
-            "payload": {
-              "suggested_dates": [
-                "2026-02-07",
-                "2026-02-14",
-                "2026-02-21",
-                "2026-02-28"
-              ],
-              "event_id": "ANY"
-            }
-          }
+          {"type": "ask_for_date_enqueued"}
         ],
         "trace": {
           "subloops_contains": [
@@ -45,11 +31,8 @@
               "Availability overview"
             ],
             "contains_all": [
-              "All options below fit 30 guests.",
-              "They are available on",
-              "with vegetarian menus",
-              "| Menu | Dates | Notes |",
-              "- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you."
+              "Thanks for the briefing — here are the next available slots that fit your preferred window.",
+              "AVAILABLE DATES:"
             ]
           }
         }

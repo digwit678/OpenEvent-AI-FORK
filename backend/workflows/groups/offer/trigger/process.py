@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple, Union
+from functools import lru_cache
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from backend.workflows.common.requirements import merge_client_profile, requirements_hash
 from backend.workflows.common.types import GroupResult, WorkflowState
@@ -17,6 +18,8 @@ from backend.debug.hooks import trace_db_write, trace_detour, trace_gate, trace_
 from backend.debug.trace import set_hil_open
 from backend.utils.profiler import profile_step
 from backend.workflow.state import WorkflowStep, write_stage
+from backend.services.products import find_product
+from backend.services.rooms import load_room_catalog
 
 from ..llm.send_offer_llm import ComposeOffer
 
@@ -158,6 +161,13 @@ def process(state: WorkflowState) -> GroupResult:
         state.extras["persist"] = True
 
     _ensure_products_container(event_entry)
+    autofilled = _autofill_products_from_preferences(
+        event_entry,
+        state.user_info or {},
+        min_score=0.5,  # TODO(openevent): expose as configurable threshold
+    )
+    if autofilled:
+        state.extras["persist"] = True
     products_changed = _apply_product_operations(event_entry, state.user_info or {})
     if products_changed:
         state.extras["persist"] = True
@@ -467,6 +477,97 @@ def _has_offer_update(user_info: Dict[str, Any]) -> bool:
     return any(bool(user_info.get(key)) for key in update_keys)
 
 
+def _autofill_products_from_preferences(
+    event_entry: Dict[str, Any],
+    user_info: Dict[str, Any],
+    *,
+    min_score: float = 0.5,
+) -> bool:
+    products_state = event_entry.setdefault("products_state", {})
+    if products_state.get("autofill_applied"):
+        return False
+
+    existing_products = event_entry.get("products") or []
+    if existing_products:
+        products_state["autofill_applied"] = True
+        return False
+
+    preferences = {}
+    event_prefs = event_entry.get("preferences")
+    if isinstance(event_prefs, dict):
+        preferences = dict(event_prefs)
+    elif isinstance(user_info.get("preferences"), dict):
+        preferences = dict(user_info["preferences"])
+    if not preferences:
+        return False
+
+    selected_room = event_entry.get("locked_room_id")
+    if not selected_room:
+        pending = event_entry.get("room_pending_decision") or {}
+        selected_room = pending.get("selected_room")
+    if not selected_room:
+        return False
+
+    breakdown_map = preferences.get("room_match_breakdown") or {}
+    breakdown = breakdown_map.get(selected_room)
+    if not isinstance(breakdown, dict):
+        return False
+
+    matches_detail = breakdown.get("matches_detail") or []
+    matched_names = breakdown.get("matched") or []
+    if not matches_detail and matched_names:
+        matches_detail = [{"product": name, "wish": None, "score": 1.0} for name in matched_names if name]
+
+    if not matches_detail:
+        return False
+
+    participants = _infer_participant_count(event_entry)
+    match_threshold = max(0.65, min_score)
+    additions: List[Dict[str, Any]] = []
+    summary_entries: List[Dict[str, Any]] = []
+    included_lower: Set[str] = set()
+
+    for entry in matches_detail:
+        product_name = entry.get("product")
+        if not product_name:
+            continue
+        score = float(entry.get("score") or 0.0)
+        if score < match_threshold:
+            continue
+        record = find_product(product_name)
+        if not record or _product_unavailable_in_room(record, selected_room):
+            continue
+        product_key = record.name.strip().lower()
+        if product_key in included_lower:
+            continue
+        item = _build_product_line_from_record(record, participants)
+        additions.append(item)
+        summary_entries.append(_summarize_product_line(record, entry.get("wish"), score, item))
+        included_lower.add(product_key)
+
+    if not additions:
+        # No confident matches; keep prompt logic in place.
+        return False
+
+    for item in additions:
+        _upsert_product(event_entry["products"], item)
+
+    alternatives_payload = _build_alternative_suggestions(
+        breakdown.get("alternatives") or [],
+        included_lower,
+        selected_room,
+        min_score=min_score,
+    )
+
+    products_state["autofill_summary"] = {
+        "matched": summary_entries,
+        "alternatives": alternatives_payload["products"],
+        "catering_alternatives": alternatives_payload["catering"],
+    }
+    products_state["autofill_applied"] = True
+    return True
+
+
 def _apply_product_operations(event_entry: Dict[str, Any], user_info: Dict[str, Any]) -> bool:
     additions = _normalise_products(user_info.get("products_add"))
     removals = _normalise_product_names(user_info.get("products_remove"))
@@ -533,6 +634,139 @@ def _upsert_product(products: List[Dict[str, Any]], item: Dict[str, Any]) -> Non
             existing["unit_price"] = item["unit_price"]
             return
     products.append(item)
+
+
+def _build_product_line_from_record(record: Any, participants: Optional[int]) -> Dict[str, Any]:
+    quantity = 1
+    if record.unit == "per_person" and participants:
+        quantity = max(1, int(participants))
+    item: Dict[str, Any] = {
+        "name": record.name,
+        "quantity": quantity,
+        "unit_price": float(record.base_price or 0.0),
+    }
+    if getattr(record, "product_id", None):
+        item["product_id"] = record.product_id
+    if getattr(record, "unit", None):
+        item["unit"] = record.unit
+    if getattr(record, "category", None):
+        item["category"] = record.category
+    return item
+
+
+def _summarize_product_line(
+    record: Any,
+    wish: Optional[str],
+    score: float,
+    item: Dict[str, Any],
+) -> Dict[str, Any]:
+    unit_price = float(item.get("unit_price") or 0.0)
+    quantity = int(item.get("quantity") or 1)
+    total = unit_price * quantity
+    return {
+        "name": record.name,
+        "category": record.category or "General",
+        "unit": record.unit,
+        "wish": wish,
+        "match_pct": int(round(score * 100)),
+        "unit_price": unit_price,
+        "quantity": quantity,
+        "total": round(total, 2),
+    }
+
+
+def _build_alternative_suggestions(
+    raw_alternatives: List[Dict[str, Any]],
+    included_lower: Set[str],
+    room_name: str,
+    *,
+    min_score: float,
+) -> Dict[str, List[Dict[str, Any]]]:
+    best_by_product: Dict[str, Dict[str, Any]] = {}
+    for entry in raw_alternatives:
+        product_name = entry.get("product")
+        if not product_name:
+            continue
+        score = float(entry.get("score") or 0.0)
+        if score < min_score:
+            continue
+        record = find_product(product_name)
+        if not record or _product_unavailable_in_room(record, room_name):
+            continue
+        key = record.name.strip().lower()
+        if key in included_lower:
+            continue
+        stored = best_by_product.get(key)
+        if stored and stored["score"] >= score:
+            continue
+        best_by_product[key] = {
+            "name": record.name,
+            "category": record.category or "General",
+            "unit": record.unit,
+            "unit_price": float(record.base_price or 0.0),
+            "score": score,
+            "wish": entry.get("wish"),
+        }
+
+    product_alternatives: List[Dict[str, Any]] = []
+    catering_alternatives: List[Dict[str, Any]] = []
+    for payload in sorted(best_by_product.values(), key=lambda item: item["score"], reverse=True):
+        formatted = {
+            "name": payload["name"],
+            "category": payload["category"],
+            "unit": payload["unit"],
+            "unit_price": payload["unit_price"],
+            "match_pct": int(round(payload["score"] * 100)),
+            "wish": payload.get("wish"),
+        }
+        category_lower = (payload["category"] or "").strip().lower()
+        if category_lower in {"catering", "beverages"}:
+            catering_alternatives.append(formatted)
+        else:
+            product_alternatives.append(formatted)
+
+    return {"products": product_alternatives, "catering": catering_alternatives}
+
+
+def _infer_participant_count(event_entry: Dict[str, Any]) -> Optional[int]:
+    requirements = event_entry.get("requirements") or {}
+    participants = requirements.get("number_of_participants")
+    if participants is None:
+        participants = (event_entry.get("event_data") or {}).get("Number of Participants")
+    if participants is None:
+        participants = (event_entry.get("captured") or {}).get("participants")
+    try:
+        return int(str(participants).strip())
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _product_unavailable_in_room(record: Any, room_name: str) -> bool:
+    aliases = _room_aliases(room_name)
+    record_unavailable = {str(entry).strip().lower() for entry in getattr(record, "unavailable_in", [])}
+    return any(alias in record_unavailable for alias in aliases)
+
+
+@lru_cache(maxsize=1)
+def _room_alias_map() -> Dict[str, Set[str]]:
+    mapping: Dict[str, Set[str]] = {}
+    for record in load_room_catalog():
+        identifiers = {
+            record.name.strip().lower(),
+            (record.room_id or record.name).strip().lower(),
+        }
+        mapping[record.name] = identifiers
+    return mapping
+
+
+def _room_aliases(room_name: str) -> Set[str]:
+    lowered = (room_name or "").strip().lower()
+    aliases: Set[str] = {lowered}
+    for identifiers in _room_alias_map().values():
+        if lowered in identifiers:
+            aliases |= identifiers
+            break
+    return aliases
 
 
 def _rebuild_pricing_inputs(event_entry: Dict[str, Any], user_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -628,22 +862,118 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> 
     chosen_date = event_entry.get("chosen_date") or "Date TBD"
     room = event_entry.get("locked_room_id") or "Room TBD"
     products = event_entry.get("products") or []
+    products_state = event_entry.get("products_state") or {}
+    autofill_summary = products_state.get("autofill_summary") or {}
+    matched_summary = autofill_summary.get("matched") or []
+    product_alternatives = autofill_summary.get("alternatives") or []
+    catering_alternatives = autofill_summary.get("catering_alternatives") or []
 
     intro_room = room if room != "Room TBD" else "your preferred room"
     intro_date = chosen_date if chosen_date != "Date TBD" else "your requested date"
     lines = [
         f"Great — {intro_room} on {intro_date} is ready for review.",
         f"Offer draft for {chosen_date} · {room}",
-        f"Total: CHF {total_amount:,.2f}",
     ]
-    if products:
-        lines.append("Included products:")
+
+    lines.append("")
+    if matched_summary:
+        lines.append("**Included products**")
+        for entry in matched_summary:
+            quantity = int(entry.get("quantity") or 1)
+            name = entry.get("name") or "Unnamed item"
+            unit_price = float(entry.get("unit_price") or 0.0)
+            total_line = float(entry.get("total") or quantity * unit_price)
+            unit = entry.get("unit")
+            wish = entry.get("wish")
+
+            price_text = f"CHF {total_line:,.2f}"
+            if unit == "per_person" and quantity > 0:
+                price_text += f" (CHF {unit_price:,.2f} per person)"
+
+            details: List[str] = []
+            if entry.get("match_pct") is not None:
+                details.append(f"match {entry.get('match_pct')}%")
+            if wish:
+                details.append(f'for "{wish}"')
+            detail_text = f" ({', '.join(details)})" if details else ""
+
+            lines.append(f"- {quantity}× {name}{detail_text} · {price_text}")
+
+    elif products:
+        lines.append("**Included products**")
         for product in products:
-            lines.append(
-                f"- {product['name']} × {product['quantity']} @ CHF {product['unit_price']:,.2f}"
-            )
+            quantity = int(product.get("quantity") or 1)
+            name = product.get("name") or "Unnamed item"
+            unit_price = float(product.get("unit_price") or 0.0)
+            unit = product.get("unit")
+
+            price_text = f"CHF {unit_price * quantity:,.2f}"
+            if unit == "per_person" and quantity > 0:
+                price_text += f" (CHF {unit_price:,.2f} per person)"
+
+            lines.append(f"- {quantity}× {name} · {price_text}")
     else:
         lines.append("No optional products selected yet.")
+
+    lines.extend([
+        "",
+        "---",
+        f"**Total: CHF {total_amount:,.2f}**",
+        "---",
+        "",
+    ])
+
+    has_alternatives = product_alternatives or catering_alternatives
+    if has_alternatives:
+        lines.append("**Suggestions for you**")
+        lines.append("")
+
+    if product_alternatives:
+        lines.append("*Other close matches you can add:*")
+        for entry in product_alternatives:
+            name = entry.get("name") or "Unnamed add-on"
+            unit_price = float(entry.get("unit_price") or 0.0)
+            unit = entry.get("unit")
+            wish = entry.get("wish")
+            match_pct = entry.get("match_pct")
+
+            price_text = f"CHF {unit_price:,.2f}"
+            if unit == "per_person":
+                price_text += " per person"
+
+            qualifiers: List[str] = []
+            if match_pct is not None:
+                qualifiers.append(f"{match_pct}% match")
+            if wish:
+                qualifiers.append(f'covers "{wish}"')
+            qualifier_text = f" ({', '.join(qualifiers)})" if qualifiers else ""
+
+            lines.append(f"- {name}{qualifier_text} · {price_text}")
+        if catering_alternatives:
+            lines.append("")
+
+    if catering_alternatives:
+        lines.append("*Catering alternatives with a close fit:*")
+        for entry in catering_alternatives:
+            name = entry.get("name") or "Catering option"
+            unit_price = float(entry.get("unit_price") or 0.0)
+            unit_label = (entry.get("unit") or "per event").replace("_", " ")
+            wish = entry.get("wish")
+            match_pct = entry.get("match_pct")
+
+            qualifiers: List[str] = []
+            if match_pct is not None:
+                qualifiers.append(f"{match_pct}% match")
+            if wish:
+                qualifiers.append(f'covers "{wish}"')
+            detail = ", ".join(qualifiers)
+            detail_text = f" ({detail})" if detail else ""
+
+            lines.append(f"- {name}{detail_text} · CHF {unit_price:,.2f} {unit_label}")
+
+    if has_alternatives:
+        lines.append("")
+
     lines.append("Please review and approve before sending to the client.")
     return lines
 
