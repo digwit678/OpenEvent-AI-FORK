@@ -16,5 +16,5 @@
 		}
 	},
 	"postCreateCommand": "pip install -r requirements-dev.txt && cd atelier-ai-frontend && npm install",
-	"postStartCommand": "sh scripts/run-dev.sh"
+	"postStartCommand": "sh run-dev.sh"
 }
