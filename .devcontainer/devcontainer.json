@@ -1,0 +1,20 @@
+{
+	"name": "OpenEvent AI Codespace",
+	"image": "mcr.microsoft.com/devcontainers/python:3.11",
+	"features": {
+		"ghcr.io/devcontainers/features/node:1": {
+			"version": "18"
+		}
+	},
+	"forwardPorts": [
+		3000,
+		8000
+	],
+	"portsAttributes": {
+		"3000": {
+			"label": "frontend"
+		}
+	},
+	"postCreateCommand": "pip install -r requirements-dev.txt && cd atelier-ai-frontend && npm install",
+	"postStartCommand": "sh scripts/run-dev.sh"
+}
