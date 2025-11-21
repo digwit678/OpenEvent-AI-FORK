@@ -1,0 +1,161 @@
+{
+  "suite": "flow_C_normal",
+  "initial_clock": "2025-11-11T10:00:00+01:00",
+  "steps": [
+    {
+      "turn": 1,
+      "msg_in": {
+        "subject": "Family dinner in February",
+        "body": "Hello, we’re planning a family dinner event for about 30 people. Prefer a Saturday evening in February. Please advise on availability for this booking."
+      },
+      "expect": {
+        "intent": "event_intake",
+        "user_info": {
+          "participants": 30,
+          "vague_month": "February",
+          "vague_weekday": "Saturday"
+        },
+        "actions": [
+          {
+            "type": "ask_for_date_enqueued",
+            "payload": {
+              "suggested_dates": [
+                "2026-02-07",
+                "2026-02-14",
+                "2026-02-21",
+                "2026-02-28"
+              ],
+              "event_id": "ANY"
+            }
+          }
+        ],
+        "res": {
+          "assistant_draft": {
+            "headers": [
+              "Date options for February"
+            ],
+            "contains": [
+              "Saturdays available in February 2026: 07, 14, 21, 28"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "turn": "1a",
+      "gui_action": {
+        "approve_task": "ask_for_date_enqueued"
+      },
+      "expect": {
+        "actions": [
+          {
+            "type": "send_reply"
+          }
+        ]
+      }
+    },
+    {
+      "turn": 2,
+      "msg_in": {
+        "body": "07.02.2026 works for us."
+      },
+      "expect": {
+        "intent": "event_update",
+        "user_info": {
+          "date": "2026-02-07"
+        },
+        "actions": [
+          {
+            "type": "send_reply"
+          }
+        ],
+        "res": {
+          "assistant_draft": {
+            "headers": [
+              "Next step"
+            ],
+            "contains": [
+              "07.02.2026"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "turn": 3,
+      "system_call": "room_status_on_date",
+      "args": {
+        "date": "2026-02-07"
+      },
+      "stub_returns": {
+        "rooms": [
+          {
+            "id": "R-A",
+            "name": "Room A",
+            "capacity": 40,
+            "matched": [
+              "Long dining table"
+            ],
+            "missing": [
+              "Background music"
+            ]
+          },
+          {
+            "id": "R-D",
+            "name": "Room D",
+            "capacity": 50,
+            "matched": [],
+            "missing": [
+              "Long dining table",
+              "Background music"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "rooms_min": 2,
+        "res": {
+          "assistant_draft": {
+            "headers": [
+              "Rooms for 30 people on 07.02.2026"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "turn": 4,
+      "msg_in": {
+        "body": "Room A, please. Send an offer."
+      },
+      "simulate_intent": "room_choice",
+      "expect": {
+        "intent": "room_choice",
+        "actions": []
+      }
+    },
+    {
+      "turn": 5,
+      "system_call": "build_offer",
+      "args": {
+        "room_id": "R-A",
+        "date": "2026-02-07",
+        "pax": 30
+      },
+      "expect": {
+        "status": "Option",
+        "res": {
+          "assistant_draft": {
+            "headers": [
+              "Offer"
+            ],
+            "contains": [
+              "Room A",
+              "07.02.2026"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

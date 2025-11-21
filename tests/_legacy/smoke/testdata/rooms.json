@@ -1,0 +1,54 @@
+{
+  "rooms": [
+    {
+      "id": "room_a",
+      "name": "Room A",
+      "calendar_id": "room_a",
+      "capacity_max": 60,
+      "capacity_by_layout": {
+        "classroom": 40,
+        "theater": 100
+      },
+      "features": [
+        "projector",
+        "sound_system",
+        "screen"
+      ],
+      "buffer_before_min": 30,
+      "buffer_after_min": 30
+    },
+    {
+      "id": "room_b",
+      "name": "Room B",
+      "calendar_id": "room_b",
+      "capacity_max": 80,
+      "capacity_by_layout": {
+        "classroom": 60,
+        "theater": 120
+      },
+      "features": [
+        "projector",
+        "sound_system"
+      ],
+      "buffer_before_min": 30,
+      "buffer_after_min": 30
+    },
+    {
+      "id": "room_c",
+      "name": "Room C",
+      "calendar_id": "room_c",
+      "capacity_max": 150,
+      "capacity_by_layout": {
+        "theater": 160,
+        "banquet": 120
+      },
+      "features": [
+        "projector",
+        "sound_system",
+        "hybrid"
+      ],
+      "buffer_before_min": 45,
+      "buffer_after_min": 45
+    }
+  ]
+}

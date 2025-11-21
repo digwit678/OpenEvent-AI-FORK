@@ -1,0 +1,20 @@
+{
+  "v1-current": {
+    "label": "Current reasoning profile",
+    "max_tokens": 2048,
+    "temperature": 0.2,
+    "chain": "full"
+  },
+  "v1-fast": {
+    "label": "Latency optimised profile",
+    "max_tokens": 1024,
+    "temperature": 0.0,
+    "chain": "concise"
+  },
+  "v1-hybrid": {
+    "label": "Hybrid intent routing",
+    "max_tokens": 1536,
+    "temperature": 0.1,
+    "chain": "light-routing"
+  }
+}

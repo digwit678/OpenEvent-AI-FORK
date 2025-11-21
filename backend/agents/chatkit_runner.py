@@ -1,0 +1,742 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+from dataclasses import dataclass, field
+from typing import Any, AsyncGenerator, Callable, Dict, Iterable, List, Optional, Set
+
+from pydantic import ValidationError
+
+from backend.agents.guardrails import safe_envelope
+from backend.agents.openevent_agent import OpenEventAgent
+from backend.agents.tools.dates import (
+    SuggestDatesInput,
+    ParseDateIntentInput,
+    tool_suggest_dates,
+    tool_parse_date_intent,
+)
+from backend.agents.tools.rooms import (
+    EvaluateRoomsInput,
+    RoomStatusInput,
+    CapacityCheckInput,
+    tool_evaluate_rooms,
+    tool_room_status_on_date,
+    tool_capacity_check,
+)
+from backend.agents.tools.offer import (
+    ComposeOfferInput,
+    PersistOfferInput,
+    ModifyProductInput,
+    FollowUpSuggestInput,
+    ListCateringInput,
+    ListProductsInput,
+    SendOfferInput,
+    tool_build_offer_draft,
+    tool_persist_offer,
+    tool_add_product_to_offer,
+    tool_remove_product_from_offer,
+    tool_follow_up_suggest,
+    tool_list_catering,
+    tool_list_products,
+    tool_send_offer,
+)
+from backend.agents.tools.negotiation import NegotiationInput, tool_negotiate_offer
+from backend.agents.tools.transition import TransitionInput, tool_transition_sync
+from backend.agents.tools.confirmation import ConfirmationInput, tool_classify_confirmation
+
+logger = logging.getLogger(__name__)
+
+ENGINE_TOOL_ALLOWLIST: Dict[str, Set[str]] = {
+    "2": {
+        "tool_suggest_dates",
+        "tool_parse_date_intent",
+    },
+    "3": {
+        "tool_room_status_on_date",
+        "tool_capacity_check",
+        "tool_evaluate_rooms",
+    },
+    "4": {
+        "tool_build_offer_draft",
+        "tool_persist_offer",
+        "tool_list_products",
+        "tool_list_catering",
+        "tool_add_product_to_offer",
+        "tool_remove_product_from_offer",
+        "tool_send_offer",
+    },
+    "5": {
+        "tool_negotiate_offer",
+        "tool_transition_sync",
+    },
+    "7": {
+        "tool_follow_up_suggest",
+        "tool_classify_confirmation",
+    },
+}
+
+CLIENT_STOP_AT_TOOLS: Set[str] = {
+    "client_confirm_offer",
+    "client_change_offer",
+    "client_discard_offer",
+    "client_see_catering",
+    "client_see_products",
+}
+
+
+TOOL_SCHEMAS: Dict[str, Dict[str, Any]] = {
+    "tool_suggest_dates": {
+        "type": "object",
+        "properties": {
+            "event_id": {"type": ["string", "null"]},
+            "preferred_room": {"type": ["string", "null"]},
+            "start_from_iso": {"type": ["string", "null"]},
+            "days_ahead": {"type": "integer", "minimum": 1, "maximum": 120},
+            "max_results": {"type": "integer", "minimum": 1, "maximum": 10},
+        },
+        "additionalProperties": False,
+    },
+    "tool_room_status_on_date": {
+        "type": "object",
+        "properties": {
+            "date": {"type": "string", "pattern": r"^\d{2}\.\d{2}\.\d{4}$"},
+            "room": {"type": "string"},
+        },
+        "required": ["date", "room"],
+        "additionalProperties": False,
+    },
+    "tool_evaluate_rooms": {
+        "type": "object",
+        "properties": {
+            "date": {"type": "string", "pattern": r"^\d{2}\.\d{2}\.\d{4}$"},
+        },
+        "required": ["date"],
+        "additionalProperties": False,
+    },
+    "tool_list_products": {
+        "type": "object",
+        "properties": {
+            "room_id": {"type": ["string", "null"]},
+            "categories": {
+                "type": ["array", "null"],
+                "items": {"type": "string"},
+            },
+        },
+        "additionalProperties": False,
+    },
+    "tool_list_catering": {
+        "type": "object",
+        "properties": {
+            "room_id": {"type": ["string", "null"]},
+            "date_token": {"type": ["string", "null"]},
+            "categories": {
+                "type": ["array", "null"],
+                "items": {"type": "string"},
+            },
+        },
+        "additionalProperties": False,
+    },
+    "tool_send_offer": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "offer_id": {"type": "string"},
+            "to_email": {"type": "string"},
+            "cc": {"type": ["string", "null"]},
+        },
+        "required": ["event_entry", "offer_id", "to_email"],
+        "additionalProperties": False,
+    },
+    "tool_parse_date_intent": {
+        "type": "object",
+        "properties": {
+            "message": {"type": "string"},
+        },
+        "required": ["message"],
+        "additionalProperties": False,
+    },
+    "tool_capacity_check": {
+        "type": "object",
+        "properties": {
+            "room": {"type": "string"},
+            "attendees": {"type": ["integer", "null"], "minimum": 1},
+            "layout": {"type": ["string", "null"]},
+        },
+        "required": ["room"],
+        "additionalProperties": False,
+    },
+    "tool_build_offer_draft": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "user_info": {"type": ["object", "null"]},
+        },
+        "required": ["event_entry"],
+        "additionalProperties": False,
+    },
+    "tool_persist_offer": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "pricing_inputs": {"type": "object"},
+            "user_info": {"type": ["object", "null"]},
+        },
+        "required": ["event_entry", "pricing_inputs"],
+        "additionalProperties": False,
+    },
+    "tool_add_product_to_offer": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "product": {"type": "object"},
+        },
+        "required": ["event_entry", "product"],
+        "additionalProperties": False,
+    },
+    "tool_remove_product_from_offer": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "product": {"type": "object"},
+        },
+        "required": ["event_entry", "product"],
+        "additionalProperties": False,
+    },
+    "tool_follow_up_suggest": {
+        "type": "object",
+        "properties": {
+            "status": {"type": ["string", "null"]},
+            "pending_actions": {
+                "type": ["array", "null"],
+                "items": {"type": "string"},
+            },
+        },
+        "additionalProperties": False,
+    },
+    "tool_negotiate_offer": {
+        "type": "object",
+        "properties": {
+            "event_id": {"type": "string"},
+            "client_email": {"type": "string"},
+            "message": {"type": "string"},
+            "msg_id": {"type": ["string", "null"]},
+        },
+        "required": ["event_id", "client_email", "message"],
+        "additionalProperties": False,
+    },
+    "tool_transition_sync": {
+        "type": "object",
+        "properties": {
+            "event_id": {"type": "string"},
+            "client_email": {"type": "string"},
+            "message": {"type": "string"},
+            "msg_id": {"type": ["string", "null"]},
+        },
+        "required": ["event_id", "client_email", "message"],
+        "additionalProperties": False,
+    },
+    "tool_classify_confirmation": {
+        "type": "object",
+        "properties": {
+            "event_id": {"type": "string"},
+            "client_email": {"type": "string"},
+            "message": {"type": "string"},
+            "msg_id": {"type": ["string", "null"]},
+        },
+        "required": ["event_id", "client_email", "message"],
+        "additionalProperties": False,
+    },
+}
+
+
+@dataclass(frozen=True)
+class ToolDefinition:
+    handler: Callable[..., Any]
+    input_model: Any
+    requires_db: bool = False
+    schema: Dict[str, Any] = field(default_factory=dict)
+    use_event_entry: bool = False
+
+
+TOOL_DEFINITIONS: Dict[str, ToolDefinition] = {
+    "tool_suggest_dates": ToolDefinition(
+        handler=tool_suggest_dates,
+        input_model=SuggestDatesInput,
+        requires_db=True,
+        schema=TOOL_SCHEMAS["tool_suggest_dates"],
+    ),
+    "tool_room_status_on_date": ToolDefinition(
+        handler=tool_room_status_on_date,
+        input_model=RoomStatusInput,
+        requires_db=True,
+        schema=TOOL_SCHEMAS["tool_room_status_on_date"],
+    ),
+    "tool_evaluate_rooms": ToolDefinition(
+        handler=tool_evaluate_rooms,
+        input_model=EvaluateRoomsInput,
+        requires_db=True,
+        schema=TOOL_SCHEMAS["tool_evaluate_rooms"],
+    ),
+    "tool_list_products": ToolDefinition(
+        handler=tool_list_products,
+        input_model=ListProductsInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_list_products"],
+    ),
+    "tool_list_catering": ToolDefinition(
+        handler=tool_list_catering,
+        input_model=ListCateringInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_list_catering"],
+    ),
+    "tool_send_offer": ToolDefinition(
+        handler=tool_send_offer,
+        input_model=SendOfferInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_send_offer"],
+    ),
+    "tool_parse_date_intent": ToolDefinition(
+        handler=tool_parse_date_intent,
+        input_model=ParseDateIntentInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_parse_date_intent"],
+    ),
+    "tool_capacity_check": ToolDefinition(
+        handler=tool_capacity_check,
+        input_model=CapacityCheckInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_capacity_check"],
+    ),
+    "tool_build_offer_draft": ToolDefinition(
+        handler=tool_build_offer_draft,
+        input_model=ComposeOfferInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_build_offer_draft"],
+        use_event_entry=True,
+    ),
+    "tool_persist_offer": ToolDefinition(
+        handler=tool_persist_offer,
+        input_model=PersistOfferInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_persist_offer"],
+        use_event_entry=True,
+    ),
+    "tool_add_product_to_offer": ToolDefinition(
+        handler=tool_add_product_to_offer,
+        input_model=ModifyProductInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_add_product_to_offer"],
+    ),
+    "tool_remove_product_from_offer": ToolDefinition(
+        handler=tool_remove_product_from_offer,
+        input_model=ModifyProductInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_remove_product_from_offer"],
+    ),
+    "tool_follow_up_suggest": ToolDefinition(
+        handler=tool_follow_up_suggest,
+        input_model=FollowUpSuggestInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_follow_up_suggest"],
+    ),
+    "tool_negotiate_offer": ToolDefinition(
+        handler=tool_negotiate_offer,
+        input_model=NegotiationInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_negotiate_offer"],
+    ),
+    "tool_transition_sync": ToolDefinition(
+        handler=tool_transition_sync,
+        input_model=TransitionInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_transition_sync"],
+    ),
+    "tool_classify_confirmation": ToolDefinition(
+        handler=tool_classify_confirmation,
+        input_model=ConfirmationInput,
+        requires_db=False,
+        schema=TOOL_SCHEMAS["tool_classify_confirmation"],
+    ),
+}
+
+
+class ToolExecutionError(RuntimeError):
+    """Raised when a tool invocation violates the step-aware allowlist or schema."""
+
+    def __init__(
+        self,
+        tool_name: str,
+        step: Optional[int],
+        *,
+        reason: Optional[str] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        self.tool_name = tool_name
+        self.step = step
+        allowed = StepToolPolicy.allowed_tools_for(step)
+        detail = {
+            "tool": tool_name,
+            "step": step,
+            "allowed_tools": sorted(allowed),
+        }
+        if reason:
+            detail["reason"] = reason
+        if extra:
+            detail.update(extra)
+        super().__init__(json.dumps(detail))
+        self.detail = detail
+
+
+@dataclass
+class StepToolPolicy:
+    current_step: Optional[int]
+    allowed_tools: Set[str] = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.allowed_tools = self.allowed_tools_for(self.current_step)
+
+    @staticmethod
+    def allowed_tools_for(step: Optional[int]) -> Set[str]:
+        if step is None:
+            return set().union(*ENGINE_TOOL_ALLOWLIST.values()) if ENGINE_TOOL_ALLOWLIST else set()
+        return set(ENGINE_TOOL_ALLOWLIST.get(str(step), set()))
+
+    def ensure_allowed(self, tool_name: str) -> None:
+        if tool_name in CLIENT_STOP_AT_TOOLS:
+            # Client tools are surfaced via StopAtTools; they are not executed automatically.
+            return
+        if tool_name not in self.allowed_tools:
+            raise ToolExecutionError(tool_name, self.current_step)
+
+
+def _type_matches(value: Any, expected: str) -> bool:
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected == "boolean":
+        return isinstance(value, bool)
+    if expected == "object":
+        return isinstance(value, dict)
+    if expected == "array":
+        return isinstance(value, list)
+    if expected == "null":
+        return value is None
+    return True
+
+
+def _validate_json_schema(schema: Dict[str, Any], value: Any, path: str = "root") -> List[str]:
+    errors: List[str] = []
+    expected_type = schema.get("type")
+
+    def _validate(value: Any, schema: Dict[str, Any], current_path: str) -> None:
+        expected = schema.get("type")
+        if isinstance(expected, list):
+            if value is None and "null" in expected:
+                return
+            if not any(_type_matches(value, candidate) for candidate in expected if candidate != "null"):
+                errors.append(f"{current_path}: expected one of {expected}, received {type(value).__name__}")
+                return
+            # Determine dominant type for recursive validation
+            for candidate in expected:
+                if candidate == "null":
+                    continue
+                if _type_matches(value, candidate):
+                    candidate_schema = dict(schema)
+                    candidate_schema["type"] = candidate
+                    _validate(value, candidate_schema, current_path)
+                    return
+            return
+
+        if expected == "object":
+            if not isinstance(value, dict):
+                errors.append(f"{current_path}: expected object, received {type(value).__name__}")
+                return
+            required = schema.get("required", [])
+            for field in required:
+                if field not in value:
+                    errors.append(f"{current_path}.{field}: missing required property")
+            properties = schema.get("properties", {})
+            for key, val in value.items():
+                next_path = f"{current_path}.{key}"
+                if key in properties:
+                    _validate(val, properties[key], next_path)
+                elif schema.get("additionalProperties", True) is False:
+                    errors.append(f"{next_path}: additional property not allowed")
+            return
+
+        if expected == "array":
+            if not isinstance(value, list):
+                errors.append(f"{current_path}: expected array, received {type(value).__name__}")
+                return
+            item_schema = schema.get("items")
+            if item_schema:
+                for idx, item in enumerate(value):
+                    _validate(item, item_schema, f"{current_path}[{idx}]")
+            return
+
+        if expected == "integer":
+            if not _type_matches(value, "integer"):
+                errors.append(f"{current_path}: expected integer, received {type(value).__name__}")
+                return
+            minimum = schema.get("minimum")
+            maximum = schema.get("maximum")
+            if minimum is not None and value < minimum:
+                errors.append(f"{current_path}: value {value} < minimum {minimum}")
+            if maximum is not None and value > maximum:
+                errors.append(f"{current_path}: value {value} > maximum {maximum}")
+            return
+
+        if expected == "number":
+            if not _type_matches(value, "number"):
+                errors.append(f"{current_path}: expected number, received {type(value).__name__}")
+                return
+            minimum = schema.get("minimum")
+            maximum = schema.get("maximum")
+            if minimum is not None and value < minimum:
+                errors.append(f"{current_path}: value {value} < minimum {minimum}")
+            if maximum is not None and value > maximum:
+                errors.append(f"{current_path}: value {value} > maximum {maximum}")
+            return
+
+        if expected == "string":
+            if not isinstance(value, str):
+                errors.append(f"{current_path}: expected string, received {type(value).__name__}")
+                return
+            enum = schema.get("enum")
+            if enum and value not in enum:
+                errors.append(f"{current_path}: expected one of {enum}, received {value!r}")
+            pattern = schema.get("pattern")
+            if pattern:
+                import re
+
+                if re.fullmatch(pattern, value) is None:
+                    errors.append(f"{current_path}: value {value!r} does not match pattern {pattern!r}")
+            return
+
+        if expected == "boolean":
+            if not isinstance(value, bool):
+                errors.append(f"{current_path}: expected boolean, received {type(value).__name__}")
+            return
+
+        if expected == "null":
+            if value is not None:
+                errors.append(f"{current_path}: expected null, received {type(value).__name__}")
+            return
+
+        # Unknown type is treated as pass-through
+
+    _validate(value, schema, path)
+    return errors
+
+
+def _validate_tool_schema(tool_name: str, payload: Optional[Dict[str, Any]], step: Optional[int]) -> None:
+    schema = TOOL_SCHEMAS.get(tool_name)
+    if not schema:
+        return
+    arguments = payload or {}
+    if not isinstance(arguments, dict):
+        raise ToolExecutionError(
+            tool_name,
+            step,
+            reason="schema_validation_failed",
+            extra={"errors": ["root: expected object arguments"]},
+        )
+    errors = _validate_json_schema(schema, arguments)
+    if errors:
+        raise ToolExecutionError(
+            tool_name,
+            step,
+            reason="schema_validation_failed",
+            extra={"errors": errors},
+        )
+
+
+@dataclass
+class StepAwareAgent:
+    thread_id: str
+    state: Dict[str, Any]
+    policy: StepToolPolicy
+
+
+def build_agent(state: Dict[str, Any]) -> StepAwareAgent:
+    current_step = state.get("current_step")
+    policy = StepToolPolicy(current_step)
+    return StepAwareAgent(
+        thread_id=state.get("thread_id") or "unknown-thread",
+        state=state,
+        policy=policy,
+    )
+
+
+def execute_tool_call(
+    tool_name: str,
+    tool_call_id: str,
+    arguments: Optional[Dict[str, Any]],
+    state: Dict[str, Any],
+    db: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Validate and execute a server-side tool call in a deterministic manner.
+
+    The call enforces the per-step allowlist, validates arguments against the
+    declared JSON schema, hydrates the corresponding Pydantic input model, and
+    finally invokes the underlying tool implementation. Results are wrapped in a
+    structure compatible with Agents SDK expectations, echoing tool_call_id.
+    """
+
+    policy = StepToolPolicy(state.get("current_step"))
+    policy.ensure_allowed(tool_name)
+    _validate_tool_schema(tool_name, arguments, policy.current_step)
+
+    definition = TOOL_DEFINITIONS.get(tool_name)
+    if not definition:
+        raise ToolExecutionError(
+            tool_name,
+            policy.current_step,
+            reason="tool_not_supported",
+        )
+
+    payload = arguments or {}
+    try:
+        params = definition.input_model(**payload) if payload or definition.input_model is not None else None
+    except ValidationError as exc:
+        raise ToolExecutionError(
+            tool_name,
+            policy.current_step,
+            reason="schema_validation_failed",
+            extra={"errors": exc.errors()},
+        )
+
+    result: Any
+    if definition.requires_db:
+        if db is None:
+            raise ToolExecutionError(
+                tool_name,
+                policy.current_step,
+                reason="db_required",
+            )
+        if definition.use_event_entry:
+            event_entry_data = getattr(params, "event_entry", None)
+            if event_entry_data is None:
+                raise ToolExecutionError(
+                    tool_name,
+                    policy.current_step,
+                    reason="schema_validation_failed",
+                    extra={"errors": ["event_entry missing"]},
+                )
+            result = definition.handler(db, event_entry_data, params)
+        else:
+            result = definition.handler(db, params)
+    else:
+        if definition.use_event_entry:
+            event_entry_data = getattr(params, "event_entry", None)
+            if event_entry_data is None:
+                raise ToolExecutionError(
+                    tool_name,
+                    policy.current_step,
+                    reason="schema_validation_failed",
+                    extra={"errors": ["event_entry missing"]},
+                )
+            result = definition.handler(event_entry_data, params)
+        else:
+            result = definition.handler(params)
+
+    if hasattr(result, "dict"):
+        content = result.dict()
+    elif isinstance(result, dict):
+        content = result
+    else:
+        content = {"value": result}
+
+    return {
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+        "content": content,
+    }
+
+
+async def _fallback_stream(thread_id: str, message: Dict[str, Any], state: Dict[str, Any]) -> AsyncGenerator[str, None]:
+    """
+    Deterministic fallback path when the Agents SDK is unavailable.
+
+    We reuse the existing OpenEventAgent facade so behaviour mirrors the
+    traditional workflow-backed path. The output is wrapped in SSE format.
+    """
+
+    agent = OpenEventAgent()
+    session = agent.create_session(thread_id)
+    envelope = agent.run(session, message)
+    payload = safe_envelope(envelope)
+    yield f"data: {json.dumps(payload)}\n\n"
+
+
+async def run_streamed(thread_id: str, message: Dict[str, Any], state: Dict[str, Any]) -> AsyncGenerator[str, None]:
+    """
+    Stream the assistant response for ChatKit.
+
+    When the Agents SDK or network access is not available the function falls
+    back to the deterministic workflow pipeline so tests can run offline.
+    """
+
+    policy = StepToolPolicy(state.get("current_step"))
+    agent_mode = os.getenv("AGENT_MODE", "workflow").lower()
+
+    if agent_mode != "openai":
+        async for chunk in _fallback_stream(thread_id, message, state):
+            yield chunk
+        return
+
+    try:  # pragma: no cover - SDK path exercised only in integration runs
+        from openai import OpenAI  # type: ignore
+
+        client = OpenAI()
+        allowed_tools = [{"type": "function", "function": {"name": tool}} for tool in policy.allowed_tools]
+        stop_tools = [{"type": "function", "function": {"name": tool}} for tool in CLIENT_STOP_AT_TOOLS]
+        system_instructions = (
+            "You are OpenEvent, an empathetic venue assistant. Follow Workflow v3 strictly.\n"
+            f"Current step: {state.get('current_step') or 'unknown'}; "
+            f"Status: {state.get('status') or 'Lead'}.\n"
+            "Only invoke engine tools that appear in the provided allowlist. "
+            "Client tools (confirm/change/discard offer, see catering/products) must use StopAtTools."
+        )
+
+        response = client.responses.stream.create(  # type: ignore[attr-defined]
+            model=os.getenv("OPENAI_AGENT_MODEL", "gpt-4.1-mini"),
+            input=[
+                {"role": "system", "content": system_instructions},
+                {"role": "user", "content": message["body"]},
+            ],
+            tools=allowed_tools + stop_tools,
+            tool_choice={"type": "required"},
+        )
+
+        async for event in response:
+            if event.type == "response.error":
+                raise RuntimeError(event.error)  # type: ignore[attr-defined]
+            if event.type != "response.output_text.delta":  # type: ignore[attr-defined]
+                continue
+            text = event.delta  # type: ignore[attr-defined]
+            yield f"data: {json.dumps({'delta': text})}\n\n"
+
+        final = response.get_final_response()
+        yield f"data: {json.dumps({'assistant_text': final.output_text})}\n\n"
+    except Exception as exc:
+        logger.warning("Agents SDK unavailable or failed (%s); using fallback workflow path.", exc)
+        async for chunk in _fallback_stream(thread_id, message, state):
+            yield chunk
+
+
+def validate_tool_call(tool_name: str, state: Dict[str, Any], arguments: Optional[Dict[str, Any]] = None) -> None:
+    """
+    Helper exposed for tests so we can assert allowlist enforcement without
+    needing to exercise the Agents SDK.
+    """
+
+    policy = StepToolPolicy(state.get("current_step"))
+    policy.ensure_allowed(tool_name)
+    _validate_tool_schema(tool_name, arguments, policy.current_step)

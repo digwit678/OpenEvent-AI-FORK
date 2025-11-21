@@ -1,0 +1,95 @@
+{
+  "suite": "flow_D_hybrid",
+  "initial_clock": "2025-11-11T10:00:00+01:00",
+  "steps": [
+    {
+      "turn": 1,
+      "msg_in": {
+        "subject": "Hybrid request",
+        "body": "Do you have vegetarian three-course menus with wine? 21.02.2026 works for us; we’re 30 people."
+      },
+      "expect": {
+        "user_info": {
+          "participants": 30,
+          "date": "2026-02-21"
+        },
+        "trace": {
+          "subloops_contains": [
+            "general_q_a"
+          ]
+        },
+        "db_assert": {
+          "gatekeeping": {
+            "attendees": 30,
+            "date": "21.02.2026"
+          }
+        }
+      }
+    },
+    {
+      "turn": 2,
+      "system_call": "room_status_on_date",
+      "args": {
+        "date": "2026-02-21"
+      },
+      "expect": {
+        "rooms_min": 2,
+        "res": {
+          "assistant_draft": {
+            "headers": [
+              "Availability overview",
+              "Rooms for 30 people on 21.02.2026"
+            ],
+            "body_order": [
+              "Vegetarian three-course menus with wine pairings",
+              "21.02.2026 is set.",
+              "For 30 people on 21.02.2026, these rooms are available (ranked):",
+              "Room A",
+              "Room B"
+            ],
+            "contains_all": [
+              "Room A — Coffee ✓ · U-shape ~ · Projector ✓ · Capacity ✓ (max 40)",
+              "Room B — Coffee ✓ · U-shape ~ · Projector ✓ · Capacity ✓ (max 32)"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "turn": 3,
+      "msg_in": {
+        "body": "Room A please. Send the offer."
+      },
+      "simulate_intent": "room_choice",
+      "expect": {
+        "intent": "room_choice"
+      }
+    },
+    {
+      "turn": 4,
+      "system_call": "build_offer",
+      "args": {
+        "room_id": "R-A",
+        "date": "2026-02-21",
+        "pax": 30
+      },
+      "expect": {
+        "status": "Option",
+        "res": {
+          "assistant_draft": {
+            "headers_subset": [
+              "Offer"
+            ],
+            "contains_all": [
+              "Offer sent",
+              "status is Option",
+              "Room A",
+              "21.02.2026",
+              "30 guests"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
