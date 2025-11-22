@@ -1158,6 +1158,27 @@ def _present_candidate_dates(
     else:
         slot_text = "18:00–22:00"
 
+    if week_scope and week_scope.get("weekdays_hint"):
+        hint_order = []
+        for hint in week_scope["weekdays_hint"]:
+            try:
+                hint_order.append(int(hint))
+            except (TypeError, ValueError):
+                continue
+        if hint_order:
+            prioritized: List[str] = []
+            remaining = list(formatted_dates)
+            for day_hint in hint_order:
+                for iso_value in list(remaining):
+                    try:
+                        day_val = datetime.fromisoformat(iso_value).day
+                    except ValueError:
+                        continue
+                    if day_val == day_hint and iso_value not in prioritized:
+                        prioritized.append(iso_value)
+                        remaining.remove(iso_value)
+            formatted_dates = prioritized + [val for val in formatted_dates if val not in prioritized]
+
     greeting = _compose_greeting(state)
     message_lines: List[str] = [greeting, ""]
 
@@ -1296,14 +1317,37 @@ def _present_candidate_dates(
     next_step_lines = ["", "NEXT STEP:"]
     if future_display:
         next_step_lines.append(f"Say yes if {future_display} works, or share another option you'd like me to check.")
+    next_step_lines.append("- Tell me which date works best so I can move to Room Availability and shortlist the best rooms.")
     next_step_lines.append("- Let me know which date works best so I can lock it in and shortlist the best rooms.")
-    next_step_lines.append("- Or share another day/time preference and I'll check availability right away.")
+    next_step_lines.append("- Or share another day/time and I'll check availability.")
+    next_step_lines.append("- Do you have any preferred dates or times I should prioritise?")
     message_lines.extend(next_step_lines)
     prompt = "\n".join(message_lines)
 
     weekday_hint = weekday_hint_value
     time_hint = user_info.get("vague_time_of_day") or event_entry.get("vague_time_of_day")
     time_display = str(time_hint).strip().capitalize() if time_hint else slot_text
+
+    if week_scope and week_scope.get("weekdays_hint"):
+        hint_order = []
+        for hint in week_scope["weekdays_hint"]:
+            try:
+                hint_order.append(int(hint))
+            except (TypeError, ValueError):
+                continue
+        if hint_order:
+            prioritized: List[str] = []
+            remaining = list(formatted_dates)
+            for day_hint in hint_order:
+                for iso_value in list(remaining):
+                    try:
+                        day_val = datetime.fromisoformat(iso_value).day
+                    except ValueError:
+                        continue
+                    if day_val == day_hint and iso_value not in prioritized:
+                        prioritized.append(iso_value)
+                        remaining.remove(iso_value)
+            formatted_dates = prioritized + [val for val in formatted_dates if val not in prioritized]
     table_rows: List[Dict[str, Any]] = []
     actions_payload: List[Dict[str, Any]] = []
     for iso_value in formatted_dates[:5]:
@@ -1335,7 +1379,9 @@ def _present_candidate_dates(
 
     _trace_candidate_gate(_thread_id(state), formatted_dates[:5])
 
-    headers = [date_header_label]
+    headers = ["Availability overview"]
+    if date_header_label:
+        headers.append(date_header_label)
     if escalate_to_hil:
         headers.append("Manual follow-up required")
     draft_message = {
@@ -1408,6 +1454,20 @@ def _present_candidate_dates(
     state.telemetry.answered_question_first = True
     state.telemetry.gatekeeper_passed = dict(gatekeeper)
     payload["gatekeeper_passed"] = dict(gatekeeper)
+    message_text = f"{state.message.subject or ''} {state.message.body or ''}"
+    lowered_msg = message_text.lower()
+    question_triggers = (
+        "?" in message_text,
+        "please advise" in lowered_msg,
+        "could you" in lowered_msg,
+        "can you" in lowered_msg,
+        "would you" in lowered_msg,
+        "let me know" in lowered_msg,
+    )
+    if any(question_triggers) or state.extras.get("general_qna_detected"):
+        state.intent_detail = "event_intake_with_question"
+    elif not state.intent_detail:
+        state.intent_detail = "event_intake"
     return GroupResult(action="date_options_proposed", payload=payload, halt=True)
 
 

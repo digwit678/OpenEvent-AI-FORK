@@ -309,9 +309,11 @@ def _enqueue_hil_tasks(state: WorkflowState, event_entry: Dict[str, Any]) -> Non
             step_num = int(step_id)
         except (TypeError, ValueError):
             continue
-        if step_num not in {2, 3, 4}:
+        if step_num not in {2, 3, 4, 5}:
             continue
         if step_num == 4:
+            task_type = TaskType.OFFER_MESSAGE
+        elif step_num == 5:
             task_type = TaskType.OFFER_MESSAGE
         elif step_num == 3:
             task_type = TaskType.ROOM_AVAILABILITY_MESSAGE
@@ -365,6 +367,8 @@ def _hil_action_type_for_step(step_id: Optional[int]) -> Optional[str]:
         return "room_options_enqueued"
     if step_id == 4:
         return "offer_enqueued"
+    if step_id == 5:
+        return "negotiation_enqueued"
     return None
 
 
@@ -412,9 +416,15 @@ def approve_task_and_send(
     step_num = target_request.get("step")
     if isinstance(step_num, int):
         try:
-            workflow_step = WorkflowStep(f"step_{step_num}")
+            current_step_raw = target_event.get("current_step")
+            try:
+                current_step_int = int(current_step_raw) if current_step_raw is not None else None
+            except (TypeError, ValueError):
+                current_step_int = None
+            effective_step = max(step_num, current_step_int) if current_step_int else step_num
+            workflow_step = WorkflowStep(f"step_{effective_step}")
             write_stage(target_event, current_step=workflow_step)
-            update_event_metadata(target_event, current_step=step_num)
+            update_event_metadata(target_event, current_step=effective_step)
         except ValueError:
             pass
 

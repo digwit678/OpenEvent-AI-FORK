@@ -18,6 +18,7 @@ ACTION_TASK_MAP = {
     "ask_for_date_enqueued": 2,
     "room_options_enqueued": 3,
     "offer_enqueued": 4,
+    "negotiation_enqueued": 5,
 }
 
 
