@@ -31,6 +31,7 @@ class OpenEventAgent:
 
     def __init__(self) -> None:
         self._sdk_available = False
+        self._chat_supported = False
         self._client = None
         self._agent_id: Optional[str] = None
         self._sessions: Dict[str, Dict[str, Any]] = {}
@@ -42,11 +43,18 @@ class OpenEventAgent:
             from openai import OpenAI  # type: ignore
 
             self._client = OpenAI()
-            self._sdk_available = True
-            logger.info("OpenAI Agents SDK detected. Agent orchestration enabled.")
+            self._sdk_available = hasattr(self._client, "agents")
+            self._chat_supported = hasattr(self._client, "chat")
+            if self._sdk_available:
+                logger.info("OpenAI Agents SDK detected. Agent orchestration enabled.")
+            elif self._chat_supported:
+                logger.info("OpenAI chat completions detected; using lightweight agent runner.")
+            else:
+                logger.info("OpenAI client present but no agents/chat support; using workflow fallback.")
         except Exception as exc:  # pragma: no cover - optional dependency probe
             self._client = None
             self._sdk_available = False
+            self._chat_supported = False
             logger.info("Agents SDK unavailable (%s); using workflow fallback.", exc)
 
     def _ensure_agent(self) -> Optional[str]:
@@ -146,6 +154,11 @@ class OpenEventAgent:
                 return self._run_via_agent(session, message)
             except Exception as exc:  # pragma: no cover - network guarded
                 logger.warning("Agents SDK execution failed (%s); falling back.", exc)
+        elif self._chat_supported and self._client:
+            try:
+                return self._run_via_chat(session, message)
+            except Exception as exc:
+                logger.warning("Chat-based agent execution failed (%s); falling back.", exc)
 
         return self._run_fallback(message)
 
@@ -169,6 +182,52 @@ class OpenEventAgent:
             return validated
         except Exception as exc:  # pragma: no cover - network guarded
             raise RuntimeError(f"Agents SDK run failed: {exc}") from exc
+
+    def _run_via_chat(self, session: Dict[str, Any], message: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Lightweight agent runner using chat completions when the Agents SDK
+        surface is unavailable in the installed OpenAI version.
+        """
+
+        assert self._client is not None
+        history: List[Dict[str, Any]] = session.get("history", []) or []
+        messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": self._SYSTEM_PROMPT},
+            *history,
+            {"role": "user", "content": message.get("body", "")},
+        ]
+
+        response = self._client.chat.completions.create(  # type: ignore[attr-defined]
+            model="gpt-4.1-mini",
+            messages=messages,
+            temperature=0.2,
+        )
+
+        choice = response.choices[0].message  # type: ignore[index]
+        content = choice.content
+        if isinstance(content, list):
+            content_text = "".join(part.get("text", "") if isinstance(part, dict) else str(part) for part in content)
+        else:
+            content_text = str(content or "")
+
+        try:
+            parsed = json.loads(content_text)
+        except Exception:
+            parsed = {
+                "assistant_text": content_text or "Thanks, I’ll check that now.",
+                "requires_hil": True,
+                "action": "agent_reply",
+                "payload": {"raw_message": content_text},
+            }
+
+        # Persist minimal history for follow-up turns.
+        session["history"] = [
+            *history[-4:],  # cap memory growth
+            {"role": "user", "content": message.get("body", "")},
+            {"role": "assistant", "content": content_text},
+        ]
+
+        return safe_envelope(parsed if isinstance(parsed, dict) else {"assistant_text": content_text, "requires_hil": True, "action": "agent_reply", "payload": {}})
 
     def _run_fallback(self, message: Dict[str, Any]) -> Dict[str, Any]:
         wf_res = workflow_process_msg(message)

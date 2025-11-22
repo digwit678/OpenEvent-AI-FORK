@@ -633,13 +633,13 @@
       "date_confirmed": false,
       "locked_room_id": null,
       "requirements": {
-        "number_of_participants": 30,
+        "number_of_participants": 20,
         "seating_layout": null,
         "event_duration": {},
         "special_requirements": null,
-        "preferred_room": null
+        "preferred_room": "Room For"
       },
-      "requirements_hash": "4919ac192a5fda3ee0c945f3d8a50c4a5486e4f67b70db2fce52b2217bae2737",
+      "requirements_hash": "4eba89987936c5b8a79fcab1fd1ec9e8e903a0663730e8d4aca40eec93f0ba1f",
       "room_eval_hash": null,
       "offer_id": null,
       "audit": [
@@ -747,21 +747,28 @@
           "from_step": 2,
           "to_step": 2,
           "reason": "date_missing"
+        },
+        {
+          "ts": "2025-11-22T02:58:47Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_missing"
         }
       ],
       "event_data": {
-        "Date Email Received": "11.11.2025",
+        "Date Email Received": "22.11.2025",
         "Status": "Lead",
         "Event Date": "Not specified",
-        "Name": "Test",
+        "Name": "CLI Test",
         "Email": "client@example.com",
         "Phone": "2025110218",
         "Company": "Not specified",
         "Billing Address": "Not specified",
         "Start Time": "18:00",
         "End Time": "22:00",
-        "Preferred Room": "Room B",
-        "Number of Participants": "30",
+        "Preferred Room": "Room For",
+        "Number of Participants": "20",
         "Type of Event": "workshop",
         "Catering Preference": "Not specified",
         "Billing Amount": "none",
@@ -809,7 +816,8 @@
         "agent-1761882608.412583",
         "test",
         "test2",
-        "test3"
+        "test3",
+        "live-1763776723.835858"
       ],
       "offers": [],
       "current_offer_id": null,
@@ -858,7 +866,7 @@
       },
       "decision": "pending",
       "captured": {
-        "preferred_room": "Room B",
+        "preferred_room": "Room For",
         "start_time": "18:00",
         "end_time": "22:00",
         "contact": {
@@ -880,10 +888,12 @@
         "7d171c3e-04cc-41dc-a442-30e40bf0d6c6:event_date",
         "7d171c3e-04cc-41dc-a442-30e40bf0d6c6:start_time",
         "7d171c3e-04cc-41dc-a442-30e40bf0d6c6:end_time",
-        "a3dbb0bf-efb8-4180-8960-d42ec126f8ce:preferred_room"
+        "a3dbb0bf-efb8-4180-8960-d42ec126f8ce:preferred_room",
+        "live-1763776723.835858:preferred_room"
       ],
       "deferred_intents": [
-        "contact_update"
+        "contact_update",
+        "room_selection"
       ],
       "room_decision": {
         "status": "available",
@@ -957,13 +967,236 @@
       "vague_time_of_day": "evening",
       "range_query_detected": true,
       "candidate_dates": [
-        "07.02.2026",
-        "14.02.2026",
-        "21.02.2026",
-        "28.02.2026",
-        "06.02.2027"
+        "24.11.2025",
+        "01.12.2025",
+        "08.12.2025",
+        "15.12.2025",
+        "29.12.2025"
       ],
-      "pending_hil_requests": [],
+      "pending_hil_requests": [
+        {
+          "task_id": "03b7ae4c-f99b-433d-b2dc-cc2c61f99031",
+          "signature": "756065946a751198db593d92fd1c5ce374808e43e26c9d8219c8294ddaea0888",
+          "step": 2,
+          "draft": {
+            "body": "Availability overview\nAll options below fit 20 guests. They are available on Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025 and Mon 29 Dec 2025 and during the evening. I assumed 20 guests and evening from your previous details.\n\n| Room | Dates | Notes |\n| --- | --- | --- |\n| Room A | Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025, Mon 29 Dec 2025 | Status: Available |\n| Room B | Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025, Mon 29 Dec 2025 | Status: Available |\n| Room D | Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025, Mon 29 Dec 2025 | Status: Available |\n\nNEXT STEP:\n- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+            "step": 2,
+            "next_step": 3,
+            "thread_state": "Awaiting Client",
+            "topic": "general_room_qna",
+            "candidate_dates": [
+              "24.11.2025",
+              "01.12.2025",
+              "08.12.2025",
+              "15.12.2025",
+              "29.12.2025"
+            ],
+            "actions": [
+              {
+                "type": "select_date",
+                "label": "Confirm 24.11.2025",
+                "date": "24.11.2025",
+                "iso_date": "2025-11-24"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm 01.12.2025",
+                "date": "01.12.2025",
+                "iso_date": "2025-12-01"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm 08.12.2025",
+                "date": "08.12.2025",
+                "iso_date": "2025-12-08"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm 15.12.2025",
+                "date": "15.12.2025",
+                "iso_date": "2025-12-15"
+              },
+              {
+                "type": "select_date",
+                "label": "Confirm 29.12.2025",
+                "date": "29.12.2025",
+                "iso_date": "2025-12-29"
+              },
+              {
+                "type": "ask_for_date_enqueued",
+                "payload": {
+                  "event_id": "9b1a04a2-9acc-4962-8b89-500dd76828bb",
+                  "suggested_dates": [
+                    "24.11.2025",
+                    "01.12.2025",
+                    "08.12.2025",
+                    "15.12.2025",
+                    "29.12.2025"
+                  ]
+                }
+              }
+            ],
+            "subloop": "general_q_a",
+            "headers": [
+              "Availability overview"
+            ],
+            "range_results": [
+              {
+                "iso_date": "2025-11-24",
+                "date_label": "Mon 24 Nov 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-11-24",
+                "date_label": "Mon 24 Nov 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-11-24",
+                "date_label": "Mon 24 Nov 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-12-01",
+                "date_label": "Mon 01 Dec 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-12-01",
+                "date_label": "Mon 01 Dec 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-12-01",
+                "date_label": "Mon 01 Dec 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-12-08",
+                "date_label": "Mon 08 Dec 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-12-08",
+                "date_label": "Mon 08 Dec 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-12-08",
+                "date_label": "Mon 08 Dec 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-12-15",
+                "date_label": "Mon 15 Dec 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-12-15",
+                "date_label": "Mon 15 Dec 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-12-15",
+                "date_label": "Mon 15 Dec 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-12-29",
+                "date_label": "Mon 29 Dec 2025",
+                "room": "Room B",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-12-29",
+                "date_label": "Mon 29 Dec 2025",
+                "room": "Room A",
+                "status": "Available",
+                "hint": "sound system"
+              },
+              {
+                "iso_date": "2025-12-29",
+                "date_label": "Mon 29 Dec 2025",
+                "room": "Room D",
+                "status": "Available",
+                "hint": "sound system"
+              }
+            ],
+            "body_markdown": "Availability overview\nAll options below fit 20 guests. They are available on Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025 and Mon 29 Dec 2025 and during the evening. I assumed 20 guests and evening from your previous details.\n\n| Room | Dates | Notes |\n| --- | --- | --- |\n| Room A | Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025, Mon 29 Dec 2025 | Status: Available |\n| Room B | Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025, Mon 29 Dec 2025 | Status: Available |\n| Room D | Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025, Mon 29 Dec 2025 | Status: Available |\n\nNEXT STEP:\n- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you.",
+            "footer": "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+            "table_blocks": [
+              {
+                "type": "table",
+                "label": "Availability overview Summary",
+                "columns": [
+                  {
+                    "key": "room",
+                    "label": "Room"
+                  },
+                  {
+                    "key": "dates",
+                    "label": "Dates"
+                  },
+                  {
+                    "key": "notes",
+                    "label": "Notes"
+                  }
+                ],
+                "rows": [
+                  {
+                    "room": "Room A",
+                    "dates": "Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025, Mon 29 Dec 2025",
+                    "notes": "Status: Available"
+                  },
+                  {
+                    "room": "Room B",
+                    "dates": "Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025, Mon 29 Dec 2025",
+                    "notes": "Status: Available"
+                  },
+                  {
+                    "room": "Room D",
+                    "dates": "Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025, Mon 29 Dec 2025",
+                    "notes": "Status: Available"
+                  }
+                ],
+                "column_order": [
+                  "room",
+                  "dates",
+                  "notes"
+                ]
+              }
+            ],
+            "requires_approval": true,
+            "created_at_step": 2
+          },
+          "thread_id": "live-1763776723.835858"
+        }
+      ],
       "wish_products": [
         "sound system"
       ],
@@ -1057,6 +1290,19 @@
             ]
           }
         }
+      },
+      "weekdays_hint": [
+        20
+      ],
+      "window_scope": {
+        "weekdays_hint": [
+          20
+        ]
+      },
+      "last_general_qna": {
+        "topic": "non_event_info",
+        "date_pattern": null,
+        "timestamp": "2025-11-22T02:58:51.336664Z"
       }
     },
     {
@@ -12324,6 +12570,48 @@
             "vague_month": "february",
             "vague_weekday": "saturday",
             "vague_time_of_day": "evening"
+          }
+        },
+        {
+          "msg_id": "live-1763776723.835858",
+          "ts": "2025-11-22T02:58:43.836040Z",
+          "subject": "Test live agent",
+          "body_preview": "Hi, we want to book a room for 20 people next month. What dates work?",
+          "intent": "event_request",
+          "confidence": 0.85,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 20,
+            "room": "Room For",
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              20
+            ],
+            "window": {
+              "weekdays_hint": [
+                20
+              ]
+            },
+            "event_date": null
           }
         }
       ],
@@ -48884,6 +49172,26 @@
         "requirements_hash": "3d21803cc4d957766a6d3e21e48a9f11895bcc576417452ab1da44e6d43f4b10",
         "room_eval_hash": "3d21803cc4d957766a6d3e21e48a9f11895bcc576417452ab1da44e6d43f4b10",
         "thread_id": "322cd910-18c9-4628-a654-35735e8d0758"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "03b7ae4c-f99b-433d-b2dc-cc2c61f99031",
+      "created_at": "2025-11-22T02:58:52.641674",
+      "type": "date_confirmation_message",
+      "status": "pending",
+      "client_id": "client@example.com",
+      "event_id": "9b1a04a2-9acc-4962-8b89-500dd76828bb",
+      "payload": {
+        "step_id": 2,
+        "intent": "event_request",
+        "event_id": "9b1a04a2-9acc-4962-8b89-500dd76828bb",
+        "draft_msg": "Availability overview\nAll options below fit 20 guests. They are available on Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025 and Mon 29 Dec 2025 and during the evening. I assumed 20 guests and evening from your previous details.\n\n| Room | Dates | Notes |\n| --- | --- | --- |\n| Room A | Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025, Mon 29 Dec 2025 | Status: Available |\n| Room B | Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025, Mon 29 Dec 2025 | Status: Available |\n| Room D | Mon 24 Nov 2025, Mon 01 Dec 2025, Mon 08 Dec 2025, Mon 15 Dec 2025, Mon 29 Dec 2025 | Status: Available |\n\nNEXT STEP:\n- Confirm your preferred date (and any other must-haves) so I can fast-track the next workflow step for you.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+        "language": null,
+        "caller_step": 4,
+        "requirements_hash": "4eba89987936c5b8a79fcab1fd1ec9e8e903a0663730e8d4aca40eec93f0ba1f",
+        "room_eval_hash": null,
+        "thread_id": "live-1763776723.835858"
       },
       "notes": ""
     }
