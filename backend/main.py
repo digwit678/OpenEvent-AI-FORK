@@ -37,8 +37,8 @@ from backend.workflow_email import (
     load_db as wf_load_db,
     save_db as wf_save_db,
     list_pending_tasks as wf_list_pending_tasks,
-    update_task_status as wf_update_task_status,
     approve_task_and_send as wf_approve_task_and_send,
+    reject_task_and_send as wf_reject_task_and_send,
     cleanup_tasks as wf_cleanup_tasks,
 )
 from backend.api.debug import (
@@ -153,6 +153,19 @@ def _format_draft_text(draft: Dict[str, Any]) -> str:
 
 
 def _extract_workflow_reply(wf_res: Dict[str, Any]) -> tuple[str, List[Dict[str, Any]]]:
+    wf_action = wf_res.get("action")
+    if wf_action in {
+        "offer_accept_pending_hil",
+        "negotiation_accept_pending_hil",
+        "negotiation_hil_waiting",
+        "offer_waiting_hil",
+    }:
+        waiting_text = (
+            "Thanks for confirming - I've sent the full offer to our manager for approval. "
+            "I'll let you know as soon as it's reviewed."
+        )
+        return waiting_text, wf_res.get("actions") or []
+
     drafts = wf_res.get("draft_messages") or []
     if drafts:
         draft = drafts[-1]
@@ -674,9 +687,38 @@ async def get_pending_tasks():
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to load tasks: {exc}") from exc
     tasks = wf_list_pending_tasks(db)
+    events_by_id = {event.get("event_id"): event for event in db.get("events") or [] if event.get("event_id")}
     payload = []
     for task in tasks:
         payload_data = task.get("payload") or {}
+        event_entry = events_by_id.get(task.get("event_id"))
+        event_data = (event_entry or {}).get("event_data") or {}
+        draft_body = payload_data.get("draft_msg")
+        if not draft_body and event_entry:
+            for request in event_entry.get("pending_hil_requests") or []:
+                if request.get("task_id") == task.get("task_id"):
+                    draft_body = (request.get("draft") or {}).get("body") or draft_body
+                    break
+
+        event_summary = None
+        if event_entry:
+            event_summary = {
+                "client_name": event_data.get("Name"),
+                "company": event_data.get("Company"),
+                "billing_address": event_data.get("Billing Address"),
+                "email": event_data.get("Email"),
+                "chosen_date": event_entry.get("chosen_date"),
+                "locked_room": event_entry.get("locked_room_id"),
+            }
+            try:
+                from backend.workflows.groups.negotiation_close import _determine_offer_total
+
+                total_amount = _determine_offer_total(event_entry)
+            except Exception:
+                total_amount = None
+            if total_amount not in (None, 0):
+                event_summary["offer_total"] = total_amount
+
         payload.append(
             {
                 "task_id": task.get("task_id"),
@@ -687,8 +729,11 @@ async def get_pending_tasks():
                 "notes": task.get("notes"),
                 "payload": {
                     "snippet": payload_data.get("snippet"),
+                    "draft_body": draft_body,
                     "suggested_dates": payload_data.get("suggested_dates"),
                     "thread_id": payload_data.get("thread_id"),
+                    "step_id": payload_data.get("step_id") or payload_data.get("step"),
+                    "event_summary": event_summary,
                 },
             }
         )
@@ -720,15 +765,21 @@ async def approve_task(task_id: str, request: TaskDecisionRequest):
 async def reject_task(task_id: str, request: TaskDecisionRequest):
     """OpenEvent Action (light-blue): mark a task as rejected from the GUI."""
     try:
-        db = wf_load_db()
-        wf_update_task_status(db, task_id, "rejected", request.notes)
-        wf_save_db(db)
+        result = wf_reject_task_and_send(task_id, manager_notes=request.notes)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to reject task: {exc}") from exc
     print(f"[WF] task rejected id={task_id}")
-    return {"task_id": task_id, "task_status": "rejected", "review_state": "rejected"}
+    assistant_text = result.get("res", {}).get("assistant_draft_text")
+    return {
+        "task_id": task_id,
+        "task_status": "rejected",
+        "assistant_reply": assistant_text,
+        "thread_id": result.get("thread_id"),
+        "event_id": result.get("event_id"),
+        "review_state": "rejected",
+    }
 
 
 @app.post("/api/tasks/cleanup")
