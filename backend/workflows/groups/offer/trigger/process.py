@@ -255,7 +255,7 @@ def process(state: WorkflowState) -> GroupResult:
         "offer_id": offer_id,
         "offer_version": offer_version,
         "total_amount": total_amount,
-        "requires_approval": True,
+        "requires_approval": False,
         "table_blocks": [
             {
                 "type": "table",
@@ -460,7 +460,7 @@ def _handle_products_pending(state: WorkflowState, event_entry: Dict[str, Any], 
             "next_step": "Share preferred products",
             "thread_state": "Awaiting Client",
             "topic": "offer_products_prompt",
-            "requires_approval": True,
+            "requires_approval": False,
             "actions": [
                 {
                     "type": "share_products",
