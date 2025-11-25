@@ -198,7 +198,7 @@ def _detect_room_choice(message_text: str, linked_event: Optional[Dict[str, Any]
         current_step = int(linked_event.get("current_step") or 0)
     except (TypeError, ValueError):
         current_step = 0
-    if current_step != 3:
+    if current_step < 3:
         return None
 
     rooms = load_rooms()
@@ -564,6 +564,13 @@ def process(state: WorkflowState) -> GroupResult:
         # Keep the thread on negotiation/offer so Step 5 can run immediately.
         update_event_metadata(linked_event, current_step=target_step, thread_state="Waiting on HIL", caller_step=None)
         state.extras["persist"] = True
+    # Early room-choice detection so we don't rely on classifier confidence
+    early_room_choice = _detect_room_choice(body_text, linked_event)
+    if early_room_choice:
+        user_info["room"] = early_room_choice
+        user_info["_room_choice_detected"] = True
+        state.extras["room_choice_selected"] = early_room_choice
+
     product_update_detected = _detect_product_update_request(message_payload, user_info, linked_event)
     if product_update_detected:
         state.extras["product_update_detected"] = True
@@ -583,7 +590,16 @@ def process(state: WorkflowState) -> GroupResult:
 
     if not is_event_request(intent) or confidence < 0.85:
         body_text = message_payload.get("body") or ""
-        if _looks_like_gate_confirmation(body_text, linked_event):
+        awaiting_billing = linked_event and (linked_event.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
+        if awaiting_billing:
+            intent = IntentLabel.EVENT_REQUEST
+            confidence = max(confidence, 0.9)
+            state.intent = intent
+            state.confidence = confidence
+            state.intent_detail = "event_intake_billing_update"
+            if body_text.strip() and _looks_like_billing_fragment(body_text):
+                user_info["billing_address"] = body_text.strip()
+        elif _looks_like_gate_confirmation(body_text, linked_event):
             intent = IntentLabel.EVENT_REQUEST
             confidence = max(confidence, 0.95)
             state.intent = intent
@@ -609,69 +625,93 @@ def process(state: WorkflowState) -> GroupResult:
                 user_info["room"] = room_choice
                 user_info["_room_choice_detected"] = True
                 state.extras["room_choice_selected"] = room_choice
+                # Only lock immediately if no room is currently locked; otherwise let Step 3 handle a switch.
+                if linked_event:
+                    locked = linked_event.get("locked_room_id")
+                    if not locked:
+                        req_hash = linked_event.get("requirements_hash")
+                        update_event_metadata(
+                            linked_event,
+                            locked_room_id=room_choice,
+                            room_eval_hash=req_hash,
+                            room_status="Available",
+                            caller_step=None,
+                        )
             else:
-                trace_marker(
-                    thread_id,
-                    "CONDITIONAL_HIL",
-                    detail="manual_review_required",
-                    data={"intent": intent.value, "confidence": round(confidence, 3)},
-                    owner_step=owner_step,
-                )
-                linked_event_id = linked_event.get("event_id") if linked_event else None
-                task_payload: Dict[str, Any] = {
-                    "subject": message_payload.get("subject"),
-                    "snippet": (message_payload.get("body") or "")[:200],
-                    "ts": message_payload.get("ts"),
-                    "reason": "manual_review_required",
-                    "thread_id": thread_id,
-                }
-                task_id = enqueue_manual_review_task(
-                    state.db,
-                    state.client_id,
-                    linked_event_id,
-                    task_payload,
-                )
-                state.extras.update({"task_id": task_id, "persist": True})
-                clarification = (
-                    "Thanks for your message. A member of our team will review it shortly "
-                    "to make sure it reaches the right place."
-                )
-                clarification = append_footer(
-                    clarification,
-                    step=1,
-                    next_step="Team review (HIL)",
-                    thread_state="Waiting on HIL",
-                )
-                state.add_draft_message(
-                    {
-                        "body": clarification,
-                        "step": 1,
-                        "topic": "manual_review",
-                    }
-                )
-                state.set_thread_state("Waiting on HIL")
-                if os.getenv("OE_DEBUG") == "1":
-                    print(
-                        "[DEBUG] manual_review_enqueued:",
-                        f"conf={confidence:.2f}",
-                        f"parsed_date={user_info.get('date')}",
-                        f"intent={intent.value}",
+                if _looks_like_billing_fragment(body_text):
+                    intent = IntentLabel.EVENT_REQUEST
+                    confidence = max(confidence, 0.92)
+                    state.intent = intent
+                    state.confidence = confidence
+                    state.intent_detail = "event_intake_billing_capture"
+                    user_info["billing_address"] = body_text.strip()
+                if not is_event_request(intent) or confidence < 0.85:
+                    trace_marker(
+                        thread_id,
+                        "CONDITIONAL_HIL",
+                        detail="manual_review_required",
+                        data={"intent": intent.value, "confidence": round(confidence, 3)},
+                        owner_step=owner_step,
                     )
-                payload = {
-                    "client_id": state.client_id,
-                    "event_id": linked_event_id,
-                    "intent": intent.value,
-                    "confidence": round(confidence, 3),
-                    "persisted": True,
-                    "task_id": task_id,
-                    "user_info": user_info,
-                    "context": context,
-                    "draft_messages": state.draft_messages,
-                    "thread_state": state.thread_state,
-                }
-                return GroupResult(action="manual_review_enqueued", payload=payload, halt=True)
+                    linked_event_id = linked_event.get("event_id") if linked_event else None
+                    task_payload: Dict[str, Any] = {
+                        "subject": message_payload.get("subject"),
+                        "snippet": (message_payload.get("body") or "")[:200],
+                        "ts": message_payload.get("ts"),
+                        "reason": "manual_review_required",
+                        "thread_id": thread_id,
+                    }
+                    task_id = enqueue_manual_review_task(
+                        state.db,
+                        state.client_id,
+                        linked_event_id,
+                        task_payload,
+                    )
+                    state.extras.update({"task_id": task_id, "persist": True})
+                    clarification = (
+                        "Thanks for your message. A member of our team will review it shortly "
+                        "to make sure it reaches the right place."
+                    )
+                    clarification = append_footer(
+                        clarification,
+                        step=1,
+                        next_step="Team review (HIL)",
+                        thread_state="Waiting on HIL",
+                    )
+                    state.add_draft_message(
+                        {
+                            "body": clarification,
+                            "step": 1,
+                            "topic": "manual_review",
+                        }
+                    )
+                    state.set_thread_state("Waiting on HIL")
+                    if os.getenv("OE_DEBUG") == "1":
+                        print(
+                            "[DEBUG] manual_review_enqueued:",
+                            f"conf={confidence:.2f}",
+                            f"parsed_date={user_info.get('date')}",
+                            f"intent={intent.value}",
+                        )
+                    payload = {
+                        "client_id": state.client_id,
+                        "event_id": linked_event_id,
+                        "intent": intent.value,
+                        "confidence": round(confidence, 3),
+                        "persisted": True,
+                        "task_id": task_id,
+                        "user_info": user_info,
+                        "context": context,
+                        "draft_messages": state.draft_messages,
+                        "thread_state": state.thread_state,
+                    }
+                    return GroupResult(action="manual_review_enqueued", payload=payload, halt=True)
 
     event_entry = _ensure_event_record(state, message_payload, user_info)
+    if event_entry.get("pending_hil_requests"):
+        event_entry["pending_hil_requests"] = []
+        state.extras["persist"] = True
+
     if merge_client_profile(event_entry, user_info):
         state.extras["persist"] = True
     handle_billing_capture(state, event_entry)
@@ -770,12 +810,31 @@ def process(state: WorkflowState) -> GroupResult:
             or user_info.get("event_date")
             or user_info.get("date")
         )
-        return handle_select_room_action(
-            state,
-            room=room_choice_selected,
-            status=status_value,
-            date=chosen_date,
+        update_event_metadata(
+            event_entry,
+            locked_room_id=room_choice_selected,
+            room_status=status_value,
+            room_eval_hash=event_entry.get("requirements_hash"),
+            caller_step=None,
+            current_step=4,
+            thread_state="Awaiting Client",
         )
+        event_entry.setdefault("event_data", {})["Preferred Room"] = room_choice_selected
+        append_audit_entry(event_entry, state.current_step or 1, 4, "room_choice_captured")
+        state.current_step = 4
+        state.caller_step = None
+        state.set_thread_state("Awaiting Client")
+        state.extras["persist"] = True
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": intent.value,
+            "confidence": round(confidence, 3),
+            "locked_room_id": room_choice_selected,
+            "thread_state": state.thread_state,
+            "persisted": True,
+        }
+        return GroupResult(action="room_choice_captured", payload=payload, halt=False)
 
     new_preferred_room = requirements.get("preferred_room")
 
@@ -906,7 +965,8 @@ def process(state: WorkflowState) -> GroupResult:
 
     tag_message(event_entry, message_payload.get("msg_id"))
 
-    update_event_metadata(event_entry, thread_state="Waiting on HIL")
+    if not event_entry.get("thread_state"):
+        update_event_metadata(event_entry, thread_state="Awaiting Client")
 
     state.current_step = event_entry.get("current_step")
     state.caller_step = event_entry.get("caller_step")
@@ -973,6 +1033,19 @@ def _ensure_event_record(
     )
     update_event_metadata(event_entry, status=event_entry.get("status", "Lead"))
     return event_entry
+
+
+def _looks_like_billing_fragment(text: str) -> bool:
+    if not text:
+        return False
+    lowered = text.lower()
+    if lowered.startswith("room "):
+        return False
+    keywords = ("postal", "postcode", "zip", "street", "avenue", "road", "switzerland", " ch", "city", "country")
+    if any(k in lowered for k in keywords):
+        return True
+    digit_groups = sum(1 for token in lowered.replace(",", " ").split() if token.isdigit() and len(token) >= 3)
+    return digit_groups >= 1
 
 
 def _trace_user_entities(state: WorkflowState, message_payload: Dict[str, Any], user_info: Dict[str, Any]) -> None:

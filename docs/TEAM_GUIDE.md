@@ -170,3 +170,27 @@ The `_autofill_products_from_preferences` function in `backend/workflows/groups/
 **Regression Guard:** With `negotiation_pending_decision` present, any client reply should only see the waiting note; the offer should not reappear and only one HIL task should exist.
 
 **Playbook:** If a client acceptance seems ignored, check `hil_open` and `current_step`—they should be `True` and `5`. If not, re-run intake on the acceptance email; the new heuristic forces the HIL acceptance path with the offer summary attached.
+
+### Billing address required before offer submission (New)
+**Symptoms:** Clients could confirm offers without a billing address; the manager/HIL view sometimes lacked billing context alongside the line items.
+
+**Fixes Applied:**
+1. Offer drafts and HIL summaries now include the billing address (formatted leniently) plus all line items so the manager sees the full offer payload.【F:backend/workflows/groups/offer/trigger/process.py†L200-L260】【F:backend/workflows/groups/negotiation_close.py†L430-L520】
+2. Acceptance in Steps 4–5 is gated on a complete billing address (name/company, street, postal code, city, country). If a client confirms before sharing it, we prompt for the missing pieces, keep the thread on “Awaiting Client,” and auto-submit the offer for HIL as soon as the address is provided—no second confirmation needed.【F:backend/workflows/groups/offer/trigger/process.py†L70-L140】【F:backend/workflows/groups/negotiation_close.py†L85-L190】
+
+**UX:** When billing is missing, the assistant politely lists the missing fields and waits; once the address is captured, the offer confirmation resumes automatically and the HIL view includes the full billing line.
+
+**Regression watchouts (Nov 25):**
+- Address fragments (e.g., “Postal code: 8000; Country: Switzerland”) are now treated as billing updates on an existing event, so we stay on Step 4/5 instead of manual review. Room-choice replies stay room choices; we no longer overwrite billing with room labels, and we only display billing once at least some required fields are present.【F:backend/workflows/groups/intake/trigger/process.py†L600-L666】【F:backend/workflows/groups/offer/trigger/process.py†L60-L120】【F:backend/workflows/groups/negotiation_close.py†L70-L140】
+- Billing prompts now include a concrete example (“Helvetia Labs, Bahnhofstrasse 1, 8001 Zurich, Switzerland”). Partial replies won’t duplicate room prompts or trigger manual review detours.【F:backend/workflows/groups/offer/trigger/process.py†L130-L190】【F:backend/workflows/groups/intake/trigger/process.py†L610-L666】
+
+**Pending risk:** Empty or single-word replies still won’t capture billing; real-world replies should include at least one of street/postal/city/country.
+
+### Room choice repeats / manual-review detours (Ongoing Fix)
+**Symptoms:** After a client types a room name (e.g., “Room E”), the workflow dropped back to Step 3, showed another room list, or enqueued manual review; sometimes the room label was mistaken for a billing address (“Billing Address: Room E”).
+
+**Fixes Applied:**
+- Early room-choice detection now runs for any confidence level and locks the room at Step 4 (thread stays “Awaiting Client”) instead of rerunning Step 3.【F:backend/workflows/groups/intake/trigger/process.py†L120-L155】【F:backend/workflows/groups/intake/trigger/process.py†L760-L815】
+- Billing updates while awaiting address only trigger when the reply looks like an address; “Room …” or other short replies no longer overwrite billing or send to manual review.【F:backend/workflows/groups/intake/trigger/process.py†L650-L676】
+
+**Regression Guard:** After a client types a room name, the next message should be the Step 4 offer/products prompt (no duplicate room list, no manual-review task, no “Billing Address: Room …”). If confidence is low, the room should still be accepted.
