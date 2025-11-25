@@ -428,7 +428,8 @@ def process(state: WorkflowState) -> GroupResult:
         "headers": headers,
     }
     attempt = _increment_room_attempt(event_entry)
-    hil_required = attempt >= ROOM_PROPOSAL_HIL_THRESHOLD
+    manager_requested = bool((event_entry.get("flags") or {}).get("manager_requested"))
+    hil_required = manager_requested and attempt >= ROOM_PROPOSAL_HIL_THRESHOLD
     thread_state_label = "Waiting on HIL" if hil_required else "Awaiting Client"
     draft_message["thread_state"] = thread_state_label
     draft_message["requires_approval"] = hil_required
@@ -726,12 +727,15 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
     selected_room = pending.get("selected_room")
     requirements_hash = event_entry.get("requirements_hash") or pending.get("requirements_hash")
 
+    manager_requested = bool((event_entry.get("flags") or {}).get("manager_requested"))
+    next_thread_state = "Waiting on HIL" if manager_requested else "Awaiting Client"
+
     update_event_metadata(
         event_entry,
         locked_room_id=selected_room,
         room_eval_hash=requirements_hash,
         current_step=4,
-        thread_state="Waiting on HIL",
+        thread_state=next_thread_state,
     )
     _reset_room_attempts(event_entry)
     trace_gate(
@@ -759,7 +763,7 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
 
     state.current_step = 4
     state.caller_step = None
-    state.set_thread_state("Waiting on HIL")
+    state.set_thread_state(next_thread_state)
     state.extras["persist"] = True
 
     payload = {
@@ -936,6 +940,8 @@ def _verbalizer_rooms_payload(
         coffee_badge = profile.get("coffee_badge", "—")
         capacity_badge = profile.get("capacity_badge", "—")
         normalized_products = {str(token).strip().lower() for token in needs_products}
+        if "coffee" not in normalized_products and "tea" not in normalized_products and "drinks" not in normalized_products:
+            coffee_badge = None
         alt_dates = [
             format_iso_date_to_ddmmyyyy(value) or value
             for value in available_dates_map.get(entry.room, [])
@@ -964,10 +970,24 @@ def _verbalizer_rooms_payload(
 
 
 def _general_qna_lines(state: WorkflowState) -> List[str]:
+    def _short_menu_line(row: Dict[str, Any]) -> str:
+        name = str(row.get("menu_name") or "").strip()
+        price = str(row.get("price") or "").strip()
+        if not name:
+            return ""
+        display_price = price if price else "CHF ?"
+        suffix = ""
+        if display_price and "per" not in display_price.lower():
+            suffix = " per event"
+        return f"- {name} — {display_price}{suffix} (Rooms: all)"
+
     payload = state.turn_notes.get("general_qa")
     rows: Optional[List[Dict[str, Any]]] = None
     title: Optional[str] = None
     month_hint: Optional[str] = None
+    event_entry = state.event_entry or {}
+    if not payload:
+        payload = event_entry.get("general_qa_payload")
     if isinstance(payload, dict) and payload.get("rows"):
         rows = payload["rows"]
         title = payload.get("title")
@@ -983,11 +1003,17 @@ def _general_qna_lines(state: WorkflowState) -> List[str]:
                 rows = select_menu_options(request, month_hint=context_month)
             if rows:
                 title = build_menu_title(request)
+        elif event_entry:
+            context_month = (event_entry.get("vague_month") or "").lower() or (state.user_info or {}).get("vague_month")
+            default_request = {"menu_requested": True, "wine_pairing": True, "three_course": True, "month": context_month}
+            rows = select_menu_options(default_request, month_hint=context_month) if context_month else select_menu_options(default_request)
+            if rows:
+                title = build_menu_title(default_request)
     if not rows:
         return []
     lines = [title or "Menu options we can offer:"]
     for row in rows:
-        rendered = format_menu_line(row, month_hint=month_hint)
+        rendered = _short_menu_line(row)
         if rendered:
             lines.append(rendered)
     return lines

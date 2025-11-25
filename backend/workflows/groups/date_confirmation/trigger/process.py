@@ -1377,10 +1377,8 @@ def _present_candidate_dates(
     next_step_lines = ["", "NEXT STEP:"]
     if future_display:
         next_step_lines.append(f"Say yes if {future_display} works, or share another option you'd like me to check.")
-    next_step_lines.append("- Tell me which date works best so I can move to Room Availability and shortlist the best rooms.")
-    next_step_lines.append("- Let me know which date works best so I can lock it in and shortlist the best rooms.")
+    next_step_lines.append("- Tell me which date works best so I can move to Room Availability.")
     next_step_lines.append("- Or share another day/time and I'll check availability.")
-    next_step_lines.append("- Do you have any preferred dates or times I should prioritise?")
     message_lines.extend(next_step_lines)
     prompt = "\n".join(message_lines)
 
@@ -3143,6 +3141,8 @@ def _present_general_room_qna(
     ]
     if qa_payload:
         state.turn_notes["general_qa"] = qa_payload
+        event_entry.setdefault("general_qa_payload", qa_payload)
+        state.extras["persist"] = True
         trace_general_qa_status(
             resolved_thread_id,
             "payload_attached",

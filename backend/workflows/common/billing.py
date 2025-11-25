@@ -83,10 +83,7 @@ def billing_prompt_for_missing_fields(fields: Iterable[str]) -> str:
         joined = " and ".join(labels)
     else:
         joined = ", ".join(labels[:-1]) + f", and {labels[-1]}"
-    return (
-        f"Before I finalise, could you share the {joined}? "
-        "Feel free to reply in one line (e.g., \"Postal code: 8000; Country: Switzerland\")."
-    )
+    return f"Before I finalise, could you share the {joined}?"
 
 
 def format_billing_display(details: BillingDetails, fallback_raw: Optional[str] = None) -> Optional[str]:
