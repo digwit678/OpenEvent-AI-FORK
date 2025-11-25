@@ -31,6 +31,17 @@ interface PendingTaskPayload {
   snippet?: string | null;
   suggested_dates?: string[] | null;
   thread_id?: string | null;
+  draft_body?: string | null;
+  step_id?: number | null;
+  event_summary?: {
+    client_name?: string | null;
+    company?: string | null;
+    billing_address?: string | null;
+    email?: string | null;
+    chosen_date?: string | null;
+    locked_room?: string | null;
+    offer_total?: number | null;
+  } | null;
 }
 
 interface PendingTask {
@@ -902,13 +913,40 @@ export default function EmailThreadUI() {
                 const suggestedDates = Array.isArray(task.payload?.suggested_dates)
                   ? task.payload!.suggested_dates!.filter((date): date is string => Boolean(date))
                   : [];
+                const draftBody = task.payload?.draft_body ? task.payload.draft_body.trim() : '';
+                const eventSummary = task.payload?.event_summary;
+                const offerTotal =
+                  typeof eventSummary?.offer_total === 'number' ? eventSummary.offer_total : null;
+                const canAction = ['ask_for_date', 'manual_review', 'offer_message', 'room_availability_message', 'date_confirmation_message'].includes(task.type);
                 return (
                   <div key={task.task_id} className="p-3 bg-gray-50 border border-gray-200 rounded-md">
                     <div className="text-sm font-semibold text-gray-800">{task.type}</div>
                     <div className="text-xs text-gray-500 mt-1">
                       Client: {task.client_id || 'unknown'} | Created:{' '}
-                      {task.created_at ? new Date(task.created_at).toLocaleString() : 'n/a'}
+                      {task.created_at ? new Date(task.created_at).toLocaleString() : 'n/a'}{' '}
+                      {task.payload?.step_id ? `| Step ${task.payload.step_id}` : ''}
                     </div>
+                    {eventSummary && (
+                      <div className="text-xs text-gray-700 mt-2 space-y-1">
+                        {eventSummary.client_name && <div>Contact: {eventSummary.client_name}</div>}
+                        {eventSummary.company && <div>Company: {eventSummary.company}</div>}
+                        {eventSummary.email && <div>Email: {eventSummary.email}</div>}
+                        {eventSummary.billing_address && (
+                          <div>Billing: {eventSummary.billing_address}</div>
+                        )}
+                        {eventSummary.locked_room && <div>Room: {eventSummary.locked_room}</div>}
+                        {eventSummary.chosen_date && <div>Date: {eventSummary.chosen_date}</div>}
+                        {offerTotal !== null && (
+                          <div>
+                            Offer total: CHF{' '}
+                            {offerTotal.toLocaleString('de-CH', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {suggestedDates.length > 0 && (
                       <div className="text-xs text-gray-700 mt-2">Suggested dates: {suggestedDates.join(', ')}</div>
                     )}
@@ -918,7 +956,17 @@ export default function EmailThreadUI() {
                     {task.payload?.thread_id && (
                       <div className="text-xs text-gray-500 mt-1">Thread: {task.payload.thread_id}</div>
                     )}
-                    {(task.type === 'ask_for_date' || task.type === 'manual_review') && (
+                    {draftBody && (
+                      <details className="mt-2">
+                        <summary className="text-xs text-gray-700 cursor-pointer">
+                          Review request details
+                        </summary>
+                        <pre className="mt-1 text-xs bg-white border border-gray-200 rounded p-2 whitespace-pre-wrap max-h-48 overflow-auto">
+                          {draftBody}
+                        </pre>
+                      </details>
+                    )}
+                    {canAction && (
                       <>
                         <div className="mt-2">
                           <textarea

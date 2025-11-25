@@ -140,4 +140,33 @@ The `_autofill_products_from_preferences` function in `backend/workflows/groups/
 4. HIL Approve now applies the decision to the pending negotiation and runs the transition checkpoint so the workflow moves past Step 5 as soon as the manager clicks Approve (no more stuck buttons).【F:backend/workflow_email.py†L306-L359】
 5. Step 4 now also recognizes acceptance phrases (with normalized quotes) and short-circuits straight to HIL with a pending decision, avoiding repeated offer drafts when clients reply “approved/continue/that’s fine” on the offer thread.【F:backend/workflows/groups/offer/trigger/process.py†L52-L123】【F:backend/workflows/groups/offer/trigger/process.py†L1115-L1131】
 
+### Duplicate HIL sends after offer acceptance (Fixed)
+**Symptoms:** Client says “that’s fine” → placeholder “sent to manager” is shown, but the full offer is re-posted to the client and multiple HIL tasks are created.
+
+**Fixes Applied:**
+1. Step 5 now detects if a negotiation decision is already pending or a step-5 HIL task exists and returns a `negotiation_hil_waiting` action without re-enqueuing tasks or re-sending the offer draft.【F:backend/workflows/groups/negotiation_close.py†L37-L61】
+2. Client-facing replies for `negotiation_hil_waiting` are collapsed to a single “sent to manager” notice (no offer body) so the chat isn’t spammed while HIL is open.【F:backend/main.py†L80-L86】
+
+**Regression Guard:** If a client restates acceptance while HIL is open, you should see one HIL task and a single waiting message; no new drafts should reach the chat.
+
+### Spurious unavailable-date apologies on month-only requests (Fixed)
+**Symptoms:** A month-only ask (“February 2026, Saturday evening”) produced “Sorry, we don't have free rooms on 20.02.2026” even though the client never mentioned that date, and the suggested list collapsed to a single date.
+
+**Fixes Applied:**
+1. `_client_requested_dates` now ignores month-only hints unless an explicit day appears in the message (dd.mm.yyyy, yyyy-mm-dd, or “12 Feb 2026”), preventing phantom “unavailable” notices.【F:backend/workflows/groups/date_confirmation/trigger/process.py†L270-L296】
+2. Window hints now sanitize `weekdays_hint` to 1–7, so mis-parsed numbers (e.g., participant counts) can’t force a single “Week 1” view and truncate the date list.【F:backend/workflows/groups/date_confirmation/trigger/process.py†L2462-L2474】
+3. When a client asks for menus alongside dates, the date proposal now includes a menu block filtered to the requested month so the hybrid question is answered in one message.【F:backend/workflows/groups/date_confirmation/trigger/process.py†L1302-L1319】【F:backend/workflows/groups/date_confirmation/trigger/process.py†L2123-L2143】
+
+**Regression Guard:** Month-only requests should return up to five valid options in that month (e.g., February Saturdays) with no apology about dates the client never mentioned.
+
+### Offer re-sent while waiting on HIL (Fixed)
+**Symptoms:** After a client accepts, the “sent to manager” note is shown but the offer body is posted again and multiple HIL tasks appear.
+
+**Fixes Applied:**
+1. Step 4 now short-circuits when a Step 5 HIL decision is already pending, returning `offer_waiting_hil` so no new drafts/tasks are emitted.【F:backend/workflows/groups/offer/trigger/process.py†L33-L49】
+2. Client-facing replies for `offer_waiting_hil` reuse the waiting message (no offer body) to avoid spam.【F:backend/main.py†L80-L88】
+3. Older HIL requests are cleaned up automatically: new reviews replace prior tasks, and Step 5 acceptance clears Step 4 offer tasks so only one manager action remains.【F:backend/workflow_email.py†L296-L320】【F:backend/workflows/groups/negotiation_close.py†L25-L66】【F:backend/workflows/groups/negotiation_close.py†L467-L489】
+
+**Regression Guard:** With `negotiation_pending_decision` present, any client reply should only see the waiting note; the offer should not reappear and only one HIL task should exist.
+
 **Playbook:** If a client acceptance seems ignored, check `hil_open` and `current_step`—they should be `True` and `5`. If not, re-run intake on the acceptance email; the new heuristic forces the HIL acceptance path with the offer summary attached.

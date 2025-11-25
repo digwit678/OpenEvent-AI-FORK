@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from backend.domain import TaskType
+from backend.domain import TaskStatus, TaskType
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
@@ -12,7 +12,7 @@ from backend.workflows.common.general_qna import append_general_qna_to_primary, 
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
-from backend.workflows.io.tasks import enqueue_task
+from backend.workflows.io.tasks import enqueue_task, update_task_status
 from backend.workflows.nlu import detect_general_room_query
 from backend.debug.hooks import trace_marker, trace_general_qa_status, set_subloop
 from backend.debug.trace import set_hil_open
@@ -79,6 +79,28 @@ def process(state: WorkflowState) -> GroupResult:
     if hil_step == 5:
         decision = state.user_info.get("hil_decision") or "approve"
         return _apply_hil_negotiation_decision(state, event_entry, decision)
+
+    # Clear stale HIL requests from earlier steps (e.g., outdated offer drafts).
+    _clear_stale_hil_requests(state, event_entry, keep_steps={5})
+
+    # If a manager decision is already pending, keep waiting instead of spamming duplicates.
+    pending_decision = event_entry.get("negotiation_pending_decision")
+    pending_hil = [
+        req for req in (event_entry.get("pending_hil_requests") or []) if req.get("step") == 5
+    ]
+    if pending_decision or pending_hil:
+        state.set_thread_state("Waiting on HIL")
+        set_hil_open(thread_id, True)
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "pending_decision": pending_decision,
+            "thread_state": state.thread_state,
+            "context": state.context_snapshot,
+        }
+    return GroupResult(action="negotiation_hil_waiting", payload=payload, halt=True)
 
     if merge_client_profile(event_entry, state.user_info or {}):
         state.extras["persist"] = True
@@ -416,30 +438,168 @@ def _apply_hil_negotiation_decision(state: WorkflowState, event_entry: Dict[str,
 
 
 def _offer_summary_lines(event_entry: Dict[str, Any]) -> list[str]:
-    """Build a lightweight offer summary for HIL review."""
+    """Recreate the offer body (with totals) so HIL sees exactly what the client saw."""
 
-    pricing = event_entry.get("pricing_inputs") or {}
-    line_items = pricing.get("line_items") or []
-    total = pricing.get("total_amount") or pricing.get("total") or 0.0
-    try:
-        total_val = float(total)
-    except (TypeError, ValueError):
-        total_val = 0.0
+    chosen_date = event_entry.get("chosen_date") or "Date TBD"
+    room = event_entry.get("locked_room_id") or "Room TBD"
+    event_data = event_entry.get("event_data") or {}
+    billing_address = (event_data.get("Billing Address") or "").strip() or None
+    email = (event_data.get("Email") or "").strip() or None
+    contact_parts = [
+        part.strip()
+        for part in (event_data.get("Name"), event_data.get("Company"))
+        if isinstance(part, str) and part.strip() and part.strip().lower() != "not specified"
+    ]
+    if email and email.lower() != "not specified":
+        contact_parts.append(email)
+    products = event_entry.get("products") or []
+    products_state = event_entry.get("products_state") or {}
+    autofill_summary = products_state.get("autofill_summary") or {}
+    matched_summary = autofill_summary.get("matched") or []
+    product_alternatives = autofill_summary.get("alternatives") or []
+    catering_alternatives = autofill_summary.get("catering_alternatives") or []
 
-    lines = ["Offer summary:"]
-    for item in line_items:
-        desc = item.get("description") or item.get("name") or "Item"
-        qty = item.get("quantity") or 1
-        unit_price = item.get("unit_price") or 0.0
-        try:
-            unit_val = float(unit_price)
-        except (TypeError, ValueError):
-            unit_val = 0.0
-        amount = qty * unit_val
-        lines.append(f"- {qty}× {desc} · CHF {amount:,.2f}")
+    intro_room = room if room != "Room TBD" else "your preferred room"
+    intro_date = chosen_date if chosen_date != "Date TBD" else "your requested date"
+    lines = [
+        f"Great — {intro_room} on {intro_date} is ready for review.",
+        f"Offer draft for {chosen_date} · {room}",
+        "",
+    ]
 
-    lines.append(f"Total: CHF {total_val:,.2f}")
+    if contact_parts or billing_address:
+        if contact_parts:
+            lines.append("Client: " + " · ".join(contact_parts))
+        if billing_address:
+            lines.append(f"Billing address: {billing_address}")
+        lines.append("")
+
+    if matched_summary:
+        lines.append("**Included products**")
+        for entry in matched_summary:
+            quantity = int(entry.get("quantity") or 1)
+            name = entry.get("name") or "Unnamed item"
+            unit_price = float(entry.get("unit_price") or 0.0)
+            total_line = float(entry.get("total") or quantity * unit_price)
+            unit = entry.get("unit")
+            wish = entry.get("wish")
+
+            price_text = f"CHF {total_line:,.2f}"
+            if unit == "per_person" and quantity > 0:
+                price_text += f" (CHF {unit_price:,.2f} per person)"
+
+            details = []
+            if entry.get("match_pct") is not None:
+                details.append(f"match {entry.get('match_pct')}%")
+            if wish:
+                details.append(f'for "{wish}"')
+            detail_text = f" ({', '.join(details)})" if details else ""
+
+            lines.append(f"- {quantity}× {name}{detail_text} · {price_text}")
+    elif products:
+        lines.append("**Included products**")
+        for product in products:
+            quantity = int(product.get("quantity") or 1)
+            name = product.get("name") or "Unnamed item"
+            unit_price = float(product.get("unit_price") or 0.0)
+            unit = product.get("unit")
+
+            price_text = f"CHF {unit_price * quantity:,.2f}"
+            if unit == "per_person" and quantity > 0:
+                price_text += f" (CHF {unit_price:,.2f} per person)"
+
+            lines.append(f"- {quantity}× {name} · {price_text}")
+    else:
+        lines.append("No optional products selected yet.")
+
+    total_amount = _determine_offer_total(event_entry)
+
+    lines.extend(
+        [
+            "",
+            "---",
+            f"**Total: CHF {total_amount:,.2f}**",
+            "---",
+            "",
+        ]
+    )
+
+    has_alternatives = product_alternatives or catering_alternatives
+    if has_alternatives:
+        lines.append("**Suggestions for you**")
+        lines.append("")
+
+    if product_alternatives:
+        lines.append("*Other close matches you can add:*")
+        for entry in product_alternatives:
+            name = entry.get("name") or "Unnamed add-on"
+            unit_price = float(entry.get("unit_price") or 0.0)
+            unit = entry.get("unit")
+            wish = entry.get("wish")
+            match_pct = entry.get("match_pct")
+
+            price_text = f"CHF {unit_price:,.2f}"
+            if unit == "per_person":
+                price_text += " per person"
+
+            qualifiers = []
+            if match_pct is not None:
+                qualifiers.append(f"{match_pct}% match")
+            if wish:
+                qualifiers.append(f'covers "{wish}"')
+            qualifier_text = f" ({', '.join(qualifiers)})" if qualifiers else ""
+
+            lines.append(f"- {name}{qualifier_text} · {price_text}")
+        if catering_alternatives:
+            lines.append("")
+
+    if catering_alternatives:
+        lines.append("*Catering alternatives with a close fit:*")
+        for entry in catering_alternatives:
+            name = entry.get("name") or "Catering option"
+            unit_price = float(entry.get("unit_price") or 0.0)
+            unit_label = (entry.get("unit") or "per event").replace("_", " ")
+            wish = entry.get("wish")
+            match_pct = entry.get("match_pct")
+
+            qualifiers = []
+            if match_pct is not None:
+                qualifiers.append(f"{match_pct}% match")
+            if wish:
+                qualifiers.append(f'covers "{wish}"')
+            detail = ", ".join(qualifiers)
+            detail_text = f" ({detail})" if detail else ""
+
+            lines.append(f"- {name}{detail_text} · CHF {unit_price:,.2f} {unit_label}")
+
+    if has_alternatives:
+        lines.append("")
+
+    lines.append("Please review and approve before sending to the manager.")
     return lines
+
+
+def _clear_stale_hil_requests(state: WorkflowState, event_entry: Dict[str, Any], keep_steps: set[int]) -> None:
+    """Mark older HIL requests as done so only the relevant step stays visible."""
+
+    pending = event_entry.get("pending_hil_requests") or []
+    remaining = []
+    changed = False
+    for entry in pending:
+        step = entry.get("step")
+        task_id = entry.get("task_id")
+        if step in keep_steps:
+            remaining.append(entry)
+            continue
+        if task_id:
+            try:
+                update_task_status(state.db, task_id, TaskStatus.DONE)
+            except Exception:
+                pass
+        changed = True
+    if changed:
+        event_entry["pending_hil_requests"] = remaining
+        state.extras["persist"] = True
 
 
 def _handle_accept(event_entry: Dict[str, Any]) -> Dict[str, Any]:
@@ -495,6 +655,49 @@ def _iso_to_ddmmyyyy(raw: Optional[str]) -> Optional[str]:
         return None
     year, month, day = match.groups()
     return f"{day}.{month}.{year}"
+
+
+def _determine_offer_total(event_entry: Dict[str, Any]) -> float:
+    """Compute the offer total with multiple fallbacks so HIL sees the real number."""
+
+    offers = event_entry.get("offers") or []
+    current_offer_id = event_entry.get("current_offer_id")
+    total_candidates = []
+    for offer in offers:
+        if offer.get("offer_id") == current_offer_id:
+            total_candidates.append(offer.get("total_amount"))
+            break
+
+    pricing_inputs = event_entry.get("pricing_inputs") or {}
+    total_candidates.extend([pricing_inputs.get("total_amount"), pricing_inputs.get("total")])
+
+    computed_total = 0.0
+    base_rate = pricing_inputs.get("base_rate")
+    if base_rate not in (None, ""):
+        try:
+            computed_total += float(base_rate)
+        except (TypeError, ValueError):
+            pass
+
+    for product in event_entry.get("products") or []:
+        try:
+            quantity = float(product.get("quantity") or 0)
+            unit_price = float(product.get("unit_price") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        computed_total += quantity * unit_price
+
+    for candidate in total_candidates:
+        try:
+            value = float(candidate)
+            if value > 0:
+                return round(value, 2)
+        except (TypeError, ValueError):
+            continue
+
+    if computed_total > 0:
+        return round(computed_total, 2)
+    return 0.0
 
 
 def _thread_id(state: WorkflowState) -> str:

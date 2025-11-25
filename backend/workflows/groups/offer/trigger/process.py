@@ -48,6 +48,25 @@ def process(state: WorkflowState) -> GroupResult:
     state.current_step = 4
     thread_id = _thread_id(state)
 
+    # If an acceptance is already awaiting HIL (step 5), do not emit another offer.
+    pending_negotiation = event_entry.get("negotiation_pending_decision")
+    pending_hil = [
+        req for req in (event_entry.get("pending_hil_requests") or []) if req.get("step") == 5
+    ]
+    if pending_negotiation or pending_hil:
+        state.set_thread_state("Waiting on HIL")
+        set_hil_open(thread_id, True)
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "pending_decision": pending_negotiation,
+            "thread_state": state.thread_state,
+            "context": state.context_snapshot,
+        }
+        return GroupResult(action="offer_waiting_hil", payload=payload, halt=True)
+
     if merge_client_profile(event_entry, state.user_info or {}):
         state.extras["persist"] = True
 
