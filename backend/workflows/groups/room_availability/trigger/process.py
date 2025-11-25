@@ -199,7 +199,7 @@ def process(state: WorkflowState) -> GroupResult:
             return GroupResult(action="change_detour", payload=payload, halt=False)
 
     # No change detected: check if Q&A should be handled
-    user_requested_room = state.user_info.get("room")
+    user_requested_room = state.user_info.get("room") if state.user_info.get("_room_choice_detected") else None
     locked_room_id = event_entry.get("locked_room_id")
     deferred_general_qna = False
     general_qna_applicable = classification.get("is_general") and not bool(locked_room_id)

@@ -1553,7 +1553,7 @@ def _message_signals_confirmation(text: str) -> bool:
     # Treat bare mentions of supported dates/times as confirmations.
     tokens = _extract_candidate_tokens(text or "")
     if tokens:
-        parsed = parse_first_date(tokens)
+        parsed = parse_first_date(tokens, allow_relative=True)
         if parsed:
             return True
     return False
@@ -1767,8 +1767,8 @@ def _determine_date(
         if ddmmyyyy and is_valid_ddmmyyyy(ddmmyyyy):
             return ddmmyyyy, iso_candidate
 
-    parsed = parse_first_date(body_text, reference=reference_day, allow_relative=False) or parse_first_date(
-        subject_text, reference=reference_day, allow_relative=False
+    parsed = parse_first_date(body_text, reference=reference_day, allow_relative=True) or parse_first_date(
+        subject_text, reference=reference_day, allow_relative=True
     )
     if parsed:
         return parsed.strftime("%d.%m.%Y"), parsed.isoformat()

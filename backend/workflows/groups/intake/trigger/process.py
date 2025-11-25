@@ -396,21 +396,9 @@ def _detect_product_update_request(
             payload: Dict[str, Any] = {"name": record.name}
             if quantity:
                 payload["quantity"] = quantity
-            elif linked_event:
-                existing_products = linked_event.get("products") or []
-                for existing in existing_products:
-                    existing_name = str(existing.get("name") or "").strip().lower()
-                    if not existing_name:
-                        continue
-                    if existing_name != primary:
-                        continue
-                    try:
-                        base_qty = int(str(existing.get("quantity") or 0).strip())
-                    except (TypeError, ValueError):
-                        base_qty = 0
-                    if base_qty > 0:
-                        payload["quantity"] = base_qty + 1
-                    break
+            else:
+                # Default to a single additional unit; downstream upsert increments existing quantity.
+                payload["quantity"] = 1
             additions.append(payload)
 
     if additions:
@@ -421,6 +409,49 @@ def _detect_product_update_request(
         user_info["products_remove"] = removals
 
     return bool(additions or removals)
+
+
+def _normalize_quotes(text: str) -> str:
+    """Normalize typographic apostrophes/quotes for downstream keyword checks."""
+
+    if not text:
+        return ""
+    return (
+        text.replace("\u2019", "'")
+        .replace("\u2018", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+        .replace("\u00a0", " ")
+    )
+
+
+def _looks_like_offer_acceptance(text: str) -> bool:
+    if not text:
+        return False
+    lowered = _normalize_quotes(text).lower()
+    accept_tokens = (
+        "accept",
+        "accepted",
+        "confirm",
+        "confirmed",
+        "approve",
+        "approved",
+        "continue",
+        "please send",
+        "send it",
+        "send to client",
+        "ok to send",
+        "go ahead",
+        "proceed",
+        "that's fine",
+        "thats fine",
+        "fine for me",
+        "sounds good",
+        "good to go",
+        "ok thats fine",
+        "ok that's fine",
+    )
+    return any(token in lowered for token in accept_tokens)
 
 
 @trace_step("Step1_Intake")
@@ -484,7 +515,6 @@ def process(state: WorkflowState) -> GroupResult:
     preferences = extract_preferences(user_info, raw_text=raw_pref_text or None)
     if preferences:
         user_info["preferences"] = preferences
-    state.user_info = user_info
     if intent == IntentLabel.EVENT_REQUEST and _has_same_turn_shortcut(user_info):
         state.intent_detail = "event_intake_shortcut"
         state.extras["shortcut_detected"] = True
@@ -499,7 +529,8 @@ def process(state: WorkflowState) -> GroupResult:
     state.client = client
     state.client_id = (message_payload.get("from_email") or "").lower()
     linked_event = last_event_for_email(state.db, state.client_id)
-    body_text = message_payload.get("body") or ""
+    body_text_raw = message_payload.get("body") or ""
+    body_text = _normalize_quotes(body_text_raw)
     fallback_year = _fallback_year_from_ts(message_payload.get("ts"))
 
     confirmation_detected = False
@@ -518,6 +549,33 @@ def process(state: WorkflowState) -> GroupResult:
             user_info["start_time"] = start_time
         if end_time and "end_time" not in user_info:
             user_info["end_time"] = end_time
+    # Capture short acceptances on existing offers to avoid manual-review loops.
+    acceptance_detected = linked_event and _looks_like_offer_acceptance(body_text)
+    if acceptance_detected:
+        intent = IntentLabel.EVENT_REQUEST
+        confidence = max(confidence, 0.99)
+        state.intent = intent
+        state.confidence = confidence
+        if state.intent_detail in (None, "intake"):
+            state.intent_detail = "event_intake_negotiation_accept"
+        # Ensure downstream HIL handler can act if this routes through Step 5.
+        target_step = max(linked_event.get("current_step") or 0, 5)
+        user_info.setdefault("hil_approve_step", target_step)
+        # Keep the thread on negotiation/offer so Step 5 can run immediately.
+        update_event_metadata(linked_event, current_step=target_step, thread_state="Waiting on HIL", caller_step=None)
+        state.extras["persist"] = True
+    product_update_detected = _detect_product_update_request(message_payload, user_info, linked_event)
+    if product_update_detected:
+        state.extras["product_update_detected"] = True
+        if not is_event_request(intent):
+            intent = IntentLabel.EVENT_REQUEST
+            confidence = max(confidence, 0.9)
+            state.intent = intent
+            state.confidence = confidence
+            state.intent_detail = "event_intake_product_update"
+        elif state.intent_detail in (None, "intake", "event_intake"):
+            state.intent_detail = "event_intake_product_update"
+    state.user_info = user_info
     append_history(client, message_payload, intent.value, confidence, user_info)
 
     context = context_snapshot(state.db, client, state.client_id)
@@ -549,14 +607,8 @@ def process(state: WorkflowState) -> GroupResult:
                 state.confidence = confidence
                 state.intent_detail = "event_intake_room_choice"
                 user_info["room"] = room_choice
+                user_info["_room_choice_detected"] = True
                 state.extras["room_choice_selected"] = room_choice
-            elif _detect_product_update_request(message_payload, user_info, linked_event):
-                intent = IntentLabel.EVENT_REQUEST
-                confidence = max(confidence, 0.9)
-                state.intent = intent
-                state.confidence = confidence
-                state.intent_detail = "event_intake_product_update"
-                state.extras["product_update_detected"] = True
             else:
                 trace_marker(
                     thread_id,

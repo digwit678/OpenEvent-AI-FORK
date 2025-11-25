@@ -15,13 +15,39 @@ from backend.workflows.io.database import append_audit_entry, update_event_metad
 from backend.workflows.io.tasks import enqueue_task
 from backend.workflows.nlu import detect_general_room_query
 from backend.debug.hooks import trace_marker, trace_general_qa_status, set_subloop
+from backend.debug.trace import set_hil_open
 from backend.utils.profiler import profile_step
 
 __all__ = ["process"]
 
 MAX_COUNTERS = 3
 
-ACCEPT_KEYWORDS = ("accept", "confirmed", "confirm", "looks good", "we agree", "approved")
+ACCEPT_KEYWORDS = (
+    "accept",
+    "accepted",
+    "confirmed",
+    "confirm",
+    "looks good",
+    "we agree",
+    "approved",
+    "approve",
+    "continue",
+    "please send",
+    "send it",
+    "send to client",
+    "ok to send",
+    "go ahead",
+    "proceed",
+    "that's fine",
+    "thats fine",
+    "fine for me",
+    "ok",
+    "okay",
+    "yes that's fine",
+    "yes thats fine",
+    "sounds good",
+    "good to go",
+)
 DECLINE_KEYWORDS = ("decline", "reject", "cancel", "not move forward", "no longer", "pass")
 COUNTER_KEYWORDS = ("discount", "lower", "reduce", "better price", "could you do", "counter", "budget")
 
@@ -47,6 +73,12 @@ def process(state: WorkflowState) -> GroupResult:
     negotiation_state = event_entry.setdefault(
         "negotiation_state", {"counter_count": 0, "manual_review_task_id": None}
     )
+
+    # Handle HIL decision callbacks for Step 5 (offer approval/decline).
+    hil_step = state.user_info.get("hil_approve_step")
+    if hil_step == 5:
+        decision = state.user_info.get("hil_decision") or "approve"
+        return _apply_hil_negotiation_decision(state, event_entry, decision)
 
     if merge_client_profile(event_entry, state.user_info or {}):
         state.extras["persist"] = True
@@ -116,11 +148,13 @@ def process(state: WorkflowState) -> GroupResult:
     if classification == "accept":
         response = _handle_accept(event_entry)
         state.add_draft_message(response["draft"])
-        append_audit_entry(event_entry, 5, 6, "offer_accepted")
+        append_audit_entry(event_entry, 5, 5, "offer_accept_pending_hil")
         negotiation_state["counter_count"] = 0
-        update_event_metadata(event_entry, current_step=6, thread_state="In Progress")
-        state.current_step = 6
-        state.set_thread_state("In Progress")
+        update_event_metadata(event_entry, current_step=5, thread_state="Waiting on HIL", transition_ready=False)
+        event_entry["negotiation_pending_decision"] = response["pending"]
+        state.current_step = 5
+        state.set_thread_state("Waiting on HIL")
+        set_hil_open(thread_id, True)
         state.extras["persist"] = True
         payload = {
             "client_id": state.client_id,
@@ -128,12 +162,13 @@ def process(state: WorkflowState) -> GroupResult:
             "intent": state.intent.value if state.intent else None,
             "confidence": round(state.confidence or 0.0, 3),
             "offer_id": response["offer_id"],
+            "pending_decision": response["pending"],
             "draft_messages": state.draft_messages,
             "thread_state": state.thread_state,
             "context": state.context_snapshot,
             "persisted": True,
         }
-        result = GroupResult(action="negotiation_accept", payload=payload, halt=False)
+        result = GroupResult(action="negotiation_accept_pending_hil", payload=payload, halt=True)
         if deferred_general_qna:
             _append_deferred_general_qna(state, event_entry, qna_classification, thread_id)
         return result
@@ -303,27 +338,131 @@ def _detect_structural_change(user_info: Dict[str, Any], event_entry: Dict[str, 
     return None
 
 
-def _handle_accept(event_entry: Dict[str, Any]) -> Dict[str, Any]:
+def _apply_hil_negotiation_decision(state: WorkflowState, event_entry: Dict[str, Any], decision: str) -> GroupResult:
+    """Process HIL approval/decline for Step 5 offer acceptance."""
+
+    thread_id = _thread_id(state)
+    pending = event_entry.get("negotiation_pending_decision")
+    if not pending:
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "reason": "no_pending_negotiation_decision",
+            "context": state.context_snapshot,
+        }
+        return GroupResult(action="negotiation_hil_missing", payload=payload, halt=True)
+
+    if decision != "approve":
+        event_entry.pop("negotiation_pending_decision", None)
+        append_audit_entry(event_entry, 5, 5, "offer_hil_rejected")
+        draft = {
+            "body": append_footer(
+                "Manager declined this offer version. Please adjust and resend.",
+                step=5,
+                next_step=5,
+                thread_state="Awaiting Client",
+            ),
+            "step": 5,
+            "topic": "negotiation_hil_reject",
+            "requires_approval": True,
+        }
+        state.add_draft_message(draft)
+        update_event_metadata(event_entry, current_step=5, thread_state="Awaiting Client")
+        state.set_thread_state("Awaiting Client")
+        set_hil_open(thread_id, False)
+        state.extras["persist"] = True
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "draft_messages": state.draft_messages,
+            "thread_state": state.thread_state,
+            "context": state.context_snapshot,
+            "persisted": True,
+        }
+        return GroupResult(action="negotiation_hil_rejected", payload=payload, halt=True)
+
+    # Approval path
+    offer_id = pending.get("offer_id") or event_entry.get("current_offer_id")
     offers = event_entry.get("offers") or []
-    offer_id = event_entry.get("current_offer_id")
     timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     for offer in offers:
         if offer.get("offer_id") == offer_id:
             offer["status"] = "Accepted"
             offer["accepted_at"] = timestamp
     event_entry["offer_status"] = "Accepted"
+    event_entry.pop("negotiation_pending_decision", None)
+    append_audit_entry(event_entry, 5, 6, "offer_accepted_hil")
+    update_event_metadata(event_entry, current_step=6, thread_state="In Progress")
+    state.current_step = 6
+    state.set_thread_state("In Progress")
+    set_hil_open(thread_id, False)
+    state.extras["persist"] = True
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "offer_id": offer_id,
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+    }
+    return GroupResult(action="negotiation_hil_approved", payload=payload, halt=False)
+
+
+def _offer_summary_lines(event_entry: Dict[str, Any]) -> list[str]:
+    """Build a lightweight offer summary for HIL review."""
+
+    pricing = event_entry.get("pricing_inputs") or {}
+    line_items = pricing.get("line_items") or []
+    total = pricing.get("total_amount") or pricing.get("total") or 0.0
+    try:
+        total_val = float(total)
+    except (TypeError, ValueError):
+        total_val = 0.0
+
+    lines = ["Offer summary:"]
+    for item in line_items:
+        desc = item.get("description") or item.get("name") or "Item"
+        qty = item.get("quantity") or 1
+        unit_price = item.get("unit_price") or 0.0
+        try:
+            unit_val = float(unit_price)
+        except (TypeError, ValueError):
+            unit_val = 0.0
+        amount = qty * unit_val
+        lines.append(f"- {qty}× {desc} · CHF {amount:,.2f}")
+
+    lines.append(f"Total: CHF {total_val:,.2f}")
+    return lines
+
+
+def _handle_accept(event_entry: Dict[str, Any]) -> Dict[str, Any]:
+    offer_id = event_entry.get("current_offer_id")
+    timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    pending = {
+        "type": "accept",
+        "offer_id": offer_id,
+        "created_at": timestamp,
+    }
+    summary_lines = _offer_summary_lines(event_entry)
     draft = {
         "body": append_footer(
-            "Fantastic — I’ve noted your acceptance. I’ll lock everything in now and send the final confirmation shortly.",
+            "Client accepted the offer. Please approve to proceed to confirmation.\n\n" + "\n".join(summary_lines),
             step=5,
-            next_step=6,
-            thread_state="In Progress",
+            next_step=5,
+            thread_state="Waiting on HIL",
         ),
         "step": 5,
         "topic": "negotiation_accept",
         "requires_approval": True,
     }
-    return {"offer_id": offer_id, "draft": draft}
+    return {"offer_id": offer_id, "draft": draft, "pending": pending}
 
 
 def _handle_decline(event_entry: Dict[str, Any]) -> Dict[str, Any]:
