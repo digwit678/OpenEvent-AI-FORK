@@ -459,9 +459,33 @@ def _normalize_quotes(text: str) -> str:
 
 
 def _looks_like_offer_acceptance(text: str) -> bool:
+    """
+    Heuristic: short, declarative acknowledgements without question marks that contain approval verbs.
+    """
+
     if not text:
         return False
-    lowered = _normalize_quotes(text).lower()
+    normalized = _normalize_quotes(text).lower()
+    if "?" in normalized:
+        return False
+    if len(normalized) > 200:
+        return False
+
+    accept_re = re.compile(
+        r"\b("
+        r"accept(?:ed)?|"
+        r"approv(?:e|ed|al)|"
+        r"confirm(?:ed)?|"
+        r"proceed|continue|go ahead|"
+        r"send (?:it|to client)|please send|ok to send|"
+        r"all good|looks good|sounds good|good to go|"
+        r"(?:that'?s|thats) fine|fine for me"
+        r")\b"
+    )
+    if accept_re.search(normalized):
+        return True
+
+    # Fallback to legacy tokens for odd phrasing.
     accept_tokens = (
         "accept",
         "accepted",
@@ -483,8 +507,9 @@ def _looks_like_offer_acceptance(text: str) -> bool:
         "good to go",
         "ok thats fine",
         "ok that's fine",
+        "all good",
     )
-    return any(token in lowered for token in accept_tokens)
+    return any(token in normalized for token in accept_tokens)
 
 
 @trace_step("Step1_Intake")
@@ -594,8 +619,6 @@ def process(state: WorkflowState) -> GroupResult:
         # Always route acceptances through HIL so the manager can approve/decline before confirmation.
         target_step = max(linked_event.get("current_step") or 0, 5)
         user_info.setdefault("hil_approve_step", target_step)
-        flags = linked_event.setdefault("flags", {})
-        flags["manager_requested"] = True
         update_event_metadata(
             linked_event,
             current_step=target_step,

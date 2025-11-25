@@ -35,6 +35,7 @@ ACCEPT_KEYWORDS = (
     "confirmed",
     "confirm",
     "looks good",
+    "all good",
     "we agree",
     "approved",
     "approve",
@@ -573,6 +574,25 @@ def _start_hil_acceptance(
     negotiation_state = event_entry.setdefault("negotiation_state", {"counter_count": 0, "manual_review_task_id": None})
     negotiation_state["counter_count"] = 0
 
+    # Drop stale HIL requests for other steps so only one approval task remains visible.
+    pending_records = event_entry.get("pending_hil_requests") or []
+    pruned: list[Dict[str, Any]] = []
+    existing_signatures: set[str] = set()
+    for entry in pending_records:
+        signature = entry.get("signature")
+        if entry.get("step") != 5:
+            task_id = entry.get("task_id")
+            if task_id:
+                try:
+                    update_task_status(state.db, task_id, TaskStatus.DONE)
+                except Exception:
+                    pass
+            continue
+        if signature:
+            existing_signatures.add(signature)
+        pruned.append(entry)
+    event_entry["pending_hil_requests"] = pruned
+
     response = _handle_accept(event_entry)
     state.add_draft_message(response["draft"])
     pending_records = event_entry.setdefault("pending_hil_requests", [])
@@ -585,6 +605,7 @@ def _start_hil_acceptance(
             "intent": state.intent.value if state.intent else None,
             "event_id": event_entry.get("event_id"),
             "draft_msg": response["draft"].get("body"),
+            "draft_body": response["draft"].get("body"),
             "language": (state.user_info or {}).get("language"),
             "caller_step": event_entry.get("caller_step"),
             "requirements_hash": event_entry.get("requirements_hash"),
