@@ -5,6 +5,12 @@ from functools import lru_cache
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from backend.workflows.common.requirements import merge_client_profile, requirements_hash
+from backend.workflows.common.billing import (
+    billing_prompt_for_missing_fields,
+    format_billing_display,
+    missing_billing_fields,
+    update_billing_details,
+)
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
@@ -69,6 +75,18 @@ def process(state: WorkflowState) -> GroupResult:
 
     if merge_client_profile(event_entry, state.user_info or {}):
         state.extras["persist"] = True
+
+    if (event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept"):
+        message_text = (state.message.body or "").strip() if state.message else ""
+        if message_text:
+            event_entry.setdefault("event_data", {})["Billing Address"] = message_text
+            state.extras["persist"] = True
+
+    billing_missing = _refresh_billing(event_entry)
+    state.extras["persist"] = True
+    auto_accept = _auto_accept_if_billing_ready(state, event_entry, previous_step, thread_id, billing_missing)
+    if auto_accept:
+        return auto_accept
 
     # [CHANGE DETECTION + Q&A] Tap incoming stream BEFORE offer composition to detect client revisions
     message_text = _message_text(state)
@@ -164,39 +182,46 @@ def process(state: WorkflowState) -> GroupResult:
 
     # Acceptance (no product/date change) — short-circuit to HIL review
     if _looks_like_offer_acceptance(normalized_message_text):
-        negotiation_state = event_entry.setdefault("negotiation_state", {"counter_count": 0, "manual_review_task_id": None})
-        negotiation_state["counter_count"] = 0
-        response = _handle_accept(event_entry)
+        billing_missing = _refresh_billing(event_entry)
+        if billing_missing:
+            _flag_billing_accept_pending(event_entry, billing_missing)
+            prompt = _billing_prompt_draft(billing_missing, step=4)
+            state.add_draft_message(prompt)
+            append_audit_entry(event_entry, previous_step, 4, "offer_accept_blocked_missing_billing")
+            update_event_metadata(
+                event_entry,
+                current_step=5,
+                thread_state="Awaiting Client",
+                transition_ready=False,
+                caller_step=None,
+            )
+            state.current_step = 5
+            state.caller_step = None
+            state.set_thread_state("Awaiting Client")
+            set_hil_open(thread_id, False)
+            state.extras["persist"] = True
 
-        state.add_draft_message(response["draft"])
-        append_audit_entry(event_entry, previous_step, 5, "offer_accept_pending_hil")
-        event_entry["negotiation_pending_decision"] = response["pending"]
-        update_event_metadata(
+            payload = {
+                "client_id": state.client_id,
+                "event_id": event_entry.get("event_id"),
+                "intent": state.intent.value if state.intent else None,
+                "confidence": round(state.confidence or 0.0, 3),
+                "missing": billing_missing,
+                "draft_messages": state.draft_messages,
+                "thread_state": state.thread_state,
+                "context": state.context_snapshot,
+                "persisted": True,
+            }
+            return GroupResult(action="offer_accept_requires_billing", payload=payload, halt=True)
+
+        return _start_hil_acceptance_flow(
+            state,
             event_entry,
-            current_step=5,
-            thread_state="Waiting on HIL",
-            transition_ready=False,
-            caller_step=None,
+            previous_step,
+            thread_id,
+            audit_label="offer_accept_pending_hil",
+            action="offer_accept_pending_hil",
         )
-        state.current_step = 5
-        state.caller_step = None
-        state.set_thread_state("Waiting on HIL")
-        set_hil_open(thread_id, True)
-        state.extras["persist"] = True
-
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "offer_id": response["offer_id"],
-            "pending_decision": response["pending"],
-            "draft_messages": state.draft_messages,
-            "thread_state": state.thread_state,
-            "context": state.context_snapshot,
-            "persisted": True,
-        }
-        return GroupResult(action="offer_accept_pending_hil", payload=payload, halt=True)
 
     # No change detected: check if Q&A should be handled
     has_offer_update = _has_offer_update(user_info)
@@ -245,6 +270,10 @@ def process(state: WorkflowState) -> GroupResult:
 
     offer_id, offer_version, total_amount = _record_offer(event_entry, pricing_inputs, state.user_info, thread_id)
     summary_lines = _compose_offer_summary(event_entry, total_amount)
+    billing_display = format_billing_display(
+        event_entry.get("billing_details") or {},
+        (event_entry.get("event_data") or {}).get("Billing Address"),
+    )
 
     draft_message = {
         "body_markdown": "\n".join(summary_lines),
@@ -263,6 +292,7 @@ def process(state: WorkflowState) -> GroupResult:
                 "rows": [
                     ["Event Date", event_entry.get("chosen_date") or "TBD"],
                     ["Room", event_entry.get("locked_room_id") or "TBD"],
+                    ["Billing address", billing_display or "Pending"],
                     ["Total", f"CHF {total_amount:,.2f}"],
                 ],
             }
@@ -920,6 +950,17 @@ def _record_offer(
 def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> List[str]:
     chosen_date = event_entry.get("chosen_date") or "Date TBD"
     room = event_entry.get("locked_room_id") or "Room TBD"
+    event_data = event_entry.get("event_data") or {}
+    billing_details = event_entry.get("billing_details") or {}
+    billing_address = format_billing_display(billing_details, event_data.get("Billing Address"))
+    contact_parts = [
+        part.strip()
+        for part in (event_data.get("Name"), event_data.get("Company"))
+        if isinstance(part, str) and part.strip() and part.strip().lower() != "not specified"
+    ]
+    email = (event_data.get("Email") or "").strip() or None
+    if email and email.lower() != "not specified":
+        contact_parts.append(email)
     products = event_entry.get("products") or []
     products_state = event_entry.get("products_state") or {}
     autofill_summary = products_state.get("autofill_summary") or {}
@@ -933,6 +974,14 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> 
         f"Great — {intro_room} on {intro_date} is ready for review.",
         f"Offer draft for {chosen_date} · {room}",
     ]
+
+    if contact_parts or billing_address:
+        lines.append("")
+        if contact_parts:
+            lines.append("Client: " + " · ".join(contact_parts))
+        if billing_address:
+            lines.append(f"Billing address: {billing_address}")
+        lines.append("")
 
     lines.append("")
     if matched_summary:
@@ -1120,6 +1169,118 @@ def _normalize_quotes(text: str) -> str:
     for bad, repl in replacements.items():
         text = text.replace(bad, repl)
     return text
+
+
+def _refresh_billing(event_entry: Dict[str, Any]) -> List[str]:
+    """Parse and persist billing details, returning missing required fields."""
+
+    update_billing_details(event_entry)
+    details = event_entry.get("billing_details") or {}
+    missing = missing_billing_fields(event_entry)
+    has_filled_required = len(missing) < 5
+    display = format_billing_display(details, (event_entry.get("event_data") or {}).get("Billing Address"))
+    if display and has_filled_required:
+        event_entry.setdefault("event_data", {})["Billing Address"] = display
+
+    validation = event_entry.setdefault("billing_validation", {})
+    if missing:
+        validation["missing"] = list(missing)
+    else:
+        validation.pop("missing", None)
+    return missing
+
+
+def _flag_billing_accept_pending(event_entry: Dict[str, Any], missing_fields: List[str]) -> None:
+    gate = event_entry.setdefault("billing_requirements", {})
+    gate["awaiting_billing_for_accept"] = True
+    gate["last_missing"] = list(missing_fields)
+
+
+def _auto_accept_if_billing_ready(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    previous_step: int,
+    thread_id: str,
+    missing_fields: List[str],
+) -> Optional[GroupResult]:
+    gate = event_entry.get("billing_requirements") or {}
+    if not gate.get("awaiting_billing_for_accept"):
+        return None
+    if missing_fields:
+        gate["last_missing"] = list(missing_fields)
+        return None
+
+    gate["awaiting_billing_for_accept"] = False
+    gate["last_missing"] = []
+    return _start_hil_acceptance_flow(
+        state,
+        event_entry,
+        previous_step,
+        thread_id,
+        audit_label="offer_accept_pending_hil_auto",
+        action="offer_accept_pending_hil",
+    )
+
+
+def _billing_prompt_draft(missing_fields: List[str], *, step: int) -> Dict[str, Any]:
+    prompt = (
+        "Thanks for confirming — I need the billing address before I can send this for approval.\n"
+        f"{billing_prompt_for_missing_fields(missing_fields)} "
+        "Example: \"Helvetia Labs, Bahnhofstrasse 1, 8001 Zurich, Switzerland\". "
+        "As soon as I have it, I'll forward the offer automatically."
+    )
+    return {
+        "body_markdown": prompt,
+        "step": step,
+        "topic": "billing_details_required",
+        "next_step": "Await billing details",
+        "thread_state": "Awaiting Client",
+        "requires_approval": False,
+    }
+
+
+def _start_hil_acceptance_flow(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    previous_step: int,
+    thread_id: str,
+    *,
+    audit_label: str,
+    action: str,
+) -> GroupResult:
+    negotiation_state = event_entry.setdefault("negotiation_state", {"counter_count": 0, "manual_review_task_id": None})
+    negotiation_state["counter_count"] = 0
+
+    response = _handle_accept(event_entry)
+    state.add_draft_message(response["draft"])
+    append_audit_entry(event_entry, previous_step, 5, audit_label)
+    event_entry["negotiation_pending_decision"] = response["pending"]
+    update_event_metadata(
+        event_entry,
+        current_step=5,
+        thread_state="Waiting on HIL",
+        transition_ready=False,
+        caller_step=None,
+    )
+    state.current_step = 5
+    state.caller_step = None
+    state.set_thread_state("Waiting on HIL")
+    set_hil_open(thread_id, True)
+    state.extras["persist"] = True
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "offer_id": response["offer_id"],
+        "pending_decision": response["pending"],
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+    }
+    return GroupResult(action=action, payload=payload, halt=True)
 
 
 def _looks_like_offer_acceptance(message_text: str) -> bool:

@@ -87,3 +87,41 @@ def billing_prompt_for_missing_fields(fields: Iterable[str]) -> str:
         f"Before I finalise, could you share the {joined}? "
         "Feel free to reply in one line (e.g., \"Postal code: 8000; Country: Switzerland\")."
     )
+
+
+def format_billing_display(details: BillingDetails, fallback_raw: Optional[str] = None) -> Optional[str]:
+    """Render a lenient display string for billing details."""
+
+    if not details and not fallback_raw:
+        return None
+
+    parts: List[str] = []
+    name = details.get("name_or_company")
+    street = details.get("street")
+    postal = details.get("postal_code")
+    city = details.get("city")
+    country = details.get("country")
+
+    if name and str(name).strip().lower() != "not specified":
+        parts.append(str(name).strip())
+
+    if street and str(street).strip():
+        parts.append(str(street).strip())
+
+    locality_bits: List[str] = []
+    if postal and str(postal).strip():
+        locality_bits.append(str(postal).strip())
+    if city and str(city).strip():
+        locality_bits.append(str(city).strip())
+    if locality_bits:
+        parts.append(" ".join(locality_bits))
+
+    if country and str(country).strip():
+        parts.append(str(country).strip())
+
+    display = ", ".join([p for p in parts if p])
+    if display:
+        return display
+
+    raw = (fallback_raw or "").strip()
+    return raw or None
