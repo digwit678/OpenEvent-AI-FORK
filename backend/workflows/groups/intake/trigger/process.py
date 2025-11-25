@@ -45,6 +45,7 @@ from backend.workflows.groups.room_availability import handle_select_room_action
 from ..billing_flow import handle_billing_capture
 from backend.workflows.common.datetime_parse import parse_first_date, parse_time_range
 from backend.services.products import list_product_records, normalise_product_payload
+from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
 
 __workflow_role__ = "trigger"
 
@@ -126,6 +127,38 @@ _PRODUCT_REMOVE_KEYWORDS = (
 
 _KEYWORD_REGEX_CACHE: Dict[str, re.Pattern[str]] = {}
 _PRODUCT_TOKEN_REGEX_CACHE: Dict[str, re.Pattern[str]] = {}
+
+def _menu_price_value(raw: Any) -> Optional[float]:
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        text = str(raw).lower().replace("chf", "").replace(" ", "")
+        text = text.replace(",", "").strip()
+        try:
+            return float(text)
+        except (TypeError, ValueError):
+            return None
+
+
+def _detect_menu_choice(message_text: str) -> Optional[Dict[str, Any]]:
+    if not message_text:
+        return None
+    lowered = message_text.lower()
+    for menu in DINNER_MENU_OPTIONS:
+        name = str(menu.get("menu_name") or "")
+        if not name:
+            continue
+        if name.lower() in lowered:
+            price_value = _menu_price_value(menu.get("price"))
+            return {
+                "name": name,
+                "price": price_value,
+                "unit": "per_event",
+                "month": menu.get("available_months"),
+            }
+    return None
 
 def _fallback_year_from_ts(ts: Optional[str]) -> int:
     if not ts:
@@ -558,11 +591,17 @@ def process(state: WorkflowState) -> GroupResult:
         state.confidence = confidence
         if state.intent_detail in (None, "intake"):
             state.intent_detail = "event_intake_negotiation_accept"
-        # Ensure downstream HIL handler can act if this routes through Step 5.
+        # Always route acceptances through HIL so the manager can approve/decline before confirmation.
         target_step = max(linked_event.get("current_step") or 0, 5)
         user_info.setdefault("hil_approve_step", target_step)
-        # Keep the thread on negotiation/offer so Step 5 can run immediately.
-        update_event_metadata(linked_event, current_step=target_step, thread_state="Waiting on HIL", caller_step=None)
+        flags = linked_event.setdefault("flags", {})
+        flags["manager_requested"] = True
+        update_event_metadata(
+            linked_event,
+            current_step=target_step,
+            thread_state="Waiting on HIL",
+            caller_step=None,
+        )
         state.extras["persist"] = True
     # Early room-choice detection so we don't rely on classifier confidence
     early_room_choice = _detect_room_choice(body_text, linked_event)
@@ -570,6 +609,30 @@ def process(state: WorkflowState) -> GroupResult:
         user_info["room"] = early_room_choice
         user_info["_room_choice_detected"] = True
         state.extras["room_choice_selected"] = early_room_choice
+
+    # Capture explicit menu selection (e.g., "Room E with Seasonal Garden Trio")
+    menu_choice = _detect_menu_choice(body_text)
+    if menu_choice:
+        user_info["menu_choice"] = menu_choice["name"]
+        participants = _participants_from_event(linked_event) or user_info.get("participants")
+        try:
+            participants = int(participants) if participants is not None else None
+        except (TypeError, ValueError):
+            participants = None
+        if menu_choice.get("price"):
+            product_payload = {
+                "name": menu_choice["name"],
+                "quantity": 1 if menu_choice.get("unit") == "per_event" else (participants or 1),
+                "unit_price": menu_choice["price"],
+                "unit": menu_choice.get("unit") or "per_event",
+                "category": "Catering",
+                "wish": "menu",
+            }
+            existing = user_info.get("products_add") or []
+            if isinstance(existing, list):
+                user_info["products_add"] = existing + [product_payload]
+            else:
+                user_info["products_add"] = [product_payload]
 
     product_update_detected = _detect_product_update_request(message_payload, user_info, linked_event)
     if product_update_detected:
@@ -715,6 +778,13 @@ def process(state: WorkflowState) -> GroupResult:
     if merge_client_profile(event_entry, user_info):
         state.extras["persist"] = True
     handle_billing_capture(state, event_entry)
+    menu_choice_name = user_info.get("menu_choice")
+    if menu_choice_name:
+        catering_list = event_entry.setdefault("selected_catering", [])
+        if menu_choice_name not in catering_list:
+            catering_list.append(menu_choice_name)
+            event_entry.setdefault("event_data", {})["Catering Preference"] = menu_choice_name
+            state.extras["persist"] = True
     state.event_entry = event_entry
     state.event_id = event_entry["event_id"]
     state.current_step = event_entry.get("current_step")

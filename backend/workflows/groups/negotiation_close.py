@@ -23,6 +23,7 @@ from backend.workflows.nlu import detect_general_room_query
 from backend.debug.hooks import trace_marker, trace_general_qa_status, set_subloop
 from backend.debug.trace import set_hil_open
 from backend.utils.profiler import profile_step
+from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
 
 __all__ = ["process"]
 
@@ -56,6 +57,40 @@ ACCEPT_KEYWORDS = (
 )
 DECLINE_KEYWORDS = ("decline", "reject", "cancel", "not move forward", "no longer", "pass")
 COUNTER_KEYWORDS = ("discount", "lower", "reduce", "better price", "could you do", "counter", "budget")
+
+
+def _menu_name_set() -> set[str]:
+    return {
+        str(entry.get("menu_name") or "").strip().lower()
+        for entry in DINNER_MENU_OPTIONS
+        if entry.get("menu_name")
+    }
+
+
+def _normalise_product_fields(product: Dict[str, Any], *, menu_names: Optional[set[str]] = None) -> Dict[str, Any]:
+    menu_names = menu_names or _menu_name_set()
+    normalised = dict(product)
+    name = str(normalised.get("name") or "").strip()
+    unit = normalised.get("unit")
+    if not unit and name.lower() in menu_names:
+        unit = "per_event"
+    try:
+        quantity = float(normalised.get("quantity") or 1)
+    except (TypeError, ValueError):
+        quantity = 1
+    try:
+        unit_price = float(normalised.get("unit_price") or 0.0)
+    except (TypeError, ValueError):
+        unit_price = 0.0
+
+    if unit == "per_event":
+        quantity = 1
+
+    normalised["name"] = name or "Unnamed item"
+    normalised["unit"] = unit
+    normalised["quantity"] = quantity
+    normalised["unit_price"] = unit_price
+    return normalised
 
 
 @profile_step("workflow.step5.negotiation")
@@ -540,6 +575,42 @@ def _start_hil_acceptance(
 
     response = _handle_accept(event_entry)
     state.add_draft_message(response["draft"])
+    pending_records = event_entry.setdefault("pending_hil_requests", [])
+    draft_signature = f"step5:{response['pending'].get('offer_id')}"
+    existing_signatures = {entry.get("signature") for entry in pending_records if entry.get("signature")}
+    task_id: Optional[str] = None
+    if draft_signature not in existing_signatures:
+        task_payload = {
+            "step_id": 5,
+            "intent": state.intent.value if state.intent else None,
+            "event_id": event_entry.get("event_id"),
+            "draft_msg": response["draft"].get("body"),
+            "language": (state.user_info or {}).get("language"),
+            "caller_step": event_entry.get("caller_step"),
+            "requirements_hash": event_entry.get("requirements_hash"),
+            "room_eval_hash": event_entry.get("room_eval_hash"),
+            "thread_id": thread_id,
+        }
+        client_id = state.client_id or (state.message.from_email if state.message else "unknown@example.com")
+        task_id = enqueue_task(
+            state.db,
+            TaskType.OFFER_MESSAGE,
+            client_id,
+            event_entry.get("event_id"),
+            task_payload,
+        )
+        pending_records.append(
+            {
+                "task_id": task_id,
+                "signature": draft_signature,
+                "step": 5,
+                "draft": dict(response["draft"]),
+                "thread_id": thread_id,
+            }
+        )
+        state.extras["persist"] = True
+    else:
+        task_id = next((entry.get("task_id") for entry in pending_records if entry.get("signature") == draft_signature), None)
     append_audit_entry(event_entry, 5, 5, audit_label)
     update_event_metadata(event_entry, current_step=5, thread_state="Waiting on HIL", transition_ready=False)
     event_entry["negotiation_pending_decision"] = response["pending"]
@@ -555,6 +626,7 @@ def _start_hil_acceptance(
         "confidence": round(state.confidence or 0.0, 3),
         "offer_id": response["offer_id"],
         "pending_decision": response["pending"],
+        "pending_task_id": task_id,
         "draft_messages": state.draft_messages,
         "thread_state": state.thread_state,
         "context": state.context_snapshot,
@@ -563,7 +635,7 @@ def _start_hil_acceptance(
     return GroupResult(action=action, payload=payload, halt=True)
 
 
-def _offer_summary_lines(event_entry: Dict[str, Any]) -> list[str]:
+def _offer_summary_lines(event_entry: Dict[str, Any], *, include_cta: bool = True) -> list[str]:
     """Recreate the offer body (with totals) so HIL sees exactly what the client saw."""
 
     chosen_date = event_entry.get("chosen_date") or "Date TBD"
@@ -585,14 +657,15 @@ def _offer_summary_lines(event_entry: Dict[str, Any]) -> list[str]:
     matched_summary = autofill_summary.get("matched") or []
     product_alternatives = autofill_summary.get("alternatives") or []
     catering_alternatives = autofill_summary.get("catering_alternatives") or []
+    manager_requested = bool((event_entry.get("flags") or {}).get("manager_requested"))
 
     intro_room = room if room != "Room TBD" else "your preferred room"
     intro_date = chosen_date if chosen_date != "Date TBD" else "your requested date"
-    lines = [
-        f"Great — {intro_room} on {intro_date} is ready for review.",
-        f"Offer draft for {chosen_date} · {room}",
-        "",
-    ]
+    lines: list[str] = []
+    if manager_requested:
+        lines.append(f"Great — {intro_room} on {intro_date} is ready for manager review.")
+    lines.append(f"Offer draft for {chosen_date} · {room}")
+    lines.append("")
 
     if contact_parts or billing_address:
         if contact_parts:
@@ -604,16 +677,19 @@ def _offer_summary_lines(event_entry: Dict[str, Any]) -> list[str]:
     if matched_summary:
         lines.append("**Included products**")
         for entry in matched_summary:
-            quantity = int(entry.get("quantity") or 1)
-            name = entry.get("name") or "Unnamed item"
-            unit_price = float(entry.get("unit_price") or 0.0)
+            normalised = _normalise_product_fields(entry, menu_names=_menu_name_set())
+            quantity = int(normalised.get("quantity") or 1)
+            name = normalised.get("name") or "Unnamed item"
+            unit_price = float(normalised.get("unit_price") or 0.0)
             total_line = float(entry.get("total") or quantity * unit_price)
-            unit = entry.get("unit")
+            unit = normalised.get("unit")
             wish = entry.get("wish")
 
             price_text = f"CHF {total_line:,.2f}"
             if unit == "per_person" and quantity > 0:
                 price_text += f" (CHF {unit_price:,.2f} per person)"
+            elif unit == "per_event":
+                price_text += " (per event)"
 
             details = []
             if entry.get("match_pct") is not None:
@@ -626,14 +702,17 @@ def _offer_summary_lines(event_entry: Dict[str, Any]) -> list[str]:
     elif products:
         lines.append("**Included products**")
         for product in products:
-            quantity = int(product.get("quantity") or 1)
-            name = product.get("name") or "Unnamed item"
-            unit_price = float(product.get("unit_price") or 0.0)
-            unit = product.get("unit")
+            normalised = _normalise_product_fields(product, menu_names=_menu_name_set())
+            quantity = int(normalised.get("quantity") or 1)
+            name = normalised.get("name") or "Unnamed item"
+            unit_price = float(normalised.get("unit_price") or 0.0)
+            unit = normalised.get("unit")
 
             price_text = f"CHF {unit_price * quantity:,.2f}"
             if unit == "per_person" and quantity > 0:
                 price_text += f" (CHF {unit_price:,.2f} per person)"
+            elif unit == "per_event":
+                price_text += " (per event)"
 
             lines.append(f"- {quantity}× {name} · {price_text}")
     else:
@@ -702,7 +781,12 @@ def _offer_summary_lines(event_entry: Dict[str, Any]) -> list[str]:
     if has_alternatives:
         lines.append("")
 
-    lines.append("Please review and approve before sending to the manager.")
+    if include_cta:
+        manager_requested = bool((event_entry.get("flags") or {}).get("manager_requested"))
+        if manager_requested:
+            lines.append("Please review and approve before sending to the manager.")
+        else:
+            lines.append("Please review and approve to confirm.")
     return lines
 
 
@@ -807,9 +891,10 @@ def _determine_offer_total(event_entry: Dict[str, Any]) -> float:
             pass
 
     for product in event_entry.get("products") or []:
+        normalised = _normalise_product_fields(product, menu_names=_menu_name_set())
         try:
-            quantity = float(product.get("quantity") or 0)
-            unit_price = float(product.get("unit_price") or 0.0)
+            quantity = float(normalised.get("quantity") or 0)
+            unit_price = float(normalised.get("unit_price") or 0.0)
         except (TypeError, ValueError):
             continue
         computed_total += quantity * unit_price

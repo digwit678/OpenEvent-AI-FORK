@@ -194,3 +194,23 @@ The `_autofill_products_from_preferences` function in `backend/workflows/groups/
 - Billing updates while awaiting address only trigger when the reply looks like an address; “Room …” or other short replies no longer overwrite billing or send to manual review.【F:backend/workflows/groups/intake/trigger/process.py†L650-L676】
 
 **Regression Guard:** After a client types a room name, the next message should be the Step 4 offer/products prompt (no duplicate room list, no manual-review task, no “Billing Address: Room …”). If confidence is low, the room should still be accepted.
+
+### Manager approval now opt-in (New)
+**Symptoms:** Offers were sent to HIL/manager even when the client didn’t ask for manager review.
+
+**Fixes Applied:** Acceptance now only opens HIL when the client explicitly mentions the manager; otherwise the offer is confirmed directly and we continue to site-visit prep.【F:backend/workflows/groups/offer/trigger/process.py†L180-L250】【F:backend/workflows/groups/offer/trigger/process.py†L1190-L1245】
+
+**Regression Guard:** A plain “that’s fine” acceptance now always opens the manager approval task (Step 5) so the manager sees the approve/decline buttons in the UI before the client-facing confirmation is released.
+
+### Menu selection alongside room choice (New)
+**Symptoms:** When a client replies “Room E with Seasonal Garden Trio,” the menu wasn’t captured, menus weren’t shown with room options, and the offer totals ignored catering.
+
+**Fixes Applied:**
+- Menu choices are detected in the room-selection turn; we add the menu as a catering line item (per-event by default) and store the choice.【F:backend/workflows/groups/intake/trigger/process.py†L150-L190】
+- Room-availability messages now surface concise menu bullets with per-event pricing (rooms: all) so the client can decide in one go.【F:backend/workflows/groups/room_availability/trigger/process.py†L980-L1030】
+- Offer/HIL summaries respect manager opt-in and keep CTA text aligned (confirm vs manager approval).【F:backend/workflows/groups/offer/trigger/process.py†L1000-L1105】【F:backend/workflows/groups/negotiation_close.py†L570-L610】
+- If no menu was chosen before the offer, the offer body includes a short “Menu options you can add” block; when a menu was already selected, the list is omitted to avoid repetition.【F:backend/workflows/groups/offer/trigger/process.py†L1065-L1115】
+- Coffee badges in room cards are suppressed unless the client asked for coffee/tea/drinks, so unrelated “Coffee ✓” no longer appears by default.【F:backend/workflows/groups/room_availability/trigger/process.py†L900-L960】
+- The “Great — <room> … ready for review” intro is now only shown when the client explicitly asked for manager review; normal confirmations start directly with the offer draft line.【F:backend/workflows/groups/offer/trigger/process.py†L1000-L1010】
+
+**Regression Guard:** A reply like “Room B with Seasonal Garden Trio” should lock the room, add the menu (priced per guest) to the offer, and show a confirmation CTA without defaulting to manager approval.
