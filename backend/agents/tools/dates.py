@@ -10,6 +10,28 @@ from backend.workflows.groups.intake.condition.checks import suggest_dates
 from backend.workflows.common.datetime_parse import to_iso_date
 from backend.workflow_email import process_msg as workflow_process_msg
 
+TOOL_SCHEMA: Dict[str, Dict[str, Any]] = {
+    "tool_suggest_dates": {
+        "type": "object",
+        "properties": {
+            "event_id": {"type": ["string", "null"]},
+            "preferred_room": {"type": ["string", "null"]},
+            "start_from_iso": {"type": ["string", "null"]},
+            "days_ahead": {"type": "integer", "minimum": 1, "maximum": 120},
+            "max_results": {"type": "integer", "minimum": 1, "maximum": 10},
+        },
+        "additionalProperties": False,
+    },
+    "tool_parse_date_intent": {
+        "type": "object",
+        "properties": {
+            "message": {"type": "string"},
+        },
+        "required": ["message"],
+        "additionalProperties": False,
+    },
+}
+
 
 class SuggestDatesInput(BaseModel):
     event_id: Optional[str]

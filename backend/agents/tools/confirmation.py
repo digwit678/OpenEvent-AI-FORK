@@ -6,6 +6,20 @@ from pydantic import BaseModel, Field
 
 from backend.workflow_email import process_msg as workflow_process_msg
 
+TOOL_SCHEMA: Dict[str, Dict[str, Any]] = {
+    "tool_classify_confirmation": {
+        "type": "object",
+        "properties": {
+            "event_id": {"type": "string"},
+            "client_email": {"type": "string"},
+            "message": {"type": "string"},
+            "msg_id": {"type": ["string", "null"]},
+        },
+        "required": ["event_id", "client_email", "message"],
+        "additionalProperties": False,
+    }
+}
+
 
 class ConfirmationInput(BaseModel):
     event_id: str = Field(..., description="Event identifier.")
@@ -37,4 +51,3 @@ def tool_classify_confirmation(params: ConfirmationInput) -> ConfirmationOutput:
     payload = {k: v for k, v in result.items() if k != "draft_messages"}
     payload["draft_messages"] = result.get("draft_messages") or []
     return ConfirmationOutput(action=action, payload=payload)
-

@@ -12,6 +12,83 @@ from backend.workflows.groups.offer.trigger.process import (
 from backend.workflows.groups.offer.llm.send_offer_llm import send_offer_email  # type: ignore
 from backend.workflows.common.catalog import list_products, list_catering
 
+TOOL_SCHEMA: Dict[str, Dict[str, Any]] = {
+    "tool_build_offer_draft": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "user_info": {"type": "object"},
+        },
+        "required": ["event_entry"],
+        "additionalProperties": False,
+    },
+    "tool_persist_offer": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "pricing_inputs": {"type": "object"},
+            "user_info": {"type": "object"},
+        },
+        "required": ["event_entry", "pricing_inputs"],
+        "additionalProperties": False,
+    },
+    "tool_send_offer": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "offer_id": {"type": "string"},
+            "to_email": {"type": "string"},
+            "cc": {"type": ["string", "null"]},
+        },
+        "required": ["event_entry", "offer_id", "to_email"],
+        "additionalProperties": False,
+    },
+    "tool_list_products": {
+        "type": "object",
+        "properties": {
+            "room_id": {"type": ["string", "null"]},
+            "categories": {"type": ["array", "null"], "items": {"type": "string"}},
+        },
+        "additionalProperties": False,
+    },
+    "tool_list_catering": {
+        "type": "object",
+        "properties": {
+            "room_id": {"type": ["string", "null"]},
+            "date_token": {"type": ["string", "null"]},
+            "categories": {"type": ["array", "null"], "items": {"type": "string"}},
+        },
+        "additionalProperties": False,
+    },
+    "tool_add_product_to_offer": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "product": {"type": "object"},
+        },
+        "required": ["event_entry", "product"],
+        "additionalProperties": False,
+    },
+    "tool_remove_product_from_offer": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "product": {"type": "object"},
+        },
+        "required": ["event_entry", "product"],
+        "additionalProperties": False,
+    },
+    "tool_follow_up_suggest": {
+        "type": "object",
+        "properties": {
+            "event_entry": {"type": "object"},
+            "user_info": {"type": ["object", "null"]},
+        },
+        "required": ["event_entry"],
+        "additionalProperties": False,
+    },
+}
+
 
 class ComposeOfferInput(BaseModel):
     event_entry: Dict[str, Any]

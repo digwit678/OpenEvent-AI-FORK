@@ -20,6 +20,7 @@ from backend.utils.profiler import profile_step
 from backend.workflow.state import WorkflowStep, write_stage
 from backend.services.products import find_product, normalise_product_payload
 from backend.services.rooms import load_room_catalog
+from ...negotiation_close import _handle_accept, ACCEPT_KEYWORDS
 
 from ..llm.send_offer_llm import ComposeOffer
 
@@ -52,6 +53,7 @@ def process(state: WorkflowState) -> GroupResult:
 
     # [CHANGE DETECTION + Q&A] Tap incoming stream BEFORE offer composition to detect client revisions
     message_text = _message_text(state)
+    normalized_message_text = _normalize_quotes(message_text)
     user_info = state.user_info or {}
 
     # Q&A classification
@@ -140,6 +142,42 @@ def process(state: WorkflowState) -> GroupResult:
                 "persisted": True,
             }
             return GroupResult(action="change_detour", payload=payload, halt=False)
+
+    # Acceptance (no product/date change) — short-circuit to HIL review
+    if _looks_like_offer_acceptance(normalized_message_text):
+        negotiation_state = event_entry.setdefault("negotiation_state", {"counter_count": 0, "manual_review_task_id": None})
+        negotiation_state["counter_count"] = 0
+        response = _handle_accept(event_entry)
+
+        state.add_draft_message(response["draft"])
+        append_audit_entry(event_entry, previous_step, 5, "offer_accept_pending_hil")
+        event_entry["negotiation_pending_decision"] = response["pending"]
+        update_event_metadata(
+            event_entry,
+            current_step=5,
+            thread_state="Waiting on HIL",
+            transition_ready=False,
+            caller_step=None,
+        )
+        state.current_step = 5
+        state.caller_step = None
+        state.set_thread_state("Waiting on HIL")
+        set_hil_open(thread_id, True)
+        state.extras["persist"] = True
+
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "offer_id": response["offer_id"],
+            "pending_decision": response["pending"],
+            "draft_messages": state.draft_messages,
+            "thread_state": state.thread_state,
+            "context": state.context_snapshot,
+            "persisted": True,
+        }
+        return GroupResult(action="offer_accept_pending_hil", payload=payload, halt=True)
 
     # No change detected: check if Q&A should be handled
     has_offer_update = _has_offer_update(user_info)
@@ -978,7 +1016,7 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> 
     if has_alternatives:
         lines.append("")
 
-    lines.append("Please review and approve before sending to the client.")
+    lines.append("Please review and approve before sending to the manager.")
     return lines
 
 
@@ -1047,6 +1085,27 @@ def _message_text(state: WorkflowState) -> str:
     if subject and body:
         return f"{subject}\n{body}"
     return subject or body
+
+
+def _normalize_quotes(text: str) -> str:
+    if not text:
+        return ""
+    replacements = {
+        "’": "'",
+        "‘": "'",
+        "´": "'",
+        "`": "'",
+        "“": '"',
+        "”": '"',
+    }
+    for bad, repl in replacements.items():
+        text = text.replace(bad, repl)
+    return text
+
+
+def _looks_like_offer_acceptance(message_text: str) -> bool:
+    normalized = _normalize_quotes(message_text or "").lower()
+    return any(keyword in normalized for keyword in ACCEPT_KEYWORDS)
 
 
 def _present_general_room_qna(

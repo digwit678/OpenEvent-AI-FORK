@@ -124,3 +124,20 @@ When a user requests a product addition (e.g., "add a wireless microphone"), two
 
 **Fix:**
 The `_autofill_products_from_preferences` function in `backend/workflows/groups/offer/trigger/process.py` was updated to prevent it from running if products have already been manually modified in the same turn. It now checks `_has_offer_update(user_info)` before proceeding, ensuring that explicit user requests always take precedence over automated suggestions.【F:backend/workflows/groups/offer/trigger/process.py†L405-L410】
+
+### Offer Acceptance Stuck / Not Reaching HIL (Fixed)
+**Symptoms:** Client replies “ok that’s fine / approved / continue / please send” but the workflow stays at Step 4 (Awaiting Client) or routes to manual review; manager/HIL never sees the offer to approve; Approve button in GUI does nothing.
+
+**Root Causes:**
+1. Acceptance phrases were classified as `other`, so Step 5 (negotiation) never ran and no HIL task was created.
+2. Even when acceptance was detected later, HIL didn’t have a compact offer summary to review and approve.
+3. GUI Approve relied on `hil_approve_step=5` but the state sometimes remained at Step 4.
+
+**Fixes Applied:**
+1. Intake now force-upgrades short acceptance replies to `event_request`, stamps `intent_detail=event_intake_negotiation_accept`, sets `hil_approve_step=5`, and pins the event on Step 5 with `Waiting on HIL` so negotiation close can run immediately.【F:backend/workflows/groups/intake/trigger/process.py†L538-L559】
+2. Negotiation accept flow now sends a HIL-ready summary (line items + total) and keeps the thread in `Waiting on HIL` until the manager approves; HIL approval sets the offer to Accepted and advances to Step 6 automatically; rejection prompts to adjust and resend.【F:backend/workflows/groups/negotiation_close.py†L23-L47】【F:backend/workflows/groups/negotiation_close.py†L98-L170】【F:backend/workflows/groups/negotiation_close.py†L341-L394】
+3. Acceptance keywords expanded to include “continue / please send / go ahead / ok that’s fine / approved” and we normalize curly apostrophes so short “that’s fine” replies are caught.【F:backend/workflows/groups/negotiation_close.py†L23-L47】【F:backend/workflows/groups/intake/trigger/process.py†L149-L167】【F:backend/workflows/groups/intake/trigger/process.py†L518-L559】
+4. HIL Approve now applies the decision to the pending negotiation and runs the transition checkpoint so the workflow moves past Step 5 as soon as the manager clicks Approve (no more stuck buttons).【F:backend/workflow_email.py†L306-L359】
+5. Step 4 now also recognizes acceptance phrases (with normalized quotes) and short-circuits straight to HIL with a pending decision, avoiding repeated offer drafts when clients reply “approved/continue/that’s fine” on the offer thread.【F:backend/workflows/groups/offer/trigger/process.py†L52-L123】【F:backend/workflows/groups/offer/trigger/process.py†L1115-L1131】
+
+**Playbook:** If a client acceptance seems ignored, check `hil_open` and `current_step`—they should be `True` and `5`. If not, re-run intake on the acceptance email; the new heuristic forces the HIL acceptance path with the offer summary attached.
