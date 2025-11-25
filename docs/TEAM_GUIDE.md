@@ -31,11 +31,11 @@ Each step applies an entry guard, deterministic actions, and explicit exits/deto
 - **Backfill:** When the extractor misses the ISO string entirely, Step 1 now re-parses `YYYY-MM-DD HH:MM–HH:MM` replies before classification and populates `date/event_date/start_time/end_time` so Step 2 can auto-confirm and trigger Step 3 instead of falling into the “Next step” stub.【F:backend/workflows/groups/intake/trigger/process.py†L208-L321】
 - **Rule:** Do **not** resurrect that fallback to mask missing structured payloads—if Step 3 fails, surface a clear error instead of looping managers on the “Next step” stub.
 
-### Step 3 — Room Availability & HIL Gate
+### Step 3 — Room Availability (no HIL)
 - **Entry guard:** Requires a chosen date; otherwise detours to Step 2 and records caller provenance.【F:backend/workflows/groups/room_availability/trigger/process.py†L51-L121】
-- **Actions:** Re-evaluate inventory when requirements change, select the best room, draft outcome messaging, compute alternatives, and store a `room_pending_decision` payload awaiting HIL approval.【F:backend/workflows/groups/room_availability/trigger/process.py†L60-L115】
-- **HIL gate:** When `hil_approve_step==3`, managers approve or reject the pending room before progressing; approval locks the room, aligns `room_eval_hash`, and advances to Step 4.【F:backend/workflows/groups/room_availability/trigger/process.py†L246-L315】
+- **Actions:** Re-evaluate inventory when requirements change, select the best room, draft outcome messaging, compute alternatives. No manager review is enqueued at this step; drafts are always `requires_approval=False` and stale step-3 HIL requests are cleared on entry.【F:backend/workflows/groups/room_availability/trigger/process.py†L120-L205】【F:backend/workflow_email.py†L280-L360】
 - **Caching:** If the locked room and requirement hash already match, Step 3 short-circuits and returns control to the caller without recomputing availability.【F:backend/workflows/groups/room_availability/trigger/process.py†L60-L205】
+- **Regression Guard:** If you ever see a Step-3 task in the manager panel, it’s a bug. Clear `pending_hil_requests` for step=3 and ensure the room draft leaves `requires_approval` false.【F:backend/workflows/groups/room_availability/trigger/process.py†L120-L205】
 
 ### Step 4 — Offer Preparation
 - **Entry guard:** Requires an event entry populated by prior steps; otherwise halts with `offer_missing_event`.【F:backend/workflows/groups/offer/trigger/process.py†L21-L33】
@@ -200,7 +200,7 @@ The `_autofill_products_from_preferences` function in `backend/workflows/groups/
 
 **Fixes Applied:** Acceptance now only opens HIL when the client explicitly mentions the manager; otherwise the offer is confirmed directly and we continue to site-visit prep.【F:backend/workflows/groups/offer/trigger/process.py†L180-L250】【F:backend/workflows/groups/offer/trigger/process.py†L1190-L1245】
 
-**Regression Guard:** A plain “that’s fine” acceptance now always opens the manager approval task (Step 5) so the manager sees the approve/decline buttons in the UI before the client-facing confirmation is released.
+**Regression Guard:** A plain “that’s fine” acceptance now always opens the manager approval task (Step 5) so the manager sees the approve/decline buttons in the UI before the client-facing confirmation is released. GUI Approve/Reject calls `/api/tasks/{task_id}/approve|reject`, which applies the pending Step‑5 decision and sends the assistant reply; if it doesn’t fire, check that the task is `offer_message` (not room/date/manual) and that `pending_hil_requests` contains only step=5 entries.【F:backend/main.py†L760-L860】【F:backend/workflow_email.py†L422-L540】
 
 ### Menu selection alongside room choice (New)
 **Symptoms:** When a client replies “Room E with Seasonal Garden Trio,” the menu wasn’t captured, menus weren’t shown with room options, and the offer totals ignored catering.

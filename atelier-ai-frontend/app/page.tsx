@@ -936,6 +936,16 @@ export default function EmailThreadUI() {
                         )}
                         {eventSummary.locked_room && <div>Room: {eventSummary.locked_room}</div>}
                         {eventSummary.chosen_date && <div>Date: {eventSummary.chosen_date}</div>}
+                        {Array.isArray(eventSummary.line_items) && eventSummary.line_items.length > 0 && (
+                          <div className="mt-1">
+                            <div className="font-semibold">Line items:</div>
+                            <ul className="list-disc list-inside space-y-0.5">
+                              {eventSummary.line_items.map((item: string, idx: number) => (
+                                <li key={idx}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                         {offerTotal !== null && (
                           <div>
                             Offer total: CHF{' '}

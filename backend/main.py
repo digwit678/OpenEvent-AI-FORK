@@ -689,11 +689,12 @@ async def get_pending_tasks():
     tasks = wf_list_pending_tasks(db)
     events_by_id = {event.get("event_id"): event for event in db.get("events") or [] if event.get("event_id")}
     payload = []
+    offer_tasks_indices: Dict[tuple[str, str], int] = {}
     for task in tasks:
         payload_data = task.get("payload") or {}
         event_entry = events_by_id.get(task.get("event_id"))
         event_data = (event_entry or {}).get("event_data") or {}
-        draft_body = payload_data.get("draft_msg")
+        draft_body = payload_data.get("draft_body") or payload_data.get("draft_msg")
         if not draft_body and event_entry:
             for request in event_entry.get("pending_hil_requests") or []:
                 if request.get("task_id") == task.get("task_id"):
@@ -702,6 +703,29 @@ async def get_pending_tasks():
 
         event_summary = None
         if event_entry:
+            def _line_items(entry: Dict[str, Any]) -> list[str]:
+                items: list[str] = []
+                for product in entry.get("products") or []:
+                    name = product.get("name") or "Unnamed item"
+                    try:
+                        qty = float(product.get("quantity") or 0)
+                    except (TypeError, ValueError):
+                        qty = 0
+                    try:
+                        unit_price = float(product.get("unit_price") or 0.0)
+                    except (TypeError, ValueError):
+                        unit_price = 0.0
+                    unit = product.get("unit")
+                    total = qty * unit_price if qty and unit_price else unit_price
+                    label = f"{qty:g}× {name}" if qty else name
+                    price_text = f"CHF {total:,.2f}"
+                    if unit == "per_person" and qty:
+                        price_text += f" (CHF {unit_price:,.2f} per person)"
+                    elif unit == "per_event":
+                        price_text += " (per event)"
+                    items.append(f"{label} · {price_text}")
+                return items
+
             event_summary = {
                 "client_name": event_data.get("Name"),
                 "company": event_data.get("Company"),
@@ -709,6 +733,7 @@ async def get_pending_tasks():
                 "email": event_data.get("Email"),
                 "chosen_date": event_entry.get("chosen_date"),
                 "locked_room": event_entry.get("locked_room_id"),
+                "line_items": _line_items(event_entry),
             }
             try:
                 from backend.workflows.groups.negotiation_close import _determine_offer_total
@@ -719,24 +744,46 @@ async def get_pending_tasks():
             if total_amount not in (None, 0):
                 event_summary["offer_total"] = total_amount
 
-        payload.append(
-            {
-                "task_id": task.get("task_id"),
-                "type": task.get("type"),
-                "client_id": task.get("client_id"),
-                "event_id": task.get("event_id"),
-                "created_at": task.get("created_at"),
-                "notes": task.get("notes"),
-                "payload": {
-                    "snippet": payload_data.get("snippet"),
-                    "draft_body": draft_body,
-                    "suggested_dates": payload_data.get("suggested_dates"),
-                    "thread_id": payload_data.get("thread_id"),
-                    "step_id": payload_data.get("step_id") or payload_data.get("step"),
-                    "event_summary": event_summary,
-                },
-            }
-        )
+        record = {
+            "task_id": task.get("task_id"),
+            "type": task.get("type"),
+            "client_id": task.get("client_id"),
+            "event_id": task.get("event_id"),
+            "created_at": task.get("created_at"),
+            "notes": task.get("notes"),
+            "payload": {
+                "snippet": payload_data.get("snippet"),
+                "draft_body": draft_body,
+                "suggested_dates": payload_data.get("suggested_dates"),
+                "thread_id": payload_data.get("thread_id"),
+                "step_id": payload_data.get("step_id") or payload_data.get("step"),
+                "event_summary": event_summary,
+            },
+        }
+        payload.append(record)
+        if task.get("type") == "offer_message" and payload_data.get("thread_id"):
+            key = (task.get("event_id"), payload_data.get("thread_id"))
+            offer_tasks_indices[key] = len(payload) - 1
+
+    # Deduplicate per (event, thread) by priority so only one task shows in the manager panel.
+    priority = {
+        "offer_message": 0,
+        "room_availability_message": 1,
+        "date_confirmation_message": 2,
+        "ask_for_date": 3,
+        "manual_review": 4,
+    }
+    dedup: Dict[tuple[str, str], Dict[str, Any]] = {}
+    for record in payload:
+        thread_id = (record.get("payload") or {}).get("thread_id")
+        event_id = record.get("event_id")
+        key = (event_id, thread_id)
+        rank = priority.get(record.get("type"), 99)
+        current = dedup.get(key)
+        if current is None or priority.get(current.get("type"), 99) > rank:
+            dedup[key] = record
+    payload = list(dedup.values())
+
     return {"tasks": payload}
 
 

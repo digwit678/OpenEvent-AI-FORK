@@ -106,6 +106,13 @@ def process(state: WorkflowState) -> GroupResult:
         decision = state.user_info.get("hil_decision") or "approve"
         return _apply_hil_decision(state, event_entry, decision)
 
+    # Hard guard: Step 3 should never enqueue HIL; clear any stale requests.
+    pending = event_entry.get("pending_hil_requests") or []
+    filtered = [entry for entry in pending if (entry.get("step") or 0) != 3]
+    if len(filtered) != len(pending):
+        event_entry["pending_hil_requests"] = filtered
+        state.extras["persist"] = True
+
     # [CHANGE DETECTION + Q&A] Tap incoming stream BEFORE room evaluation to detect client revisions
     # ("actually we're 50 now") and route them back to dependent nodes while hashes stay valid.
     message_text = _message_text(state)
@@ -428,13 +435,11 @@ def process(state: WorkflowState) -> GroupResult:
         "headers": headers,
     }
     attempt = _increment_room_attempt(event_entry)
-    manager_requested = bool((event_entry.get("flags") or {}).get("manager_requested"))
-    hil_required = manager_requested and attempt >= ROOM_PROPOSAL_HIL_THRESHOLD
-    thread_state_label = "Waiting on HIL" if hil_required else "Awaiting Client"
+    # Do not escalate room availability to HIL; approvals only happen at offer/negotiation (Step 5).
+    hil_required = False
+    thread_state_label = "Awaiting Client"
     draft_message["thread_state"] = thread_state_label
     draft_message["requires_approval"] = hil_required
-    if hil_required:
-        draft_message["hil_reason"] = "Client can't find suitable room, needs manual help"
     draft_message["rooms_summary"] = verbalizer_rooms
     state.add_draft_message(draft_message)
 
