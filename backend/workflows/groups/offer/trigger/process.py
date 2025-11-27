@@ -277,12 +277,13 @@ def process(state: WorkflowState) -> GroupResult:
         (event_entry.get("event_data") or {}).get("Billing Address"),
     )
 
-    # Safety Sandwich: verbalize offer response (LLM with verification, fallback to deterministic)
-    from backend.ux.safety_sandwich_wiring import verbalize_offer_response
-    offer_body_markdown = verbalize_offer_response(
+    # Universal Verbalizer: transform to warm, human-like message
+    from backend.workflows.common.prompts import verbalize_draft_body
+    offer_body_markdown = verbalize_draft_body(
         "\n".join(summary_lines),
+        step=4,
+        topic="offer_draft",
         event_date=format_iso_date_to_ddmmyyyy(event_entry.get("chosen_date")) or event_entry.get("chosen_date"),
-        event_date_iso=event_entry.get("chosen_date") if event_entry.get("chosen_date") and "-" in (event_entry.get("chosen_date") or "") else None,
         participants_count=_infer_participant_count(event_entry),
         room_name=event_entry.get("locked_room_id"),
         total_amount=total_amount,

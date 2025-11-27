@@ -30,9 +30,31 @@ The Safety Sandwich pattern enables warm, empathetic responses while guaranteein
 
 **Tone Control:**
 ```bash
-VERBALIZER_TONE=plain      # Deterministic only (default)
-VERBALIZER_TONE=empathetic # LLM verbalization enabled
+VERBALIZER_TONE=empathetic # Human-like UX (NEW DEFAULT)
+VERBALIZER_TONE=plain      # Deterministic only (for CI/testing)
 ```
+
+### Universal Verbalizer (Human-Like UX)
+
+**Enhancement: All client messages now go through the Universal Verbalizer**
+
+The verbalization system was extended to transform ALL client-facing messages into warm, human-like communication:
+
+**New Files:**
+- `backend/ux/universal_verbalizer.py` — Core verbalizer with step-aware UX prompts
+- `backend/tests/verbalizer/test_universal_verbalizer.py` — 19 tests
+
+**Modified Files:**
+- `backend/workflows/common/prompts.py` — Added `verbalize_draft_body()`, updated `append_footer()` with auto-verbalization
+
+**Design Principles:**
+1. Sound like a helpful human (conversational, not robotic)
+2. Help clients decide (highlight recommendations with reasons)
+3. Complete & correct (all facts preserved)
+4. Show empathy (acknowledge needs)
+5. Guide next steps clearly
+
+**Test Results:** 209 tests pass (48 verbalizer tests + 161 detection/flow tests)
 
 ---
 

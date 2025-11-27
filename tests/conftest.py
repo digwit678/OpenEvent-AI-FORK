@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
 from tests.flows.run_yaml_flow import run_suite_file
+
+# Force plain verbalizer tone for deterministic test output
+os.environ.setdefault("VERBALIZER_TONE", "plain")
 
 
 def pytest_collect_file(parent, path):

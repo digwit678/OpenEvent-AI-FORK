@@ -547,3 +547,94 @@ pytest backend/tests/verbalizer/ -m "" -v
 | TEST_SANDWICH_004 | WorkflowState integration |
 | TEST_SANDWICH_005 | Edge cases (empty, no rooms) |
 | TEST_SANDWICH_006 | Hard facts extraction |
+
+---
+
+## Universal Verbalizer (Human-Like UX)
+
+**Last Updated:** 2025-11-27
+
+The Universal Verbalizer transforms ALL client-facing messages into warm, human-like communication that helps clients make decisions easily.
+
+### Design Principles
+
+1. **Sound like a helpful human** - Conversational language, not robotic bullet points
+2. **Help clients decide** - Highlight best options with clear reasons, don't just list data
+3. **Be concise but complete** - Every fact preserved, wrapped in helpful context
+4. **Show empathy** - Acknowledge the client's needs and situation
+5. **Guide next steps** - Make it clear what happens next
+
+### Message Transformation Example
+
+**BEFORE (data dump):**
+```
+Room A - Available - Capacity 50 - Coffee: ✓ - Projector: ✓
+Room B - Option - Capacity 80 - Coffee: ✓ - Projector: ✗
+```
+
+**AFTER (human-like):**
+```
+Great news! Room A is available for your event on 15.03.2025 and fits your
+30 guests perfectly. It has everything you asked for — the coffee service
+and projector are both included.
+
+If you'd like more space, Room B (capacity 80) is also open, though we'd
+need to arrange the projector separately. I'd recommend Room A as your
+best match.
+
+Just let me know which you prefer, and I'll lock it in for you.
+```
+
+### Integration Points
+
+The Universal Verbalizer is integrated at two levels:
+
+1. **`append_footer()`** - Automatically verbalizes body before adding footer
+2. **`verbalize_draft_body()`** - Explicit verbalization for messages without footer
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/ux/universal_verbalizer.py` | Core verbalizer with UX-focused prompts |
+| `backend/workflows/common/prompts.py` | Integration helpers (`append_footer`, `verbalize_draft_body`) |
+
+### Tone Control
+
+**Default is now `empathetic`** for human-like UX.
+
+```bash
+# Disable verbalization (use deterministic text only)
+VERBALIZER_TONE=plain
+# or
+PLAIN_VERBALIZER=1
+
+# Explicitly enable (this is now the default)
+VERBALIZER_TONE=empathetic
+```
+
+For CI/testing, set `VERBALIZER_TONE=plain` to get deterministic output.
+
+### Step-Specific Guidance
+
+The verbalizer uses context-aware prompts for each workflow step:
+
+| Step | Focus |
+|------|-------|
+| Step 2 (Date) | Help client choose confidently, highlight best-fit dates |
+| Step 3 (Room) | Lead with recommendation, explain differences clearly |
+| Step 4 (Offer) | Make value clear, justify totals, easy to accept |
+| Step 5 (Negotiation) | Acknowledge decisions warmly, maintain momentum |
+| Step 7 (Confirmation) | Celebrate their choice, make admin feel easy |
+
+### Hard Rules (Never Broken)
+
+Even in empathetic mode, these facts are ALWAYS preserved exactly:
+
+- Dates (DD.MM.YYYY format)
+- Prices (CHF X.XX format)
+- Room names (case-insensitive match)
+- Participant counts
+- Time windows
+
+If the LLM output fails verification, the system falls back to deterministic text.
