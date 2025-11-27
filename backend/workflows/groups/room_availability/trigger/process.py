@@ -409,6 +409,17 @@ def process(state: WorkflowState) -> GroupResult:
         segments = intro_lines + (["", body_markdown] if body_markdown else [])
         body_markdown = "\n".join(segment for segment in segments if segment)
 
+    # Safety Sandwich: verbalize room response (LLM with verification, fallback to deterministic)
+    from backend.ux.safety_sandwich_wiring import verbalize_room_response
+    body_markdown = verbalize_room_response(
+        body_markdown,
+        event_date=display_chosen_date,
+        event_date_iso=chosen_date if chosen_date and "-" in chosen_date else None,
+        participants_count=participants,
+        rooms=verbalizer_rooms,
+        recommended_room=selected_room,
+    )
+
     qa_lines = _general_qna_lines(state)
     if qa_lines:
         sections = [body_markdown] if body_markdown else []

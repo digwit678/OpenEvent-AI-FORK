@@ -12,6 +12,7 @@ from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from backend.utils.openai_key import SECRET_NAME, load_openai_api_key
 from backend.agents.openevent_agent import OpenEventAgent
 
 
@@ -23,9 +24,9 @@ def run_live_smoke_reference() -> Dict[str, Any]:
     Raises ``RuntimeError`` when the required OpenAI configuration is missing.
     """
 
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = load_openai_api_key(required=False)
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is not configured for live smoke tests.")
+        raise RuntimeError(f"Environment variable '{SECRET_NAME}' is not configured for live smoke tests.")
 
     previous_agent_mode = os.getenv("AGENT_MODE")
     previous_openai_test_mode = os.getenv("OPENAI_TEST_MODE")

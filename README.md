@@ -19,6 +19,7 @@ OpenEvent automates The Atelier’s end-to-end venue booking flow: it ingests cl
 4. **Persist safely:** Update metadata, hashes, and audit logs exactly as the helper methods do so later steps can validate caching and status transitions.【F:backend/workflows/groups/room_availability/trigger/process.py†L95-L315】【F:backend/workflows/groups/offer/trigger/process.py†L201-L233】
 
 ## Local Verification
+Set environment variable `OPENAI_API_KEY` (see `.env.example`) before running any tests or agents that call OpenAI. You can source it from the macOS Keychain item named `openevent-api-test-key`.
 Run the curated workflow regression suites with a stubbed LLM adapter:
 ```bash
 # Core parity checks (Steps 1–3)
@@ -30,6 +31,15 @@ pytest backend/tests/workflows/test_workflow_v3_alignment.py::test_intake_guard_
 pytest backend/tests/workflows/test_workflow_v3_steps_4_to_7.py
 ```
 These suites stub the agent adapter, feed deterministic inputs, and assert persisted fields, audit events, and draft requirements at every stage.【F:backend/tests/workflows/test_workflow_v3_alignment.py†L16-L148】【F:backend/tests/workflows/test_workflow_v3_steps_4_to_7.py†L33-L318】
+
+### Developer environment (macOS)
+For local testing with real OpenAI access:
+```bash
+cd /Users/nico/PycharmProjects/OpenEvent-AI
+source scripts/oe_env.sh
+pytest backend/tests/smoke/test_workflow_v3_agent.py -q
+```
+This loads `OPENAI_API_KEY` at runtime from the macOS Keychain item `openevent-api-test-key` and sets `PYTHONPATH` to the repo root so imports like `import backend` work.
 
 ## Privacy & Data-Access Model (Developer Focus)
 - **Identity:** Clients are keyed by lowercased email, ensuring per-user isolation across client, event, and task collections.【F:backend/workflows/io/database.py†L131-L173】  
@@ -85,4 +95,3 @@ Use the stubbed agent harness from the tests or the CLI adapter to simulate thes
 1. Create events for `client@example.com` and `client+1@example.com`.  
 2. Confirm lookups via `last_event_for_email` and `find_event_idx` keep records separate, even if names match.  
 3. Ensure context snapshots never include the other client’s history.【F:backend/workflows/io/database.py†L175-L227】【F:backend/workflows/io/database.py†L190-L206】
-

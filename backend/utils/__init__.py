@@ -6,4 +6,4 @@ pulling heavier workflow modules. Tests that need to reset runtime caches
 can import `backend.utils.runtime` for explicit reset hooks.
 """
 
-__all__ = ["async_tools", "json_io", "profiler", "runtime"]
+__all__ = ["async_tools", "json_io", "openai_key", "profiler", "runtime"]

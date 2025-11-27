@@ -18,6 +18,7 @@ from backend.workflow_email import load_db, process_msg, save_db
 from backend.workflows.common.billing import update_billing_details
 from backend.workflows.common.gatekeeper import explain_step7_gate, refresh_gatekeeper
 from backend.workflows.llm import adapter as llm_adapter
+from backend.utils.openai_key import SECRET_NAME, load_openai_api_key
 
 from .utils_live import (
     _tmp_log_path,
@@ -29,7 +30,7 @@ from .utils_live import (
 
 # Live invocation (documented for developers):
 # export AGENT_MODE=openai
-# export OPENAI_API_KEY='sk-REAL-KEY'
+# export OPENAI_API_KEY='sk-REAL-KEY'  # (often sourced from Keychain item 'openevent-api-test-key')
 # export OPENAI_AGENT_MODEL=gpt-4o-mini
 # export OPENAI_INTENT_MODEL=gpt-4o-mini
 # export OPENAI_ENTITY_MODEL=gpt-4o-mini
@@ -73,10 +74,10 @@ def _require_live_env() -> None:
     agent_mode = os.getenv("AGENT_MODE")
     if agent_mode != "openai":
         errors.append(f"AGENT_MODE must be 'openai' (got {agent_mode!r})")
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = load_openai_api_key(required=False)
     if not _looks_like_real_api_key(api_key):
         safe_preview = (api_key or "").strip()[:8]
-        errors.append(f"OPENAI_API_KEY appears invalid (preview: {safe_preview!r})")
+        errors.append(f"{SECRET_NAME} appears invalid (preview: {safe_preview!r})")
     if os.getenv("OPENAI_TEST_MODE") != "1":
         errors.append("OPENAI_TEST_MODE must be '1' for deterministic live tests")
     if errors:

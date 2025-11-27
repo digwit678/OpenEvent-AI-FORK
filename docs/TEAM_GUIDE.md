@@ -85,6 +85,45 @@ Each step applies an entry guard, deterministic actions, and explicit exits/deto
 | 7 – Confirmation | `backend/workflows/groups/event_confirmation/trigger/process.py` | `process` & `_process_hil_confirmation`【F:backend/workflows/groups/event_confirmation/trigger/process.py†L25-L360】 |
 | Router | `backend/workflow_email.py` | `process_msg` loop【F:backend/workflow_email.py†L86-L145】 |
 
+## Agent Tools Layer (AGENT_MODE=openai)
+
+When `AGENT_MODE=openai` is set, the system uses OpenAI function-calling for tool execution instead of the deterministic workflow. Tools are bounded per step to enforce the same workflow constraints as the deterministic path.
+
+### Tool Allowlist by Step
+
+| Step | Allowed Tools |
+| --- | --- |
+| 2 – Date | `tool_suggest_dates`, `tool_parse_date_intent` |
+| 3 – Room | `tool_room_status_on_date`, `tool_capacity_check`, `tool_evaluate_rooms` |
+| 4 – Offer | `tool_build_offer_draft`, `tool_persist_offer`, `tool_list_products`, `tool_list_catering`, `tool_add_product_to_offer`, `tool_remove_product_from_offer`, `tool_send_offer` |
+| 5 – Negotiation | `tool_negotiate_offer`, `tool_transition_sync` |
+| 7 – Confirmation | `tool_follow_up_suggest`, `tool_classify_confirmation` |
+
+### Key Files
+
+| File | Description |
+| --- | --- |
+| `backend/agents/chatkit_runner.py` | `ENGINE_TOOL_ALLOWLIST`, `TOOL_DEFINITIONS`, `execute_tool_call`, schema validation |
+| `backend/agents/tools/dates.py` | Date suggestion and parsing tools |
+| `backend/agents/tools/rooms.py` | Room status and capacity tools |
+| `backend/agents/tools/offer.py` | Offer composition, products, and catering tools |
+| `backend/agents/tools/negotiation.py` | Negotiation handling |
+| `backend/agents/tools/transition.py` | Transition sync |
+| `backend/agents/tools/confirmation.py` | Confirmation classification |
+
+### Testing
+
+```bash
+# Run all agent tools tests (parity + approve path)
+pytest backend/tests/agents/ -m "" -v
+
+# Run parity tests only
+pytest backend/tests/agents/test_agent_tools_parity.py -m "" -v
+
+# Run approve path tests only
+pytest backend/tests/agents/test_manager_approve_path.py -m "" -v
+```
+
 ## Common user messages → expected reactions
 | User message | System reaction | Notes |
 | --- | --- | --- |
@@ -213,4 +252,298 @@ The `_autofill_products_from_preferences` function in `backend/workflows/groups/
 - Coffee badges in room cards are suppressed unless the client asked for coffee/tea/drinks, so unrelated “Coffee ✓” no longer appears by default.【F:backend/workflows/groups/room_availability/trigger/process.py†L900-L960】
 - The “Great — <room> … ready for review” intro is now only shown when the client explicitly asked for manager review; normal confirmations start directly with the offer draft line.【F:backend/workflows/groups/offer/trigger/process.py†L1000-L1010】
 
-**Regression Guard:** A reply like “Room B with Seasonal Garden Trio” should lock the room, add the menu (priced per guest) to the offer, and show a confirmation CTA without defaulting to manager approval.
+**Regression Guard:** A reply like "Room B with Seasonal Garden Trio" should lock the room, add the menu (priced per guest) to the offer, and show a confirmation CTA without defaulting to manager approval.
+
+---
+
+## Test Suite Status
+
+**Last Updated:** 2025-11-27
+
+### Inventory Completed
+
+A comprehensive test suite inventory was performed. See:
+- `tests/TEST_INVENTORY.md` — Full listing of all test files with coverage, type, and status
+- `tests/TEST_REORG_PLAN.md` — Proposed reorganization and migration actions
+
+### Current State
+
+| Location | Tests | Status |
+|----------|-------|--------|
+| `tests/specs/` | ~90 | 68 pass, 22 fail |
+| `tests/workflows/` | ~75 | 67 pass, 8 fail |
+| `tests/gatekeeping/` | 3 | all pass |
+| `tests/flows/` | 10 | 5 pass, 5 fail |
+| `tests/e2e_v4/` | 2 | all pass |
+| `tests/_legacy/` | ~20 | xfail (v3 reference) |
+| `backend/tests/smoke/` | 1 | pass |
+| `backend/tests_integration/` | 4 | requires live env |
+
+### Legacy Tests
+
+Legacy v3 workflow tests are isolated in `tests/_legacy/` with:
+- `pytest.mark.legacy` marker
+- `xfail` expectation (retained for regression reference)
+- No changes made; these are not run by default
+
+### Failing Tests Requiring Attention
+
+**Priority 1 — Change Propagation (Core v4)**
+- `tests/specs/dag/test_change_propagation.py` (4 failures)
+- `tests/specs/dag/test_change_scenarios_e2e.py` (5 failures)
+- `tests/specs/dag/test_change_integration_e2e.py` (4 failures)
+
+These test the v4 DAG-based change routing. The API may have evolved; expectations need alignment.
+
+**Priority 2 — General Q&A Path**
+- `tests/specs/date/test_general_room_qna_*.py` (7 failures)
+- `tests/flows/test_flow_specs.py` (5 failures)
+
+Q&A path expectations appear outdated; fixtures need update.
+
+**Priority 3 — Minor**
+- `tests/workflows/test_offer_product_operations.py` (1 failure) — quantity update logic
+- `tests/workflows/qna/test_verbalizer.py` (1 failure) — fallback format
+- `tests/workflows/date/test_confirmation_window_recovery.py` (1 failure) — relative date edge case
+
+### Next Steps
+
+1. **Fix change propagation tests** — These cover core v4 functionality (date/room/requirements detours)
+2. **Update Q&A test expectations** — Align with current behavior
+3. **Add missing coverage** — Steps 5-7 have limited unit tests
+4. **Consolidate structure** — Consider merging `tests/workflows/` into `tests/specs/` per reorganization plan
+
+### Running Tests
+
+```bash
+# Activate environment
+source scripts/oe_env.sh
+
+# Run default v4 tests
+pytest
+
+# Run backend smoke test
+pytest backend/tests/smoke/ -m ""
+
+# Run with verbose output
+pytest tests/specs/ -v --tb=short
+
+# Run new detection/flow tests
+pytest backend/tests/detection/ backend/tests/regression/ backend/tests/flow/ -m "" -v
+```
+
+---
+
+## Detection & Flow Tests (New)
+
+**Last Updated:** 2025-11-27
+
+A comprehensive detection test suite was created to cover:
+- Q&A detection
+- Manager request detection
+- Acceptance/confirmation detection
+- Detour change propagation
+- Shortcut capture
+- Gatekeeping (billing + deposit)
+- Happy-path flow Steps 1–4
+- Regression tests linked to TEAM_GUIDE bugs
+
+See `tests/TEST_MATRIX_detection_and_flow.md` for full test ID matrix.
+
+### Test Locations
+
+| Category | Location | Tests |
+|----------|----------|-------|
+| Q&A Detection | `backend/tests/detection/test_qna_detection.py` | DET_QNA_001–006 |
+| Manager Request | `backend/tests/detection/test_manager_request.py` | DET_MGR_001–006 |
+| Acceptance | `backend/tests/detection/test_acceptance.py` | DET_ACCEPT_001–009 |
+| Detour Changes | `backend/tests/detection/test_detour_changes.py` | DET_DETOUR_* |
+| Shortcuts | `backend/tests/detection/test_shortcuts.py` | DET_SHORT_001–006 |
+| Gatekeeping | `backend/tests/detection/test_gatekeeping.py` | DET_GATE_BILL_*, DET_GATE_DEP_* |
+| Happy Path Flow | `backend/tests/flow/test_happy_path_step1_to_4.py` | FLOW_1TO4_HAPPY_001 |
+| Regression | `backend/tests/regression/test_team_guide_bugs.py` | REG_* |
+
+### Test Results Summary
+
+**Run Date:** 2025-11-27
+**Results:** 161 passed, 0 failed
+
+All detection and flow tests pass after the following fixes:
+
+### Detection Logic Fixes (2025-11-27)
+
+1. **Manager Request Detection — "real person" variant (DET_MGR_002)**
+   - **Issue:** The phrase "I'd like to speak with a real person" wasn't caught by `_looks_like_manager_request`.
+   - **Fix:** Added regex pattern `r"\b(speak|talk|chat)\s+(to|with)\s+(a\s+)?real\s+person\b"` to `_MANAGER_PATTERNS` in `backend/llm/intent_classifier.py:229`.
+   - **Test:** `test_DET_MGR_002_real_person` now passes.
+
+2. **Q&A Detection — Parking Policy (DET_QNA_006)**
+   - **Issue:** The `parking_policy` Q&A type existed but its keywords didn't match "where can guests park?".
+   - **Fix:** Added `" park"` (with leading space) and `"park?"` to the `parking_policy` keywords in `backend/llm/intent_classifier.py:157-158`.
+   - **Test:** `test_DET_QNA_006_parking_question` now passes.
+
+### Regression Tests Linked to TEAM_GUIDE Bugs
+
+| Test ID | TEAM_GUIDE Bug | Status |
+|---------|----------------|--------|
+| `REG_PRODUCT_DUP_001` | Product Additions Causing Duplicates | ✓ Pass |
+| `REG_ACCEPT_STUCK_001` | Offer Acceptance Stuck / Not Reaching HIL | ✓ Pass |
+| `REG_HIL_DUP_001` | Duplicate HIL sends after offer acceptance | ✓ Pass |
+| `REG_DATE_MONTH_001` | Spurious unavailable-date apologies | ✓ Pass |
+| `REG_QUOTE_CONF_001` | Quoted confirmation triggering Q&A | ✓ Pass |
+| `REG_ROOM_REPEAT_001` | Room choice repeats / manual-review detours | ✓ Pass |
+| `REG_BILL_ROOM_001` | Room label as billing address | ✓ Pass |
+
+### Anti-Fallback Assertions
+
+All tests include guards against legacy fallback messages:
+```python
+FALLBACK_PATTERNS = [
+    "no specific information available",
+    "sorry, cannot handle",
+    "unable to process",
+    "i don't understand",
+    "there appears to be no",
+    "it appears there is no",
+]
+```
+
+If any test response contains these patterns, it fails with `FALLBACK DETECTED`.
+
+### Running Detection Tests
+
+```bash
+# Run all detection/flow tests (bypasses pytest.ini markers)
+pytest backend/tests/detection/ backend/tests/regression/ backend/tests/flow/ -m "" -v
+
+# Run specific category
+pytest backend/tests/detection/test_acceptance.py -m "" -v
+
+# Run regression tests only
+pytest backend/tests/regression/ -m "" -v
+```
+
+---
+
+## Safety Sandwich Pattern (LLM Verbalizer)
+
+**Last Updated:** 2025-11-27
+
+The Safety Sandwich pattern provides LLM-powered verbalization of room and offer messages while ensuring all hard facts (dates, prices, room names, participant counts) are preserved.
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    Safety Sandwich Flow                          │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   Deterministic Engine ─┐                                        │
+│   (builds facts bundle) │                                        │
+│                         ▼                                        │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │  RoomOfferFacts                                          │   │
+│   │  - event_date (DD.MM.YYYY)                              │   │
+│   │  - participants_count                                    │   │
+│   │  - rooms: [{name, status, capacity}]                    │   │
+│   │  - menus: [{name, price}]                               │   │
+│   │  - total_amount, deposit_amount                         │   │
+│   └─────────────────────────────────────────────────────────┘   │
+│                         │                                        │
+│                         ▼                                        │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │  LLM Verbalizer (verbalize_room_offer)                  │   │
+│   │  - Rewords for empathetic, professional tone            │   │
+│   │  - CANNOT alter dates, prices, room names               │   │
+│   └─────────────────────────────────────────────────────────┘   │
+│                         │                                        │
+│                         ▼                                        │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │  Deterministic Verifier (verify_output)                 │   │
+│   │  - Extracts hard facts from LLM output                  │   │
+│   │  - Checks: all canonical facts present?                 │   │
+│   │  - Checks: any facts invented?                          │   │
+│   │  - Returns: VerificationResult(ok, missing, invented)   │   │
+│   └─────────────────────────────────────────────────────────┘   │
+│                         │                                        │
+│            ┌────────────┴────────────┐                          │
+│            │                         │                          │
+│       ok=True                   ok=False                        │
+│            │                         │                          │
+│            ▼                         ▼                          │
+│   Return LLM text            Return fallback text               │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/ux/verbalizer_payloads.py` | Facts bundle types (RoomFact, MenuFact, RoomOfferFacts) |
+| `backend/ux/verbalizer_safety.py` | Deterministic verifier (extract_hard_facts, verify_output) |
+| `backend/ux/safety_sandwich_wiring.py` | Workflow integration helpers |
+| `backend/llm/verbalizer_agent.py` | LLM entry point (verbalize_room_offer) |
+
+### Hard Facts (Must Be Preserved)
+
+The verifier extracts and checks these fact types:
+
+| Fact Type | Pattern | Example |
+|-----------|---------|---------|
+| Dates | `DD.MM.YYYY` | `15.03.2025` |
+| Currency | `CHF X` or `CHF X.XX` | `CHF 500`, `CHF 92.50` |
+| Room names | Case-insensitive match | `Room A`, `Punkt.Null` |
+| Participant counts | Integer in "X participants" context | `30 participants` |
+| Time strings | `HH:MM` or `HH:MM–HH:MM` | `14:00–18:00` |
+
+### Verification Rules
+
+1. **Missing Facts:** Every hard fact in the facts bundle MUST appear in LLM output
+2. **Invented Facts:** LLM output MUST NOT contain dates/prices not in the bundle
+3. **Order Preservation:** Section headers must appear in original order (if applicable)
+
+### Tone Control
+
+The verbalizer respects environment variables:
+
+```bash
+# Force plain (deterministic) tone
+VERBALIZER_TONE=plain
+
+# Enable empathetic LLM tone
+VERBALIZER_TONE=empathetic
+# or
+EMPATHETIC_VERBALIZER=1
+```
+
+Default is `plain` (no LLM, deterministic text only).
+
+### Workflow Integration Points
+
+The Safety Sandwich is wired into:
+
+1. **Step 3 (Room Availability):** `backend/workflows/groups/room_availability/trigger/process.py:412-421`
+2. **Step 4 (Offer):** `backend/workflows/groups/offer/trigger/process.py:280-290`
+
+### Tests
+
+```bash
+# Run Safety Sandwich tests
+pytest backend/tests/verbalizer/ -m "" -v
+
+# Test breakdown:
+# - test_safety_sandwich_room_offer.py: 19 tests (facts extraction, verification)
+# - test_safety_sandwich_wiring.py: 10 tests (workflow helpers)
+```
+
+### Test IDs
+
+| Test ID | Description |
+|---------|-------------|
+| TEST_SANDWICH_001 | Happy path - valid paraphrase accepted |
+| TEST_SANDWICH_002 | Changed price rejected |
+| TEST_SANDWICH_003 | Invented date rejected |
+| TEST_SANDWICH_004 | WorkflowState integration |
+| TEST_SANDWICH_005 | Edge cases (empty, no rooms) |
+| TEST_SANDWICH_006 | Hard facts extraction |

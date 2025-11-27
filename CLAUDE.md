@@ -1,6 +1,135 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude 4.5 working on the OpenEvent-AI repository.
+
+## Your Role
+
+- Act as a senior test- and workflow-focused engineer
+- Keep the system aligned with the management plan "Lindy" and Workflow v3/v4 specifications
+- Prioritize deterministic backend behaviour and strong automated tests over ad-hoc changes
+
+## Canonical Vocabulary and Concepts
+
+**Use these exact terms (do not invent new ones):**
+- Core entities: `msg`, `user_info`, `client_id`, `event_id`, `intent`, `res`, `task`
+- Workflow components:
+  - OpenEvent Action (light-blue)
+  - LLM step (green)
+  - OpenEvent Database (dark-blue)
+  - Condition (purple)
+- Event statuses: `Lead` → `Option` → `Confirmed`
+- Workflow steps: Follow documented Workflow v3/v4, especially Steps 1–4 and their detours
+
+## Primary References
+
+**Always open/re-read relevant ones before major changes:**
+- AI-Powered Event Management Platform.pdf
+- Workflow v3.pdf
+- Workflow instance working on Lindy.pdf
+- Openevent - Workflow v3 TO TEXT (MAIN).pdf
+- Technical Workflow v2.pdf
+- workflow_rules.md
+- step4_step5_requirements.md
+- qna_shortcuts_debugger.md
+- TEAM_GUIDE.md (bugs, open issues, heuristics)
+
+## Environment and API Keys
+
+**Never hard-code API keys:**
+- Assume OPENAI_API_KEY is provided via environment, possibly sourced from macOS Keychain item "openevent-api-test-key"
+- Python code and tests must obtain the key via `backend/utils/openai_key.load_openai_api_key()`, not `os.getenv` directly
+
+**Before running any tests or scripts that call OpenAI:**
+1. Activate the dev environment from repo root:
+   ```bash
+   cd /Users/nico/PycharmProjects/OpenEvent-AI
+   source scripts/oe_env.sh
+   ```
+
+2. Preferred test commands under this activated environment:
+   ```bash
+   pytest backend/tests/smoke/test_workflow_v3_agent.py -q
+   pytest backend/tests_integration/test_e2e_live_openai.py -q
+   # and other pytest commands
+   ```
+
+## Behaviour Around Bugs and Features
+
+### Before Fixing a Bug
+
+1. **Read TEAM_GUIDE.md** and search for a matching bug description
+2. If it exists, update that entry with:
+   - Current status (open / investigating / fixed)
+   - File(s) touched
+   - Test(s) covering it (paths and test names)
+3. If it does not exist, add a new entry under "Bugs and Known Issues" with:
+   - Short title
+   - Description
+   - Minimal reproduction scenario
+
+### After Fixing a Bug
+
+1. Add or update automated tests so the bug cannot silently reappear
+2. Mark the bug as fixed in TEAM_GUIDE.md, referencing the tests that now cover it
+
+### For New Features, Refactors and Changes
+
+Maintain a lightweight log in DEV_CHANGELOG.md at repo root:
+- Date (YYYY-MM-DD)
+- Short description
+- Files touched
+- Tests added/updated
+
+If DEV_CHANGELOG.md does not exist, create it with a simple chronological list, newest entries at the top.
+
+## Testing Principles (High Priority)
+
+**The test suite is the main guardrail; keep it clean, well-structured and focused on high-value behaviours.**
+
+- Prefer pytest with clear naming and structure
+- Tests should be organized for easy discovery:
+  - Detection tests (Q&A, confirmation, shortcuts, special manager request, detours)
+  - Workflow tests (Steps 1–4, Status Lead/Option/Confirmed, gatekeeping)
+  - Q&A and general shortcuts
+  - GUI/frontend/chat integration where applicable
+
+**For each major detection type in the workflow, strive to have:**
+- A happy-path test
+- One or more edge-case tests
+
+**Always add tests for:**
+- Regressions mentioned in TEAM_GUIDE.md
+- Known fallback/stub issues
+- Detours and conflict logic
+
+## Fallback and "Old Default" Behaviour
+
+**Main goal: Prevent the system from silently falling back to old stub responses or generic defaults.**
+
+When you see code paths that:
+- Emit very generic messages ("sorry, cannot handle this request" or old templates)
+- Or bypass the current Workflow v3/v4 logic
+
+Add assertions or tests so that such paths are detectable and fail loudly in tests.
+
+**When writing or updating tests:** Add expectations so that if a fallback/stub message appears in a flow that should be handled deterministically, the test fails.
+
+## Working Style
+
+- Always explain in plain language what you are doing and why, but keep responses concise
+- Use the existing workflow files and terminology exactly; do not invent new step names or statuses
+- Prefer minimal, targeted changes over large refactors
+
+**For any non-trivial change to tests or workflow logic:**
+- State the relevant workflow rule or document you are following
+- Outline the tests you will add/update
+- Ensure that running pytest under scripts/oe_env.sh will validate your work
+
+## When in Doubt
+
+- Re-read Workflow v3 TO TEXT and TEAM_GUIDE.md
+- Prefer adding or strengthening tests before changing logic
+- If something feels like a "shortcut", check shortcut_workflow_request.txt and qna_shortcuts_debugger.md before proceeding
 
 ## Project Overview
 
@@ -78,17 +207,19 @@ pip install -r requirements-dev.txt  # test dependencies
 cd atelier-ai-frontend && npm install
 ```
 
-## Workflow Architecture (V4 Authoritative)
+## Workflow Architecture (V3/V4 Authoritative)
 
-**Source of Truth:** `backend/workflow/specs/` contains v4 workflow specifications:
-- `v4_dag_and_change_rules.md` - Dependency graph and minimal re-run matrix
-- `no_shortcut_way_v4.md` - Complete state machine with entry guards
-- `v4_shortcuts_and_ux.md` - Shortcut capture policy and UX guarantees
-- `v4_actions_payloads.md` - Action/payload contracts
+**Sources of Truth:**
+- Workflow v3 documents (see Primary References above)
+- `backend/workflow/specs/` contains v4 workflow specifications:
+  - `v4_dag_and_change_rules.md` - Dependency graph and minimal re-run matrix
+  - `no_shortcut_way_v4.md` - Complete state machine with entry guards
+  - `v4_shortcuts_and_ux.md` - Shortcut capture policy and UX guarantees
+  - `v4_actions_payloads.md` - Action/payload contracts
 
 ### Canonical State Variables
 
-The workflow maintains these core variables (see `v4_dag_and_change_rules.md`):
+The workflow maintains these core variables:
 - `chosen_date` and `date_confirmed` (boolean)
 - `requirements = {participants, seating_layout, duration(start-end), special_requirements}`
 - `requirements_hash` (SHA256 of requirements)
@@ -98,7 +229,7 @@ The workflow maintains these core variables (see `v4_dag_and_change_rules.md`):
 - `offer_hash` (snapshot of accepted commercial terms)
 - `caller_step` (who requested the detour)
 
-### Dependency DAG (V4)
+### Dependency DAG
 
 ```
 participants ┐
@@ -117,54 +248,6 @@ Confirmation / Deposit
 ```
 
 **Key Insight:** Room evaluation depends on confirmed date AND current requirements. Offer depends on room decision (unchanged room_eval_hash) plus products. Confirmation depends on accepted offer. This drives the "detour and return" logic with hash guards to prevent redundant re-checks.
-
-### Minimal Re-Run Matrix (What Actually Re-Executes)
-
-| Client Change | Re-run Exactly | Skip | Guard That Decides |
-|---|---|---|---|
-| **Date** | Step 2 (Date Confirmation). If new date confirmed and room search still required, Step 3; otherwise return to caller. | Products, offer, negotiation (unless room outcome changes) | `date_confirmed` re-set; Step 2 owns date |
-| **Room (different/bigger)** | Step 3 (Room Availability) only; then return to caller (often Step 4) | Step 2; products | Step-3 entry guard B ("client asks to change room"); `room_eval_hash` refreshed |
-| **Requirements (participants/layout/duration/special)** | Step 3 re-evaluates room fit; then back to caller | Step 2 | Step-3 entry guard C + `requirements_hash ≠ room_eval_hash` triggers re-check |
-| **Products/Catering** | Stay inside Step 4 (products mini-flow → offer rebuild); no date/room recheck | Steps 2-3 | Products live in Step 4; no structural dependency upward |
-| **Commercial terms only** | Step 5 (Negotiation) only; accept → Step 7; else loop | Steps 2-3-4 (unless negotiation implies structural change) | Negotiation routing and acceptance handoff |
-| **Deposit/Reservation** | Within Step 7 (option/deposit branches) | Steps 2-4 | Confirmation layer owns payment/option lifecycle |
-
-### Deterministic Detour Rules
-
-1. **Always set `caller_step` before jumping**
-2. **Jump to the owner step** of the changed variable:
-   - Date → Step 2
-   - Room/Requirements → Step 3
-   - Products/Offer consistency → Step 4
-3. **On completion, return to `caller_step`**, unless hash check proves nothing changed (fast-skip)
-4. **Hashes prevent churn:**
-   - If `requirements_hash` unchanged, skip room re-evaluation
-   - If `offer_hash` still matches, skip transition repairs
-
-```
-[ c a l l e r ] ──(change detected)──► [ owner step ]
-▲                                           │
-└──────────(resolved + hashes)──────────────┘
-```
-
-### Entry Guard Prerequisites (Step-by-Step)
-
-**→ Step 2 (Date):** `event_id` exists; email known; date **not** confirmed
-
-**→ Step 3 (Room):** `date_confirmed=true`, capacity present, requirements present; `requirements_hash` computed
-
-**→ Step 4 (Offer compose/send):**
-- **P1:** `date_confirmed`
-- **P2:** `locked_room_id` AND `requirements_hash == room_eval_hash`
-- **P3:** capacity present
-- **P4:** products phase completed (or explicitly skipped)
-
-**First unmet prerequisite triggers detour:**
-- P1 fails → detour to Step 2 (caller_step=4)
-- P2 or P3 fail → detour to Step 3 (caller_step=4)
-- P4 incomplete → products mini-flow
-
-**All client-facing sends need HIL approval** except the tight products mini-loop.
 
 ### 7-Step Pipeline (Implementation Locations)
 
@@ -210,58 +293,23 @@ Confirmation / Deposit
    - Option/deposit branches via `db.policy.read`, `db.options.create_hold`
    - All transitions audited through HIL gates
 
-### Shortcut Capture Policy (V4)
+### Deterministic Detour Rules
 
-**No Shortcut Way (orchestration):** Advance strictly via gates (Intake → Date → Room → Products/Offer). Shortcuts **never skip gates**.
+1. **Always set `caller_step` before jumping**
+2. **Jump to the owner step** of the changed variable:
+   - Date → Step 2
+   - Room/Requirements → Step 3
+   - Products/Offer consistency → Step 4
+3. **On completion, return to `caller_step`**, unless hash check proves nothing changed (fast-skip)
+4. **Hashes prevent churn:**
+   - If `requirements_hash` unchanged, skip room re-evaluation
+   - If `offer_hash` still matches, skip transition repairs
 
-**Shortcut Way (capture):** Eagerly capture relevant entities **out of order** and reuse at their owning step **without re-asking**, if valid and unchanged.
-
-**Deterministic Rules:**
-1. **Eager capture:** Run Regex → NER → LLM-refine on every message. Persist with `source="shortcut"`, `captured_at_step`
-2. **Validation:** Apply owning step's validator (capacity: positive int; date: ISO Y-M-D). If invalid/ambiguous, **don't persist** (owning step will ask)
-3. **No re-ask:** At owning step, if valid shortcut exists and client hasn't changed it, **use silently**
-4. **Change detection:** New value supersedes prior, recomputes hashes, detours **only dependent steps**
-5. **Precedence:** Values at owning step override shortcuts
-6. **Never skip gates:** Shortcut presence doesn't allow early entry; P1-P4 and entry guards still apply
-
-**Examples:**
-- Capacity stated at Intake → stored as shortcut → Step 3 won't ask capacity again
-- "Projector" mentioned at Intake → stored in `wish_products` → Step 4 uses for ranking
-
-### UX Footer Contract (Never Left in the Dark)
-
-**Every outbound message must include:**
 ```
-Step: <StepName> · Next: <expected action/options> · State: <Awaiting Client|Waiting on HIL>
+[ c a l l e r ] ──(change detected)──► [ owner step ]
+▲                                           │
+└──────────(resolved + hashes)──────────────┘
 ```
-
-This footer keeps clients and HIL aligned on progress, upcoming actions, and wait states.
-
-### Event Status Lifecycle
-
-- **Lead** → **Option** → **Confirmed** → **Cancelled**
-- Stored in `event.metadata.status` and mirrored to `event.event_data` for legacy compatibility
-
-### Thread State
-
-Tracks sub-step position within each step (e.g., `AwaitingClient`, `WaitingOnHIL`, `Closed`)
-
-### Three Crisp Change Scenarios (End-to-End)
-
-**A) Client ups attendees 24→36 (same date):**
-- Step-3 entry guard C triggers
-- Re-evaluate rooms via `db.rooms.search`
-- If room still fits, return to caller (often Step 4) **without touching date/products**
-
-**B) Client changes date after offer sent:**
-- `caller_step=Step 4` → detour to Step 2
-- Confirm new date → if same room still valid, **skip Step 3** and return to Step 4 to refresh offer dates
-- Else run Step 3, then back to Step 4
-
-**C) Client accepts but adds Prosecco:**
-- Stay in Step 4 products sub-flow → recompute totals
-- Resend offer or proceed if already accepted/within policy → Step 7 for final confirmation/deposit
-- **No date/room rechecks**
 
 ### Database & Persistence
 
@@ -281,28 +329,22 @@ The workflow engine calls these adapters. **LLM never touches DB directly:**
 db.events.create(intake)                              # [DB-WRITE] → event_id
 db.events.update_date(event_id, date)                 # [DB-WRITE]
 db.events.lock_room(event_id, room_id, room_eval_hash) # [DB-WRITE]
-db.events.sync_lock(event_id)                         # [DB-READ/WRITE] (date/room/hashes/products/totals)
+db.events.sync_lock(event_id)                         # [DB-READ/WRITE]
 db.events.set_lost(event_id)                          # [DB-WRITE]
 db.events.set_confirmed(event_id)                     # [DB-WRITE]
 
 # Date & room operations
-db.dates.next5(base_or_today, rules)                  # [DB-READ] (≥ TODAY(Europe/Zurich), blackout/buffer rules)
+db.dates.next5(base_or_today, rules)                  # [DB-READ]
 db.rooms.search(date, requirements)                   # [DB-READ]
 
 # Product & offer operations
 db.products.rank(rooms, wish_list)                    # [DB-READ]
-db.offers.create(event_id, payload)                   # [DB-WRITE] (status=Lead → offer_id)
+db.offers.create(event_id, payload)                   # [DB-WRITE]
 
 # Options & policy
 db.options.create_hold(event_id, expiry)              # [DB-WRITE]
-db.policy.read(event_id)                              # [DB-READ] (deposit required?)
+db.policy.read(event_id)                              # [DB-READ]
 ```
-
-**Privacy Model:**
-- Clients keyed by lowercased email for per-user isolation
-- Context snapshots include: profile + last 5 history previews + latest event (no cross-user leakage)
-- History previews capped at 160 chars, store intent/confidence only
-- All database helpers filter by current email (`last_event_for_email`, `find_event_idx`)
 
 ### LLM Integration
 
@@ -311,7 +353,7 @@ db.policy.read(event_id)                              # [DB-READ] (deposit requi
 - Drafts remain HIL-gated before outbound send
 - Profile selection via `backend/config.py` reading `configs/llm_profiles.json`
 
-**LLM Role Separation (V4 Pattern):**
+**LLM Role Separation:**
 
 The workflow uses three distinct LLM roles, each with strict boundaries:
 
@@ -343,133 +385,6 @@ The workflow uses three distinct LLM roles, each with strict boundaries:
 
 **Stubbed Testing:** Tests in `tests/stubs/` provide deterministic LLM responses for regression tests
 
-### Room & Calendar System
-
-**Room Configuration:** `backend/rooms.json` defines capacities, buffers, calendar IDs
-
-**Calendar Adapters:** `backend/adapters/calendar_adapter.py` reads busy slots from `backend/calendar_data/<calendar_id>.json`
-
-**Availability Logic:** `backend/workflows/groups/room_availability/trigger/process.py` computes:
-- Direct conflicts (event overlaps busy slot)
-- Buffer violations (±30/60/90 min near-miss)
-- Fallback alternatives (if preferred room unavailable)
-
-### Frontend Architecture
-
-**Location:** `atelier-ai-frontend/` (Next.js 14+ with App Router)
-
-**Key Routes:**
-- `/` - Client chat interface
-- Event Manager UI (exact routes TBD from app structure)
-
-**Integration:** Calls FastAPI backend at `http://localhost:8000` for chat/workflow operations
-
-## Common Development Patterns
-
-### Adding a New Workflow Step
-
-1. Create step directory in `backend/workflows/groups/<step_name>/`
-2. Implement `trigger/process.py` with function signature matching `GroupResult`
-3. Register in `backend/workflow_email.py` step router (around L150-300)
-4. Add entry guards in `backend/workflow/guards.py` if prerequisites needed
-5. Update `WorkflowStep` enum in `backend/workflow/state.py`
-6. Add test fixtures in `tests/fixtures/` and tests in `tests/specs/<step_name>/`
-
-### Working with Event State
-
-```python
-from backend.workflows.io.database import load_client_context, update_event_metadata
-
-# Load bounded client context (no cross-user leakage)
-ctx = load_client_context(email="client@example.com")
-event = ctx["last_event"]
-
-# Update event metadata atomically
-update_event_metadata(
-    email="client@example.com",
-    event_id=event["event_id"],
-    updates={"locked_room_id": "room_a", "room_eval_hash": "<hash>"}
-)
-```
-
-### Creating HIL Tasks
-
-```python
-from backend.workflows.io.tasks import enqueue_task
-
-enqueue_task(
-    email="client@example.com",
-    event_id="evt_123",
-    task_type="room_approval",  # TaskType enum value
-    payload={"room_id": "room_a", "date": "2025-03-15", "draft_reply": "..."}
-)
-```
-
-### Running Specific Workflow Scenarios
-
-```bash
-# Use manual scenario scripts for targeted testing
-python scripts/manual_ux_scenario_E.py  # Tests specific UX flow E
-python scripts/manual_smoke_intake.py    # Smoke test intake step
-```
-
-## Debugging & Tracing
-
-**Enable Debug Mode:**
-```bash
-export WF_DEBUG_STATE=1  # Prints state transitions to console
-```
-
-**Debug Artifacts:**
-- `tmp-debug/sessions/` - Session traces
-- `tmp-debug/reports/` - Generated reports
-- `backend-uvicorn.log` - Backend server logs
-
-**Debug API Endpoints** (`backend/api/debug.py`):
-- `/debug/trace/<thread_id>` - Full execution trace
-- `/debug/timeline/<thread_id>` - Timeline view
-- `/debug/report/<thread_id>` - Generated report
-
-## Git Workflow
-
-**Main branch:** `main`
-**Current feature branch:** `feature/agent-workflow-ui-2`
-
-**Common branches:**
-- Feature branches: `feature/*`
-- Chores: `chore/*`
-
-## File Organization Patterns
-
-```
-backend/
-  workflows/
-    groups/          # Step implementations
-    common/          # Shared types, prompts, payloads
-    io/              # Database & task persistence
-    llm/             # LLM adapter layer
-    nlu/             # Natural language understanding utilities
-    planner/         # Smart shortcuts & planning
-    qna/             # General Q&A handling
-  adapters/          # External service adapters (calendar, GUI)
-  domain/            # Core domain models (EventStatus, TaskStatus, etc.)
-  api/               # FastAPI route definitions
-  tests/             # Backend-specific tests (currently just smoke/)
-
-tests/               # Main test suite (repo root)
-  specs/             # Spec-driven workflow tests
-  e2e_v4/            # End-to-end v4 tests
-  regression/        # Regression suite
-  fixtures/          # Test data fixtures
-  stubs/             # Stubbed LLM responses
-  _legacy/           # Legacy v3 tests
-
-atelier-ai-frontend/
-  app/               # Next.js App Router pages
-  components/        # React components
-  agent/             # Frontend agent logic
-```
-
 ## Important Implementation Notes
 
 **Thread Safety:** Database operations use `FileLock` (in `backend/workflows/io/database.py`). Always use provided helpers (`load_db`, `save_db`) rather than direct JSON access.
@@ -481,21 +396,6 @@ atelier-ai-frontend/
 **Time Handling:** All dates use Europe/Zurich timezone. Tests use `freezegun` for deterministic time (`tests/utils/timezone.py`).
 
 **Detour Recovery:** After detour (e.g., Step 3 → Step 2 for new date → Step 3), system preserves all prior metadata and only re-runs dependent steps.
-
-## Test Data & Fixtures
-
-**Calendar Fixtures:** Place in `backend/calendar_data/<calendar_id>.json`
-```json
-{
-  "busy": [
-    {"start": "2025-10-16T13:45:00+02:00", "end": "2025-10-16T16:30:00+02:00"}
-  ]
-}
-```
-
-**Event Database:** `backend/events_database.json` (auto-managed, do not edit manually)
-
-**Test Fixtures:** `tests/fixtures/` contains deterministic test cases for each workflow step
 
 ## Common Gotchas
 
