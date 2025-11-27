@@ -8,9 +8,10 @@ try:  # pragma: no cover - optional dependency
     from openai import OpenAI  # type: ignore
 except Exception:  # pragma: no cover - dependency may be missing in tests
     OpenAI = None  # type: ignore
+from backend.utils.openai_key import load_openai_api_key
 
 MODEL_NAME = os.getenv("OPEN_EVENT_QNA_VERBALIZER_MODEL", "gpt-4.1-mini")
-_LLM_ENABLED = bool(os.getenv("OPENAI_API_KEY") and OpenAI is not None)
+_LLM_ENABLED = bool(load_openai_api_key(required=False) and OpenAI is not None)
 
 SYSTEM_PROMPT = (
     "You are OpenEvent's structured Q&A verbalizer. Craft concise markdown answers for clients "
@@ -35,7 +36,8 @@ def render_qna_answer(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _call_llm(payload: Dict[str, Any]) -> Dict[str, Any]:
-    client = OpenAI()
+    api_key = load_openai_api_key()
+    client = OpenAI(api_key=api_key)
     response = client.chat.completions.create(
         model=MODEL_NAME,
         temperature=0,

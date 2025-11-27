@@ -6,6 +6,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.utils.openai_key import load_openai_api_key
 from backend.ux.verb_rubric import enforce as enforce_rubric
 
 logger = logging.getLogger(__name__)
@@ -211,7 +212,8 @@ def _call_verbalizer(payload: Dict[str, Any]) -> str:
     except Exception as exc:  # pragma: no cover - import guard
         raise RuntimeError(f"OpenAI SDK unavailable: {exc}") from exc
 
-    client = OpenAI()
+    api_key = load_openai_api_key()
+    client = OpenAI(api_key=api_key)
     response = client.responses.create(
         model=os.getenv("OPENAI_VERBALIZER_MODEL", "gpt-4o-mini"),
         input=[
@@ -241,3 +243,124 @@ def _validate_sections(text: str, sections: List[Tuple[str, List[str]]]) -> bool
     if positions != sorted(positions):
         return False
     return True
+
+
+# ==============================================================================
+# Safety Sandwich: Room/Offer Verbalizer
+# ==============================================================================
+
+
+def verbalize_room_offer(
+    facts: "RoomOfferFacts",
+    fallback_text: str,
+    *,
+    locale: str = "en",
+) -> str:
+    """
+    Verbalize a room/offer message using the Safety Sandwich pattern.
+
+    1. Build LLM request with facts bundle
+    2. Get candidate LLM text
+    3. Verify with deterministic verifier
+    4. Return LLM text if OK, else fallback
+
+    Args:
+        facts: RoomOfferFacts bundle containing all deterministic facts
+        fallback_text: Deterministic template to use if verification fails
+        locale: Language locale (en or de)
+
+    Returns:
+        Verbalized text (LLM or fallback)
+    """
+    from backend.ux.verbalizer_payloads import RoomOfferFacts
+    from backend.ux.verbalizer_safety import verify_output, log_verification_failure
+
+    tone = _resolve_tone()
+    if tone == "plain":
+        logger.debug("verbalize_room_offer: plain tone, using fallback")
+        return fallback_text
+
+    # Check if LLM is available
+    api_key = load_openai_api_key(required=False)
+    if not api_key:
+        logger.debug("verbalize_room_offer: no API key, using fallback")
+        return fallback_text
+
+    try:
+        prompt_payload = _build_room_offer_prompt(facts, locale)
+        llm_text = _call_verbalizer(prompt_payload)
+    except Exception as exc:
+        logger.warning(
+            "verbalize_room_offer: LLM call failed, using fallback",
+            extra={"error": str(exc)},
+        )
+        return fallback_text
+
+    if not llm_text or not llm_text.strip():
+        logger.warning("verbalize_room_offer: empty LLM response, using fallback")
+        return fallback_text
+
+    # Verify the LLM output
+    result = verify_output(facts, llm_text)
+
+    if result.ok:
+        logger.debug("verbalize_room_offer: verification passed, using LLM text")
+        return llm_text
+
+    # Verification failed - log and use fallback
+    log_verification_failure(facts, llm_text, result)
+    return fallback_text
+
+
+def _build_room_offer_prompt(
+    facts: "RoomOfferFacts",
+    locale: str,
+) -> Dict[str, Any]:
+    """Build the LLM prompt for room/offer verbalization."""
+    from backend.ux.verbalizer_payloads import RoomOfferFacts
+
+    locale_instruction = ""
+    if locale == "de":
+        locale_instruction = "Write the response in German (Deutsch). "
+    else:
+        locale_instruction = "Write the response in English. "
+
+    system_content = f"""You are OpenEvent, a professional and empathetic assistant for a premium event venue.
+
+{locale_instruction}Your task is to present room options and/or offer details to a client in a warm, helpful tone.
+
+STRICT RULES:
+1. You MUST include ALL dates exactly as provided (format: DD.MM.YYYY)
+2. You MUST include ALL room names exactly as provided
+3. You MUST include ALL prices exactly as provided (format: CHF XX or CHF XX.XX)
+4. You MUST include the participant count if provided
+5. You MUST NOT invent any new dates, prices, room names, or numeric values
+6. You MUST NOT change any numbers, dates, or prices
+7. You MAY:
+   - Add a brief, warm greeting
+   - Recommend one or two rooms based on matched preferences
+   - Explain differences between rooms
+   - Reorder or group items for clarity
+   - Add helpful context about features
+
+Keep the response concise (under 150 words if possible)."""
+
+    facts_json = json.dumps(facts.to_dict(), ensure_ascii=False, indent=2)
+
+    user_content = f"""Please compose a client-facing message based on these facts:
+
+{facts_json}
+
+Return only the message text, starting with a greeting."""
+
+    return {
+        "system": system_content,
+        "user": user_content,
+    }
+
+
+# Type hint import for runtime
+try:
+    from backend.ux.verbalizer_payloads import RoomOfferFacts  # noqa: F401
+except ImportError:
+    pass

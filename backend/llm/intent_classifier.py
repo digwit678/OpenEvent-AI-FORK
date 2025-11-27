@@ -154,10 +154,10 @@ _QNA_KEYWORDS: Dict[str, Sequence[str]] = {
         "parking",
         "car park",
         "where to park",
-        "policy",
-        "rules",
-        "access",
+        " park",  # "can guests park" - note leading space to avoid matching "park" in other contexts
+        "park?",  # "where can guests park?"
         "loading dock",
+        "access",
     ),
 }
 
@@ -226,6 +226,7 @@ def _has_offer_action(text: str) -> bool:
 _MANAGER_PATTERNS = (
     r"\b(escalate|escalation)\b",
     r"\b(speak|talk|chat)\s+(to|with)\s+(a|the)\s+(manager|human|person)\b",
+    r"\b(speak|talk|chat)\s+(to|with)\s+(a\s+)?real\s+person\b",
     r"\bneed\s+(a|the)\s+(manager|human)\b",
     r"\bconnect\s+me\s+with\s+(someone|a person)\b",
 )
