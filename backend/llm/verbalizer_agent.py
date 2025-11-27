@@ -103,15 +103,22 @@ def verbalize_gui_reply(
 
 
 def _resolve_tone() -> str:
+    """Determine verbalization tone from environment.
+
+    Default is 'empathetic' for human-like UX.
+    Set VERBALIZER_TONE=plain to disable LLM verbalization.
+    """
     tone_env = os.getenv("VERBALIZER_TONE")
     if tone_env:
         candidate = tone_env.strip().lower()
         if candidate in {"empathetic", "plain"}:
             return candidate
-    empathetic_flag = os.getenv("EMPATHETIC_VERBALIZER", "")
-    if empathetic_flag.strip().lower() in {"1", "true", "yes", "on"}:
-        return "empathetic"
-    return "plain"
+    # Check for explicit disable flag
+    plain_flag = os.getenv("PLAIN_VERBALIZER", "")
+    if plain_flag.strip().lower() in {"1", "true", "yes", "on"}:
+        return "plain"
+    # Default to empathetic for human-like UX
+    return "empathetic"
 
 
 def _telemetry_extra(
