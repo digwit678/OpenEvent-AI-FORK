@@ -837,3 +837,46 @@ HYPOTHETICAL_PATTERNS = [
 *Document generated: 2025-12-01*
 *Author: Claude Code Analysis*
 *Version: 1.0*
+
+ I've completed a comprehensive analysis and created a detailed implementation plan. Here's the summary:
+
+  Summary
+
+  I've created DETECTION_IMPROVEMENT_PLAN.md with a complete analysis and implementation plan. Here are the key findings:
+
+  Critical Issues Found
+
+  1. No "I Don't Know" Response Path: The system always returns an answer even when confidence is 0.0. The confidence values are tracked but never used to gate responses. This matches the Reddit concern you mentioned.
+  2. Keyword Lists Are Brittle:
+    - negotiation_close.py has 26 hardcoded ACCEPT_KEYWORDS
+    - Every new client phrasing requires manual addition
+    - No fuzzy matching or semantic patterns
+  3. 5 Conflict Areas Identified:
+    - Accept vs Room Selection ("Room A looks good")
+    - Q&A vs Short Confirmations
+    - Change Detection vs Hypothetical Questions
+    - Product Updates vs Descriptive Mentions
+    - Commercial Changes vs Price Questions
+
+  Key Solutions Proposed
+
+  1. Confidence Gating: Add thresholds (HIGH=0.85, LOW=0.40, DEFER=0.25) and ask clarifying questions when uncertain instead of guessing.
+  2. Semantic Pattern Matching: Replace keyword lists with regex patterns that handle variations automatically:
+  # Instead of: "looks good" in ACCEPT_KEYWORDS
+  # Use: r"\b(looks?|sounds?|all|good\s+to)\s+good\b"
+  3. Hypothetical Question Filter: Prevent "What if we changed..." from triggering change detours.
+  4. Room-Selection Guard: Detect "Room A looks good" as room selection, not acceptance.
+  5. Response Normalization: Handle variations like "yep", "sounds great", "d'accord" automatically.
+
+  Implementation Timeline
+
+  The plan is structured for a junior developer across 10 days:
+  - Days 1-2: Create confidence module and semantic matchers
+  - Days 3-4: Replace keyword lists with patterns
+  - Days 5-6: Add confidence gating and clarification flow
+  - Days 7-8: Improve change detection
+  - Days 9-10: Add response normalization
+
+  Test Requirements
+
+  I specified ~30 test cases across 6 test files to ensure no regressions.
