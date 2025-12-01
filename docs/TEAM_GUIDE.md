@@ -254,6 +254,13 @@ The `_autofill_products_from_preferences` function in `backend/workflows/groups/
 
 **Regression Guard:** A reply like "Room B with Seasonal Garden Trio" should lock the room, add the menu (priced per guest) to the offer, and show a confirmation CTA without defaulting to manager approval.
 
+### Room selections misread as acceptances (New)
+**Symptoms:** When clients clicked/typed room-action labels such as “Proceed with Room E”, Step 4 treated the message as an offer acceptance, sent the thread to HIL, and blocked normal offer iteration.
+
+**Fix:** Offer acceptance now ignores messages that include a detected room choice (`_room_choice_detected`) or the phrase “proceed with room…”, so these stay in the normal offer loop instead of triggering manager review.【F:backend/workflows/groups/offer/trigger/process.py†L185-L204】
+
+**Regression Guard:** Room selections should keep the thread in “Awaiting Client” with `action=offer_draft_prepared` and no pending HIL requests unless the client explicitly accepts the offer.
+
 ---
 
 ## Test Suite Status
