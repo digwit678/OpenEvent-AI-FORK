@@ -5,6 +5,12 @@ from functools import lru_cache
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from backend.workflows.common.requirements import merge_client_profile, requirements_hash
+from backend.workflows.common.billing import (
+    billing_prompt_for_missing_fields,
+    format_billing_display,
+    missing_billing_fields,
+    update_billing_details,
+)
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
@@ -20,7 +26,13 @@ from backend.utils.profiler import profile_step
 from backend.workflow.state import WorkflowStep, write_stage
 from backend.services.products import find_product, normalise_product_payload
 from backend.services.rooms import load_room_catalog
-from ...negotiation_close import _handle_accept, ACCEPT_KEYWORDS
+from ...negotiation_close import _handle_accept, ACCEPT_KEYWORDS, _offer_summary_lines as _hil_offer_summary_lines
+from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
+from backend.utils.pseudolinks import (
+    generate_catering_catalog_link,
+    generate_catering_menu_link,
+    generate_room_details_link,
+)
 
 from ..llm.send_offer_llm import ComposeOffer
 
@@ -48,8 +60,39 @@ def process(state: WorkflowState) -> GroupResult:
     state.current_step = 4
     thread_id = _thread_id(state)
 
+    # If an acceptance is already awaiting HIL (step 5), do not emit another offer.
+    pending_negotiation = event_entry.get("negotiation_pending_decision")
+    pending_hil = [
+        req for req in (event_entry.get("pending_hil_requests") or []) if req.get("step") == 5
+    ]
+    if pending_negotiation or pending_hil:
+        state.set_thread_state("Waiting on HIL")
+        set_hil_open(thread_id, True)
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "pending_decision": pending_negotiation,
+            "thread_state": state.thread_state,
+            "context": state.context_snapshot,
+        }
+        return GroupResult(action="offer_waiting_hil", payload=payload, halt=True)
+
     if merge_client_profile(event_entry, state.user_info or {}):
         state.extras["persist"] = True
+
+    if (event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept"):
+        message_text = (state.message.body or "").strip() if state.message else ""
+        if message_text:
+            event_entry.setdefault("event_data", {})["Billing Address"] = message_text
+            state.extras["persist"] = True
+
+    billing_missing = _refresh_billing(event_entry)
+    state.extras["persist"] = True
+    auto_accept = _auto_accept_if_billing_ready(state, event_entry, previous_step, thread_id, billing_missing)
+    if auto_accept:
+        return auto_accept
 
     # [CHANGE DETECTION + Q&A] Tap incoming stream BEFORE offer composition to detect client revisions
     message_text = _message_text(state)
@@ -143,41 +186,54 @@ def process(state: WorkflowState) -> GroupResult:
             }
             return GroupResult(action="change_detour", payload=payload, halt=False)
 
-    # Acceptance (no product/date change) — short-circuit to HIL review
-    if _looks_like_offer_acceptance(normalized_message_text):
-        negotiation_state = event_entry.setdefault("negotiation_state", {"counter_count": 0, "manual_review_task_id": None})
-        negotiation_state["counter_count"] = 0
-        response = _handle_accept(event_entry)
+    # Acceptance (no product/date change) — short-circuit to HIL review.
+    # Guard: ignore room-selection clicks (labels like "Proceed with Room E") so they don't look like acceptances.
+    room_choice_signal = bool(user_info.get("_room_choice_detected"))
+    room_selection_phrase = "proceed with room" in (normalized_message_text or "").lower()
+    acceptance_applicable = not (room_choice_signal or room_selection_phrase)
 
-        state.add_draft_message(response["draft"])
-        append_audit_entry(event_entry, previous_step, 5, "offer_accept_pending_hil")
-        event_entry["negotiation_pending_decision"] = response["pending"]
-        update_event_metadata(
+    if acceptance_applicable and _looks_like_offer_acceptance(normalized_message_text):
+        billing_missing = _refresh_billing(event_entry)
+        if billing_missing:
+            _flag_billing_accept_pending(event_entry, billing_missing)
+            prompt = _billing_prompt_draft(billing_missing, step=4)
+            state.add_draft_message(prompt)
+            append_audit_entry(event_entry, previous_step, 4, "offer_accept_blocked_missing_billing")
+            update_event_metadata(
+                event_entry,
+                current_step=5,
+                thread_state="Awaiting Client",
+                transition_ready=False,
+                caller_step=None,
+            )
+            state.current_step = 5
+            state.caller_step = None
+            state.set_thread_state("Awaiting Client")
+            set_hil_open(thread_id, False)
+            state.extras["persist"] = True
+
+            payload = {
+                "client_id": state.client_id,
+                "event_id": event_entry.get("event_id"),
+                "intent": state.intent.value if state.intent else None,
+                "confidence": round(state.confidence or 0.0, 3),
+                "missing": billing_missing,
+                "draft_messages": state.draft_messages,
+                "thread_state": state.thread_state,
+                "context": state.context_snapshot,
+                "persisted": True,
+            }
+            return GroupResult(action="offer_accept_requires_billing", payload=payload, halt=True)
+
+        # Always route acceptances through HIL so the manager dashboard shows the approval buttons.
+        return _start_hil_acceptance_flow(
+            state,
             event_entry,
-            current_step=5,
-            thread_state="Waiting on HIL",
-            transition_ready=False,
-            caller_step=None,
+            previous_step,
+            thread_id,
+            audit_label="offer_accept_pending_hil",
+            action="offer_accept_pending_hil",
         )
-        state.current_step = 5
-        state.caller_step = None
-        state.set_thread_state("Waiting on HIL")
-        set_hil_open(thread_id, True)
-        state.extras["persist"] = True
-
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "offer_id": response["offer_id"],
-            "pending_decision": response["pending"],
-            "draft_messages": state.draft_messages,
-            "thread_state": state.thread_state,
-            "context": state.context_snapshot,
-            "persisted": True,
-        }
-        return GroupResult(action="offer_accept_pending_hil", payload=payload, halt=True)
 
     # No change detected: check if Q&A should be handled
     has_offer_update = _has_offer_update(user_info)
@@ -226,9 +282,26 @@ def process(state: WorkflowState) -> GroupResult:
 
     offer_id, offer_version, total_amount = _record_offer(event_entry, pricing_inputs, state.user_info, thread_id)
     summary_lines = _compose_offer_summary(event_entry, total_amount)
+    billing_display = format_billing_display(
+        event_entry.get("billing_details") or {},
+        (event_entry.get("event_data") or {}).get("Billing Address"),
+    )
+
+    # Universal Verbalizer: transform to warm, human-like message
+    from backend.workflows.common.prompts import verbalize_draft_body
+    offer_body_markdown = verbalize_draft_body(
+        "\n".join(summary_lines),
+        step=4,
+        topic="offer_draft",
+        event_date=format_iso_date_to_ddmmyyyy(event_entry.get("chosen_date")) or event_entry.get("chosen_date"),
+        participants_count=_infer_participant_count(event_entry),
+        room_name=event_entry.get("locked_room_id"),
+        total_amount=total_amount,
+        products=event_entry.get("products"),
+    )
 
     draft_message = {
-        "body_markdown": "\n".join(summary_lines),
+        "body_markdown": offer_body_markdown,
         "step": 4,
         "next_step": "Await feedback",
         "thread_state": "Awaiting Client",
@@ -236,7 +309,7 @@ def process(state: WorkflowState) -> GroupResult:
         "offer_id": offer_id,
         "offer_version": offer_version,
         "total_amount": total_amount,
-        "requires_approval": True,
+        "requires_approval": False,
         "table_blocks": [
             {
                 "type": "table",
@@ -244,6 +317,7 @@ def process(state: WorkflowState) -> GroupResult:
                 "rows": [
                     ["Event Date", event_entry.get("chosen_date") or "TBD"],
                     ["Room", event_entry.get("locked_room_id") or "TBD"],
+                    ["Billing address", billing_display or "Pending"],
                     ["Total", f"CHF {total_amount:,.2f}"],
                 ],
             }
@@ -441,7 +515,7 @@ def _handle_products_pending(state: WorkflowState, event_entry: Dict[str, Any], 
             "next_step": "Share preferred products",
             "thread_state": "Awaiting Client",
             "topic": "offer_products_prompt",
-            "requires_approval": True,
+            "requires_approval": False,
             "actions": [
                 {
                     "type": "share_products",
@@ -809,9 +883,46 @@ def _room_aliases(room_name: str) -> Set[str]:
     return aliases
 
 
+def _menu_name_set() -> Set[str]:
+    return {
+        str(entry.get("menu_name") or "").strip().lower()
+        for entry in DINNER_MENU_OPTIONS
+        if entry.get("menu_name")
+    }
+
+
+def _normalise_product_fields(product: Dict[str, Any], *, menu_names: Optional[Set[str]] = None) -> Dict[str, Any]:
+    """Normalize product quantity/unit for pricing and display."""
+
+    menu_names = menu_names or _menu_name_set()
+    normalised = dict(product)
+    name = str(normalised.get("name") or "").strip()
+    unit = normalised.get("unit")
+    if not unit and name.lower() in menu_names:
+        unit = "per_event"
+    try:
+        quantity = float(normalised.get("quantity") or 1)
+    except (TypeError, ValueError):
+        quantity = 1
+    try:
+        unit_price = float(normalised.get("unit_price") or 0.0)
+    except (TypeError, ValueError):
+        unit_price = 0.0
+
+    if unit == "per_event":
+        quantity = 1
+
+    normalised["name"] = name or "Unnamed item"
+    normalised["unit"] = unit
+    normalised["quantity"] = quantity
+    normalised["unit_price"] = unit_price
+    return normalised
+
+
 def _rebuild_pricing_inputs(event_entry: Dict[str, Any], user_info: Dict[str, Any]) -> Dict[str, Any]:
     pricing_inputs = dict(event_entry.get("pricing_inputs") or {})
     override_total = user_info.get("offer_total_override")
+    menu_names = _menu_name_set()
 
     if "room_rate" in user_info and user_info["room_rate"] is not None:
         try:
@@ -820,15 +931,20 @@ def _rebuild_pricing_inputs(event_entry: Dict[str, Any], user_info: Dict[str, An
             pricing_inputs["base_rate"] = pricing_inputs.get("base_rate", 0.0)
 
     line_items: List[Dict[str, Any]] = []
+    normalised_products: List[Dict[str, Any]] = []
     for product in event_entry.get("products", []):
+        normalised = _normalise_product_fields(product, menu_names=menu_names)
         line_items.append(
             {
-                "description": product["name"],
-                "quantity": product["quantity"],
-                "unit_price": product["unit_price"],
-                "amount": product["quantity"] * product["unit_price"],
+                "description": normalised["name"],
+                "quantity": normalised["quantity"],
+                "unit_price": normalised["unit_price"],
+                "amount": normalised["quantity"] * normalised["unit_price"],
             }
         )
+        normalised_products.append(normalised)
+    if normalised_products:
+        event_entry["products"] = normalised_products
     pricing_inputs["line_items"] = line_items
     if override_total is not None:
         try:
@@ -901,34 +1017,63 @@ def _record_offer(
 def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> List[str]:
     chosen_date = event_entry.get("chosen_date") or "Date TBD"
     room = event_entry.get("locked_room_id") or "Room TBD"
+    link_date = event_entry.get("chosen_date") or (chosen_date if chosen_date != "Date TBD" else "")
+    event_data = event_entry.get("event_data") or {}
+    billing_details = event_entry.get("billing_details") or {}
+    billing_address = format_billing_display(billing_details, event_data.get("Billing Address"))
+    contact_parts = [
+        part.strip()
+        for part in (event_data.get("Name"), event_data.get("Company"))
+        if isinstance(part, str) and part.strip() and part.strip().lower() != "not specified"
+    ]
+    email = (event_data.get("Email") or "").strip() or None
+    if email and email.lower() != "not specified":
+        contact_parts.append(email)
     products = event_entry.get("products") or []
     products_state = event_entry.get("products_state") or {}
     autofill_summary = products_state.get("autofill_summary") or {}
     matched_summary = autofill_summary.get("matched") or []
     product_alternatives = autofill_summary.get("alternatives") or []
     catering_alternatives = autofill_summary.get("catering_alternatives") or []
+    if not catering_alternatives and not event_entry.get("selected_catering"):
+        catering_alternatives = _default_menu_alternatives(event_entry)
 
     intro_room = room if room != "Room TBD" else "your preferred room"
     intro_date = chosen_date if chosen_date != "Date TBD" else "your requested date"
-    lines = [
-        f"Great — {intro_room} on {intro_date} is ready for review.",
-        f"Offer draft for {chosen_date} · {room}",
-    ]
+    manager_requested = bool((event_entry.get("flags") or {}).get("manager_requested"))
+    if manager_requested:
+        lines = [
+            f"Great — {intro_room} on {intro_date} is ready for manager review.",
+            f"Offer draft for {chosen_date} · {room}",
+        ]
+    else:
+        lines = [f"Offer draft for {chosen_date} · {room}"]
+
+    if contact_parts or billing_address:
+        lines.append("")
+        if contact_parts:
+            lines.append("Client: " + " · ".join(contact_parts))
+        if billing_address:
+            lines.append(f"Billing address: {billing_address}")
+        lines.append("")
 
     lines.append("")
     if matched_summary:
         lines.append("**Included products**")
         for entry in matched_summary:
-            quantity = int(entry.get("quantity") or 1)
-            name = entry.get("name") or "Unnamed item"
-            unit_price = float(entry.get("unit_price") or 0.0)
+            normalized = _normalise_product_fields(entry, menu_names=_menu_name_set())
+            quantity = int(normalized.get("quantity") or 1)
+            name = normalized.get("name") or "Unnamed item"
+            unit_price = float(normalized.get("unit_price") or 0.0)
+            unit = normalized.get("unit")
             total_line = float(entry.get("total") or quantity * unit_price)
-            unit = entry.get("unit")
             wish = entry.get("wish")
 
             price_text = f"CHF {total_line:,.2f}"
             if unit == "per_person" and quantity > 0:
                 price_text += f" (CHF {unit_price:,.2f} per person)"
+            elif unit == "per_event":
+                price_text += " (per event)"
 
             details: List[str] = []
             if entry.get("match_pct") is not None:
@@ -942,14 +1087,17 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> 
     elif products:
         lines.append("**Included products**")
         for product in products:
-            quantity = int(product.get("quantity") or 1)
-            name = product.get("name") or "Unnamed item"
-            unit_price = float(product.get("unit_price") or 0.0)
-            unit = product.get("unit")
+            normalized = _normalise_product_fields(product, menu_names=_menu_name_set())
+            quantity = int(normalized.get("quantity") or 1)
+            name = normalized.get("name") or "Unnamed item"
+            unit_price = float(normalized.get("unit_price") or 0.0)
+            unit = normalized.get("unit")
 
             price_text = f"CHF {unit_price * quantity:,.2f}"
             if unit == "per_person" and quantity > 0:
                 price_text += f" (CHF {unit_price:,.2f} per person)"
+            elif unit == "per_event":
+                price_text += " (per event)"
 
             lines.append(f"- {quantity}× {name} · {price_text}")
     else:
@@ -964,6 +1112,22 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> 
         "---",
         "",
     ])
+
+    selected_catering = event_entry.get("selected_catering")
+    if not selected_catering and catering_alternatives:
+        catalog_link = generate_catering_catalog_link()
+        lines.append("")
+        lines.append(catalog_link)
+        lines.append("Menu options you can add:")
+        for entry in catering_alternatives:
+            name = entry.get("name") or "Catering option"
+            unit_price = float(entry.get("unit_price") or 0.0)
+            unit_label = (entry.get("unit") or "per event").replace("_", " ")
+            menu_link = generate_catering_menu_link(name, room=room, date=link_date)
+            lines.append(f"- {name} · CHF {unit_price:,.2f} {unit_label}")
+            lines.append(f"  {menu_link}")
+        lines.append("")
+        catering_alternatives = []
 
     has_alternatives = product_alternatives or catering_alternatives
     if has_alternatives:
@@ -1016,8 +1180,43 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> 
     if has_alternatives:
         lines.append("")
 
-    lines.append("Please review and approve before sending to the manager.")
+    manager_requested = bool((event_entry.get("flags") or {}).get("manager_requested"))
+    if manager_requested:
+        lines.append("Please review and approve before sending to the manager.")
+    else:
+        lines.append("Please review and approve to confirm.")
     return lines
+
+
+def _default_menu_alternatives(event_entry: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return default dinner menu options as catering suggestions."""
+
+    results: List[Dict[str, Any]] = []
+    participants = event_entry.get("event_data", {}).get("Number of Participants")
+    try:
+        participants = int(participants) if participants is not None else None
+    except (TypeError, ValueError):
+        participants = None
+    for menu in DINNER_MENU_OPTIONS:
+        name = menu.get("menu_name")
+        if not name:
+            continue
+        price = menu.get("price")
+        try:
+            unit_price = float(str(price).replace("CHF", "").strip())
+        except (TypeError, ValueError):
+            unit_price = None
+        results.append(
+            {
+                "name": name,
+                "unit_price": unit_price or 0.0,
+                "unit": "per_event",
+                "wish": "menu",
+                "match_pct": 90,
+                "quantity": 1,
+            }
+        )
+    return results
 
 
 def _determine_offer_total(event_entry: Dict[str, Any], fallback_total: float) -> float:
@@ -1039,9 +1238,10 @@ def _determine_offer_total(event_entry: Dict[str, Any], fallback_total: float) -
             pass
 
     for product in event_entry.get("products", []):
+        normalized = _normalise_product_fields(product, menu_names=_menu_name_set())
         try:
-            quantity = float(product.get("quantity") or 0)
-            unit_price = float(product.get("unit_price") or 0.0)
+            quantity = float(normalized.get("quantity") or 0)
+            unit_price = float(normalized.get("unit_price") or 0.0)
         except (TypeError, ValueError):
             continue
         computed_total += quantity * unit_price
@@ -1101,6 +1301,207 @@ def _normalize_quotes(text: str) -> str:
     for bad, repl in replacements.items():
         text = text.replace(bad, repl)
     return text
+
+
+def _refresh_billing(event_entry: Dict[str, Any]) -> List[str]:
+    """Parse and persist billing details, returning missing required fields."""
+
+    update_billing_details(event_entry)
+    details = event_entry.get("billing_details") or {}
+    missing = missing_billing_fields(event_entry)
+    has_filled_required = len(missing) < 5
+    display = format_billing_display(details, (event_entry.get("event_data") or {}).get("Billing Address"))
+    if display and has_filled_required:
+        event_entry.setdefault("event_data", {})["Billing Address"] = display
+
+    validation = event_entry.setdefault("billing_validation", {})
+    if missing:
+        validation["missing"] = list(missing)
+    else:
+        validation.pop("missing", None)
+    return missing
+
+
+def _flag_billing_accept_pending(event_entry: Dict[str, Any], missing_fields: List[str]) -> None:
+    gate = event_entry.setdefault("billing_requirements", {})
+    gate["awaiting_billing_for_accept"] = True
+    gate["last_missing"] = list(missing_fields)
+
+
+def _auto_accept_if_billing_ready(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    previous_step: int,
+    thread_id: str,
+    missing_fields: List[str],
+) -> Optional[GroupResult]:
+    gate = event_entry.get("billing_requirements") or {}
+    if not gate.get("awaiting_billing_for_accept"):
+        return None
+    if missing_fields:
+        gate["last_missing"] = list(missing_fields)
+        return None
+
+    gate["awaiting_billing_for_accept"] = False
+    gate["last_missing"] = []
+    return _start_hil_acceptance_flow(
+        state,
+        event_entry,
+        previous_step,
+        thread_id,
+        audit_label="offer_accept_pending_hil_auto",
+        action="offer_accept_pending_hil",
+    )
+
+
+def _billing_prompt_draft(missing_fields: List[str], *, step: int) -> Dict[str, Any]:
+    prompt = (
+        "Thanks for confirming — I need the billing address before I can send this for approval.\n"
+        f"{billing_prompt_for_missing_fields(missing_fields)} "
+        "Example: \"Helvetia Labs, Bahnhofstrasse 1, 8001 Zurich, Switzerland\". "
+        "As soon as I have it, I'll forward the offer automatically."
+    )
+    return {
+        "body_markdown": prompt,
+        "step": step,
+        "topic": "billing_details_required",
+        "next_step": "Await billing details",
+        "thread_state": "Awaiting Client",
+        "requires_approval": False,
+    }
+
+
+def _manager_request_detected(state: WorkflowState, event_entry: Dict[str, Any]) -> bool:
+    """Detect explicit manager/special-request signals."""
+
+    if (event_entry.get("flags") or {}).get("manager_requested"):
+        return True
+    text = (_message_text(state) or "").lower()
+    manager_tokens = (
+        "manager",
+        "boss",
+        "owner",
+        "director",
+        "gm",
+        "general manager",
+        "approve with manager",
+        "manager approval",
+    )
+    if any(token in text for token in manager_tokens):
+        flags = event_entry.setdefault("flags", {})
+        flags["manager_requested"] = True
+        # ensure persistence
+        state.extras["persist"] = True
+        return True
+    return False
+
+
+def _auto_confirm_without_hil(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    previous_step: int,
+    thread_id: str,
+) -> GroupResult:
+    offers = event_entry.get("offers") or []
+    current_offer_id = event_entry.get("current_offer_id")
+    summary_lines = _hil_offer_summary_lines(event_entry, include_cta=False)
+    room_label = event_entry.get("locked_room_id") or event_entry.get("selected_room") or "the room"
+    display_date = event_entry.get("chosen_date") or ""
+    billing_display = format_billing_display(event_entry.get("billing_details") or {}, (event_entry.get("event_data") or {}).get("Billing Address"))
+
+    body_lines = [
+        f"Confirmed — {room_label} on {display_date} is locked in.",
+    ]
+    if billing_display:
+        body_lines.append(f"Billing address: {billing_display}.")
+    body_lines.append("")
+    body_lines.append("\n".join(summary_lines))
+    body_lines.append("")
+    body_lines.append("Next step: let's line up a site visit. Do you have preferred dates or times?")
+    body = "\n".join(line for line in body_lines if line)
+
+    draft = {
+        "body": append_footer(body, step=5, next_step=5, thread_state="In Progress"),
+        "step": 5,
+        "topic": "negotiation_accept_no_hil",
+        "requires_approval": False,
+    }
+    for offer in offers:
+        if offer.get("offer_id") == current_offer_id:
+            offer["status"] = "Accepted"
+            offer["accepted_at"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    event_entry["offer_status"] = "Accepted"
+    event_entry["negotiation_pending_decision"] = None
+    event_entry["pending_hil_requests"] = []
+    update_event_metadata(
+        event_entry,
+        current_step=5,
+        thread_state="In Progress",
+        transition_ready=False,
+        caller_step=None,
+    )
+    state.current_step = 5
+    state.caller_step = None
+    state.set_thread_state("In Progress")
+    set_hil_open(thread_id, False)
+    state.add_draft_message(draft)
+    append_audit_entry(event_entry, previous_step, 5, "offer_accept_no_hil")
+    state.extras["persist"] = True
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+    }
+    return GroupResult(action="offer_accept_no_hil", payload=payload, halt=True)
+
+
+def _start_hil_acceptance_flow(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    previous_step: int,
+    thread_id: str,
+    *,
+    audit_label: str,
+    action: str,
+) -> GroupResult:
+    negotiation_state = event_entry.setdefault("negotiation_state", {"counter_count": 0, "manual_review_task_id": None})
+    negotiation_state["counter_count"] = 0
+
+    response = _handle_accept(event_entry)
+    state.add_draft_message(response["draft"])
+    append_audit_entry(event_entry, previous_step, 5, audit_label)
+    event_entry["negotiation_pending_decision"] = response["pending"]
+    update_event_metadata(
+        event_entry,
+        current_step=5,
+        thread_state="Waiting on HIL",
+        transition_ready=False,
+        caller_step=None,
+    )
+    state.current_step = 5
+    state.caller_step = None
+    state.set_thread_state("Waiting on HIL")
+    set_hil_open(thread_id, True)
+    state.extras["persist"] = True
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "offer_id": response["offer_id"],
+        "pending_decision": response["pending"],
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+    }
+    return GroupResult(action=action, payload=payload, halt=True)
 
 
 def _looks_like_offer_acceptance(message_text: str) -> bool:

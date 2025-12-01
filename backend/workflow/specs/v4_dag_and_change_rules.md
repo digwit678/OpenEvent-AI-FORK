@@ -40,11 +40,45 @@ Confirmation / Deposit
 
 The table above is the textual version of “Change-Propagation Logic / Steps Re-evaluated” + the Step-3 entry guards and the global detour/return rules.
 
-## 4) Deterministic Detour Rules (how the jump/return works)
+## 4) Site Visit Sub-Flow (Thread-like Branch)
+
+### Site Visit Variables (independent namespace)
+- `site_visit_room` (defaults to `locked_room_id` if set, can be overridden)
+- `site_visit_date` (must be provided, no default)
+- `site_visit_status` (idle → scheduled → cancelled)
+- `site_visit_calendar_id` (separate calendar entry, status="Option")
+
+### Site Visit Dependencies
+```
+site_visit_room ─┐
+                 ├─► Calendar Check ─► site_visit_confirmation
+site_visit_date ─┘
+     │
+     └─► Must be < chosen_date (if set)
+```
+
+### Site Visit Change Matrix
+
+| Client change | Re-run exactly… | Constraint | Fallback |
+|---|---|---|---|
+| **Site visit date** | Site visit date validation only | New date < chosen_date AND room available | Offer alternative dates |
+| **Site visit room** | Site visit room validation only | Room available on current visit date | Offer alternative rooms |
+| **Both** | Full site visit validation | New room on new date available | Suggest changing one at a time |
+| **Cancel** | Mark cancelled, continue main flow | None | Confirm cancellation |
+
+### Site Visit Integration Rules
+- Can branch from **any step** (unlike detours which have owners)
+- Returns to **calling step** after completion (stores `return_to_step`)
+- **No hash guards** - simpler validation (just room+date)
+- **No propagation** - changes don't affect main event variables
+- **Calendar separation** - site visits are always "Option" status
+
+## 5) Deterministic Detour Rules (how the jump/return works)
 - Always set `caller_step` before jumping.
 - Jump to the **owner step** of the changed variable: Date → Step 2, Room/Requirements → Step 3, Products/Offer consistency → Step 4.
-- On completion, **return to `caller_step`**, unless the step’s entry guard or hash check proves nothing changed (**fast-skip**).
+- On completion, **return to `caller_step`**, unless the step's entry guard or hash check proves nothing changed (**fast-skip**).
 - **Hashes prevent churn:** If `requirements_hash` is unchanged, skip room re-evaluation. If `offer_hash` still matches, skip transition repairs.
+- **Site visits are NOT detours** - they're thread-like branches that don't change main flow variables
 
 **ASCII detour sketch**
 [ c a l l e r ] ──(change detected)──► [ owner step ]

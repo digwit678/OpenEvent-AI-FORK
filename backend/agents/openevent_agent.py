@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from backend.workflow_email import process_msg as workflow_process_msg
 from backend.agents.guardrails import safe_envelope
 from backend.workflows.common.prompts import FOOTER_SEPARATOR
+from backend.utils.openai_key import load_openai_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,15 @@ class OpenEventAgent:
         try:  # pragma: no cover - optional dependency probe
             from openai import OpenAI  # type: ignore
 
-            self._client = OpenAI()
+            api_key = load_openai_api_key(required=False)
+            if not api_key:
+                self._client = None
+                self._sdk_available = False
+                self._chat_supported = False
+                logger.info("OpenAI API key missing; using workflow fallback.")
+                return
+
+            self._client = OpenAI(api_key=api_key)
             self._sdk_available = hasattr(self._client, "agents")
             self._chat_supported = hasattr(self._client, "chat")
             if self._sdk_available:

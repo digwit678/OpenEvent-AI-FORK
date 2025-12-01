@@ -311,6 +311,36 @@ def _enqueue_hil_tasks(state: WorkflowState, event_entry: Dict[str, Any]) -> Non
             continue
         if step_num not in {2, 3, 4, 5}:
             continue
+        # Drop older pending requests for the same step to avoid duplicate reviews.
+        stale_requests = [entry for entry in pending_records if entry.get("step") == step_num]
+        if stale_requests:
+            for stale in stale_requests:
+                task_id = stale.get("task_id")
+                if task_id:
+                    try:
+                        update_task_status(state.db, task_id, TaskStatus.DONE)
+                    except Exception:
+                        pass
+                try:
+                    pending_records.remove(stale)
+                except ValueError:
+                    pass
+            state.extras["persist"] = True
+        if step_num == 5:
+            earlier_steps = [entry for entry in pending_records if (entry.get("step") or 0) < 5]
+            for stale in earlier_steps:
+                task_id = stale.get("task_id")
+                if task_id:
+                    try:
+                        update_task_status(state.db, task_id, TaskStatus.DONE)
+                    except Exception:
+                        pass
+                try:
+                    pending_records.remove(stale)
+                except ValueError:
+                    pass
+            if earlier_steps:
+                state.extras["persist"] = True
         if step_num == 4:
             task_type = TaskType.OFFER_MESSAGE
         elif step_num == 5:
@@ -372,6 +402,23 @@ def _hil_action_type_for_step(step_id: Optional[int]) -> Optional[str]:
     return None
 
 
+def _compose_hil_decision_reply(decision: str, manager_notes: Optional[str] = None) -> str:
+    normalized = (decision or "").lower()
+    approved = normalized == "approve"
+    decision_line = "Manager decision: Approved" if approved else "Manager decision: Declined"
+    note_text = (manager_notes or "").strip()
+    next_line = (
+        "Next step: Let's continue with site visit bookings. Do you have any preferred dates or times?"
+        if approved
+        else "Next step: I'll revise the offer with this feedback and share an updated proposal."
+    )
+    sections = [decision_line]
+    if note_text:
+        sections.append(f"Manager note: {note_text}")
+    sections.append(next_line)
+    return "\n\n".join(section for section in sections if section)
+
+
 def approve_task_and_send(
     task_id: str,
     db_path: Path = DB_PATH,
@@ -410,8 +457,10 @@ def approve_task_and_send(
             "approved_at": datetime.utcnow().isoformat() + "Z",
             "notes": manager_notes,
             "step": target_request.get("step"),
+            "decision": "approved",
         }
     )
+    set_hil_open(thread_id, bool(target_event.get("pending_hil_requests") or []))
 
     step_num = target_request.get("step")
     if isinstance(step_num, int):
@@ -467,7 +516,137 @@ def approve_task_and_send(
     assistant_draft = {"headers": headers, "body": body_text, "body_markdown": body_text}
 
     note_text = (manager_notes or "").strip()
-    if note_text:
+    if step_num == 5:
+        new_body = _compose_hil_decision_reply("approve", note_text)
+        assistant_draft["body"] = new_body
+        assistant_draft["body_markdown"] = new_body
+        draft = dict(draft)
+        draft["body_markdown"] = new_body
+        draft["body"] = new_body
+        body_text = new_body
+    elif note_text:
+        appended = f"{body_text.rstrip()}\n\nManager note:\n{note_text}" if body_text.strip() else f"Manager note:\n{note_text}"
+        body_text = appended
+        assistant_draft["body"] = appended
+        assistant_draft["body_markdown"] = appended
+        draft = dict(draft)
+        draft["body_markdown"] = appended
+        draft["body"] = appended
+
+    return {
+        "action": "send_reply",
+        "event_id": target_event.get("event_id"),
+        "thread_state": target_event.get("thread_state"),
+        "draft": draft,
+        "res": {
+            "assistant_draft": assistant_draft,
+            "assistant_draft_text": body_text,
+        },
+        "actions": [{"type": "send_reply"}],
+        "thread_id": thread_id,
+    }
+
+
+def reject_task_and_send(
+    task_id: str,
+    db_path: Path = DB_PATH,
+    *,
+    manager_notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    """[OpenEvent Action] Reject a pending HIL task and emit a client-facing payload."""
+
+    path = Path(db_path)
+    lock_path = _resolve_lock_path(path)
+    db = db_io.load_db(path, lock_path=lock_path)
+    update_task_status(db, task_id, TaskStatus.REJECTED, manager_notes)
+
+    target_event: Optional[Dict[str, Any]] = None
+    target_request: Optional[Dict[str, Any]] = None
+    for event in db.get("events", []):
+        pending = event.get("pending_hil_requests") or []
+        for request in pending:
+            if request.get("task_id") == task_id:
+                target_event = event
+                target_request = request
+                pending.remove(request)
+                break
+        if target_event:
+            break
+
+    if not target_event or not target_request:
+        raise ValueError(f"Task {task_id} not found in pending approvals.")
+
+    thread_id = target_request.get("thread_id") or target_event.get("thread_id")
+
+    target_event.setdefault("hil_history", []).append(
+        {
+            "task_id": task_id,
+            "rejected_at": datetime.utcnow().isoformat() + "Z",
+            "notes": manager_notes,
+            "step": target_request.get("step"),
+            "decision": "rejected",
+        }
+    )
+    set_hil_open(thread_id, bool(target_event.get("pending_hil_requests") or []))
+
+    step_num = target_request.get("step")
+    if isinstance(step_num, int):
+        try:
+            current_step_raw = target_event.get("current_step")
+            try:
+                current_step_int = int(current_step_raw) if current_step_raw is not None else None
+            except (TypeError, ValueError):
+                current_step_int = None
+            effective_step = max(step_num, current_step_int) if current_step_int else step_num
+            workflow_step = WorkflowStep(f"step_{effective_step}")
+            write_stage(target_event, current_step=workflow_step)
+            update_event_metadata(target_event, current_step=effective_step)
+        except ValueError:
+            pass
+
+    if step_num == 5:
+        pending_decision = target_event.get("negotiation_pending_decision")
+        if pending_decision:
+            from backend.workflows.common.types import IncomingMessage, WorkflowState
+            from backend.workflows.groups import negotiation_close as negotiation_group
+
+            hil_message = IncomingMessage.from_dict(
+                {
+                    "msg_id": f"hil-reject-{task_id}",
+                    "from_email": target_event.get("event_data", {}).get("Email"),
+                    "subject": "HIL rejection",
+                    "body": manager_notes or "Declined",
+                    "ts": datetime.utcnow().isoformat() + "Z",
+                }
+            )
+            hil_state = WorkflowState(message=hil_message, db_path=path, db=db)
+            hil_state.client_id = (target_event.get("event_data", {}).get("Email") or "").lower()
+            hil_state.event_entry = target_event
+            hil_state.current_step = 5
+            hil_state.user_info = {"hil_approve_step": 5, "hil_decision": "reject"}
+            hil_state.thread_state = target_event.get("thread_state")
+
+            negotiation_group._apply_hil_negotiation_decision(hil_state, target_event, "reject")  # type: ignore[attr-defined]
+            if hil_state.extras.get("persist"):
+                db_io.save_db(db, path, lock_path=lock_path)
+
+    db_io.save_db(db, path, lock_path=lock_path)
+
+    draft = target_request.get("draft") or {}
+    body_text = draft.get("body_markdown") or draft.get("body") or ""
+    headers = draft.get("headers") or []
+    assistant_draft = {"headers": headers, "body": body_text, "body_markdown": body_text}
+
+    note_text = (manager_notes or "").strip()
+    if step_num == 5:
+        new_body = _compose_hil_decision_reply("reject", note_text)
+        assistant_draft["body"] = new_body
+        assistant_draft["body_markdown"] = new_body
+        draft = dict(draft)
+        draft["body_markdown"] = new_body
+        draft["body"] = new_body
+        body_text = new_body
+    elif note_text:
         appended = f"{body_text.rstrip()}\n\nManager note:\n{note_text}" if body_text.strip() else f"Manager note:\n{note_text}"
         body_text = appended
         assistant_draft["body"] = appended

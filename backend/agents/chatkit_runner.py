@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from backend.agents.guardrails import safe_envelope
 from backend.agents.openevent_agent import OpenEventAgent
+from backend.utils.openai_key import SECRET_NAME, load_openai_api_key
 from backend.agents.tools.dates import (
     SuggestDatesInput,
     ParseDateIntentInput,
@@ -732,7 +733,11 @@ async def run_streamed(thread_id: str, message: Dict[str, Any], state: Dict[str,
     try:  # pragma: no cover - SDK path exercised only in integration runs
         from openai import OpenAI  # type: ignore
 
-        client = OpenAI()
+        api_key = load_openai_api_key(required=False)
+        if not api_key:
+            raise RuntimeError(f"Environment variable '{SECRET_NAME}' is required for streamed agent mode.")
+
+        client = OpenAI(api_key=api_key)
         allowed_tools = [{"type": "function", "function": {"name": tool}} for tool in policy.allowed_tools]
         stop_tools = [{"type": "function", "function": {"name": tool}} for tool in CLIENT_STOP_AT_TOOLS]
         system_instructions = (

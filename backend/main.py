@@ -28,6 +28,12 @@ from backend.workflows.groups.date_confirmation import compose_date_confirmation
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.groups.room_availability import run_availability_workflow
 from backend.utils import json_io
+from backend.utils.test_data_providers import (
+    get_all_catering_menus,
+    get_catering_menu_details,
+    get_qna_items,
+    get_rooms_for_display,
+)
 
 os.environ.setdefault("AGENT_MODE", os.environ.get("AGENT_MODE_DEFAULT", "openai"))
 
@@ -37,8 +43,8 @@ from backend.workflow_email import (
     load_db as wf_load_db,
     save_db as wf_save_db,
     list_pending_tasks as wf_list_pending_tasks,
-    update_task_status as wf_update_task_status,
     approve_task_and_send as wf_approve_task_and_send,
+    reject_task_and_send as wf_reject_task_and_send,
     cleanup_tasks as wf_cleanup_tasks,
 )
 from backend.api.debug import (
@@ -153,6 +159,19 @@ def _format_draft_text(draft: Dict[str, Any]) -> str:
 
 
 def _extract_workflow_reply(wf_res: Dict[str, Any]) -> tuple[str, List[Dict[str, Any]]]:
+    wf_action = wf_res.get("action")
+    if wf_action in {
+        "offer_accept_pending_hil",
+        "negotiation_accept_pending_hil",
+        "negotiation_hil_waiting",
+        "offer_waiting_hil",
+    }:
+        waiting_text = (
+            "Thanks for confirming - I've sent the full offer to our manager for approval. "
+            "I'll let you know as soon as it's reviewed."
+        )
+        return waiting_text, wf_res.get("actions") or []
+
     drafts = wf_res.get("draft_messages") or []
     if drafts:
         draft = drafts[-1]
@@ -450,6 +469,8 @@ async def start_conversation(request: StartConversationRequest):
         print(f"[WF] start action={wf_action} client={request.client_email} event_id={wf_res.get('event_id')} task_id={wf_res.get('task_id')}")
     except Exception as e:
         print(f"[WF][ERROR] {e}")
+    if not wf_res:
+        raise HTTPException(status_code=500, detail="Workflow processing failed")
     if wf_action == "manual_review_enqueued":
         response_text = (
             "Thanks for your message. We routed it for manual review and will get back to you shortly."
@@ -674,24 +695,103 @@ async def get_pending_tasks():
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to load tasks: {exc}") from exc
     tasks = wf_list_pending_tasks(db)
+    events_by_id = {event.get("event_id"): event for event in db.get("events") or [] if event.get("event_id")}
     payload = []
+    offer_tasks_indices: Dict[tuple[str, str], int] = {}
     for task in tasks:
         payload_data = task.get("payload") or {}
-        payload.append(
-            {
-                "task_id": task.get("task_id"),
-                "type": task.get("type"),
-                "client_id": task.get("client_id"),
-                "event_id": task.get("event_id"),
-                "created_at": task.get("created_at"),
-                "notes": task.get("notes"),
-                "payload": {
-                    "snippet": payload_data.get("snippet"),
-                    "suggested_dates": payload_data.get("suggested_dates"),
-                    "thread_id": payload_data.get("thread_id"),
-                },
+        event_entry = events_by_id.get(task.get("event_id"))
+        event_data = (event_entry or {}).get("event_data") or {}
+        draft_body = payload_data.get("draft_body") or payload_data.get("draft_msg")
+        if not draft_body and event_entry:
+            for request in event_entry.get("pending_hil_requests") or []:
+                if request.get("task_id") == task.get("task_id"):
+                    draft_body = (request.get("draft") or {}).get("body") or draft_body
+                    break
+
+        event_summary = None
+        if event_entry:
+            def _line_items(entry: Dict[str, Any]) -> list[str]:
+                items: list[str] = []
+                for product in entry.get("products") or []:
+                    name = product.get("name") or "Unnamed item"
+                    try:
+                        qty = float(product.get("quantity") or 0)
+                    except (TypeError, ValueError):
+                        qty = 0
+                    try:
+                        unit_price = float(product.get("unit_price") or 0.0)
+                    except (TypeError, ValueError):
+                        unit_price = 0.0
+                    unit = product.get("unit")
+                    total = qty * unit_price if qty and unit_price else unit_price
+                    label = f"{qty:g}× {name}" if qty else name
+                    price_text = f"CHF {total:,.2f}"
+                    if unit == "per_person" and qty:
+                        price_text += f" (CHF {unit_price:,.2f} per person)"
+                    elif unit == "per_event":
+                        price_text += " (per event)"
+                    items.append(f"{label} · {price_text}")
+                return items
+
+            event_summary = {
+                "client_name": event_data.get("Name"),
+                "company": event_data.get("Company"),
+                "billing_address": event_data.get("Billing Address"),
+                "email": event_data.get("Email"),
+                "chosen_date": event_entry.get("chosen_date"),
+                "locked_room": event_entry.get("locked_room_id"),
+                "line_items": _line_items(event_entry),
             }
-        )
+            try:
+                from backend.workflows.groups.negotiation_close import _determine_offer_total
+
+                total_amount = _determine_offer_total(event_entry)
+            except Exception:
+                total_amount = None
+            if total_amount not in (None, 0):
+                event_summary["offer_total"] = total_amount
+
+        record = {
+            "task_id": task.get("task_id"),
+            "type": task.get("type"),
+            "client_id": task.get("client_id"),
+            "event_id": task.get("event_id"),
+            "created_at": task.get("created_at"),
+            "notes": task.get("notes"),
+            "payload": {
+                "snippet": payload_data.get("snippet"),
+                "draft_body": draft_body,
+                "suggested_dates": payload_data.get("suggested_dates"),
+                "thread_id": payload_data.get("thread_id"),
+                "step_id": payload_data.get("step_id") or payload_data.get("step"),
+                "event_summary": event_summary,
+            },
+        }
+        payload.append(record)
+        if task.get("type") == "offer_message" and payload_data.get("thread_id"):
+            key = (task.get("event_id"), payload_data.get("thread_id"))
+            offer_tasks_indices[key] = len(payload) - 1
+
+    # Deduplicate per (event, thread) by priority so only one task shows in the manager panel.
+    priority = {
+        "offer_message": 0,
+        "room_availability_message": 1,
+        "date_confirmation_message": 2,
+        "ask_for_date": 3,
+        "manual_review": 4,
+    }
+    dedup: Dict[tuple[str, str], Dict[str, Any]] = {}
+    for record in payload:
+        thread_id = (record.get("payload") or {}).get("thread_id")
+        event_id = record.get("event_id")
+        key = (event_id, thread_id)
+        rank = priority.get(record.get("type"), 99)
+        current = dedup.get(key)
+        if current is None or priority.get(current.get("type"), 99) > rank:
+            dedup[key] = record
+    payload = list(dedup.values())
+
     return {"tasks": payload}
 
 
@@ -720,15 +820,21 @@ async def approve_task(task_id: str, request: TaskDecisionRequest):
 async def reject_task(task_id: str, request: TaskDecisionRequest):
     """OpenEvent Action (light-blue): mark a task as rejected from the GUI."""
     try:
-        db = wf_load_db()
-        wf_update_task_status(db, task_id, "rejected", request.notes)
-        wf_save_db(db)
+        result = wf_reject_task_and_send(task_id, manager_notes=request.notes)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to reject task: {exc}") from exc
     print(f"[WF] task rejected id={task_id}")
-    return {"task_id": task_id, "task_status": "rejected", "review_state": "rejected"}
+    assistant_text = result.get("res", {}).get("assistant_draft_text")
+    return {
+        "task_id": task_id,
+        "task_status": "rejected",
+        "assistant_reply": assistant_text,
+        "thread_id": result.get("thread_id"),
+        "event_id": result.get("event_id"),
+        "review_state": "rejected",
+    }
 
 
 @app.post("/api/tasks/cleanup")
@@ -918,6 +1024,41 @@ async def accept_booking(session_id: str):
         "total_events": len(database["events"]),
         "event_info": conversation_state.event_info.to_dict()
     }
+
+
+# Test data endpoints for development pages
+@app.get("/api/test-data/rooms")
+async def get_rooms_data(date: Optional[str] = None, capacity: Optional[str] = None):
+    """Serve room availability data for test pages."""
+    rooms = get_rooms_for_display(date, capacity)
+    return rooms
+
+
+@app.get("/api/test-data/catering")
+async def get_catering_catalog():
+    """Serve all catering menus for catalog page."""
+    menus = get_all_catering_menus()
+    return menus
+
+
+@app.get("/api/test-data/catering/{menu_slug}")
+async def get_catering_data(menu_slug: str, room: Optional[str] = None, date: Optional[str] = None):
+    """Serve specific catering menu data for test pages."""
+    menu = get_catering_menu_details(menu_slug)
+    if not menu:
+        raise HTTPException(status_code=404, detail="Menu not found")
+
+    menu["context"] = {
+        "room": room,
+        "date": date,
+    }
+    return menu
+
+
+@app.get("/api/test-data/qna")
+async def get_qna_data(category: Optional[str] = None):
+    """Serve Q&A data for test pages."""
+    return get_qna_items(category)
 
 
 @app.get("/api/workflow/health")

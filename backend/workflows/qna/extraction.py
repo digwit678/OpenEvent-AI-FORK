@@ -11,9 +11,10 @@ except Exception:  # pragma: no cover - library may be unavailable in tests
 
 from backend.workflows.common.types import WorkflowState
 from backend.workflows.nlu.general_qna_classifier import quick_general_qna_scan
+from backend.utils.openai_key import load_openai_api_key
 
 QNA_EXTRACTION_MODEL = os.getenv("OPEN_EVENT_QNA_EXTRACTION_MODEL", "o3-mini")
-_LLM_ENABLED = bool(os.getenv("OPENAI_API_KEY") and OpenAI is not None)
+_LLM_ENABLED = bool(load_openai_api_key(required=False) and OpenAI is not None)
 
 Q_VALUE_KEYS = (
     "date",
@@ -171,7 +172,8 @@ def _run_qna_extraction(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not _LLM_ENABLED:
         return _fallback_extraction(payload)
 
-    client = OpenAI()
+    api_key = load_openai_api_key()
+    client = OpenAI(api_key=api_key)
     response = client.chat.completions.create(
         model=QNA_EXTRACTION_MODEL,
         temperature=0,

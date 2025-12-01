@@ -7,6 +7,7 @@ from calendar import monthrange
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 import datetime as dt
 import re
+import logging
 
 from backend.domain import TaskStatus, TaskType
 from backend.debug.hooks import (
@@ -35,7 +36,13 @@ from backend.workflows.common.sorting import rank_rooms
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.gatekeeper import refresh_gatekeeper
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
-from backend.workflows.common.menu_options import build_menu_payload, format_menu_line
+from backend.workflows.common.menu_options import (
+    build_menu_payload,
+    build_menu_title,
+    extract_menu_request,
+    format_menu_line,
+    select_menu_options,
+)
 from backend.workflows.common.general_qna import (
     append_general_qna_to_primary,
     render_general_qna_reply,
@@ -61,11 +68,14 @@ from backend.workflows.nlu import detect_general_room_query
 from backend.utils.profiler import profile_step
 from backend.services.availability import calendar_free, next_five_venue_dates, validate_window
 from backend.utils.dates import MONTH_INDEX_TO_NAME, from_hints
+from backend.utils.calendar_events import update_calendar_event_status
 from backend.workflow.state import WorkflowStep, default_subflow, write_stage
 
 from ..condition.decide import is_valid_ddmmyyyy
 
 __workflow_role__ = "trigger"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -282,8 +292,12 @@ def _client_requested_dates(state: WorkflowState) -> List[str]:
 
     text = _message_text(state)
     reference_day = _reference_date_from_state(state)
+    explicit_pattern = re.compile(
+        r"(\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|may|june|july|august|september|october|november|december)\b)",
+        re.IGNORECASE,
+    )
     iso_values: List[str] = []
-    if text:
+    if text and explicit_pattern.search(text):
         seen: set[str] = set()
         for value in parse_all_dates(text, fallback_year=reference_day.year):
             iso = value.isoformat()
@@ -327,6 +341,54 @@ def _preface_with_apology(text: Optional[str]) -> Optional[str]:
     if first.isalpha() and first.isupper():
         softened = first.lower() + stripped[1:]
     return f"Sorry, {softened}"
+
+
+def _clean_weekdays_hint(raw: Any) -> List[int]:
+    cleaned: List[int] = []
+    if not isinstance(raw, (list, tuple, set)):
+        return cleaned
+    for value in raw:
+        try:
+            hint_int = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= hint_int <= 7:
+            cleaned.append(hint_int)
+    return cleaned
+
+
+def _clear_invalid_weekdays_hint(event_entry: Dict[str, Any]) -> None:
+    """Strip invalid weekday hints that can be polluted by participant counts."""
+
+    weekdays_hint = event_entry.get("weekdays_hint")
+    cleaned = _clean_weekdays_hint(weekdays_hint)
+    if cleaned != weekdays_hint:
+        if cleaned:
+            event_entry["weekdays_hint"] = cleaned
+        else:
+            event_entry.pop("weekdays_hint", None)
+
+
+def _append_menu_options_if_requested(state: WorkflowState, message_lines: List[str], month_hint: Optional[str]) -> None:
+    """Attach a short menu suggestion block when the client asks about menus."""
+
+    request = extract_menu_request((state.message.body or "") + "\n" + (state.message.subject or ""))
+    if not request or not request.get("menu_requested"):
+        return
+
+    options = select_menu_options(request, month_hint=month_hint or request.get("month"))
+    if not options:
+        return
+
+    title = build_menu_title(request)
+    if month_hint:
+        title = f"{title} ({_format_label_text(str(month_hint))})"
+    message_lines.append("")
+    message_lines.append(title)
+    for option in options:
+        rendered = format_menu_line(option, month_hint=month_hint)
+        if rendered:
+            message_lines.append(rendered if rendered.lstrip().startswith("-") else f"- {rendered}")
 
 
 def _maybe_append_general_qna(
@@ -1305,6 +1367,8 @@ def _present_candidate_dates(
                 )
             message_lines.append("")
 
+    _append_menu_options_if_requested(state, message_lines, month_hint_value or month_for_line)
+
     message_lines.extend(["", "AVAILABLE DATES:"])
     if not formatted_dates:
         message_lines.append("Sorry, none of the nearby slots are free at the moment—here's the broader set I'm monitoring:")
@@ -1317,10 +1381,8 @@ def _present_candidate_dates(
     next_step_lines = ["", "NEXT STEP:"]
     if future_display:
         next_step_lines.append(f"Say yes if {future_display} works, or share another option you'd like me to check.")
-    next_step_lines.append("- Tell me which date works best so I can move to Room Availability and shortlist the best rooms.")
-    next_step_lines.append("- Let me know which date works best so I can lock it in and shortlist the best rooms.")
+    next_step_lines.append("- Tell me which date works best so I can move to Room Availability.")
     next_step_lines.append("- Or share another day/time and I'll check availability.")
-    next_step_lines.append("- Do you have any preferred dates or times I should prioritise?")
     message_lines.extend(next_step_lines)
     prompt = "\n".join(message_lines)
 
@@ -2102,6 +2164,14 @@ def _finalize_confirmation(
         requirements_hash=new_req_hash,
         thread_state="In Progress",
     )
+    if event_entry.get("calendar_event_id"):
+        try:
+            update_calendar_event_status(event_entry.get("event_id", ""), event_entry.get("status", ""), "lead")
+            from backend.utils.calendar_events import create_calendar_event
+
+            create_calendar_event(event_entry, "lead")
+        except Exception as exc:  # pragma: no cover - best-effort calendar logging
+            logger.warning("Failed to update calendar event: %s", exc)
     if not reuse_previous:
         update_event_metadata(
             event_entry,
@@ -2419,6 +2489,7 @@ def _is_weekend_token(token: Optional[Any]) -> bool:
 def _resolve_week_scope(state: WorkflowState, reference_day: date) -> Optional[Dict[str, Any]]:
     user_info = state.user_info or {}
     event_entry = state.event_entry or {}
+    _clear_invalid_weekdays_hint(event_entry)
     window_scope: Dict[str, Any] = {}
     for candidate in (event_entry.get("window_scope"), user_info.get("window")):
         if isinstance(candidate, dict):
@@ -2434,11 +2505,12 @@ def _resolve_week_scope(state: WorkflowState, reference_day: date) -> Optional[D
         or user_info.get("week_index")
         or event_entry.get("week_index")
     )
-    weekdays_hint = (
+    weekdays_hint_raw = (
         window_scope.get("weekdays_hint")
         or user_info.get("weekdays_hint")
         or event_entry.get("weekdays_hint")
     )
+    weekdays_hint = _clean_weekdays_hint(weekdays_hint_raw)
     weekday_token = (
         window_scope.get("weekday")
         or user_info.get("vague_weekday")
@@ -3081,6 +3153,8 @@ def _present_general_room_qna(
     ]
     if qa_payload:
         state.turn_notes["general_qa"] = qa_payload
+        event_entry.setdefault("general_qa_payload", qa_payload)
+        state.extras["persist"] = True
         trace_general_qa_status(
             resolved_thread_id,
             "payload_attached",

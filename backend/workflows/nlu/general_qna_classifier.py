@@ -13,6 +13,7 @@ except ImportError:  # pragma: no cover - OpenAI optional in local/dev runs
     OpenAI = None  # type: ignore[assignment]
 
 from backend.workflows.common.types import WorkflowState
+from backend.utils.openai_key import load_openai_api_key
 
 _QUESTION_WORDS = (
     "which",
@@ -119,7 +120,7 @@ _CACHE_MAX = 256
 _CACHE: Dict[str, Dict[str, Any]] = {}
 
 _LLM_MODEL = os.getenv("OPENAI_GENERAL_QNA_MODEL", "gpt-4o-mini")
-_LLM_ENABLED = bool(os.getenv("OPENAI_API_KEY"))
+_LLM_ENABLED = bool(load_openai_api_key(required=False))
 
 
 def reset_general_qna_cache() -> None:
@@ -314,7 +315,8 @@ def llm_classify(msg_text: str) -> Dict[str, Any]:
         },
     ]
 
-    client = OpenAI()
+    api_key = load_openai_api_key()
+    client = OpenAI(api_key=api_key)
     response = client.chat.completions.create(
         model=_LLM_MODEL,
         temperature=0,

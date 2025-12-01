@@ -23,6 +23,7 @@ from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
 from backend.debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate, trace_state, trace_step, set_subloop, trace_marker, trace_general_qa_status
 from backend.utils.profiler import profile_step
+from backend.utils.pseudolinks import generate_room_details_link, generate_qna_link
 from backend.workflow_verbalizer_test_hooks import render_rooms
 from backend.workflows.groups.room_availability.db_pers import load_rooms_config
 from backend.workflows.nlu import detect_general_room_query
@@ -46,6 +47,7 @@ ROOM_SIZE_ORDER = {
 }
 
 ROOM_PROPOSAL_HIL_THRESHOLD = 3  # TODO(openevent-team): make this configurable per venue
+QNA_SUMMARY_CHAR_THRESHOLD = 400  # Beyond this, instruct verbalizer to shorten and point to full Q&A
 
 
 @trace_step("Step3_Room")
@@ -105,6 +107,13 @@ def process(state: WorkflowState) -> GroupResult:
     if hil_step == 3:
         decision = state.user_info.get("hil_decision") or "approve"
         return _apply_hil_decision(state, event_entry, decision)
+
+    # Hard guard: Step 3 should never enqueue HIL; clear any stale requests.
+    pending = event_entry.get("pending_hil_requests") or []
+    filtered = [entry for entry in pending if (entry.get("step") or 0) != 3]
+    if len(filtered) != len(pending):
+        event_entry["pending_hil_requests"] = filtered
+        state.extras["persist"] = True
 
     # [CHANGE DETECTION + Q&A] Tap incoming stream BEFORE room evaluation to detect client revisions
     # ("actually we're 50 now") and route them back to dependent nodes while hashes stay valid.
@@ -402,6 +411,40 @@ def process(state: WorkflowState) -> GroupResult:
         segments = intro_lines + (["", body_markdown] if body_markdown else [])
         body_markdown = "\n".join(segment for segment in segments if segment)
 
+    room_link = generate_room_details_link(
+        room_name=selected_room or "all",
+        date=event_entry.get("chosen_date") or (display_chosen_date or ""),
+        participants=participants or event_entry.get("number_of_participants", 0),
+    )
+    if body_markdown:
+        body_markdown = "\n".join([room_link, "", body_markdown])
+    else:
+        body_markdown = room_link
+
+    shortcut_note = None
+    if state.extras.get("qna_shortcut"):
+        shortcut_payload = state.extras["qna_shortcut"]
+        shortcut_link = shortcut_payload.get("link")
+        shortcut_note = (
+            f"[VERBALIZER_SHORTCUT] Keep summary concise; if details exceed "
+            f"{shortcut_payload.get('threshold')} chars, point to {shortcut_link} instead of expanding."
+        )
+    if shortcut_note:
+        body_markdown = "\n".join([shortcut_note, "", body_markdown])
+
+    # Universal Verbalizer: transform to warm, human-like message
+    from backend.workflows.common.prompts import verbalize_draft_body
+    body_markdown = verbalize_draft_body(
+        body_markdown,
+        step=3,
+        topic=outcome_topic,
+        event_date=display_chosen_date,
+        participants_count=participants,
+        rooms=verbalizer_rooms,
+        room_name=selected_room,
+        room_status=outcome,
+    )
+
     qa_lines = _general_qna_lines(state)
     if qa_lines:
         sections = [body_markdown] if body_markdown else []
@@ -428,12 +471,11 @@ def process(state: WorkflowState) -> GroupResult:
         "headers": headers,
     }
     attempt = _increment_room_attempt(event_entry)
-    hil_required = attempt >= ROOM_PROPOSAL_HIL_THRESHOLD
-    thread_state_label = "Waiting on HIL" if hil_required else "Awaiting Client"
+    # Do not escalate room availability to HIL; approvals only happen at offer/negotiation (Step 5).
+    hil_required = False
+    thread_state_label = "Awaiting Client"
     draft_message["thread_state"] = thread_state_label
     draft_message["requires_approval"] = hil_required
-    if hil_required:
-        draft_message["hil_reason"] = "Client can't find suitable room, needs manual help"
     draft_message["rooms_summary"] = verbalizer_rooms
     state.add_draft_message(draft_message)
 
@@ -726,12 +768,15 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
     selected_room = pending.get("selected_room")
     requirements_hash = event_entry.get("requirements_hash") or pending.get("requirements_hash")
 
+    manager_requested = bool((event_entry.get("flags") or {}).get("manager_requested"))
+    next_thread_state = "Waiting on HIL" if manager_requested else "Awaiting Client"
+
     update_event_metadata(
         event_entry,
         locked_room_id=selected_room,
         room_eval_hash=requirements_hash,
         current_step=4,
-        thread_state="Waiting on HIL",
+        thread_state=next_thread_state,
     )
     _reset_room_attempts(event_entry)
     trace_gate(
@@ -759,7 +804,7 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
 
     state.current_step = 4
     state.caller_step = None
-    state.set_thread_state("Waiting on HIL")
+    state.set_thread_state(next_thread_state)
     state.extras["persist"] = True
 
     payload = {
@@ -936,6 +981,8 @@ def _verbalizer_rooms_payload(
         coffee_badge = profile.get("coffee_badge", "—")
         capacity_badge = profile.get("capacity_badge", "—")
         normalized_products = {str(token).strip().lower() for token in needs_products}
+        if "coffee" not in normalized_products and "tea" not in normalized_products and "drinks" not in normalized_products:
+            coffee_badge = None
         alt_dates = [
             format_iso_date_to_ddmmyyyy(value) or value
             for value in available_dates_map.get(entry.room, [])
@@ -964,10 +1011,24 @@ def _verbalizer_rooms_payload(
 
 
 def _general_qna_lines(state: WorkflowState) -> List[str]:
+    def _short_menu_line(row: Dict[str, Any]) -> str:
+        name = str(row.get("menu_name") or "").strip()
+        price = str(row.get("price") or "").strip()
+        if not name:
+            return ""
+        display_price = price if price else "CHF ?"
+        suffix = ""
+        if display_price and "per" not in display_price.lower():
+            suffix = " per event"
+        return f"- {name} — {display_price}{suffix} (Rooms: all)"
+
     payload = state.turn_notes.get("general_qa")
     rows: Optional[List[Dict[str, Any]]] = None
     title: Optional[str] = None
     month_hint: Optional[str] = None
+    event_entry = state.event_entry or {}
+    if not payload:
+        payload = event_entry.get("general_qa_payload")
     if isinstance(payload, dict) and payload.get("rows"):
         rows = payload["rows"]
         title = payload.get("title")
@@ -983,13 +1044,34 @@ def _general_qna_lines(state: WorkflowState) -> List[str]:
                 rows = select_menu_options(request, month_hint=context_month)
             if rows:
                 title = build_menu_title(request)
+        elif event_entry:
+            context_month = (event_entry.get("vague_month") or "").lower() or (state.user_info or {}).get("vague_month")
+            default_request = {"menu_requested": True, "wine_pairing": True, "three_course": True, "month": context_month}
+            rows = select_menu_options(default_request, month_hint=context_month) if context_month else select_menu_options(default_request)
+            if rows:
+                title = build_menu_title(default_request)
     if not rows:
         return []
     lines = [title or "Menu options we can offer:"]
     for row in rows:
-        rendered = format_menu_line(row, month_hint=month_hint)
+        rendered = _short_menu_line(row)
         if rendered:
             lines.append(rendered)
+
+    combined_len = len("\n".join(lines))
+    shortcut_link = generate_qna_link("Catering")
+    if combined_len > QNA_SUMMARY_CHAR_THRESHOLD:
+        lines = [
+            f"Full menu details: {shortcut_link}",
+            "(Keeping this brief so you can compare quickly.)",
+            "",
+        ] + lines
+        state.extras["qna_shortcut"] = {"link": shortcut_link, "threshold": QNA_SUMMARY_CHAR_THRESHOLD}
+    else:
+        lines.append("")
+        lines.append(f"Full menu details: {shortcut_link}")
+        state.extras["qna_shortcut"] = {"link": shortcut_link, "threshold": QNA_SUMMARY_CHAR_THRESHOLD}
+    # TODO(verbalizer): use shortcut_link to summarize long Q&A payloads instead of dumping full text.
     return lines
 
 
