@@ -28,6 +28,11 @@ from backend.services.products import find_product, normalise_product_payload
 from backend.services.rooms import load_room_catalog
 from ...negotiation_close import _handle_accept, ACCEPT_KEYWORDS, _offer_summary_lines as _hil_offer_summary_lines
 from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
+from backend.utils.pseudolinks import (
+    generate_catering_catalog_link,
+    generate_catering_menu_link,
+    generate_room_details_link,
+)
 
 from ..llm.send_offer_llm import ComposeOffer
 
@@ -1012,6 +1017,7 @@ def _record_offer(
 def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> List[str]:
     chosen_date = event_entry.get("chosen_date") or "Date TBD"
     room = event_entry.get("locked_room_id") or "Room TBD"
+    link_date = event_entry.get("chosen_date") or (chosen_date if chosen_date != "Date TBD" else "")
     event_data = event_entry.get("event_data") or {}
     billing_details = event_entry.get("billing_details") or {}
     billing_address = format_billing_display(billing_details, event_data.get("Billing Address"))
@@ -1109,12 +1115,17 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> 
 
     selected_catering = event_entry.get("selected_catering")
     if not selected_catering and catering_alternatives:
+        catalog_link = generate_catering_catalog_link()
+        lines.append("")
+        lines.append(catalog_link)
         lines.append("Menu options you can add:")
         for entry in catering_alternatives:
             name = entry.get("name") or "Catering option"
             unit_price = float(entry.get("unit_price") or 0.0)
             unit_label = (entry.get("unit") or "per event").replace("_", " ")
+            menu_link = generate_catering_menu_link(name, room=room, date=link_date)
             lines.append(f"- {name} · CHF {unit_price:,.2f} {unit_label}")
+            lines.append(f"  {menu_link}")
         lines.append("")
         catering_alternatives = []
 

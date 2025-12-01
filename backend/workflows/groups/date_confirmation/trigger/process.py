@@ -7,6 +7,7 @@ from calendar import monthrange
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 import datetime as dt
 import re
+import logging
 
 from backend.domain import TaskStatus, TaskType
 from backend.debug.hooks import (
@@ -67,11 +68,14 @@ from backend.workflows.nlu import detect_general_room_query
 from backend.utils.profiler import profile_step
 from backend.services.availability import calendar_free, next_five_venue_dates, validate_window
 from backend.utils.dates import MONTH_INDEX_TO_NAME, from_hints
+from backend.utils.calendar_events import update_calendar_event_status
 from backend.workflow.state import WorkflowStep, default_subflow, write_stage
 
 from ..condition.decide import is_valid_ddmmyyyy
 
 __workflow_role__ = "trigger"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -2160,6 +2164,14 @@ def _finalize_confirmation(
         requirements_hash=new_req_hash,
         thread_state="In Progress",
     )
+    if event_entry.get("calendar_event_id"):
+        try:
+            update_calendar_event_status(event_entry.get("event_id", ""), event_entry.get("status", ""), "lead")
+            from backend.utils.calendar_events import create_calendar_event
+
+            create_calendar_event(event_entry, "lead")
+        except Exception as exc:  # pragma: no cover - best-effort calendar logging
+            logger.warning("Failed to update calendar event: %s", exc)
     if not reuse_previous:
         update_event_metadata(
             event_entry,

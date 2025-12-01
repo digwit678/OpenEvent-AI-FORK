@@ -5,6 +5,7 @@ import os
 import tempfile
 import time
 import uuid
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -12,12 +13,15 @@ from functools import lru_cache
 
 from backend.domain import EventStatus, TaskStatus
 from backend.utils import json_io
+from backend.utils.calendar_events import create_calendar_event
 
 __workflow_role__ = "Database"
 
 
 LOCK_TIMEOUT = 5.0
 LOCK_SLEEP = 0.1
+
+logger = logging.getLogger(__name__)
 
 
 class FileLock:
@@ -268,6 +272,13 @@ def create_event_entry(db: Dict[str, Any], event_data: Dict[str, Any]) -> str:
         "deferred_intents": [],
     }
     db.setdefault("events", []).append(entry)
+    try:
+        calendar_event = create_calendar_event(entry, "lead")
+        entry["calendar_event_id"] = calendar_event.get("id")
+        logger.info("Created calendar event for new booking: %s", event_id)
+    except Exception as exc:  # pragma: no cover - best-effort calendar logging
+        logger.warning("Failed to create calendar event: %s", exc)
+        # Don't fail the booking if calendar creation fails
     return event_id
 
 

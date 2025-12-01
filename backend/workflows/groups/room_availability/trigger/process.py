@@ -23,6 +23,7 @@ from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
 from backend.debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate, trace_state, trace_step, set_subloop, trace_marker, trace_general_qa_status
 from backend.utils.profiler import profile_step
+from backend.utils.pseudolinks import generate_room_details_link, generate_qna_link
 from backend.workflow_verbalizer_test_hooks import render_rooms
 from backend.workflows.groups.room_availability.db_pers import load_rooms_config
 from backend.workflows.nlu import detect_general_room_query
@@ -46,6 +47,7 @@ ROOM_SIZE_ORDER = {
 }
 
 ROOM_PROPOSAL_HIL_THRESHOLD = 3  # TODO(openevent-team): make this configurable per venue
+QNA_SUMMARY_CHAR_THRESHOLD = 400  # Beyond this, instruct verbalizer to shorten and point to full Q&A
 
 
 @trace_step("Step3_Room")
@@ -408,6 +410,27 @@ def process(state: WorkflowState) -> GroupResult:
     if intro_lines:
         segments = intro_lines + (["", body_markdown] if body_markdown else [])
         body_markdown = "\n".join(segment for segment in segments if segment)
+
+    room_link = generate_room_details_link(
+        room_name=selected_room or "all",
+        date=event_entry.get("chosen_date") or (display_chosen_date or ""),
+        participants=participants or event_entry.get("number_of_participants", 0),
+    )
+    if body_markdown:
+        body_markdown = "\n".join([room_link, "", body_markdown])
+    else:
+        body_markdown = room_link
+
+    shortcut_note = None
+    if state.extras.get("qna_shortcut"):
+        shortcut_payload = state.extras["qna_shortcut"]
+        shortcut_link = shortcut_payload.get("link")
+        shortcut_note = (
+            f"[VERBALIZER_SHORTCUT] Keep summary concise; if details exceed "
+            f"{shortcut_payload.get('threshold')} chars, point to {shortcut_link} instead of expanding."
+        )
+    if shortcut_note:
+        body_markdown = "\n".join([shortcut_note, "", body_markdown])
 
     # Universal Verbalizer: transform to warm, human-like message
     from backend.workflows.common.prompts import verbalize_draft_body
@@ -1034,6 +1057,21 @@ def _general_qna_lines(state: WorkflowState) -> List[str]:
         rendered = _short_menu_line(row)
         if rendered:
             lines.append(rendered)
+
+    combined_len = len("\n".join(lines))
+    shortcut_link = generate_qna_link("Catering")
+    if combined_len > QNA_SUMMARY_CHAR_THRESHOLD:
+        lines = [
+            f"Full menu details: {shortcut_link}",
+            "(Keeping this brief so you can compare quickly.)",
+            "",
+        ] + lines
+        state.extras["qna_shortcut"] = {"link": shortcut_link, "threshold": QNA_SUMMARY_CHAR_THRESHOLD}
+    else:
+        lines.append("")
+        lines.append(f"Full menu details: {shortcut_link}")
+        state.extras["qna_shortcut"] = {"link": shortcut_link, "threshold": QNA_SUMMARY_CHAR_THRESHOLD}
+    # TODO(verbalizer): use shortcut_link to summarize long Q&A payloads instead of dumping full text.
     return lines
 
 
