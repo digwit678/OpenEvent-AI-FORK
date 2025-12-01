@@ -463,6 +463,8 @@ async def start_conversation(request: StartConversationRequest):
         print(f"[WF] start action={wf_action} client={request.client_email} event_id={wf_res.get('event_id')} task_id={wf_res.get('task_id')}")
     except Exception as e:
         print(f"[WF][ERROR] {e}")
+    if not wf_res:
+        raise HTTPException(status_code=500, detail="Workflow processing failed")
     if wf_action == "manual_review_enqueued":
         response_text = (
             "Thanks for your message. We routed it for manual review and will get back to you shortly."

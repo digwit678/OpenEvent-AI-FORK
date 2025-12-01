@@ -44,7 +44,7 @@ from backend.workflows.nlu.preferences import extract_preferences
 from backend.workflows.groups.room_availability import handle_select_room_action
 from ..billing_flow import handle_billing_capture
 from backend.workflows.common.datetime_parse import parse_first_date, parse_time_range
-from backend.services.products import list_product_records, normalise_product_payload
+from backend.services.products import list_product_records, merge_product_requests, normalise_product_payload
 from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
 
 __workflow_role__ = "trigger"
@@ -355,6 +355,26 @@ def _extract_quantity_from_window(window: str, token: str) -> Optional[int]:
         return None
 
 
+def _menu_token_candidates(name: str) -> List[str]:
+    """Return token variants to match a dinner menu mention in free text."""
+
+    tokens: List[str] = []
+    lowered = name.strip().lower()
+    if not lowered:
+        return tokens
+    tokens.append(lowered)
+    if not lowered.endswith("s"):
+        tokens.append(f"{lowered}s")
+    parts = lowered.split()
+    if parts:
+        last = parts[-1]
+        if len(last) >= 3:
+            tokens.append(last)
+            if not last.endswith("s"):
+                tokens.append(f"{last}s")
+    return tokens
+
+
 def _detect_product_update_request(
     message_payload: Dict[str, Any],
     user_info: Dict[str, Any],
@@ -367,6 +387,9 @@ def _detect_product_update_request(
         return False
 
     participant_count = _participants_from_event(linked_event)
+    existing_additions = user_info.get("products_add")
+    existing_removals = user_info.get("products_remove")
+    existing_ops = bool(existing_additions or existing_removals)
     additions: List[Dict[str, Any]] = []
     removals: List[str] = []
     catalog = list_product_records()
@@ -434,14 +457,77 @@ def _detect_product_update_request(
                 payload["quantity"] = 1
             additions.append(payload)
 
+    # Also detect dinner menu selections/removals so they behave like standard products.
+    for menu in DINNER_MENU_OPTIONS:
+        name = str(menu.get("menu_name") or "").strip()
+        if not name:
+            continue
+        matched_idx: Optional[int] = None
+        matched_token: Optional[str] = None
+        for token_candidate in _menu_token_candidates(name):
+            idx = _match_product_token(text, token_candidate)
+            if idx is not None:
+                matched_idx = idx
+                matched_token = token_candidate
+                break
+        if matched_idx is None or matched_token is None:
+            continue
+        before = text[:matched_idx]
+        if before.count("(") > before.count(")"):
+            continue
+        window_start = max(0, matched_idx - 80)
+        window_end = min(len(text), matched_idx + len(matched_token) + 80)
+        window = text[window_start:window_end]
+        if _contains_keyword(window, _PRODUCT_REMOVE_KEYWORDS):
+            removals.append(name)
+            continue
+        quantity = _extract_quantity_from_window(window, matched_token) or 1
+        additions.append(
+            {
+                "name": name,
+                "quantity": 1 if str(menu.get("unit") or "").strip().lower() == "per_event" else quantity,
+                "unit_price": _menu_price_value(menu.get("price")),
+                "unit": menu.get("unit") or "per_event",
+                "category": "Catering",
+                "wish": "menu",
+            }
+        )
+
+    combined_additions: List[Dict[str, Any]] = []
+    if existing_additions:
+        combined_additions.extend(
+            normalise_product_payload(existing_additions, participant_count=participant_count)
+        )
     if additions:
         normalised = normalise_product_payload(additions, participant_count=participant_count)
         if normalised:
-            user_info["products_add"] = normalised
-    if removals:
-        user_info["products_remove"] = removals
+            combined_additions = (
+                merge_product_requests(combined_additions, normalised) if combined_additions else normalised
+            )
+    if combined_additions:
+        user_info["products_add"] = combined_additions
 
-    return bool(additions or removals)
+    combined_removals: List[str] = []
+    removal_seen = set()
+    if isinstance(existing_removals, list):
+        for entry in existing_removals:
+            name = entry.get("name") if isinstance(entry, dict) else entry
+            text_name = str(name or "").strip()
+            if text_name:
+                lowered = text_name.lower()
+                if lowered not in removal_seen:
+                    removal_seen.add(lowered)
+                    combined_removals.append(text_name)
+    if removals:
+        for name in removals:
+            lowered = name.lower()
+            if lowered not in removal_seen:
+                removal_seen.add(lowered)
+                combined_removals.append(name)
+    if combined_removals:
+        user_info["products_remove"] = combined_removals
+
+    return bool(additions or removals or combined_additions or combined_removals or existing_ops)
 
 
 def _normalize_quotes(text: str) -> str:

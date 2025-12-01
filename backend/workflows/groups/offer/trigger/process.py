@@ -181,8 +181,13 @@ def process(state: WorkflowState) -> GroupResult:
             }
             return GroupResult(action="change_detour", payload=payload, halt=False)
 
-    # Acceptance (no product/date change) — short-circuit to HIL review
-    if _looks_like_offer_acceptance(normalized_message_text):
+    # Acceptance (no product/date change) — short-circuit to HIL review.
+    # Guard: ignore room-selection clicks (labels like "Proceed with Room E") so they don't look like acceptances.
+    room_choice_signal = bool(user_info.get("_room_choice_detected"))
+    room_selection_phrase = "proceed with room" in (normalized_message_text or "").lower()
+    acceptance_applicable = not (room_choice_signal or room_selection_phrase)
+
+    if acceptance_applicable and _looks_like_offer_acceptance(normalized_message_text):
         billing_missing = _refresh_billing(event_entry)
         if billing_missing:
             _flag_billing_accept_pending(event_entry, billing_missing)
