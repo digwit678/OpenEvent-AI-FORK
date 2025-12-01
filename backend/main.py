@@ -28,6 +28,12 @@ from backend.workflows.groups.date_confirmation import compose_date_confirmation
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.groups.room_availability import run_availability_workflow
 from backend.utils import json_io
+from backend.utils.test_data_providers import (
+    get_all_catering_menus,
+    get_catering_menu_details,
+    get_qna_items,
+    get_rooms_for_display,
+)
 
 os.environ.setdefault("AGENT_MODE", os.environ.get("AGENT_MODE_DEFAULT", "openai"))
 
@@ -1018,6 +1024,41 @@ async def accept_booking(session_id: str):
         "total_events": len(database["events"]),
         "event_info": conversation_state.event_info.to_dict()
     }
+
+
+# Test data endpoints for development pages
+@app.get("/api/test-data/rooms")
+async def get_rooms_data(date: Optional[str] = None, capacity: Optional[str] = None):
+    """Serve room availability data for test pages."""
+    rooms = get_rooms_for_display(date, capacity)
+    return rooms
+
+
+@app.get("/api/test-data/catering")
+async def get_catering_catalog():
+    """Serve all catering menus for catalog page."""
+    menus = get_all_catering_menus()
+    return menus
+
+
+@app.get("/api/test-data/catering/{menu_slug}")
+async def get_catering_data(menu_slug: str, room: Optional[str] = None, date: Optional[str] = None):
+    """Serve specific catering menu data for test pages."""
+    menu = get_catering_menu_details(menu_slug)
+    if not menu:
+        raise HTTPException(status_code=404, detail="Menu not found")
+
+    menu["context"] = {
+        "room": room,
+        "date": date,
+    }
+    return menu
+
+
+@app.get("/api/test-data/qna")
+async def get_qna_data(category: Optional[str] = None):
+    """Serve Q&A data for test pages."""
+    return get_qna_items(category)
 
 
 @app.get("/api/workflow/health")
