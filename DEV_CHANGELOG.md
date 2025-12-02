@@ -2,6 +2,77 @@
 
 ## 2025-12-02
 
+### Snapshot-Based Info Page Links
+
+**Task: Persistent links that don't overwrite each other**
+
+Implemented a snapshot system so that info page links capture data at a specific point in time, allowing clients to revisit older links in the conversation.
+
+**Problem Solved:**
+- Previously, links used query params to re-fetch live data
+- If workflow progressed, older links would show different (current) data
+- Clients couldn't review earlier room options or offers
+
+**Architecture:**
+```
+Workflow Step (e.g., room_availability)
+    ↓
+Build room data (same functions as verbalizer)
+    ↓
+├── Pass to Verbalizer → Abbreviated chat message
+└── Create Snapshot → Store full data with unique ID
+    ↓
+Generate link: /info/rooms?snapshot_id=abc123
+    ↓
+Client clicks → Fetch snapshot → Display full table
+```
+
+**Implementation:**
+
+1. **Snapshot Storage** (`backend/utils/page_snapshots.py`) - NEW
+   - `create_snapshot(type, data, event_id, params)` → returns snapshot_id
+   - `get_snapshot(snapshot_id)` → returns stored data
+   - `list_snapshots(type, event_id)` → list available snapshots
+   - Storage in `tmp-cache/page_snapshots/snapshots.json`
+   - TTL-based expiration (7 days default)
+
+2. **API Endpoints** (`backend/main.py`)
+   - `GET /api/snapshots/{snapshot_id}` → full snapshot with metadata
+   - `GET /api/snapshots/{snapshot_id}/data` → just the data payload
+   - `GET /api/snapshots` → list snapshots with filters
+
+3. **Pseudolinks Update** (`backend/utils/pseudolinks.py`)
+   - Added `snapshot_id` parameter to `generate_room_details_link()`
+   - Added `snapshot_id` parameter to `generate_qna_link()`
+   - If snapshot_id provided: `/info/rooms?snapshot_id=X`
+   - If not provided: falls back to query params
+
+4. **Room Availability Integration** (`backend/workflows/groups/room_availability/trigger/process.py`)
+   - Creates snapshot with `verbalizer_rooms`, `table_rows`, context
+   - Passes snapshot_id to `generate_room_details_link()`
+   - Same data source as verbalizer ensures consistency
+
+5. **Frontend Update** (`atelier-ai-frontend/app/info/rooms/page.tsx`)
+   - Checks for `snapshot_id` in query params first
+   - If present: fetch from `/api/snapshots/{id}`
+   - If not: fall back to current query-based fetch
+   - Shows snapshot context (created timestamp, recommended room)
+
+**Key Benefits:**
+- Links are persistent - each has unique ID
+- Client can revisit older links in chat
+- Same data source as verbalizer (consistency)
+- Reuses existing ranking/filtering functions
+
+**Key Files Changed:**
+- `backend/utils/page_snapshots.py` (new)
+- `backend/main.py` (snapshot endpoints)
+- `backend/utils/pseudolinks.py` (snapshot_id param)
+- `backend/workflows/groups/room_availability/trigger/process.py`
+- `atelier-ai-frontend/app/info/rooms/page.tsx`
+
+---
+
 ### Dynamic Content Abbreviation for Non-Q&A Paths
 
 **Task: Generalize content abbreviation for menu/catering display**

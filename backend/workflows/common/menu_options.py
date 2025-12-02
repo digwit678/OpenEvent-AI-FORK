@@ -234,7 +234,25 @@ def format_menu_line(menu: Dict[str, Any], *, month_hint: Optional[str] = None) 
     return line
 
 
-# UX threshold: beyond this char count, abbreviate menu content and link to full page
+# ============================================================================
+# CONTENT ABBREVIATION THRESHOLD
+# ============================================================================
+# When menu/catering content exceeds this character count in the chat, we:
+#   1. Abbreviate the display (show name + price only, no descriptions)
+#   2. Add a link to the full info page with snapshot data
+#
+# Current threshold: 400 characters (UX standard for focused chat messages)
+#
+# ADJUSTMENT NOTES:
+#   - Lower value (e.g., 200): More aggressive abbreviation, cleaner chat
+#   - Higher value (e.g., 600): More detail in chat before linking out
+#   - Set to 0: Always abbreviate and link (never show full details in chat)
+#   - Remove threshold check: Always show full details (may clutter chat)
+#
+# The link always goes to /info/qna with snapshot_id for persistent data.
+# See also: room_availability/trigger/process.py uses QNA_SUMMARY_CHAR_THRESHOLD
+# which references this constant for consistency.
+# ============================================================================
 MENU_CONTENT_CHAR_THRESHOLD = 400
 
 
@@ -320,6 +338,49 @@ def build_menu_payload(
     return payload
 
 
+def normalize_menu_for_display(menu: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Transform internal menu format to frontend display format.
+
+    Internal format (from DINNER_MENU_OPTIONS):
+        - menu_name, price, description, season_label, available_months, vegetarian, wine_pairing
+
+    Frontend format (expected by /info/qna):
+        - name, slug, price_per_person, description, availability_window, dietary
+    """
+    name = menu.get("menu_name") or menu.get("name") or ""
+    slug = name.lower().replace(" ", "-")
+    price = menu.get("price") or ""
+
+    # Build dietary tags
+    dietary = []
+    if menu.get("vegetarian"):
+        dietary.append("vegetarian")
+    if menu.get("wine_pairing"):
+        dietary.append("wine pairing included")
+    dietary.extend(menu.get("notes") or [])
+
+    # Build availability window
+    availability = menu.get("season_label") or ""
+    if not availability and menu.get("available_months"):
+        months = menu.get("available_months", [])
+        if isinstance(months, list) and len(months) >= 2:
+            availability = f"Available {months[0].capitalize()}–{months[-1].capitalize()}"
+
+    return {
+        "name": name,
+        "slug": slug,
+        "price_per_person": price,
+        "description": menu.get("description") or "",
+        "availability_window": availability,
+        "dietary": dietary,
+        # Keep original fields for reference
+        "courses": menu.get("courses"),
+        "vegetarian": menu.get("vegetarian"),
+        "wine_pairing": menu.get("wine_pairing"),
+    }
+
+
 __all__ = [
     "build_menu_payload",
     "build_menu_title",
@@ -327,6 +388,7 @@ __all__ = [
     "format_menu_line",
     "format_menu_line_short",
     "MENU_CONTENT_CHAR_THRESHOLD",
+    "normalize_menu_for_display",
     "select_menu_options",
 ]
 _LINK_CONTEXT_ENV = os.getenv("OPENEVENT_MENU_CONTEXT_LINK", "").strip()

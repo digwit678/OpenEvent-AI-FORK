@@ -43,9 +43,11 @@ from backend.workflows.common.menu_options import (
     format_menu_line,
     format_menu_line_short,
     MENU_CONTENT_CHAR_THRESHOLD,
+    normalize_menu_for_display,
     select_menu_options,
 )
 from backend.utils.pseudolinks import generate_qna_link
+from backend.utils.page_snapshots import create_snapshot
 from backend.workflows.common.general_qna import (
     append_general_qna_to_primary,
     render_general_qna_reply,
@@ -434,7 +436,22 @@ def _append_menu_options_if_requested(state: WorkflowState, message_lines: List[
     if request.get("three_course"):
         query_params["courses"] = "3"
 
-    shortcut_link = generate_qna_link("Catering", query_params=query_params if query_params else None)
+    # Create snapshot with full menu data for persistent link
+    # Normalize menus to frontend display format (name, price_per_person, availability_window, etc.)
+    snapshot_data = {
+        "menus": [normalize_menu_for_display(opt) for opt in options],
+        "title": title,
+        "request": request,
+        "month_hint": month_hint,
+        "full_lines": full_lines,
+    }
+    snapshot_id = create_snapshot(
+        snapshot_type="catering",
+        data=snapshot_data,
+        event_id=getattr(state, "event_id", None),
+        params=query_params,
+    )
+    shortcut_link = generate_qna_link("Catering", query_params=query_params if query_params else None, snapshot_id=snapshot_id)
 
     if combined_len > MENU_CONTENT_CHAR_THRESHOLD:
         # Use abbreviated format with link

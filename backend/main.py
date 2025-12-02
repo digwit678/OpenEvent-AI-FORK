@@ -1212,6 +1212,61 @@ async def get_qna_data(
     return get_qna_items(category, filters=filters)
 
 
+# ---------------------------------------------------------------------------
+# Snapshot endpoints for persistent info page links
+# ---------------------------------------------------------------------------
+
+from backend.utils.page_snapshots import (
+    get_snapshot,
+    get_snapshot_data,
+    list_snapshots,
+    create_snapshot,
+)
+
+
+@app.get("/api/snapshots/{snapshot_id}")
+async def get_snapshot_endpoint(snapshot_id: str):
+    """
+    Retrieve a stored snapshot by ID.
+
+    Snapshots contain page data (rooms, products, etc.) that was captured
+    at a specific point in time, allowing clients to revisit older links.
+    """
+    snapshot = get_snapshot(snapshot_id)
+    if not snapshot:
+        return {"error": "Snapshot not found or expired", "snapshot_id": snapshot_id}
+    return snapshot
+
+
+@app.get("/api/snapshots/{snapshot_id}/data")
+async def get_snapshot_data_endpoint(snapshot_id: str):
+    """
+    Retrieve just the data payload from a snapshot.
+
+    Use this endpoint when you only need the data, not the metadata.
+    """
+    data = get_snapshot_data(snapshot_id)
+    if data is None:
+        return {"error": "Snapshot not found or expired", "snapshot_id": snapshot_id}
+    return {"snapshot_id": snapshot_id, "data": data}
+
+
+@app.get("/api/snapshots")
+async def list_snapshots_endpoint(
+    type: Optional[str] = None,
+    event_id: Optional[str] = None,
+    limit: int = 50,
+):
+    """
+    List available snapshots, optionally filtered by type or event_id.
+
+    Returns metadata only (not full data) for efficiency.
+    """
+    return {
+        "snapshots": list_snapshots(snapshot_type=type, event_id=event_id, limit=limit)
+    }
+
+
 @app.get("/api/workflow/health")
 async def workflow_health():
     """Minimal health check for workflow integration."""
