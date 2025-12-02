@@ -234,6 +234,26 @@ def format_menu_line(menu: Dict[str, Any], *, month_hint: Optional[str] = None) 
     return line
 
 
+# UX threshold: beyond this char count, abbreviate menu content and link to full page
+MENU_CONTENT_CHAR_THRESHOLD = 400
+
+
+def format_menu_line_short(menu: Dict[str, Any]) -> str:
+    """
+    Render an abbreviated menu line (name + price only, no description).
+
+    Used when content exceeds display threshold and we link to full info page.
+    Matches the pattern from room_availability's _short_menu_line().
+    """
+    name = str(menu.get("menu_name") or "").strip()
+    if not name:
+        return ""
+    price_text = _normalise_price(menu.get("price"))
+    # Keep it minimal: name + price + "Rooms: all" indicator
+    suffix = " per event" if price_text and "per" not in price_text.lower() else ""
+    return f"- {name} — {price_text}{suffix} (Rooms: all)"
+
+
 def build_menu_payload(
     message_text: Optional[str],
     *,
@@ -305,6 +325,8 @@ __all__ = [
     "build_menu_title",
     "extract_menu_request",
     "format_menu_line",
+    "format_menu_line_short",
+    "MENU_CONTENT_CHAR_THRESHOLD",
     "select_menu_options",
 ]
 _LINK_CONTEXT_ENV = os.getenv("OPENEVENT_MENU_CONTEXT_LINK", "").strip()

@@ -12,6 +12,7 @@ from backend.workflows.common.billing import (
     update_billing_details,
 )
 from backend.workflows.common.prompts import append_footer
+from backend.workflows.common.pricing import derive_room_rate, normalise_rate
 from backend.workflows.common.confidence import should_defer_to_human, should_seek_clarification
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
@@ -996,12 +997,11 @@ def _determine_offer_total(event_entry: Dict[str, Any]) -> float:
     total_candidates.extend([pricing_inputs.get("total_amount"), pricing_inputs.get("total")])
 
     computed_total = 0.0
-    base_rate = pricing_inputs.get("base_rate")
-    if base_rate not in (None, ""):
-        try:
-            computed_total += float(base_rate)
-        except (TypeError, ValueError):
-            pass
+    base_rate = normalise_rate(pricing_inputs.get("base_rate"))
+    if base_rate is None:
+        base_rate = derive_room_rate(event_entry)
+    if base_rate is not None:
+        computed_total += base_rate
 
     for product in event_entry.get("products") or []:
         normalised = _normalise_product_fields(product, menu_names=_menu_name_set())

@@ -19,6 +19,7 @@ from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from backend.workflows.common.pricing import derive_room_rate, normalise_rate
 from backend.workflows.nlu import detect_general_room_query
 from backend.debug.hooks import trace_db_write, trace_detour, trace_gate, trace_state, trace_step, trace_marker, trace_general_qa_status, set_subloop
 from backend.debug.trace import set_hil_open
@@ -925,11 +926,14 @@ def _rebuild_pricing_inputs(event_entry: Dict[str, Any], user_info: Dict[str, An
     override_total = user_info.get("offer_total_override")
     menu_names = _menu_name_set()
 
-    if "room_rate" in user_info and user_info["room_rate"] is not None:
-        try:
-            pricing_inputs["base_rate"] = float(user_info["room_rate"])
-        except (TypeError, ValueError):
-            pricing_inputs["base_rate"] = pricing_inputs.get("base_rate", 0.0)
+    base_rate_override = normalise_rate(user_info.get("room_rate")) if "room_rate" in user_info else None
+    if base_rate_override is not None:
+        pricing_inputs["base_rate"] = base_rate_override
+
+    if normalise_rate(pricing_inputs.get("base_rate")) is None:
+        derived_rate = derive_room_rate(event_entry)
+        if derived_rate is not None:
+            pricing_inputs["base_rate"] = derived_rate
 
     line_items: List[Dict[str, Any]] = []
     normalised_products: List[Dict[str, Any]] = []
@@ -1022,6 +1026,7 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, sta
     event_data = event_entry.get("event_data") or {}
     billing_details = event_entry.get("billing_details") or {}
     billing_address = format_billing_display(billing_details, event_data.get("Billing Address"))
+    pricing_inputs = event_entry.get("pricing_inputs") or {}
     contact_parts = [
         part.strip()
         for part in (event_data.get("Name"), event_data.get("Company"))
@@ -1073,6 +1078,7 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, sta
     else:
         lines = [f"Offer draft for {chosen_date} · {room}"]
 
+    spacer_added = False
     if contact_parts or billing_address:
         lines.append("")
         if contact_parts:
@@ -1080,6 +1086,17 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, sta
         if billing_address:
             lines.append(f"Billing address: {billing_address}")
         lines.append("")
+        spacer_added = True
+
+    room_rate = normalise_rate(pricing_inputs.get("base_rate"))
+    if room_rate is None:
+        room_rate = derive_room_rate(event_entry)
+    if room_rate is not None:
+        if not spacer_added:
+            lines.append("")
+        lines.append("**Room booking**")
+        lines.append(f"- {room} · CHF {room_rate:,.2f}")
+        spacer_added = True
 
     lines.append("")
     if matched_summary:
@@ -1254,12 +1271,11 @@ def _determine_offer_total(event_entry: Dict[str, Any], fallback_total: float) -
     computed_total = 0.0
 
     pricing_inputs = event_entry.get("pricing_inputs") or {}
-    base_rate = pricing_inputs.get("base_rate")
-    if base_rate not in (None, ""):
-        try:
-            computed_total += float(base_rate)
-        except (TypeError, ValueError):
-            pass
+    base_rate = normalise_rate(pricing_inputs.get("base_rate"))
+    if base_rate is None:
+        base_rate = derive_room_rate(event_entry)
+    if base_rate is not None:
+        computed_total += base_rate
 
     for product in event_entry.get("products", []):
         normalized = _normalise_product_fields(product, menu_names=_menu_name_set())

@@ -9,6 +9,8 @@ from backend.workflows.common.menu_options import (
     build_menu_title,
     extract_menu_request,
     format_menu_line,
+    format_menu_line_short,
+    MENU_CONTENT_CHAR_THRESHOLD,
     select_menu_options,
 )
 from backend.workflows.common.requirements import requirements_hash
@@ -47,7 +49,8 @@ ROOM_SIZE_ORDER = {
 }
 
 ROOM_PROPOSAL_HIL_THRESHOLD = 3  # TODO(openevent-team): make this configurable per venue
-QNA_SUMMARY_CHAR_THRESHOLD = 400  # Beyond this, instruct verbalizer to shorten and point to full Q&A
+# Use shared threshold from menu_options; kept as alias for backward compat
+QNA_SUMMARY_CHAR_THRESHOLD = MENU_CONTENT_CHAR_THRESHOLD
 
 
 @trace_step("Step3_Room")
@@ -1011,16 +1014,7 @@ def _verbalizer_rooms_payload(
 
 
 def _general_qna_lines(state: WorkflowState) -> List[str]:
-    def _short_menu_line(row: Dict[str, Any]) -> str:
-        name = str(row.get("menu_name") or "").strip()
-        price = str(row.get("price") or "").strip()
-        if not name:
-            return ""
-        display_price = price if price else "CHF ?"
-        suffix = ""
-        if display_price and "per" not in display_price.lower():
-            suffix = " per event"
-        return f"- {name} — {display_price}{suffix} (Rooms: all)"
+    # Use shared format_menu_line_short from menu_options module
 
     payload = state.turn_notes.get("general_qa")
     rows: Optional[List[Dict[str, Any]]] = None
@@ -1054,7 +1048,7 @@ def _general_qna_lines(state: WorkflowState) -> List[str]:
         return []
     lines = [title or "Menu options we can offer:"]
     for row in rows:
-        rendered = _short_menu_line(row)
+        rendered = format_menu_line_short(row)
         if rendered:
             lines.append(rendered)
 
