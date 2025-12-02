@@ -1059,7 +1059,50 @@ def _general_qna_lines(state: WorkflowState) -> List[str]:
             lines.append(rendered)
 
     combined_len = len("\n".join(lines))
-    shortcut_link = generate_qna_link("Catering")
+
+    # Build dynamic query parameters from Q&A extraction (already done by LLM)
+    query_params = {}
+    qna_extraction = state.extras.get("qna_extraction", {})
+    q_values = qna_extraction.get("q_values", {})
+
+    # Extract date/month from Q&A detection
+    if q_values.get("date"):
+        query_params["date"] = str(q_values["date"])
+    elif q_values.get("date_pattern"):
+        query_params["month"] = str(q_values["date_pattern"]).lower()
+
+    # Extract capacity from Q&A detection
+    if q_values.get("n_exact"):
+        query_params["capacity"] = str(q_values["n_exact"])
+    elif q_values.get("n_range"):
+        n_range = q_values["n_range"]
+        if isinstance(n_range, dict) and n_range.get("min"):
+            query_params["capacity"] = str(n_range["min"])
+
+    # Extract product attributes (vegetarian, vegan, wine pairing, etc.) from Q&A detection
+    product_attrs = q_values.get("product_attributes") or []
+    if isinstance(product_attrs, list):
+        for attr in product_attrs:
+            attr_lower = str(attr).lower()
+            if "vegetarian" in attr_lower:
+                query_params["vegetarian"] = "true"
+            if "vegan" in attr_lower:
+                query_params["vegan"] = "true"
+            if "wine" in attr_lower or "pairing" in attr_lower:
+                query_params["wine_pairing"] = "true"
+            if ("three" in attr_lower or "3" in attr_lower) and "course" in attr_lower:
+                query_params["courses"] = "3"
+
+    # Also check the menu request for additional attributes (fallback)
+    if request:
+        if request.get("vegetarian") and "vegetarian" not in query_params:
+            query_params["vegetarian"] = "true"
+        if request.get("wine_pairing") and "wine_pairing" not in query_params:
+            query_params["wine_pairing"] = "true"
+        if request.get("three_course") and "courses" not in query_params:
+            query_params["courses"] = "3"
+
+    shortcut_link = generate_qna_link("Catering", query_params=query_params if query_params else None)
     if combined_len > QNA_SUMMARY_CHAR_THRESHOLD:
         lines = [
             f"Full menu details: {shortcut_link}",

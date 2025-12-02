@@ -43,16 +43,32 @@ def generate_catering_menu_link(menu_name: str, room: str | None = None, date: s
     return _make_link(f"View {menu_name} details", url)
 
 
-def generate_catering_catalog_link() -> str:
-    """Generate link to catering catalog."""
+def generate_catering_catalog_link(query_params: dict | None = None) -> str:
+    """Generate link to catering catalog with dynamic query parameters."""
+    params = query_params or {}
+
+    if params:
+        query_string = urlencode(params)
+        return _make_link("Browse all catering options", f"{BASE_URL}/info/catering?{query_string}")
+
     return _make_link("Browse all catering options", f"{BASE_URL}/info/catering")
 
 
-def generate_qna_link(category: str | None = None) -> str:
-    """Generate link to Q&A page."""
+def generate_qna_link(category: str | None = None, query_params: dict | None = None) -> str:
+    """Generate link to Q&A page with dynamic query parameters."""
+    params = {}
     if category:
-        params = urlencode({"category": category})
-        return _make_link(f"View {category} information", f"{BASE_URL}/info/qna?{params}")
+        params["category"] = category
+
+    # Add all extracted query parameters (month, dietary preferences, etc.)
+    if query_params:
+        params.update(query_params)
+
+    if params:
+        query_string = urlencode(params)
+        label = f"View {category} information" if category else "View information"
+        return _make_link(label, f"{BASE_URL}/info/qna?{query_string}")
+
     return _make_link("View frequently asked questions", f"{BASE_URL}/info/qna")
 
 

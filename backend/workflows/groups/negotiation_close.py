@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from backend.domain import TaskStatus, TaskType
 from backend.workflows.common.billing import (
@@ -12,6 +12,7 @@ from backend.workflows.common.billing import (
     update_billing_details,
 )
 from backend.workflows.common.prompts import append_footer
+from backend.workflows.common.confidence import should_defer_to_human, should_seek_clarification
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
@@ -20,6 +21,12 @@ from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.workflows.io.tasks import enqueue_task, update_task_status
 from backend.workflows.nlu import detect_general_room_query
+from backend.workflows.nlu.semantic_matchers import (
+    is_room_selection,
+    matches_acceptance_pattern,
+    matches_counter_pattern,
+    matches_decline_pattern,
+)
 from backend.debug.hooks import trace_marker, trace_general_qa_status, set_subloop
 from backend.debug.trace import set_hil_open
 from backend.utils.profiler import profile_step
@@ -28,36 +35,6 @@ from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
 __all__ = ["process"]
 
 MAX_COUNTERS = 3
-
-ACCEPT_KEYWORDS = (
-    "accept",
-    "accepted",
-    "confirmed",
-    "confirm",
-    "looks good",
-    "all good",
-    "we agree",
-    "approved",
-    "approve",
-    "continue",
-    "please send",
-    "send it",
-    "send to client",
-    "ok to send",
-    "go ahead",
-    "proceed",
-    "that's fine",
-    "thats fine",
-    "fine for me",
-    "ok",
-    "okay",
-    "yes that's fine",
-    "yes thats fine",
-    "sounds good",
-    "good to go",
-)
-DECLINE_KEYWORDS = ("decline", "reject", "cancel", "not move forward", "no longer", "pass")
-COUNTER_KEYWORDS = ("discount", "lower", "reduce", "better price", "could you do", "counter", "budget")
 
 
 def _menu_name_set() -> set[str]:
@@ -212,13 +189,38 @@ def process(state: WorkflowState) -> GroupResult:
             owner_step="Step5_Negotiation",
         )
 
-    classification = _classify_message(message_text)
+    classification, classification_confidence = _classify_message(message_text)
+    detected_intents = _collect_detected_intents(message_text)
 
     # Handle Q&A if detected (after change detection, before negotiation classification)
     general_qna_applicable = qna_classification.get("is_general")
     deferred_general_qna = general_qna_applicable and classification in {"accept", "decline", "counter"}
     if general_qna_applicable and not deferred_general_qna:
         result = _present_general_room_qna(state, event_entry, qna_classification, thread_id)
+        return result
+
+    if should_seek_clarification(classification_confidence):
+        result = _ask_classification_clarification(
+            state,
+            event_entry,
+            message_text,
+            detected_intents,
+            confidence=classification_confidence,
+        )
+        if deferred_general_qna:
+            _append_deferred_general_qna(state, event_entry, qna_classification, thread_id)
+        return result
+
+    if classification == "room_selection":
+        result = _ask_classification_clarification(
+            state,
+            event_entry,
+            message_text,
+            detected_intents,
+            confidence=classification_confidence,
+        )
+        if deferred_general_qna:
+            _append_deferred_general_qna(state, event_entry, qna_classification, thread_id)
         return result
 
     if classification == "accept":
@@ -380,19 +382,109 @@ def process(state: WorkflowState) -> GroupResult:
     return result
 
 
-def _classify_message(message_text: str) -> str:
-    lowered = message_text.lower()
-    if any(keyword in lowered for keyword in ACCEPT_KEYWORDS):
-        return "accept"
-    if any(keyword in lowered for keyword in DECLINE_KEYWORDS):
-        return "decline"
-    if any(keyword in lowered for keyword in COUNTER_KEYWORDS):
-        return "counter"
+def _collect_detected_intents(message_text: str) -> List[Tuple[str, float]]:
+    lowered = (message_text or "").lower()
+    intents: List[Tuple[str, float]] = []
+
+    if is_room_selection(lowered):
+        intents.append(("room_selection", 0.85))
+
+    accept, accept_conf, _ = matches_acceptance_pattern(lowered)
+    if accept:
+        intents.append(("accept", accept_conf))
+
+    decline, decline_conf, _ = matches_decline_pattern(lowered)
+    if decline:
+        intents.append(("decline", decline_conf))
+
+    counter, counter_conf, _ = matches_counter_pattern(lowered)
+    if counter:
+        intents.append(("counter", counter_conf))
+
     if re.search(r"\bchf\s*\d", lowered) or re.search(r"\d+\s*(?:franc|price|total)", lowered):
-        return "counter"
+        intents.append(("counter", 0.65))
+
     if "?" in lowered:
-        return "clarification"
-    return "clarification"
+        intents.append(("clarification", 0.6))
+
+    return intents
+
+
+def _classify_message(message_text: str) -> Tuple[str, float]:
+    lowered = (message_text or "").lower()
+    candidates = _collect_detected_intents(lowered)
+
+    if candidates:
+        best = max(candidates, key=lambda item: item[1])
+        if best[1] > 0.4:
+            return best
+
+    if "?" in lowered:
+        return "clarification", 0.6
+
+    return "clarification", 0.3
+
+
+def _ask_classification_clarification(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    message_text: str,
+    detected_intents: List[Tuple[str, float]],
+    *,
+    confidence: float = 0.0,
+) -> GroupResult:
+    """
+    Generate a clarifying question when classification is uncertain.
+    """
+    options: List[str] = []
+    if any(intent == "accept" for intent, _ in detected_intents):
+        options.append("confirm the booking")
+    if any(intent == "counter" for intent, _ in detected_intents):
+        options.append("discuss pricing")
+    if any(intent == "decline" for intent, _ in detected_intents):
+        options.append("pause or cancel")
+    if any(intent == "room_selection" for intent, _ in detected_intents):
+        options.append("choose a room")
+    if any(intent == "clarification" for intent, _ in detected_intents):
+        options.append("ask a question")
+
+    if not options:
+        options.append("clarify the proposal")
+
+    prompt = (
+        "I want to make sure I understand correctly. "
+        f"Did you mean to {' or '.join(options)}? "
+        "Please let me know so I can help you best."
+    )
+    draft = {
+        "body": append_footer(
+            prompt,
+            step=5,
+            next_step=5,
+            thread_state="Awaiting Client Response",
+        ),
+        "step": 5,
+        "topic": "classification_clarification",
+        "requires_approval": should_defer_to_human(confidence),
+    }
+    state.add_draft_message(draft)
+    update_event_metadata(event_entry, current_step=5, thread_state="Awaiting Client Response")
+    state.set_thread_state("Awaiting Client Response")
+    state.current_step = 5
+    state.extras["persist"] = True
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+        "classification_confidence": confidence,
+        "detected_intents": detected_intents,
+    }
+    return GroupResult(action="negotiation_clarification", payload=payload, halt=True)
 
 
 def _detect_structural_change(user_info: Dict[str, Any], event_entry: Dict[str, Any]) -> Optional[tuple[int, str]]:

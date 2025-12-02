@@ -159,6 +159,51 @@ function shouldDisplayEventField(key: string, value: string): boolean {
   return true;
 }
 
+function renderMessageContent(content: string): React.ReactNode {
+  // Parse HTML anchor tags and convert them to clickable React links
+  const anchorRegex = /<a\s+href="([^"]+)"[^>]*>(.*?)<\/a>/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+  let keyCounter = 0;
+
+  while ((match = anchorRegex.exec(content)) !== null) {
+    // Add text before the link
+    if (match.index > lastIndex) {
+      parts.push(content.substring(lastIndex, match.index));
+    }
+
+    // Add the link as a clickable anchor
+    const href = match[1];
+    const linkText = match[2];
+    parts.push(
+      <a
+        key={`link-${keyCounter++}`}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: '#0066cc', textDecoration: 'underline', cursor: 'pointer' }}
+      >
+        {linkText}
+      </a>
+    );
+
+    lastIndex = anchorRegex.lastIndex;
+  }
+
+  // Add remaining text after the last link
+  if (lastIndex < content.length) {
+    parts.push(content.substring(lastIndex));
+  }
+
+  // If no links were found, return the content as-is
+  if (parts.length === 0) {
+    return content;
+  }
+
+  return <>{parts}</>;
+}
+
 export default function EmailThreadUI() {
   const isMountedRef = useRef(true);
   const threadRef = useRef<HTMLDivElement | null>(null);
@@ -732,7 +777,7 @@ export default function EmailThreadUI() {
                           : 'bg-gray-100 text-gray-800 border border-gray-200'
                       } ${msg.streaming ? 'animate-pulse' : ''}`}
                     >
-                      <div className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</div>
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed">{renderMessageContent(msg.content)}</div>
                       {msg.role === 'assistant' && msg.meta?.confirmDate && (
                         <div className="flex gap-2 mt-3">
                           <button
