@@ -35,6 +35,7 @@ from backend.utils.pseudolinks import (
     generate_catering_menu_link,
     generate_room_details_link,
 )
+from backend.utils.page_snapshots import create_snapshot
 
 from ..llm.send_offer_llm import ComposeOffer
 
@@ -1156,7 +1157,20 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, sta
 
     selected_catering = event_entry.get("selected_catering")
     if not selected_catering and catering_alternatives:
-        catalog_link = generate_catering_catalog_link(query_params=query_params if query_params else None)
+        # Create snapshot for catering catalog with all alternatives
+        catalog_snapshot_data = {
+            "catering_alternatives": [dict(e) for e in catering_alternatives],
+            "room": room,
+            "date": link_date,
+            "query_params": query_params,
+        }
+        catalog_snapshot_id = create_snapshot(
+            snapshot_type="catering_catalog",
+            data=catalog_snapshot_data,
+            event_id=state.event_id,
+            params=query_params,
+        )
+        catalog_link = generate_catering_catalog_link(query_params=query_params if query_params else None, snapshot_id=catalog_snapshot_id)
         lines.append("")
         lines.append(catalog_link)
         lines.append("Menu options you can add:")
@@ -1164,7 +1178,20 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, sta
             name = entry.get("name") or "Catering option"
             unit_price = float(entry.get("unit_price") or 0.0)
             unit_label = (entry.get("unit") or "per event").replace("_", " ")
-            menu_link = generate_catering_menu_link(name, room=room, date=link_date)
+            # Create snapshot for individual menu
+            menu_snapshot_data = {
+                "menu": dict(entry),
+                "name": name,
+                "room": room,
+                "date": link_date,
+            }
+            menu_snapshot_id = create_snapshot(
+                snapshot_type="catering_menu",
+                data=menu_snapshot_data,
+                event_id=state.event_id,
+                params={"menu": name, "room": room, "date": link_date},
+            )
+            menu_link = generate_catering_menu_link(name, room=room, date=link_date, snapshot_id=menu_snapshot_id)
             lines.append(f"- {name} · CHF {unit_price:,.2f} {unit_label}")
             lines.append(f"  {menu_link}")
         lines.append("")

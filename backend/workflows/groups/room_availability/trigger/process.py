@@ -11,6 +11,7 @@ from backend.workflows.common.menu_options import (
     format_menu_line,
     format_menu_line_short,
     MENU_CONTENT_CHAR_THRESHOLD,
+    normalize_menu_for_display,
     select_menu_options,
 )
 from backend.workflows.common.requirements import requirements_hash
@@ -26,6 +27,7 @@ from backend.workflows.io.database import append_audit_entry, load_rooms, update
 from backend.debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate, trace_state, trace_step, set_subloop, trace_marker, trace_general_qa_status
 from backend.utils.profiler import profile_step
 from backend.utils.pseudolinks import generate_room_details_link, generate_qna_link
+from backend.utils.page_snapshots import create_snapshot
 from backend.workflow_verbalizer_test_hooks import render_rooms
 from backend.workflows.groups.room_availability.db_pers import load_rooms_config
 from backend.workflows.nlu import detect_general_room_query
@@ -414,10 +416,30 @@ def process(state: WorkflowState) -> GroupResult:
         segments = intro_lines + (["", body_markdown] if body_markdown else [])
         body_markdown = "\n".join(segment for segment in segments if segment)
 
+    # Create snapshot with full room data for persistent link
+    snapshot_data = {
+        "rooms": verbalizer_rooms,
+        "table_rows": table_rows,
+        "selected_room": selected_room,
+        "outcome": outcome,
+        "chosen_date": chosen_date,
+        "display_date": display_chosen_date,
+        "participants": participants,
+    }
+    snapshot_id = create_snapshot(
+        snapshot_type="rooms",
+        data=snapshot_data,
+        event_id=state.event_id,
+        params={
+            "date": event_entry.get("chosen_date") or "",
+            "capacity": str(participants) if participants else "",
+        },
+    )
     room_link = generate_room_details_link(
         room_name=selected_room or "all",
         date=event_entry.get("chosen_date") or (display_chosen_date or ""),
         participants=participants or event_entry.get("number_of_participants", 0),
+        snapshot_id=snapshot_id,
     )
     if body_markdown:
         body_markdown = "\n".join([room_link, "", body_markdown])
@@ -1096,18 +1118,32 @@ def _general_qna_lines(state: WorkflowState) -> List[str]:
         if request.get("three_course") and "courses" not in query_params:
             query_params["courses"] = "3"
 
-    shortcut_link = generate_qna_link("Catering", query_params=query_params if query_params else None)
+    # Create snapshot with full menu data for persistent link
+    # Normalize menus to frontend display format (name, price_per_person, availability_window, etc.)
+    snapshot_data = {
+        "menus": [normalize_menu_for_display(r) for r in rows] if rows else [],
+        "title": title,
+        "month_hint": month_hint,
+        "lines": lines,
+    }
+    snapshot_id = create_snapshot(
+        snapshot_type="catering",
+        data=snapshot_data,
+        event_id=state.event_id,
+        params=query_params,
+    )
+    shortcut_link = generate_qna_link("Catering", query_params=query_params if query_params else None, snapshot_id=snapshot_id)
     if combined_len > QNA_SUMMARY_CHAR_THRESHOLD:
         lines = [
             f"Full menu details: {shortcut_link}",
             "(Keeping this brief so you can compare quickly.)",
             "",
         ] + lines
-        state.extras["qna_shortcut"] = {"link": shortcut_link, "threshold": QNA_SUMMARY_CHAR_THRESHOLD}
+        state.extras["qna_shortcut"] = {"link": shortcut_link, "threshold": QNA_SUMMARY_CHAR_THRESHOLD, "snapshot_id": snapshot_id}
     else:
         lines.append("")
         lines.append(f"Full menu details: {shortcut_link}")
-        state.extras["qna_shortcut"] = {"link": shortcut_link, "threshold": QNA_SUMMARY_CHAR_THRESHOLD}
+        state.extras["qna_shortcut"] = {"link": shortcut_link, "threshold": QNA_SUMMARY_CHAR_THRESHOLD, "snapshot_id": snapshot_id}
     # TODO(verbalizer): use shortcut_link to summarize long Q&A payloads instead of dumping full text.
     return lines
 
