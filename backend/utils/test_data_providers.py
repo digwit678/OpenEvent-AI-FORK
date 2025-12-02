@@ -58,10 +58,36 @@ def get_rooms_for_display(date: Optional[str] = None, capacity: Optional[int] = 
     return sorted(rooms, key=lambda x: x["capacity"])
 
 
-def get_all_catering_menus() -> List[Dict[str, Any]]:
-    """Get all catering menus for catalog display."""
+def get_all_catering_menus(filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Get catering menus for catalog display, filtered by parameters."""
+    filters = filters or {}
     menus: List[Dict[str, Any]] = []
+
     for menu in DINNER_MENU_OPTIONS:
+        # Apply filters (same logic as _get_full_menu_details)
+        # Filter by month
+        if filters.get("month"):
+            available_months = menu.get("available_months", [])
+            month_str = str(filters["month"]).lower()
+            if available_months and month_str not in [str(m).lower() for m in available_months]:
+                continue
+
+        # Filter by vegetarian
+        if filters.get("vegetarian") is True and not menu.get("vegetarian"):
+            continue
+
+        # Filter by vegan
+        if filters.get("vegan") is True and not menu.get("vegetarian"):
+            continue
+
+        # Filter by courses
+        if filters.get("courses") and menu.get("courses") != filters["courses"]:
+            continue
+
+        # Filter by wine pairing
+        if filters.get("wine_pairing") is True and not menu.get("wine_pairing"):
+            continue
+
         menu_slug = menu.get("menu_name", "").lower().replace(" ", "-")
         menus.append({
             "name": menu.get("menu_name"),
@@ -69,6 +95,7 @@ def get_all_catering_menus() -> List[Dict[str, Any]]:
             "price_per_person": menu.get("price"),
             "summary": menu.get("description", ""),
             "dietary_options": _extract_dietary_info(str(menu)),
+            "availability_window": menu.get("available_months", "Year-round"),
         })
     return menus
 
@@ -108,8 +135,9 @@ def get_catering_menu_details(menu_slug: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def get_qna_items(category: Optional[str] = None) -> Dict[str, Any]:
-    """Get Q&A items, optionally filtered by category."""
+def get_qna_items(category: Optional[str] = None, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Get Q&A items, optionally filtered by category and other parameters."""
+    filters = filters or {}
     all_items = [
         {
             "category": "Parking",
@@ -187,11 +215,17 @@ def get_qna_items(category: Optional[str] = None) -> Dict[str, Any]:
     else:
         items = all_items
 
-    return {
+    result = {
         "items": items,
         "categories": categories,
-        "menus": _get_full_menu_details() if normalized_category == "catering" else [],
+        "menus": _get_full_menu_details(filters) if normalized_category == "catering" else [],
     }
+
+    # Include filter metadata so frontend can display what's being filtered
+    if filters:
+        result["applied_filters"] = filters
+
+    return result
 
 
 def _extract_dietary_info(text: str) -> List[str]:
@@ -227,10 +261,38 @@ def _menus_for_room(room_name: str) -> List[Dict[str, Any]]:
     return menus
 
 
-def _get_full_menu_details() -> List[Dict[str, Any]]:
-    """Get full menu details for Q&A page display."""
+def _get_full_menu_details(filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Get full menu details for Q&A page display, filtered by parameters."""
+    filters = filters or {}
     menus: List[Dict[str, Any]] = []
+
     for menu in DINNER_MENU_OPTIONS:
+        # Apply filters
+        # Filter by month
+        if filters.get("month"):
+            available_months = menu.get("available_months", [])
+            month_str = str(filters["month"]).lower()
+            if available_months and month_str not in [str(m).lower() for m in available_months]:
+                continue
+
+        # Filter by vegetarian
+        if filters.get("vegetarian") is True and not menu.get("vegetarian"):
+            continue
+
+        # Filter by vegan (stricter than vegetarian)
+        if filters.get("vegan") is True:
+            # For now, skip non-vegetarian menus (vegan would need explicit flag)
+            if not menu.get("vegetarian"):
+                continue
+
+        # Filter by courses
+        if filters.get("courses") and menu.get("courses") != filters["courses"]:
+            continue
+
+        # Filter by wine pairing
+        if filters.get("wine_pairing") is True and not menu.get("wine_pairing"):
+            continue
+
         menu_slug = menu.get("menu_name", "").lower().replace(" ", "-")
         menus.append(
             {

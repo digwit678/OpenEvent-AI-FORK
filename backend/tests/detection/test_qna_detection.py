@@ -315,3 +315,15 @@ def test_pure_date_not_general():
     state = _state()
     result = detect_general_room_query("2025-12-10 18:00-22:00", state)
     assert result["is_general"] is False
+
+
+def test_action_request_not_treated_as_qna():
+    """Action requests like 'send me the menu' should bypass Q&A routing."""
+    state = _state()
+    message = "Can you send me the menu?"
+    qna_types = _detect_qna_types(message.lower())
+    assert qna_types == []
+
+    result = detect_general_room_query(message, state)
+    assert result["is_general"] is False
+    assert result["heuristics"].get("action_request") is True

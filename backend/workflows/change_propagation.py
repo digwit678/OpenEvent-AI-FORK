@@ -204,6 +204,63 @@ def extract_change_verbs_near_noun(message_text: str, target_nouns: List[str]) -
     return False
 
 
+HYPOTHETICAL_MARKERS = [
+    r"\bwhat\s+if\b",
+    r"\bhypothetically\b",
+    r"\bin\s+theory\b",
+    r"\bwould\s+it\s+be\s+possible\b",
+    r"\bcould\s+we\s+potentially\b",
+    r"\bjust\s+(curious|wondering|asking)\b",
+    r"\bthinking\s+about\b",
+    r"\bconsidering\b",
+]
+
+
+def is_hypothetical_question(text: str) -> bool:
+    """Check if message is a hypothetical question vs actual change request."""
+    text_lower = (text or "").lower()
+    if not text_lower:
+        return False
+    for marker in HYPOTHETICAL_MARKERS:
+        if re.search(marker, text_lower) and "?" in text_lower:
+            return True
+    return False
+
+
+def has_change_intent_near_target(
+    text: str,
+    change_verbs: List[str],
+    target_keywords: List[str],
+    max_distance: int = 5,
+) -> bool:
+    """
+    Check if change verbs appear within max_distance words of target keywords.
+    """
+    if not text:
+        return False
+
+    words = [token for token in re.split(r"\W+", text.lower()) if token]
+    if not words:
+        return False
+
+    change_positions = [idx for idx, word in enumerate(words) if word in change_verbs]
+    if not change_positions:
+        return False
+
+    target_positions = [
+        idx for idx, word in enumerate(words) if any(keyword in word for keyword in target_keywords)
+    ]
+    if not target_positions:
+        return False
+
+    for cp in change_positions:
+        for tp in target_positions:
+            if abs(cp - tp) <= max_distance:
+                return True
+
+    return False
+
+
 def route_change_on_updated_variable(
     event_state: Dict[str, Any],
     change_type: ChangeType,
@@ -397,6 +454,9 @@ def detect_change_type(
     # Prepare message text for pattern matching
     text_lower = message_text.lower() if message_text else ""
 
+    if text_lower and is_hypothetical_question(text_lower):
+        return None
+
     # === CHANGE INTENT SIGNALS (EXPANDED) ===
     # Explicit change verbs
     change_verbs = [
@@ -431,6 +491,16 @@ def detect_change_type(
             any(question in text for question in change_questions)
         )
 
+    def keyword_present(text: str, keywords: List[str]) -> bool:
+        for keyword in keywords:
+            if " " in keyword:
+                if keyword in text:
+                    return True
+            else:
+                if re.search(rf"\b{re.escape(keyword)}\b", text):
+                    return True
+        return False
+
     # === DATE CHANGE ===
     # Pattern: confirmed date mentioned + change intent + new date value
     user_date = user_info.get("date") or user_info.get("event_date")
@@ -440,8 +510,9 @@ def detect_change_type(
             # Check for date mention + change intent in message
             date_keywords = ["date", "day", "when", chosen_date.replace(".", "/")]
             date_mentioned = any(keyword in text_lower for keyword in date_keywords)
+            date_intent_near = has_change_intent_near_target(text_lower, change_verbs, date_keywords)
 
-            if date_mentioned and has_change_intent(text_lower):
+            if date_mentioned and (has_change_intent(text_lower) or date_intent_near):
                 return ChangeType.DATE
             # Also fire if new date extracted without explicit intent (strong signal)
             elif date_mentioned:
@@ -455,14 +526,15 @@ def detect_change_type(
             # Check for room mention + change intent
             room_keywords = ["room", "space", "venue", locked_room_id.lower()]
             room_mentioned = any(keyword in text_lower for keyword in room_keywords)
+            room_intent_near = has_change_intent_near_target(text_lower, change_verbs, room_keywords)
 
-            if room_mentioned and has_change_intent(text_lower):
+            if room_mentioned and (has_change_intent(text_lower) or room_intent_near):
                 return ChangeType.ROOM
             # Also fire if new room extracted (strong signal)
             elif room_mentioned:
                 return ChangeType.ROOM
             # Fire if new room extracted + change intent, even without explicit room mention
-            elif has_change_intent(text_lower):
+            elif has_change_intent(text_lower) or room_intent_near:
                 return ChangeType.ROOM
 
     # === REQUIREMENTS CHANGE ===
@@ -474,14 +546,15 @@ def detect_change_type(
         req_keywords = ["people", "guests", "participants", "attendees", "capacity",
                         "layout", "setup", "time", "duration", "requirement"]
         req_mentioned = any(keyword in text_lower for keyword in req_keywords)
+        req_intent_near = has_change_intent_near_target(text_lower, change_verbs, req_keywords)
 
-        if req_mentioned and has_change_intent(text_lower):
+        if req_mentioned and (has_change_intent(text_lower) or req_intent_near):
             return ChangeType.REQUIREMENTS
         # Also fire if new requirement extracted (strong signal)
         elif req_mentioned:
             return ChangeType.REQUIREMENTS
         # Fire if requirement field extracted + change intent, even without explicit mention
-        elif has_change_intent(text_lower):
+        elif has_change_intent(text_lower) or req_intent_near:
             return ChangeType.REQUIREMENTS
 
     # === PRODUCTS CHANGE ===
@@ -497,14 +570,12 @@ def detect_change_type(
             "add", "remove", "include", "upgrade", "premium", "deluxe", "standard"
         ]
         product_mentioned = any(keyword in text_lower for keyword in product_keywords)
+        product_intent_near = has_change_intent_near_target(text_lower, change_verbs, product_keywords)
 
-        if product_mentioned and has_change_intent(text_lower):
+        if product_mentioned and product_intent_near:
             return ChangeType.PRODUCTS
         # Also fire if explicit add/remove in user_info (strong signal)
         elif user_info.get("products_add") or user_info.get("products_remove"):
-            return ChangeType.PRODUCTS
-        # Regex pattern: change verb near product noun
-        elif extract_change_verbs_near_noun(text_lower, product_keywords):
             return ChangeType.PRODUCTS
 
     # === COMMERCIAL CHANGE ===
@@ -518,17 +589,18 @@ def detect_change_type(
             "reduce", "lower", "decrease", "increase", "adjust price",
             "financial", "affordability", "affordable", "value", "competitive"
         ]
-        commercial_mentioned = any(keyword in text_lower for keyword in commercial_keywords)
+        commercial_mentioned = keyword_present(text_lower, commercial_keywords)
+        commercial_intent_near = has_change_intent_near_target(text_lower, change_verbs, commercial_keywords)
 
         # Check for currency mentions (CHF, EUR, USD, $, €, etc.) - strong price signal
         currency_patterns = ["chf", "eur", "usd", "$", "€", "£", "fr.", "francs"]
         has_currency = any(curr in text_lower for curr in currency_patterns)
 
         # ONLY fire if change intent is present (prevents "What's the price?" false positives)
-        if commercial_mentioned and has_change_intent(text_lower):
+        if commercial_mentioned and (has_change_intent(text_lower) or commercial_intent_near):
             return ChangeType.COMMERCIAL
         # Fire if currency + change intent (e.g., "Could you do CHF 3000?")
-        elif has_currency and has_change_intent(text_lower):
+        elif has_currency and (has_change_intent(text_lower) or commercial_intent_near):
             return ChangeType.COMMERCIAL
 
         # Also check for explicit counter-offer language (EXPANDED)
@@ -538,7 +610,7 @@ def detect_change_type(
             "meet us at", "work with", "budget is", "max we can do",
             "willing to pay", "comfortable with"
         ]
-        if any(signal in text_lower for signal in counter_signals):
+        if commercial_intent_near or any(signal in text_lower for signal in counter_signals):
             return ChangeType.COMMERCIAL
 
     # === DEPOSIT CHANGE ===

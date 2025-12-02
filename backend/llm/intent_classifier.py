@@ -176,6 +176,14 @@ _QUESTION_PREFIXES = (
     "how",
 )
 
+_ACTION_PATTERNS = (
+    r"\bsend\s+(me\s+)?(the\s+|a\s+)?",
+    r"\bprovide\s+(me\s+with\s+)?",
+    r"\bgive\s+(me|us)\b",
+    r"\bemail\s+(me|us)\b",
+    r"\bforward\s+(me|us)\b",
+)
+
 
 def _normalise_text(message: str) -> str:
     return re.sub(r"\s+", " ", (message or "").strip().lower())
@@ -190,6 +198,8 @@ def _detect_room_mentions(text: str) -> bool:
 
 
 def _detect_qna_types(text: str) -> List[str]:
+    if is_action_request(text):
+        return []
     matches: List[str] = []
     for qna_type, keywords in _QNA_KEYWORDS.items():
         if _matches_any(text, keywords):
@@ -234,6 +244,11 @@ _MANAGER_PATTERNS = (
 
 def _looks_like_manager_request(text: str) -> bool:
     return any(re.search(pattern, text) for pattern in _MANAGER_PATTERNS)
+
+
+def is_action_request(text: str) -> bool:
+    """Check if message is requesting an action vs asking a question."""
+    return any(re.search(pattern, text) for pattern in _ACTION_PATTERNS)
 
 
 _EVENT_INTENTS = {

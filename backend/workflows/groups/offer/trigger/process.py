@@ -26,7 +26,8 @@ from backend.utils.profiler import profile_step
 from backend.workflow.state import WorkflowStep, write_stage
 from backend.services.products import find_product, normalise_product_payload
 from backend.services.rooms import load_room_catalog
-from ...negotiation_close import _handle_accept, ACCEPT_KEYWORDS, _offer_summary_lines as _hil_offer_summary_lines
+from ...negotiation_close import _handle_accept, _offer_summary_lines as _hil_offer_summary_lines
+from backend.workflows.nlu.semantic_matchers import matches_acceptance_pattern
 from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
 from backend.utils.pseudolinks import (
     generate_catering_catalog_link,
@@ -281,7 +282,7 @@ def process(state: WorkflowState) -> GroupResult:
     pricing_inputs = _rebuild_pricing_inputs(event_entry, state.user_info)
 
     offer_id, offer_version, total_amount = _record_offer(event_entry, pricing_inputs, state.user_info, thread_id)
-    summary_lines = _compose_offer_summary(event_entry, total_amount)
+    summary_lines = _compose_offer_summary(event_entry, total_amount, state)
     billing_display = format_billing_display(
         event_entry.get("billing_details") or {},
         (event_entry.get("event_data") or {}).get("Billing Address"),
@@ -1014,7 +1015,7 @@ def _record_offer(
     return offer_id, offer_sequence, total_amount
 
 
-def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> List[str]:
+def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, state: WorkflowState) -> List[str]:
     chosen_date = event_entry.get("chosen_date") or "Date TBD"
     room = event_entry.get("locked_room_id") or "Room TBD"
     link_date = event_entry.get("chosen_date") or (chosen_date if chosen_date != "Date TBD" else "")
@@ -1037,6 +1038,29 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> 
     catering_alternatives = autofill_summary.get("catering_alternatives") or []
     if not catering_alternatives and not event_entry.get("selected_catering"):
         catering_alternatives = _default_menu_alternatives(event_entry)
+
+    # Extract Q&A parameters for catering catalog link
+    qna_extraction = state.extras.get("qna_extraction", {})
+    q_values = qna_extraction.get("q_values", {})
+    query_params: Dict[str, str] = {}
+
+    # Extract date/month from Q&A detection
+    if q_values.get("date_pattern"):
+        query_params["month"] = str(q_values["date_pattern"]).lower()
+
+    # Extract product attributes (vegetarian, vegan, wine pairing, etc.) from Q&A detection
+    product_attrs = q_values.get("product_attributes") or []
+    if isinstance(product_attrs, list):
+        for attr in product_attrs:
+            attr_lower = str(attr).lower()
+            if "vegetarian" in attr_lower:
+                query_params["vegetarian"] = "true"
+            if "vegan" in attr_lower:
+                query_params["vegan"] = "true"
+            if "wine" in attr_lower or "pairing" in attr_lower:
+                query_params["wine_pairing"] = "true"
+            if ("three" in attr_lower or "3" in attr_lower) and "course" in attr_lower:
+                query_params["courses"] = "3"
 
     intro_room = room if room != "Room TBD" else "your preferred room"
     intro_date = chosen_date if chosen_date != "Date TBD" else "your requested date"
@@ -1115,7 +1139,7 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float) -> 
 
     selected_catering = event_entry.get("selected_catering")
     if not selected_catering and catering_alternatives:
-        catalog_link = generate_catering_catalog_link()
+        catalog_link = generate_catering_catalog_link(query_params=query_params if query_params else None)
         lines.append("")
         lines.append(catalog_link)
         lines.append("Menu options you can add:")
@@ -1506,7 +1530,8 @@ def _start_hil_acceptance_flow(
 
 def _looks_like_offer_acceptance(message_text: str) -> bool:
     normalized = _normalize_quotes(message_text or "").lower()
-    return any(keyword in normalized for keyword in ACCEPT_KEYWORDS)
+    is_match, confidence, _ = matches_acceptance_pattern(normalized)
+    return is_match and confidence > 0.5
 
 
 def _present_general_room_qna(
