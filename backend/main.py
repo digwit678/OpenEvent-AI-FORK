@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
@@ -26,6 +26,7 @@ from backend.adapters.client_gui_adapter import ClientGUIAdapter
 from backend.workflows.common.payloads import PayloadValidationError, validate_confirm_date_payload
 from backend.workflows.groups.date_confirmation import compose_date_confirmation_reply
 from backend.workflows.common.prompts import append_footer
+from backend.workflows.common.pricing import derive_room_rate, normalise_rate
 from backend.workflows.groups.room_availability import run_availability_workflow
 from backend.utils import json_io
 from backend.utils.test_data_providers import (
@@ -713,6 +714,14 @@ async def get_pending_tasks():
         if event_entry:
             def _line_items(entry: Dict[str, Any]) -> list[str]:
                 items: list[str] = []
+                pricing_inputs = entry.get("pricing_inputs") or {}
+                room_label = entry.get("locked_room_id") or (entry.get("room_pending_decision") or {}).get("selected_room")
+                base_rate = normalise_rate(pricing_inputs.get("base_rate"))
+                if base_rate is None:
+                    base_rate = derive_room_rate(entry)
+                if base_rate is not None:
+                    items.append(f"{room_label or 'Room'} · CHF {base_rate:,.2f}")
+
                 for product in entry.get("products") or []:
                     name = product.get("name") or "Unnamed item"
                     try:
@@ -1074,8 +1083,7 @@ async def get_catering_data(menu_slug: str, room: Optional[str] = None, date: Op
 async def universal_qna(request: Request):
     """Universal Q&A endpoint - accepts any parameters, uses existing Q&A engine."""
     from backend.workflows.qna.engine import build_structured_qna_result
-    from backend.workflows.common.types import WorkflowState
-    from backend.workflows.common.message import Message
+    from backend.workflows.common.types import WorkflowState, IncomingMessage as Message
 
     # Get all query params
     params = dict(request.query_params)
@@ -1123,9 +1131,23 @@ async def universal_qna(request: Request):
     }
 
     # Create minimal state for Q&A engine
+    try:
+        db = wf_load_db()
+    except Exception:
+        db = {}
+
     state = WorkflowState(
         client_id="qna-page",
-        message=Message(msg_id="qna", subject="", body=""),
+        message=Message(
+            msg_id="qna", 
+            subject="", 
+            body="", 
+            from_name=None,
+            from_email=None,
+            ts=None
+        ),
+        db_path=Path(WF_DB_PATH),
+        db=db,
         user_info={},
         event_entry={},
         intent=None,
@@ -1136,12 +1158,18 @@ async def universal_qna(request: Request):
     # Use existing Q&A engine
     try:
         result = build_structured_qna_result(state, qna_extraction)
+        
+        # Fetch legacy items to support FAQ page
+        legacy_data = get_qna_items(category, filters=q_values)
 
         return {
             "query": params,
             "result_type": category,
             "filters_applied": q_values,
             "data": result.action_payload if result and result.handled else {},
+            "items": legacy_data.get("items", []),
+            "categories": legacy_data.get("categories", []),
+            "menus": legacy_data.get("menus", []),
             "body_markdown": result.body_markdown if result and result.handled else "No results found",
             "handled": result.handled if result else False,
             "success": True

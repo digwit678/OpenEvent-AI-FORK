@@ -44,14 +44,12 @@ def generate_catering_menu_link(menu_name: str, room: str | None = None, date: s
 
 
 def generate_catering_catalog_link(query_params: dict | None = None) -> str:
-    """Generate link to catering catalog with dynamic query parameters."""
-    params = query_params or {}
+    """Generate link to catering catalog with dynamic query parameters.
 
-    if params:
-        query_string = urlencode(params)
-        return _make_link("Browse all catering options", f"{BASE_URL}/info/catering?{query_string}")
-
-    return _make_link("Browse all catering options", f"{BASE_URL}/info/catering")
+    Now uses unified Q&A page instead of separate catering page.
+    """
+    # Use unified Q&A link with category=Catering
+    return generate_qna_link(category="Catering", query_params=query_params)
 
 
 def generate_qna_link(category: str | None = None, query_params: dict | None = None) -> str:
