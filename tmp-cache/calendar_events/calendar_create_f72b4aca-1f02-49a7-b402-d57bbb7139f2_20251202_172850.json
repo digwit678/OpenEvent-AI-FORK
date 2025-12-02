@@ -1,0 +1,17 @@
+{
+  "id": "openevent-f72b4aca-1f02-49a7-b402-d57bbb7139f2",
+  "title": "[LEAD] Client (Not specified) - None",
+  "date": null,
+  "room": null,
+  "participants": 0,
+  "status": "lead",
+  "client": {
+    "name": "Client",
+    "company": "Not specified",
+    "email": "newclient@example.com",
+    "phone": "Not specified"
+  },
+  "description": "Event booking for Client\nParticipants: 0\nStatus: lead\nRoom: None",
+  "created_at": "2025-12-02T17:28:50.603275",
+  "event_id": "f72b4aca-1f02-49a7-b402-d57bbb7139f2"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "openevent-402239ec-77ca-48f7-b67d-65854dd16d58",
+  "title": "[LEAD] Laura Meier (Not specified) - None",
+  "date": null,
+  "room": null,
+  "participants": 0,
+  "status": "lead",
+  "client": {
+    "name": "Laura Meier",
+    "company": "Not specified",
+    "email": "laura.meier@example.com",
+    "phone": "Not specified"
+  },
+  "description": "Event booking for Laura Meier\nParticipants: 0\nStatus: lead\nRoom: None",
+  "created_at": "2025-12-02T17:29:05.015478",
+  "event_id": "402239ec-77ca-48f7-b67d-65854dd16d58"
+}
