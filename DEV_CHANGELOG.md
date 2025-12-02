@@ -2,6 +2,56 @@
 
 ## 2025-12-02
 
+### Dynamic Content Abbreviation for Non-Q&A Paths
+
+**Task: Generalize content abbreviation for menu/catering display**
+
+Extended the content abbreviation system (previously only in room_availability for Q&A) to work for all workflow steps that display detailed menu/catering information.
+
+**Problem Solved:**
+- Date confirmation step was showing full menu descriptions (640+ chars) directly in chat
+- Only room_availability had threshold-based abbreviation with links
+- No way to build link parameters from workflow state (only from Q&A q_values)
+
+**Implementation:**
+
+1. **Shared Short Format** (`backend/workflows/common/menu_options.py`)
+   - Added `format_menu_line_short()` — abbreviated format (name + price only, no description)
+   - Added `MENU_CONTENT_CHAR_THRESHOLD = 400` — UX standard threshold
+   - Exported in `__all__` for reuse across workflow steps
+
+2. **Date Confirmation Update** (`backend/workflows/groups/date_confirmation/trigger/process.py`)
+   - Updated `_append_menu_options_if_requested()` to:
+     - Check content length against threshold
+     - Build link params from workflow state (event_entry, user_info, menu_request)
+     - Use abbreviated format when exceeding threshold
+     - Always include catering info page link for reference
+
+3. **Room Availability Refactor** (`backend/workflows/groups/room_availability/trigger/process.py`)
+   - Removed local `_short_menu_line()` function
+   - Now uses shared `format_menu_line_short()` from menu_options
+   - `QNA_SUMMARY_CHAR_THRESHOLD` now references shared constant
+
+**Link Parameter Sources (non-Q&A path):**
+- `event_entry.chosen_date` or `month_hint` → date/month
+- `requirements.number_of_participants` → capacity
+- `menu_request.vegetarian/wine_pairing/three_course` → dietary/course filters
+
+**New Tests:**
+- `tests/workflows/test_menu_abbreviation.py` — 14 tests covering:
+  - Short format output validation
+  - Threshold behavior (full exceeds, short stays under)
+  - Link generation with query params
+  - Menu request extraction
+
+**Key Files Changed:**
+- `backend/workflows/common/menu_options.py`
+- `backend/workflows/groups/date_confirmation/trigger/process.py`
+- `backend/workflows/groups/room_availability/trigger/process.py`
+- `tests/workflows/test_menu_abbreviation.py` (new)
+
+---
+
 ### Site Visit Implementation with Change Management
 
 **Task: Enhanced site visit implementation plan with update/change/detour logic**
