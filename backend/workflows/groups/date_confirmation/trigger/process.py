@@ -41,8 +41,11 @@ from backend.workflows.common.menu_options import (
     build_menu_title,
     extract_menu_request,
     format_menu_line,
+    format_menu_line_short,
+    MENU_CONTENT_CHAR_THRESHOLD,
     select_menu_options,
 )
+from backend.utils.pseudolinks import generate_qna_link
 from backend.workflows.common.general_qna import (
     append_general_qna_to_primary,
     render_general_qna_reply,
@@ -370,8 +373,11 @@ def _clear_invalid_weekdays_hint(event_entry: Dict[str, Any]) -> None:
 
 
 def _append_menu_options_if_requested(state: WorkflowState, message_lines: List[str], month_hint: Optional[str]) -> None:
-    """Attach a short menu suggestion block when the client asks about menus."""
+    """Attach a menu suggestion block when the client asks about menus.
 
+    If the full content exceeds the display threshold, uses abbreviated format
+    and adds a link to the full catering info page.
+    """
     request = extract_menu_request((state.message.body or "") + "\n" + (state.message.subject or ""))
     if not request or not request.get("menu_requested"):
         return
@@ -383,12 +389,70 @@ def _append_menu_options_if_requested(state: WorkflowState, message_lines: List[
     title = build_menu_title(request)
     if month_hint:
         title = f"{title} ({_format_label_text(str(month_hint))})"
-    message_lines.append("")
-    message_lines.append(title)
+
+    # First render full content to check length
+    full_lines = [title]
     for option in options:
         rendered = format_menu_line(option, month_hint=month_hint)
         if rendered:
-            message_lines.append(rendered if rendered.lstrip().startswith("-") else f"- {rendered}")
+            full_lines.append(rendered if rendered.lstrip().startswith("-") else f"- {rendered}")
+
+    combined_len = len("\n".join(full_lines))
+
+    # Build link params from workflow state (non-Q&A path)
+    query_params: Dict[str, str] = {}
+    event_entry = state.event_entry or {}
+    user_info = state.user_info or {}
+    requirements = event_entry.get("requirements") or {}
+
+    # Date/month from workflow state
+    chosen_date = event_entry.get("chosen_date")
+    if chosen_date:
+        query_params["date"] = str(chosen_date)
+    elif month_hint:
+        query_params["month"] = str(month_hint).lower()
+    elif request.get("month"):
+        query_params["month"] = str(request["month"]).lower()
+
+    # Capacity from requirements or user_info
+    capacity = (
+        requirements.get("number_of_participants")
+        or requirements.get("participants")
+        or user_info.get("participants")
+    )
+    if capacity:
+        try:
+            query_params["capacity"] = str(int(capacity))
+        except (TypeError, ValueError):
+            pass
+
+    # Menu request attributes
+    if request.get("vegetarian"):
+        query_params["vegetarian"] = "true"
+    if request.get("wine_pairing"):
+        query_params["wine_pairing"] = "true"
+    if request.get("three_course"):
+        query_params["courses"] = "3"
+
+    shortcut_link = generate_qna_link("Catering", query_params=query_params if query_params else None)
+
+    if combined_len > MENU_CONTENT_CHAR_THRESHOLD:
+        # Use abbreviated format with link
+        message_lines.append("")
+        message_lines.append(f"Full menu details: {shortcut_link}")
+        message_lines.append("")
+        message_lines.append(title)
+        for option in options:
+            rendered = format_menu_line_short(option)
+            if rendered:
+                message_lines.append(rendered)
+        state.extras["menu_shortcut"] = {"link": shortcut_link, "threshold": MENU_CONTENT_CHAR_THRESHOLD}
+    else:
+        # Full content fits, but still add link at the end for reference
+        message_lines.append("")
+        message_lines.extend(full_lines)
+        message_lines.append("")
+        message_lines.append(f"Full menu details: {shortcut_link}")
 
 
 def _maybe_append_general_qna(
