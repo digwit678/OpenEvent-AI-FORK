@@ -68,6 +68,8 @@ class MessageContext:
             "amounts": [],
             "room_names": [],
             "counts": [],
+            "units": [],
+            "product_names": [],
         }
 
         if self.event_date:
@@ -87,6 +89,16 @@ class MessageContext:
                     facts["amounts"].append(f"CHF {float(price):.2f}")
                 except (TypeError, ValueError):
                     pass
+            # Extract product names
+            name = product.get("name")
+            if name and name not in facts["product_names"]:
+                facts["product_names"].append(name)
+            # Extract units (per_person, per_event) with associated product for verification
+            unit = product.get("unit")
+            if unit:
+                unit_label = unit.replace("_", " ")  # per_person -> per person
+                if unit_label not in facts["units"]:
+                    facts["units"].append(unit_label)
 
         if self.room_name:
             facts["room_names"].append(self.room_name)
@@ -129,8 +141,10 @@ HARD RULES (NEVER BREAK):
 2. ALL prices must appear exactly as provided (CHF X.XX format)
 3. ALL room names must appear exactly as provided
 4. ALL participant counts must appear
-5. NEVER invent dates, prices, or room names not in the facts
-6. NEVER change any numbers
+5. ALL product names must appear exactly as provided
+6. NEVER change units: "per event" stays "per event", "per person" stays "per person"
+7. NEVER invent dates, prices, room names, or units not in the facts
+8. NEVER change any numbers or swap unit types
 
 TRANSFORMATION EXAMPLES:
 
@@ -303,11 +317,29 @@ def verbalize_message(
     verification = _verify_facts(llm_text, hard_facts)
 
     if not verification[0]:
-        logger.warning(
-            f"universal_verbalizer: verification failed for step={context.step}, topic={context.topic}",
+        # Verification failed - try to patch the output first
+        logger.debug(
+            f"universal_verbalizer: verification failed for step={context.step}, topic={context.topic}, attempting patch",
             extra={"missing": verification[1], "invented": verification[2]},
         )
-        return fallback_text
+
+        patched_text, patch_success = _patch_facts(
+            llm_text, hard_facts, verification[1], verification[2]
+        )
+
+        if patch_success:
+            # Patching fixed the issues - use the patched text
+            logger.info(
+                f"universal_verbalizer: patched successfully for step={context.step}, topic={context.topic}"
+            )
+            return patched_text
+        else:
+            # Patching didn't fully fix it - fall back to original text
+            logger.warning(
+                f"universal_verbalizer: patching failed for step={context.step}, topic={context.topic}, using fallback",
+                extra={"missing": verification[1], "invented": verification[2]},
+            )
+            return fallback_text
 
     logger.debug(f"universal_verbalizer: success for step={context.step}, topic={context.topic}")
     return llm_text
@@ -482,6 +514,30 @@ def _verify_facts(
         if count not in llm_text:
             missing.append(f"count:{count}")
 
+    # Check product names (case-insensitive)
+    for product_name in hard_facts.get("product_names", []):
+        if product_name.lower() not in text_lower:
+            missing.append(f"product:{product_name}")
+
+    # Check units - these must appear exactly as provided (per person, per event)
+    input_units = set(hard_facts.get("units", []))
+    for unit in input_units:
+        if unit not in text_lower:
+            missing.append(f"unit:{unit}")
+
+    # Check for unit swaps (invented wrong unit)
+    # If input has "per event" but output has "per person" (or vice versa), that's a swap
+    has_per_event = "per event" in input_units
+    has_per_person = "per person" in input_units
+    output_has_per_event = "per event" in text_lower
+    output_has_per_person = "per person" in text_lower
+
+    # Detect swaps: if we only had one unit type but output has the other
+    if has_per_event and not has_per_person and output_has_per_person:
+        invented.append("unit:per person (should be per event)")
+    if has_per_person and not has_per_event and output_has_per_event:
+        invented.append("unit:per event (should be per person)")
+
     # Check for invented dates
     date_pattern = re.compile(r"\b(\d{1,2}\.\d{1,2}\.\d{4})\b")
     for match in date_pattern.finditer(llm_text):
@@ -509,6 +565,99 @@ def _verify_facts(
 
     ok = len(missing) == 0 and len(invented) == 0
     return (ok, missing, invented)
+
+
+def _patch_facts(
+    llm_text: str,
+    hard_facts: Dict[str, List[str]],
+    missing: List[str],
+    invented: List[str],
+) -> Tuple[str, bool]:
+    """
+    Attempt to patch incorrect facts in LLM output without additional API calls.
+
+    This surgically fixes common errors like unit swaps while preserving
+    the verbalized prose.
+
+    Args:
+        llm_text: The LLM's verbalized output
+        hard_facts: Dictionary of facts that must be preserved
+        missing: List of missing facts from verification
+        invented: List of invented/wrong facts from verification
+
+    Returns:
+        Tuple of (patched_text, success). If patching succeeds, returns
+        the fixed text. If patching isn't possible, returns original text
+        with success=False.
+    """
+    patched = llm_text
+    patched_something = False
+
+    input_units = set(hard_facts.get("units", []))
+    has_per_event = "per event" in input_units
+    has_per_person = "per person" in input_units
+
+    # --- Unit swap fixes ---
+    # Case 1: Input has only "per event" but LLM wrote "per person"
+    if has_per_event and not has_per_person:
+        if "per person" in patched.lower():
+            # Replace all variations of "per person" with "per event"
+            patched = re.sub(r"\bper person\b", "per event", patched, flags=re.IGNORECASE)
+            patched_something = True
+            logger.debug("_patch_facts: fixed unit swap 'per person' -> 'per event'")
+
+    # Case 2: Input has only "per person" but LLM wrote "per event"
+    if has_per_person and not has_per_event:
+        if "per event" in patched.lower():
+            # Replace all variations of "per event" with "per person"
+            patched = re.sub(r"\bper event\b", "per person", patched, flags=re.IGNORECASE)
+            patched_something = True
+            logger.debug("_patch_facts: fixed unit swap 'per event' -> 'per person'")
+
+    # --- Amount fixes ---
+    # If an amount was invented (not in our canonical list), try to find and fix it
+    canonical_amounts = {}
+    for amt in hard_facts.get("amounts", []):
+        # Extract numeric value for matching
+        match = re.search(r"CHF\s*(\d+(?:[.,]\d{1,2})?)", amt, re.IGNORECASE)
+        if match:
+            value = match.group(1).replace(",", ".")
+            canonical_amounts[value] = amt
+            canonical_amounts[re.sub(r"\.00$", "", value)] = amt
+
+    # For invented amounts, we can't automatically fix them without knowing
+    # which canonical amount they should map to. However, if there's only
+    # one canonical amount and one invented amount, we can try.
+    invented_amounts = [inv for inv in invented if inv.startswith("amount:")]
+    if len(invented_amounts) == 1 and len(canonical_amounts) == 1:
+        # Single amount case - safe to replace
+        invented_match = re.search(r"CHF\s*(\d+(?:[.,]\d{1,2})?)", invented_amounts[0])
+        if invented_match:
+            wrong_amount = invented_match.group(1)
+            correct_amount = list(canonical_amounts.values())[0]
+            # Replace the wrong amount with correct one
+            pattern = rf"\bCHF\s*{re.escape(wrong_amount)}\b"
+            patched = re.sub(pattern, correct_amount, patched, flags=re.IGNORECASE)
+            patched_something = True
+            logger.debug(f"_patch_facts: fixed amount CHF {wrong_amount} -> {correct_amount}")
+
+    # --- Verify the patch worked ---
+    if patched_something:
+        # Re-verify after patching
+        new_verification = _verify_facts(patched, hard_facts)
+        if new_verification[0]:  # All facts now correct
+            logger.info("_patch_facts: successfully patched LLM output")
+            return (patched, True)
+        else:
+            # Patching didn't fully fix it
+            logger.warning(
+                "_patch_facts: patching incomplete",
+                extra={"still_missing": new_verification[1], "still_invented": new_verification[2]},
+            )
+            return (patched, False)
+
+    # Nothing to patch or couldn't patch
+    return (llm_text, False)
 
 
 # =============================================================================

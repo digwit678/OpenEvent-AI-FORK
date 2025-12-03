@@ -290,18 +290,30 @@ def process(state: WorkflowState) -> GroupResult:
         (event_entry.get("event_data") or {}).get("Billing Address"),
     )
 
-    # Universal Verbalizer: transform to warm, human-like message
+    # Universal Verbalizer: only verbalize the introduction text
+    # The structured offer (line items, prices, total) must remain as-is
     from backend.workflows.common.prompts import verbalize_draft_body
-    offer_body_markdown = verbalize_draft_body(
-        "\n".join(summary_lines),
+
+    # Create a brief intro message for verbalization
+    room = event_entry.get("locked_room_id") or "your preferred room"
+    chosen_date = event_entry.get("chosen_date") or "your requested date"
+    formatted_date = format_iso_date_to_ddmmyyyy(chosen_date) if chosen_date != "your requested date" else chosen_date
+    intro_text = f"Here is your offer for {room} on {formatted_date}."
+
+    # Verbalize only the intro, not the structured offer
+    verbalized_intro = verbalize_draft_body(
+        intro_text,
         step=4,
-        topic="offer_draft",
-        event_date=format_iso_date_to_ddmmyyyy(event_entry.get("chosen_date")) or event_entry.get("chosen_date"),
+        topic="offer_intro",
+        event_date=formatted_date,
         participants_count=_infer_participant_count(event_entry),
-        room_name=event_entry.get("locked_room_id"),
+        room_name=room,
         total_amount=total_amount,
         products=event_entry.get("products"),
     )
+
+    # Combine verbalized intro with structured offer (keeping line items intact)
+    offer_body_markdown = verbalized_intro + "\n\n" + "\n".join(summary_lines)
 
     draft_message = {
         "body_markdown": offer_body_markdown,
