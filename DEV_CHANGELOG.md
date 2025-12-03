@@ -1,5 +1,59 @@
 # Development Changelog
 
+## 2025-12-03
+
+### Verbalizer Safety Sandwich & Offer Structure Fix
+
+**Task: Preserve structured offer data through verbalization**
+
+Fixed the offer composition to only verbalize the introduction text while keeping line items, prices, and totals as structured content. Added a "safety sandwich" verification system that detects and patches fact errors without additional API calls.
+
+**Problem Solved:**
+- Offer was being fully verbalized, turning structured price lists into prose
+- LLM could swap units ("per event" → "per person") corrupting pricing data
+- No mechanism to catch or fix these errors
+
+**Changes:**
+
+1. **Offer Composition** (`backend/workflows/groups/offer/trigger/process.py`)
+   - Split offer into verbalized intro + structured body
+   - Only intro text goes through verbalizer
+   - Line items, prices, total calculation remain as-is
+
+2. **Hard Facts Extraction** (`backend/ux/universal_verbalizer.py`)
+   - Added `units` extraction (per person, per event)
+   - Added `product_names` extraction
+   - Enhanced `extract_hard_facts()` to capture all pricing-critical data
+
+3. **Fact Verification** (`backend/ux/universal_verbalizer.py`)
+   - Added unit verification in `_verify_facts()`
+   - Detects unit swaps (per person ↔ per event)
+   - Detects missing/invented product names
+
+4. **Fact Patching** (`backend/ux/universal_verbalizer.py`) - NEW
+   - `_patch_facts()` surgically fixes LLM errors without API calls
+   - Fixes unit swaps via regex replacement
+   - Fixes single-amount errors when unambiguous
+   - Re-verifies after patching to ensure correctness
+
+5. **System Prompt Update** (`backend/ux/universal_verbalizer.py`)
+   - Added rules 5-8 forbidding unit changes and requiring exact product names
+
+**Flow:**
+```
+LLM Output → Verify Facts → [OK] → Return LLM text
+                 ↓ FAIL
+            Patch Facts → [OK] → Return patched text (no extra API call)
+                 ↓ FAIL
+            Return original fallback text
+```
+
+**Files touched:**
+- `backend/workflows/groups/offer/trigger/process.py`
+- `backend/ux/universal_verbalizer.py`
+
+---
+
 ## 2025-12-02
 
 ### Snapshot-Based Info Page Links
