@@ -2,6 +2,257 @@
 
 ## 2025-12-03
 
+### Fix: Step 5 (Negotiation) Now Detects Date Changes from Message Text
+
+**Problem:** When a client at Step 5 (after offer shown) requested a date change (e.g., "sorry made a mistake, wanted 2026-02-28 instead"), the workflow would return a generic fallback message instead of routing back to Step 2.
+
+**Root Cause:** Step 5's `_detect_structural_change()` only checked `state.user_info.get("date")` but this field wasn't populated because:
+1. The LLM extraction found the new date
+2. But it was skipped because `event_date` already had a value
+3. So `state.user_info` never received the new date
+
+**Solution:** Updated `_detect_structural_change()` to also parse dates directly from the message text (same pattern as Steps 2/3/4). If any date in the message differs from `chosen_date`, it triggers a detour to Step 2.
+
+**Files:**
+- `backend/workflows/groups/negotiation_close.py` (added message_text parameter and direct date parsing)
+
+---
+
+### Fix: Skip Duplicate Date Detour - Multi-Date Matching
+
+**Problem:** The skip-duplicate-detour logic in Step 3 was checking only `message_dates[0]` which could be today's date (parsed erroneously), causing the skip to fail even when the correct date was in the message.
+
+**Solution:** Changed the check from `message_dates[0] == chosen_date` to `chosen_date in message_dates`. This correctly handles cases where multiple dates are parsed from the message.
+
+**Files:**
+- `backend/workflows/groups/room_availability/trigger/process.py` (improved date matching logic)
+
+---
+
+### Fix: Client Reset Now Matches Events by event_data.Email
+
+**Problem:** The client reset endpoint wasn't deleting all events because it only checked `client_id` but events store the email in `event_data.Email`, not at the top level.
+
+**Solution:** Updated reset endpoint to match events by BOTH `client_id` AND `event_data.Email`.
+
+**Files:**
+- `backend/main.py` (improved `reset_client` event matching logic)
+
+---
+
+### Testing: Reset Client Data Button
+
+**Task:** Add ability to reset all database entries for a client during testing
+
+Added a "Reset Client" button to the frontend (in the Tasks panel) that allows testers to clear all data for the current client's email address. This is useful for re-running test scenarios without stale data (like `date_proposal_attempts` counter).
+
+**Backend:** `POST /api/client/reset`
+- Takes `email` parameter
+- Deletes: client entry, all events, all tasks for that email
+- Returns count of deleted items
+
+**Frontend:** Red "Reset Client" button in Tasks panel
+- Shows confirmation dialog before deleting
+- Clears frontend state after successful reset
+- Disabled until a conversation is started
+
+**Files:**
+- `backend/main.py` (new `ClientResetRequest` model + `/api/client/reset` endpoint)
+- `atelier-ai-frontend/app/page.tsx` (new button + `resetClientData` function)
+
+---
+
+### Silent Ignore for Nonsense & Off-Topic Messages (No Reply Mechanism)
+
+**Task: Prevent agent from replying to messages with zero workflow relevance throughout the entire workflow**
+
+Implemented a cost-efficient two-layer nonsense/off-topic detection system that works throughout all workflow steps without adding extra LLM calls. The system reuses existing classification confidence scores from step handlers.
+
+**Architecture (No Extra LLM Calls):**
+```
+LAYER 1: Regex gate (FREE) - in classify_intent()
+├── is_gibberish(msg)? → IGNORE immediately (no LLM ever runs)
+
+LAYER 2: Reuse existing step confidence (no extra LLM)
+├── Each step handler already classifies → use that confidence
+├── Low conf + no workflow signal → IGNORE or HIL
+```
+
+**Decision Matrix:**
+| Confidence | Workflow Signal | Action |
+|------------|-----------------|--------|
+| Any        | YES             | Proceed normally |
+| < 0.15     | NO              | IGNORE (silent, no reply) |
+| 0.15-0.25  | NO              | Defer to HIL (borderline) |
+| >= 0.25    | NO              | Proceed |
+
+**Examples - IGNORED (no reply):**
+- `"asdfghjkl"` → gibberish, no workflow signal
+- `"I love Darth Vader"` → off-topic, no workflow signal
+- `"hahahaha"` → no workflow signal
+
+**Examples - PROCESSED (has workflow signal):**
+- `"hahahaha. ok confirm date"` → has "confirm" signal
+- `"yes"` → has "yes" signal
+- `"what rooms are free?"` → has "rooms" + "free" signals
+
+**Changes:**
+
+1. **Confidence Module** (`backend/workflows/common/confidence.py`)
+   - `NONSENSE_IGNORE_THRESHOLD = 0.15` - below this: silent ignore
+   - `NONSENSE_HIL_THRESHOLD = 0.25` - below this but above ignore: defer to HIL
+   - `check_nonsense_gate(confidence, message_text)` - returns: proceed/ignore/hil
+   - `WORKFLOW_SIGNALS` - comprehensive EN/DE regex patterns for workflow-relevant content
+   - `has_workflow_signal(text)` - returns True if ANY workflow pattern matches
+   - `is_gibberish(text)` - heuristics for keyboard mashing, repeated chars
+
+2. **Intent Classifier** (`backend/llm/intent_classifier.py`)
+   - Added early gate in `classify_intent()` before `_agent_route()` LLM call
+   - Gibberish caught by regex → returns `"nonsense"` immediately (saves LLM cost)
+
+3. **Step Handlers** (all updated with nonsense gate):
+   - `backend/workflows/groups/date_confirmation/trigger/process.py` (Step 2)
+   - `backend/workflows/groups/room_availability/trigger/process.py` (Step 3)
+   - `backend/workflows/groups/offer/trigger/process.py` (Step 4)
+   - `backend/workflows/groups/negotiation_close.py` (Step 5)
+   - `backend/workflows/groups/event_confirmation/trigger/process.py` (Step 7)
+   - Each step now calls `check_nonsense_gate()` using its existing confidence score
+   - Returns `GroupResult(action="nonsense_ignored")` for silent ignore
+   - Returns `GroupResult(action="nonsense_hil_deferred")` for borderline cases
+
+4. **Tests** (`backend/tests/detection/test_low_confidence_handling.py`)
+   - `TestWorkflowSignalDetection` - 7 tests for workflow pattern matching
+   - `TestGibberishDetection` - 5 tests for keyboard mash detection
+   - `TestSilentIgnore` - 8 tests for ignore logic
+   - `TestCheckNonsenseGate` - 7 tests for step handler decision function
+
+**Cost Savings:**
+- Gibberish: **100% LLM cost saved** (regex catches early in classify_intent)
+- Off-topic: **0% extra LLM** (uses existing step handler confidence)
+
+**Files touched:**
+- `backend/workflows/common/confidence.py`
+- `backend/llm/intent_classifier.py`
+- `backend/workflows/groups/date_confirmation/trigger/process.py`
+- `backend/workflows/groups/room_availability/trigger/process.py`
+- `backend/workflows/groups/offer/trigger/process.py`
+- `backend/workflows/groups/negotiation_close.py`
+- `backend/workflows/groups/event_confirmation/trigger/process.py`
+- `backend/tests/detection/test_low_confidence_handling.py`
+
+---
+
+### Fix: Date Change from Step 3 Now Confirms Explicit Date
+
+**Bug:** When client was at Step 3 (room availability) and said "id like to change to 2026-02-28", the system would:
+1. Correctly detect the date change and route to Step 2
+2. But then show date proposals instead of confirming the explicit date
+
+**Root Cause:** `_range_query_pending()` was returning True because the original request had range tokens ("Wednesdays & Saturdays in February"), which forced `window = None` and triggered showing proposals.
+
+**Fix:** Check if the **current message** contains an explicit date (`requested_client_dates`) BEFORE checking range_pending. If yes, skip range_pending and try to confirm the explicit date directly.
+
+**File:** `backend/workflows/groups/date_confirmation/trigger/process.py` (line 941-944)
+
+---
+
+### Enhanced Detour Detection with Dual-Condition Logic
+
+**Task: Reduce false positives in change/detour detection and add comprehensive EN/DE support**
+
+Implemented a robust two-stage detection system that requires BOTH a revision signal (change verb OR revision marker) AND a bound target (explicit value OR anaphoric reference) before triggering a detour. This prevents pure Q&A questions from being misclassified as change requests.
+
+**Problem Solved:**
+- Client messages like "What rooms are free?" were sometimes triggering detours
+- No support for German change patterns
+- No disambiguation when client provides a value without specifying the type (e.g., "change to 2026-02-14" - is it event date or site visit date?)
+- No way to handle implicit targets (value without explicit type mention)
+
+**Changes:**
+
+1. **New Keyword Buckets Module** (`backend/workflows/nlu/keyword_buckets.py`)
+   - Comprehensive EN/DE keyword patterns from UX analysis
+   - `DetourMode` enum (LONG/FAST/EXPLICIT) for three detour initiation modes
+   - `MessageIntent` enum for multi-class intent classification
+   - `compute_change_intent_score()` - main dual-condition detection
+   - `has_revision_signal()`, `has_bound_target()`, `is_pure_qa()` helpers
+
+2. **Enhanced Change Propagation** (`backend/workflows/change_propagation.py`)
+   - `EnhancedChangeResult` dataclass with rich detection info
+   - `detect_change_type_enhanced()` - dual-condition detection
+   - `AmbiguousTargetResult` for handling implicit targets
+   - `resolve_ambiguous_target()` - recency-based disambiguation
+   - `detect_change_type_enhanced_with_disambiguation()` - full detection with disambiguation
+
+3. **Updated Semantic Matchers** (`backend/workflows/nlu/semantic_matchers.py`)
+   - `matches_change_pattern_enhanced()` - new detection function
+   - `is_pure_qa_message()` - Q&A filter helper
+
+4. **Integrated into Workflow Triggers**
+   - `backend/workflows/groups/date_confirmation/trigger/process.py`
+   - `backend/workflows/groups/room_availability/trigger/process.py`
+   - `backend/workflows/groups/offer/trigger/process.py`
+   - `backend/workflows/groups/intake/trigger/process.py`
+
+5. **Comprehensive Tests** (`backend/tests/detection/test_detour_detection.py`)
+   - 56 test cases covering dual-condition, EN/DE, modes, Q&A filtering, ambiguity
+
+**Detection Flow:**
+```
+Client Message
+    ↓
+Stage 1: Regex Pattern Scoring
+├── Pure Q&A signals? → Route to Q&A (skip LLM)
+├── Confirmation signals? → Route to confirm (skip LLM)
+└── Dual condition met? (revision + target)
+     ├── NO → Use preliminary intent
+     └── YES → Check for ambiguity
+              ├── Single target → Proceed with detour
+              └── Multiple targets → Infer + add disambiguation message
+```
+
+**Disambiguation Logic:**
+- If only ONE variable of a type exists → use it (no disambiguation)
+- If MULTIPLE exist:
+  - Check last step/Q&A context → infer from context
+  - Check recency (which was confirmed more recently) → use closest
+  - If still ambiguous → ask for clarification
+- When inferring, append: "If you meant the **site visit date** instead, please write 'change site visit date'"
+
+**Critical Fix: Skip Manual Review for Existing Events**
+
+Fixed `intake/trigger/process.py` to skip the "is this an event request?" check when there's already an active event at step > 1. Previously, messages like "sorry - made a mistake. i wanted to book for 2026-02-28" were being sent to manual review because:
+1. The "is this an event?" classification runs on ALL messages (wrong!)
+2. Short messages got low confidence and triggered manual review
+
+The fix is simple: the "is this an event?" check should ONLY apply to first messages (intake). Once an event exists at step 2+, messages should flow through to the step-specific handlers which have their own logic for detours, Q&A, confirmations, etc.
+
+```python
+# Line 767-771 in intake/trigger/process.py
+skip_manual_review_check = linked_event and linked_event.get("current_step", 1) > 1
+
+if not skip_manual_review_check and (not is_event_request(intent) or confidence < 0.85):
+    # Only do manual review check for NEW events (intake)
+```
+
+**Files touched:**
+- `backend/workflows/nlu/keyword_buckets.py` (NEW)
+- `backend/workflows/change_propagation.py`
+- `backend/workflows/nlu/semantic_matchers.py`
+- `backend/workflows/groups/*/trigger/process.py` (4 files - including critical fix in intake)
+- `backend/tests/detection/test_detour_detection.py` (NEW)
+
+**Tests added/updated:**
+- `test_detour_detection.py`: 56 new tests including:
+  - `DET_DETOUR_DUAL_*`: Dual-condition logic tests
+  - `DET_DETOUR_EN_*`: English change detection
+  - `DET_DETOUR_DE_*`: German change detection
+  - `DET_DETOUR_MODE_*`: Three detour modes
+  - `DET_DETOUR_QA_*`: Q&A negative filter
+  - `DET_DETOUR_AMBIG_*`: Ambiguous target resolution
+
+---
+
 ### Verbalizer Safety Sandwich & Offer Structure Fix
 
 **Task: Preserve structured offer data through verbalization**

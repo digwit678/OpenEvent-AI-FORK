@@ -12,9 +12,14 @@ from backend.workflows.common.billing import (
     update_billing_details,
 )
 from backend.workflows.common.types import GroupResult, WorkflowState
+from backend.workflows.common.confidence import check_nonsense_gate
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
-from backend.workflows.change_propagation import detect_change_type, route_change_on_updated_variable
+from backend.workflows.change_propagation import (
+    detect_change_type,
+    detect_change_type_enhanced,
+    route_change_on_updated_variable,
+)
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
@@ -102,6 +107,40 @@ def process(state: WorkflowState) -> GroupResult:
     normalized_message_text = _normalize_quotes(message_text)
     user_info = state.user_info or {}
 
+    # -------------------------------------------------------------------------
+    # NONSENSE GATE: Check for off-topic/nonsense using existing confidence
+    # -------------------------------------------------------------------------
+    nonsense_action = check_nonsense_gate(state.confidence or 0.0, message_text)
+    if nonsense_action == "ignore":
+        # Silent ignore - no reply, no further processing
+        return GroupResult(
+            action="nonsense_ignored",
+            payload={"reason": "low_confidence_no_workflow_signal", "step": 4},
+            halt=True,
+        )
+    if nonsense_action == "hil":
+        # Borderline - defer to human
+        draft = {
+            "body": append_footer(
+                "I'm not sure I understood your message. I've forwarded it to our team for review.",
+                step=4,
+                next_step=4,
+                thread_state="Awaiting Manager Review",
+            ),
+            "topic": "nonsense_hil_review",
+            "requires_approval": True,
+        }
+        state.add_draft_message(draft)
+        update_event_metadata(event_entry, current_step=4, thread_state="Awaiting Manager Review")
+        state.set_thread_state("Awaiting Manager Review")
+        state.extras["persist"] = True
+        return GroupResult(
+            action="nonsense_hil_deferred",
+            payload={"reason": "borderline_confidence", "step": 4},
+            halt=True,
+        )
+    # -------------------------------------------------------------------------
+
     # Q&A classification
     classification = detect_general_room_query(message_text, state)
     state.extras["_general_qna_classification"] = classification
@@ -127,7 +166,9 @@ def process(state: WorkflowState) -> GroupResult:
         )
 
     # [CHANGE DETECTION] Run BEFORE Q&A dispatch
-    change_type = detect_change_type(event_entry, user_info, message_text=message_text)
+    # Use enhanced detection with dual-condition logic (revision signal + bound target)
+    enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
+    change_type = enhanced_result.change_type if enhanced_result.is_change else None
 
     if change_type is not None:
         # Change detected: route it per DAG rules and skip Q&A dispatch
