@@ -255,11 +255,35 @@ The `_autofill_products_from_preferences` function in `backend/workflows/groups/
 **Regression Guard:** A reply like "Room B with Seasonal Garden Trio" should lock the room, add the menu (priced per guest) to the offer, and show a confirmation CTA without defaulting to manager approval.
 
 ### Room selections misread as acceptances (New)
-**Symptoms:** When clients clicked/typed room-action labels such as “Proceed with Room E”, Step 4 treated the message as an offer acceptance, sent the thread to HIL, and blocked normal offer iteration.
+**Symptoms:** When clients clicked/typed room-action labels such as "Proceed with Room E", Step 4 treated the message as an offer acceptance, sent the thread to HIL, and blocked normal offer iteration.
 
-**Fix:** Offer acceptance now ignores messages that include a detected room choice (`_room_choice_detected`) or the phrase “proceed with room…”, so these stay in the normal offer loop instead of triggering manager review.【F:backend/workflows/groups/offer/trigger/process.py†L185-L204】
+**Fix:** Offer acceptance now ignores messages that include a detected room choice (`_room_choice_detected`) or the phrase "proceed with room…", so these stay in the normal offer loop instead of triggering manager review.【F:backend/workflows/groups/offer/trigger/process.py†L185-L204】
 
-**Regression Guard:** Room selections should keep the thread in “Awaiting Client” with `action=offer_draft_prepared` and no pending HIL requests unless the client explicitly accepts the offer.
+**Regression Guard:** Room selections should keep the thread in "Awaiting Client" with `action=offer_draft_prepared` and no pending HIL requests unless the client explicitly accepts the offer.
+
+---
+
+### Date Change Detours from Steps 3/4/5 (Fixed - 2025-12-03)
+**Symptoms:** When a client at Step 3 (Room Availability), Step 4 (Offer), or Step 5 (Negotiation) requested a date change (e.g., "sorry made a mistake, wanted 2026-02-28 instead"), the workflow would:
+- Return generic fallback message "Thanks for the update. I'll keep you posted..."
+- Not route back to Step 2 to confirm the new date
+- In some cases, enter an infinite detour loop with no proper response
+
+**Root Causes:**
+1. **Step 5 - No message text parsing:** `_detect_structural_change()` only checked `state.user_info.get("date")` but this field wasn't populated because the LLM extraction skipped it (event_date already had a value).
+2. **Step 3 - Duplicate detour loop:** When Step 2's `finalize_confirmation` internally called Step 3, Step 3 would detect the same message as a date change again (pattern-based detection) and try to detour back to Step 2, creating an infinite loop.
+3. **Step 3 - Multi-date parsing bug:** The skip-duplicate-detour logic checked only `message_dates[0]` which could be today's date (parsed erroneously), causing the skip to fail.
+
+**Fixes Applied:**
+1. **Step 5:** Updated `_detect_structural_change()` to parse dates directly from message text using `parse_all_dates()`. If any date differs from `chosen_date`, triggers detour to Step 2.【F:backend/workflows/groups/negotiation_close.py†L532-L558】
+2. **Step 3:** Added skip-duplicate-detour check that compares message dates with `chosen_date`. If the just-confirmed date is in the message, it's not a new change request.【F:backend/workflows/groups/room_availability/trigger/process.py†L197-L223】
+3. **Step 3:** Changed date matching from `message_dates[0] == chosen_date` to `chosen_date in message_dates` to handle cases where multiple dates are parsed.
+
+**Regression Guard:** After a client at any step (3/4/5) says "sorry, I meant [new date]", the workflow should:
+- Detect the date change
+- Route back to Step 2 to confirm the new date
+- Re-evaluate room availability for the new date
+- Return to the caller step (or proceed forward)
 
 ---
 

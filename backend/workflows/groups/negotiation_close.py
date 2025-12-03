@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import date as dt_date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+
+from backend.workflows.common.datetime_parse import parse_all_dates
+from backend.workflows.common.timeutils import parse_ddmmyyyy
 
 from backend.domain import TaskStatus, TaskType
 from backend.workflows.common.billing import (
@@ -13,7 +16,11 @@ from backend.workflows.common.billing import (
 )
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.pricing import derive_room_rate, normalise_rate
-from backend.workflows.common.confidence import should_defer_to_human, should_seek_clarification
+from backend.workflows.common.confidence import (
+    should_defer_to_human,
+    should_seek_clarification,
+    check_nonsense_gate,
+)
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
@@ -141,7 +148,8 @@ def process(state: WorkflowState) -> GroupResult:
     user_info = state.user_info or {}
 
     # [CHANGE DETECTION] Run FIRST to detect structural changes
-    structural = _detect_structural_change(state.user_info, event_entry)
+    # Pass message_text so we can parse dates directly from the message
+    structural = _detect_structural_change(state.user_info, event_entry, message_text)
 
     if structural:
         # Handle structural change detour BEFORE Q&A
@@ -192,6 +200,40 @@ def process(state: WorkflowState) -> GroupResult:
 
     classification, classification_confidence = _classify_message(message_text)
     detected_intents = _collect_detected_intents(message_text)
+
+    # -------------------------------------------------------------------------
+    # NONSENSE GATE: Check for off-topic/nonsense using existing confidence
+    # -------------------------------------------------------------------------
+    nonsense_action = check_nonsense_gate(classification_confidence, message_text)
+    if nonsense_action == "ignore":
+        # Silent ignore - no reply, no further processing
+        return GroupResult(
+            action="nonsense_ignored",
+            payload={"reason": "low_confidence_no_workflow_signal", "step": 5},
+            halt=True,
+        )
+    if nonsense_action == "hil":
+        # Borderline - defer to human
+        draft = {
+            "body": append_footer(
+                "I'm not sure I understood your message. I've forwarded it to our team for review.",
+                step=5,
+                next_step=5,
+                thread_state="Awaiting Manager Review",
+            ),
+            "topic": "nonsense_hil_review",
+            "requires_approval": True,
+        }
+        state.add_draft_message(draft)
+        update_event_metadata(event_entry, current_step=5, thread_state="Awaiting Manager Review")
+        state.set_thread_state("Awaiting Manager Review")
+        state.extras["persist"] = True
+        return GroupResult(
+            action="nonsense_hil_deferred",
+            payload={"reason": "borderline_confidence", "step": 5},
+            halt=True,
+        )
+    # -------------------------------------------------------------------------
 
     # Handle Q&A if detected (after change detection, before negotiation classification)
     general_qna_applicable = qna_classification.get("is_general")
@@ -488,13 +530,33 @@ def _ask_classification_clarification(
     return GroupResult(action="negotiation_clarification", payload=payload, halt=True)
 
 
-def _detect_structural_change(user_info: Dict[str, Any], event_entry: Dict[str, Any]) -> Optional[tuple[int, str]]:
+def _detect_structural_change(
+    user_info: Dict[str, Any],
+    event_entry: Dict[str, Any],
+    message_text: str = "",
+) -> Optional[tuple[int, str]]:
+    # First check user_info (from LLM extraction)
     new_iso_date = user_info.get("date")
     new_ddmmyyyy = user_info.get("event_date")
     if new_iso_date or new_ddmmyyyy:
         candidate = new_ddmmyyyy or _iso_to_ddmmyyyy(new_iso_date)
         if candidate and candidate != event_entry.get("chosen_date"):
             return 2, "negotiation_changed_date"
+
+    # Fallback: parse dates directly from message text (same as Step 2/3/4)
+    # This catches cases where user_info wasn't populated with the new date
+    if message_text:
+        chosen_date_raw = event_entry.get("chosen_date")  # e.g., "14.02.2026"
+        if chosen_date_raw:
+            chosen_parsed = parse_ddmmyyyy(chosen_date_raw)
+            chosen_iso = chosen_parsed.isoformat() if chosen_parsed else None
+            message_dates = list(parse_all_dates(message_text, fallback_year=dt_date.today().year))
+            # Check if any date in the message differs from the current chosen_date
+            for msg_date in message_dates:
+                msg_iso = msg_date.isoformat()
+                if chosen_iso and msg_iso != chosen_iso:
+                    # Found a different date in the message - this is a date change request
+                    return 2, "negotiation_changed_date"
 
     new_room = user_info.get("room")
     if new_room and new_room != event_entry.get("locked_room_id"):

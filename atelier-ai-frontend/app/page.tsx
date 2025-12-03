@@ -222,6 +222,8 @@ export default function EmailThreadUI() {
   const [taskActionId, setTaskActionId] = useState<string | null>(null);
   const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
   const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [resetClientLoading, setResetClientLoading] = useState(false);
+  const [clientEmail, setClientEmail] = useState<string | null>(null);
   const [hasStarted, setHasStarted] = useState(false);
   const [isUserNearBottom, setIsUserNearBottom] = useState(true);
   const [backendHealthy, setBackendHealthy] = useState<boolean | null>(null);
@@ -383,6 +385,46 @@ export default function EmailThreadUI() {
     }
   }, [refreshTasks, sessionId]);
 
+  const resetClientData = useCallback(async () => {
+    if (!clientEmail) {
+      alert('No client email set. Start a conversation first.');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Reset data for "${clientEmail}"?\n\nThis will delete:\n- This client's profile\n- This client's events\n- This client's tasks\n\nOther clients are not affected. This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setResetClientLoading(true);
+    try {
+      const result = await requestJSON<{
+        email: string;
+        client_deleted: boolean;
+        events_deleted: number;
+        tasks_deleted: number;
+      }>(`${API_BASE}/client/reset`, {
+        method: 'POST',
+        body: JSON.stringify({ email: clientEmail }),
+      });
+      // Clear frontend state
+      setSessionId(null);
+      setMessages([]);
+      setEventInfo(null);
+      setHasStarted(false);
+      setDraftInput('');
+      setClientEmail(null);
+      await refreshTasks();
+      alert(
+        `Client reset complete:\n- Events deleted: ${result.events_deleted}\n- Tasks deleted: ${result.tasks_deleted}`
+      );
+    } catch (error) {
+      console.error('Error resetting client:', error);
+      alert('Error resetting client data. Please try again.');
+    } finally {
+      setResetClientLoading(false);
+    }
+  }, [clientEmail, refreshTasks]);
+
   useEffect(() => {
     isMountedRef.current = true;
     // Ping backend health and start polling only when reachable
@@ -458,6 +500,7 @@ export default function EmailThreadUI() {
     }
     setIsLoading(true);
     const email = extractEmail(trimmed);
+    setClientEmail(email);
     setMessages(() => []);
     appendMessage({
       role: 'user',
@@ -942,13 +985,23 @@ export default function EmailThreadUI() {
         <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-bold text-base">📝 Tasks</h3>
-            <button
-              onClick={() => clearResolvedTasks().catch(() => undefined)}
-              disabled={cleanupLoading || tasks.length === 0}
-              className="px-3 py-1 text-xs font-semibold rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
-            >
-              {cleanupLoading ? 'Clearing…' : 'Clear resolved'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => clearResolvedTasks().catch(() => undefined)}
+                disabled={cleanupLoading || tasks.length === 0}
+                className="px-3 py-1 text-xs font-semibold rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
+              >
+                {cleanupLoading ? 'Clearing…' : 'Clear resolved'}
+              </button>
+              <button
+                onClick={() => resetClientData().catch(() => undefined)}
+                disabled={resetClientLoading || !clientEmail}
+                className="px-3 py-1 text-xs font-semibold rounded-full border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
+                title={clientEmail ? `Reset data for ${clientEmail}` : 'Start a conversation first'}
+              >
+                {resetClientLoading ? 'Resetting…' : '🗑️ Reset Client'}
+              </button>
+            </div>
           </div>
           {tasks.length === 0 ? (
             <p className="text-xs text-gray-500">No pending tasks.</p>

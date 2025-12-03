@@ -31,7 +31,24 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+# Import enhanced detection from keyword_buckets
+from backend.workflows.nlu.keyword_buckets import (
+    DetourMode,
+    MessageIntent,
+    ChangeIntentResult,
+    compute_change_intent_score,
+    has_revision_signal,
+    has_bound_target,
+    is_pure_qa,
+    is_confirmation,
+    is_decline,
+    detect_language,
+    get_all_change_verbs,
+    get_all_revision_markers,
+    TARGET_PATTERNS,
+)
 
 
 class ChangeType(Enum):
@@ -68,6 +85,34 @@ class NextStepDecision:
         if not self.needs_reeval:
             parts.append("needs_reeval=False")
         return f"NextStepDecision({', '.join(parts)})"
+
+
+@dataclass
+class EnhancedChangeResult:
+    """
+    Enhanced change detection result with dual-condition logic.
+
+    This replaces the simple Optional[ChangeType] return with richer information
+    including the detour mode and alternative intent if not a change.
+    """
+    is_change: bool                              # True if dual condition met
+    change_type: Optional[ChangeType]            # Which variable is being changed
+    mode: Optional[DetourMode]                   # LONG/FAST/EXPLICIT
+    confidence: float                            # 0.0-1.0
+    alternative_intent: Optional[MessageIntent]  # If not a change, what is it?
+    revision_signals: List[str]                  # Which patterns matched
+    target_matches: List[str]                    # Which target patterns matched
+    language: str                                # "en", "de", or "mixed"
+    old_value: Optional[Any] = None              # Previous value (if detectable)
+    new_value: Optional[Any] = None              # New value (if provided)
+
+    def __str__(self) -> str:
+        if self.is_change:
+            return (
+                f"Change({self.change_type.value}, mode={self.mode.value if self.mode else 'none'}, "
+                f"conf={self.confidence:.2f})"
+            )
+        return f"NoChange(intent={self.alternative_intent}, conf={self.confidence:.2f})"
 
 
 # ============================================================================
@@ -736,3 +781,598 @@ def compute_offer_hash(offer_payload: Dict[str, Any]) -> str:
     }
 
     return stable_hash(offer_subset)
+
+
+# ============================================================================
+# ENHANCED DETECTION WITH DUAL-CONDITION LOGIC (V2)
+# ============================================================================
+
+
+def _map_target_to_change_type(target_type: Optional[str]) -> Optional[ChangeType]:
+    """Map keyword bucket target type to ChangeType enum."""
+    if target_type == "date":
+        return ChangeType.DATE
+    elif target_type == "room":
+        return ChangeType.ROOM
+    elif target_type == "requirements":
+        return ChangeType.REQUIREMENTS
+    elif target_type == "products":
+        return ChangeType.PRODUCTS
+    return None
+
+
+def _extract_old_new_values(
+    text: str,
+    target_type: Optional[str],
+    event_state: Dict[str, Any],
+    user_info: Dict[str, Any],
+) -> Tuple[Optional[Any], Optional[Any]]:
+    """
+    Extract old and new values from message and state.
+
+    Returns:
+        (old_value, new_value) tuple
+    """
+    old_value = None
+    new_value = None
+
+    if target_type == "date":
+        old_value = event_state.get("chosen_date")
+        new_value = user_info.get("date") or user_info.get("event_date")
+
+    elif target_type == "room":
+        old_value = event_state.get("locked_room_id")
+        new_value = user_info.get("room") or user_info.get("preferred_room")
+
+    elif target_type == "requirements":
+        # For requirements, old_value is the current requirements dict
+        old_value = event_state.get("requirements")
+        # New value is extracted fields from user_info
+        new_value = {}
+        for field in ["participants", "number_of_participants", "layout", "seating_layout",
+                      "start_time", "end_time", "special_requirements"]:
+            if user_info.get(field):
+                new_value[field] = user_info.get(field)
+        if not new_value:
+            new_value = None
+
+    elif target_type == "products":
+        old_value = event_state.get("selected_products")
+        new_value = user_info.get("products") or user_info.get("products_add")
+
+    return old_value, new_value
+
+
+def _determine_detour_mode(
+    old_value: Optional[Any],
+    new_value: Optional[Any],
+    text: str,
+) -> DetourMode:
+    """
+    Determine which detour mode based on provided values.
+
+    - LONG: No new value provided (need to ask)
+    - FAST: New value provided (can validate and proceed)
+    - EXPLICIT: Both old and new values mentioned in message
+    """
+    text_lower = text.lower()
+
+    # Check for explicit old+new pattern - must mention BOTH values
+    # Pattern: "from X to Y" or "instead of X, Y" or "not X but Y"
+    explicit_patterns = [
+        r"(instead\s+of|not)\s+\S+.*?(but|,)\s+\S+",  # "instead of X, Y"
+        r"from\s+\d{1,2}[./\-]\d{1,2}.*?to\s+\d{1,2}[./\-]\d{1,2}",  # "from 21.02 to 28.02"
+        r"from\s+\d{4}[./\-]\d{1,2}[./\-]\d{1,2}.*?to\s+\d{4}[./\-]\d{1,2}[./\-]\d{1,2}",  # ISO dates
+    ]
+
+    # Only count as EXPLICIT if old_value is actually mentioned in the text
+    old_mentioned = False
+    if old_value:
+        old_str = str(old_value).lower()
+        # Check if old value or its parts are in the text
+        if old_str in text_lower:
+            old_mentioned = True
+        elif old_str.replace("-", ".") in text_lower:
+            old_mentioned = True
+        elif old_str.replace("-", "/") in text_lower:
+            old_mentioned = True
+
+    has_explicit = any(re.search(p, text_lower) for p in explicit_patterns)
+
+    if has_explicit and old_mentioned and old_value and new_value:
+        return DetourMode.EXPLICIT
+    elif new_value:
+        return DetourMode.FAST
+    else:
+        return DetourMode.LONG
+
+
+def detect_change_type_enhanced(
+    event_state: Dict[str, Any],
+    user_info: Dict[str, Any],
+    *,
+    message_text: Optional[str] = None,
+) -> EnhancedChangeResult:
+    """
+    Enhanced change detection using dual-condition logic.
+
+    A message triggers a detour ONLY when BOTH conditions are met:
+    1. Has revision signal (change verb OR revision marker)
+    2. Has bound target (explicit value OR anaphoric reference)
+
+    This prevents false positives on pure Q&A questions.
+
+    Args:
+        event_state: Current event entry
+        user_info: Extracted user information from message
+        message_text: Client message text
+
+    Returns:
+        EnhancedChangeResult with full detection details
+
+    Examples that trigger detour:
+        - "Sorry, I meant 2026-02-28" -> DETOUR_DATE (fast)
+        - "Can we change the room?" -> DETOUR_ROOM (long)
+        - "Der 10. klappt doch nicht mehr" -> DETOUR_DATE (long, German)
+
+    Examples that DON'T trigger (route to Q&A):
+        - "What rooms are free in December?" -> GENERAL_QA
+        - "Do you have parking?" -> GENERAL_QA
+        - "What's the price?" -> GENERAL_QA
+    """
+    if not message_text:
+        return EnhancedChangeResult(
+            is_change=False,
+            change_type=None,
+            mode=None,
+            confidence=0.0,
+            alternative_intent=MessageIntent.UNCLEAR,
+            revision_signals=[],
+            target_matches=[],
+            language="en",
+        )
+
+    # Use the comprehensive keyword bucket detection
+    intent_result = compute_change_intent_score(message_text, event_state)
+
+    # If no change intent detected, return early with alternative intent
+    if not intent_result.has_change_intent:
+        return EnhancedChangeResult(
+            is_change=False,
+            change_type=None,
+            mode=None,
+            confidence=intent_result.score,
+            alternative_intent=intent_result.preliminary_intent,
+            revision_signals=intent_result.revision_signals,
+            target_matches=intent_result.target_matches,
+            language=intent_result.language,
+        )
+
+    # Map target type to ChangeType
+    change_type = _map_target_to_change_type(intent_result.target_type)
+
+    # If we couldn't determine specific change type, try to infer from user_info
+    if change_type is None:
+        # Check what fields are present in user_info
+        if user_info.get("date") or user_info.get("event_date"):
+            change_type = ChangeType.DATE
+        elif user_info.get("room") or user_info.get("preferred_room"):
+            change_type = ChangeType.ROOM
+        elif has_requirement_update(event_state, user_info):
+            change_type = ChangeType.REQUIREMENTS
+        elif has_product_update(user_info):
+            change_type = ChangeType.PRODUCTS
+
+    # Extract old/new values
+    old_value, new_value = _extract_old_new_values(
+        message_text,
+        intent_result.target_type,
+        event_state,
+        user_info,
+    )
+
+    # Determine detour mode
+    mode = _determine_detour_mode(old_value, new_value, message_text)
+
+    # Validate that this is actually a change (not just mentioning same value)
+    if old_value and new_value and str(old_value) == str(new_value):
+        # Same value mentioned - not a real change
+        return EnhancedChangeResult(
+            is_change=False,
+            change_type=None,
+            mode=None,
+            confidence=0.3,
+            alternative_intent=MessageIntent.CONFIRMATION,
+            revision_signals=intent_result.revision_signals,
+            target_matches=intent_result.target_matches,
+            language=intent_result.language,
+            old_value=old_value,
+            new_value=new_value,
+        )
+
+    return EnhancedChangeResult(
+        is_change=True,
+        change_type=change_type,
+        mode=mode,
+        confidence=intent_result.score,
+        alternative_intent=None,
+        revision_signals=intent_result.revision_signals,
+        target_matches=intent_result.target_matches,
+        language=intent_result.language,
+        old_value=old_value,
+        new_value=new_value,
+    )
+
+
+def detect_change_with_fallback(
+    event_state: Dict[str, Any],
+    user_info: Dict[str, Any],
+    *,
+    message_text: Optional[str] = None,
+) -> Tuple[Optional[ChangeType], EnhancedChangeResult]:
+    """
+    Wrapper that provides backward compatibility with detect_change_type
+    while also returning enhanced result.
+
+    Returns:
+        (Optional[ChangeType], EnhancedChangeResult) - first value for backward compat,
+        second value has full detection details
+    """
+    enhanced = detect_change_type_enhanced(event_state, user_info, message_text=message_text)
+
+    if enhanced.is_change:
+        return enhanced.change_type, enhanced
+    return None, enhanced
+
+
+# ============================================================================
+# AMBIGUOUS TARGET RESOLUTION (when value provided without explicit type)
+# ============================================================================
+
+@dataclass
+class AmbiguousTargetResult:
+    """Result of ambiguous target resolution."""
+    is_ambiguous: bool                      # True if multiple targets could match
+    inferred_target: Optional[str]          # Best guess: "event_date", "site_visit_date", "room", etc.
+    alternative_targets: List[str]          # Other possible targets
+    confidence: float                       # 0.0-1.0
+    inference_reason: str                   # Why we chose this target
+    needs_disambiguation_message: bool      # Should we add clarification message?
+    disambiguation_message: Optional[str]   # The message to append if ambiguous
+
+
+# Value type patterns (detect type of value without explicit mention)
+VALUE_TYPE_PATTERNS = {
+    "date_value": [
+        r"\d{4}[-./]\d{1,2}[-./]\d{1,2}",  # ISO date: 2026-02-14
+        r"\d{1,2}[-./]\d{1,2}[-./]\d{4}",  # DD.MM.YYYY
+        r"\d{1,2}[-./]\d{1,2}\b",           # DD.MM
+        r"\b(january|february|march|april|may|june|july|august|september|oktober|november|december)\s+\d{1,2}",
+        r"\b\d{1,2}\s+(january|february|march|april|may|june|july|august|september|oktober|november|december)",
+        r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+    ],
+    "time_value": [
+        r"\d{1,2}:\d{2}",                   # 18:00
+        r"\d{1,2}\s*(am|pm)\b",             # 6pm
+    ],
+    "room_value": [
+        r"\broom\s+[a-z]\b",                # Room A
+        r"\b(sky\s*loft|garden|terrace|punkt\.?\s*null)\b",
+    ],
+    "capacity_value": [
+        r"\b\d+\s*(people|persons?|guests?|pax|attendees?)\b",
+    ],
+}
+
+
+def _has_value_without_explicit_type(
+    text: str,
+    target_type: str,
+) -> bool:
+    """
+    Check if text contains a value of the given type WITHOUT explicitly
+    mentioning the type name.
+
+    E.g., "change to 2026-02-14" has a date value but doesn't say "date".
+    """
+    text_lower = text.lower()
+
+    # Check if value pattern matches
+    patterns = VALUE_TYPE_PATTERNS.get(f"{target_type}_value", [])
+    has_value = any(re.search(p, text_lower) for p in patterns)
+
+    if not has_value:
+        return False
+
+    # Check if type is explicitly mentioned
+    type_keywords = {
+        "date": ["date", "day", "termin", "datum"],
+        "time": ["time", "uhrzeit", "zeit"],
+        "room": ["room", "space", "venue", "raum", "saal"],
+    }
+
+    keywords = type_keywords.get(target_type, [])
+    type_mentioned = any(kw in text_lower for kw in keywords)
+
+    return has_value and not type_mentioned
+
+
+def _get_confirmed_variables_of_type(
+    event_state: Dict[str, Any],
+    value_type: str,
+) -> List[Tuple[str, Any, Optional[int]]]:
+    """
+    Get all confirmed/captured variables of the given type.
+
+    Returns:
+        List of (variable_name, value, confirmation_step) tuples
+    """
+    results = []
+
+    if value_type == "date":
+        # Event date
+        if event_state.get("date_confirmed") and event_state.get("chosen_date"):
+            step = event_state.get("date_confirmed_at_step", 2)
+            results.append(("event_date", event_state["chosen_date"], step))
+
+        # Site visit date
+        site_visit_date = event_state.get("site_visit_date")
+        if site_visit_date:
+            step = event_state.get("site_visit_confirmed_at_step", 7)
+            results.append(("site_visit_date", site_visit_date, step))
+
+    elif value_type == "room":
+        # Locked room
+        if event_state.get("locked_room_id"):
+            step = event_state.get("room_confirmed_at_step", 3)
+            results.append(("event_room", event_state["locked_room_id"], step))
+
+        # Site visit room
+        site_visit_room = event_state.get("site_visit_room")
+        if site_visit_room:
+            step = event_state.get("site_visit_room_at_step", 7)
+            results.append(("site_visit_room", site_visit_room, step))
+
+    return results
+
+
+def _get_last_interaction_context(
+    event_state: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Get context about the last interaction to help disambiguate.
+
+    Returns:
+        Dict with:
+        - last_step: int
+        - last_qna_topic: Optional[str] (e.g., "event_date", "site_visit")
+        - last_confirmed_variable: Optional[str]
+    """
+    context = {
+        "last_step": event_state.get("current_step", 1),
+        "last_qna_topic": None,
+        "last_confirmed_variable": None,
+    }
+
+    # Check audit log for last Q&A topic
+    audit_log = event_state.get("audit_log", [])
+    if audit_log:
+        last_entry = audit_log[-1] if isinstance(audit_log, list) else None
+        if last_entry:
+            action = last_entry.get("action", "")
+            if "site_visit" in action.lower():
+                context["last_qna_topic"] = "site_visit"
+            elif "date" in action.lower():
+                context["last_qna_topic"] = "event_date"
+            elif "room" in action.lower():
+                context["last_qna_topic"] = "room"
+
+    return context
+
+
+def resolve_ambiguous_target(
+    event_state: Dict[str, Any],
+    value_type: str,
+    message_text: str,
+) -> AmbiguousTargetResult:
+    """
+    Resolve which target the client means when they provide a value
+    without explicitly mentioning the type.
+
+    E.g., "change to 2026-02-14" - is it event date or site visit date?
+
+    Resolution rules:
+    1. If only ONE variable of that type exists → use it
+    2. If MULTIPLE exist:
+       a. Check if last step/Q&A was about one of them → use that
+       b. Check recency (which was confirmed more recently) → use that
+       c. If still ambiguous → needs clarification
+
+    Args:
+        event_state: Current event state
+        value_type: Type of value detected ("date", "room", etc.)
+        message_text: Original message text
+
+    Returns:
+        AmbiguousTargetResult with resolution details
+    """
+    confirmed = _get_confirmed_variables_of_type(event_state, value_type)
+
+    # No confirmed variables of this type
+    if not confirmed:
+        return AmbiguousTargetResult(
+            is_ambiguous=False,
+            inferred_target=f"event_{value_type}",  # Default to event-level
+            alternative_targets=[],
+            confidence=0.8,
+            inference_reason="no_confirmed_variables",
+            needs_disambiguation_message=False,
+            disambiguation_message=None,
+        )
+
+    # Only one variable of this type
+    if len(confirmed) == 1:
+        var_name, _, _ = confirmed[0]
+        return AmbiguousTargetResult(
+            is_ambiguous=False,
+            inferred_target=var_name,
+            alternative_targets=[],
+            confidence=0.95,
+            inference_reason="single_confirmed_variable",
+            needs_disambiguation_message=False,
+            disambiguation_message=None,
+        )
+
+    # Multiple variables - need to disambiguate
+    context = _get_last_interaction_context(event_state)
+    current_step = context["last_step"]
+
+    # Rule 2a: Check if last Q&A/step was about one of them
+    if context["last_qna_topic"]:
+        for var_name, _, _ in confirmed:
+            if context["last_qna_topic"] in var_name:
+                alt_targets = [v[0] for v in confirmed if v[0] != var_name]
+                return AmbiguousTargetResult(
+                    is_ambiguous=True,
+                    inferred_target=var_name,
+                    alternative_targets=alt_targets,
+                    confidence=0.75,
+                    inference_reason=f"last_qna_topic_was_{context['last_qna_topic']}",
+                    needs_disambiguation_message=True,
+                    disambiguation_message=_build_disambiguation_message(var_name, alt_targets),
+                )
+
+    # Rule 2b: Check recency (which step was more recent)
+    # Sort by step number (higher = more recent)
+    sorted_confirmed = sorted(confirmed, key=lambda x: x[2] or 0, reverse=True)
+    most_recent = sorted_confirmed[0]
+
+    var_name, _, step = most_recent
+    alt_targets = [v[0] for v in sorted_confirmed[1:]]
+
+    # Check step distance
+    step_distance_to_most_recent = abs(current_step - (step or 0))
+    step_distance_to_second = abs(current_step - (sorted_confirmed[1][2] or 0)) if len(sorted_confirmed) > 1 else 999
+
+    # If most recent is clearly closer, use it with disambiguation message
+    if step_distance_to_most_recent < step_distance_to_second:
+        return AmbiguousTargetResult(
+            is_ambiguous=True,
+            inferred_target=var_name,
+            alternative_targets=alt_targets,
+            confidence=0.7,
+            inference_reason=f"most_recent_confirmed_at_step_{step}",
+            needs_disambiguation_message=True,
+            disambiguation_message=_build_disambiguation_message(var_name, alt_targets),
+        )
+
+    # Truly ambiguous - ask for clarification
+    return AmbiguousTargetResult(
+        is_ambiguous=True,
+        inferred_target=None,
+        alternative_targets=[v[0] for v in confirmed],
+        confidence=0.3,
+        inference_reason="equally_recent_need_clarification",
+        needs_disambiguation_message=True,
+        disambiguation_message=_build_clarification_request(value_type, [v[0] for v in confirmed]),
+    )
+
+
+def _build_disambiguation_message(
+    inferred_target: str,
+    alternative_targets: List[str],
+) -> str:
+    """
+    Build a message to append when we've made an inference but alternatives exist.
+
+    E.g., "If you meant site visit date, please write 'change site visit date'
+           and this change will be cancelled."
+    """
+    if not alternative_targets:
+        return ""
+
+    # Map internal names to user-friendly names
+    friendly_names = {
+        "event_date": "event date",
+        "site_visit_date": "site visit date",
+        "event_room": "event room",
+        "site_visit_room": "site visit room",
+    }
+
+    alt_name = friendly_names.get(alternative_targets[0], alternative_targets[0].replace("_", " "))
+
+    return (
+        f"\n\n---\n"
+        f"If you meant the **{alt_name}** instead, please write "
+        f"'change {alt_name}' and this update will be cancelled."
+    )
+
+
+def _build_clarification_request(
+    value_type: str,
+    options: List[str],
+) -> str:
+    """
+    Build a message asking for clarification when we can't infer.
+    """
+    friendly_names = {
+        "event_date": "event date",
+        "site_visit_date": "site visit date",
+        "event_room": "event room",
+        "site_visit_room": "site visit room",
+    }
+
+    options_text = " or ".join([friendly_names.get(o, o.replace("_", " ")) for o in options])
+
+    return (
+        f"I noticed you want to change a {value_type}, but I'm not sure which one. "
+        f"Could you please clarify if you mean the **{options_text}**?"
+    )
+
+
+def detect_change_type_enhanced_with_disambiguation(
+    event_state: Dict[str, Any],
+    user_info: Dict[str, Any],
+    *,
+    message_text: Optional[str] = None,
+) -> Tuple[EnhancedChangeResult, Optional[AmbiguousTargetResult]]:
+    """
+    Enhanced change detection with ambiguous target resolution.
+
+    When a client provides a value without explicitly mentioning the type
+    (e.g., "change to 2026-02-14" without saying "date"), this function
+    resolves which variable they likely mean.
+
+    Returns:
+        (EnhancedChangeResult, Optional[AmbiguousTargetResult])
+        - AmbiguousTargetResult is populated when disambiguation was needed
+    """
+    enhanced = detect_change_type_enhanced(event_state, user_info, message_text=message_text)
+
+    if not enhanced.is_change:
+        return enhanced, None
+
+    # Check if target type was explicitly mentioned
+    if message_text and enhanced.target_matches:
+        # If we matched explicit type keywords (not just values), no disambiguation needed
+        explicit_type_patterns = [
+            r"\b(date|day|termin|datum)\b",
+            r"\b(room|space|venue|raum|saal)\b",
+            r"\b(site\s+visit|besichtigung)\b",
+        ]
+        text_lower = message_text.lower()
+        has_explicit_type = any(re.search(p, text_lower) for p in explicit_type_patterns)
+
+        if has_explicit_type:
+            return enhanced, None
+
+    # Check for implicit target (value without type)
+    if message_text:
+        for value_type in ["date", "room"]:
+            if _has_value_without_explicit_type(message_text, value_type):
+                disambiguation = resolve_ambiguous_target(event_state, value_type, message_text)
+
+                if disambiguation.is_ambiguous:
+                    return enhanced, disambiguation
+
+    return enhanced, None

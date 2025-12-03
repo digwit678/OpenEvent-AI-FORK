@@ -18,9 +18,15 @@ from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.sorting import rank_rooms, RankedRoom
 from backend.workflows.common.room_rules import find_better_room_dates
 from backend.workflows.common.types import GroupResult, WorkflowState
+from backend.workflows.common.confidence import check_nonsense_gate
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
 from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
-from backend.workflows.change_propagation import detect_change_type, route_change_on_updated_variable
+from backend.workflows.change_propagation import (
+    ChangeType,
+    detect_change_type,
+    detect_change_type_enhanced,
+    route_change_on_updated_variable,
+)
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
@@ -125,6 +131,40 @@ def process(state: WorkflowState) -> GroupResult:
     message_text = _message_text(state)
     user_info = state.user_info or {}
 
+    # -------------------------------------------------------------------------
+    # NONSENSE GATE: Check for off-topic/nonsense using existing confidence
+    # -------------------------------------------------------------------------
+    nonsense_action = check_nonsense_gate(state.confidence or 0.0, message_text)
+    if nonsense_action == "ignore":
+        # Silent ignore - no reply, no further processing
+        return GroupResult(
+            action="nonsense_ignored",
+            payload={"reason": "low_confidence_no_workflow_signal", "step": 3},
+            halt=True,
+        )
+    if nonsense_action == "hil":
+        # Borderline - defer to human
+        draft = {
+            "body": append_footer(
+                "I'm not sure I understood your message. I've forwarded it to our team for review.",
+                step=3,
+                next_step=3,
+                thread_state="Awaiting Manager Review",
+            ),
+            "topic": "nonsense_hil_review",
+            "requires_approval": True,
+        }
+        state.add_draft_message(draft)
+        update_event_metadata(event_entry, current_step=3, thread_state="Awaiting Manager Review")
+        state.set_thread_state("Awaiting Manager Review")
+        state.extras["persist"] = True
+        return GroupResult(
+            action="nonsense_hil_deferred",
+            payload={"reason": "borderline_confidence", "step": 3},
+            halt=True,
+        )
+    # -------------------------------------------------------------------------
+
     # Q&A classification
     classification = detect_general_room_query(message_text, state)
     state.extras["_general_qna_classification"] = classification
@@ -150,7 +190,37 @@ def process(state: WorkflowState) -> GroupResult:
         )
 
     # [CHANGE DETECTION] Run BEFORE Q&A dispatch
-    change_type = detect_change_type(event_entry, user_info, message_text=message_text)
+    # Use enhanced detection with dual-condition logic (revision signal + bound target)
+    enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
+    change_type = enhanced_result.change_type if enhanced_result.is_change else None
+
+    # [SKIP DUPLICATE DETOUR] If a date change is detected but the date in the message
+    # matches the already-confirmed chosen_date, skip the detour. This happens when
+    # Step 2's finalize_confirmation internally calls Step 3 on the same message.
+    if change_type == ChangeType.DATE and event_entry.get("date_confirmed"):
+        from backend.workflows.common.datetime_parse import parse_all_dates
+        from datetime import date as dt_date
+
+        chosen_date_raw = event_entry.get("chosen_date")  # e.g., "21.02.2026"
+        # Parse chosen_date (DD.MM.YYYY format) to ISO
+        chosen_parsed = parse_ddmmyyyy(chosen_date_raw) if chosen_date_raw else None
+        chosen_iso = chosen_parsed.isoformat() if chosen_parsed else None
+        message_dates = list(parse_all_dates(message_text or "", fallback_year=dt_date.today().year))
+        # Check if ANY date in the message matches chosen_date (not just the first one)
+        # This handles cases where today's date or other dates are also parsed
+        if message_dates and chosen_iso:
+            message_isos = [d.isoformat() for d in message_dates]
+            if chosen_iso in message_isos:
+                # The just-confirmed date is in the message - not a new change request
+                change_type = None
+                if thread_id:
+                    trace_marker(
+                        thread_id,
+                        "SKIP_DUPLICATE_DATE_DETOUR",
+                        detail=f"chosen_date={chosen_iso} found in message_dates={message_isos}",
+                        data={"message_dates": message_isos, "chosen_date": chosen_iso},
+                        owner_step="Step3_Room",
+                    )
 
     if change_type is not None:
         # Change detected: route it per DAG rules and skip Q&A dispatch
