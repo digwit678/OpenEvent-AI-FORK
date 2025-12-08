@@ -9,6 +9,7 @@ from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.room_rules import site_visit_allowed
 from backend.workflows.common.types import GroupResult, WorkflowState
+from backend.workflows.common.confidence import check_nonsense_gate
 from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
@@ -57,6 +58,40 @@ def process(state: WorkflowState) -> GroupResult:
     # [CHANGE DETECTION] Run FIRST to detect structural changes
     message_text = (state.message.body or "").strip()
     user_info = state.user_info or {}
+
+    # -------------------------------------------------------------------------
+    # NONSENSE GATE: Check for off-topic/nonsense using existing confidence
+    # -------------------------------------------------------------------------
+    nonsense_action = check_nonsense_gate(state.confidence or 0.0, message_text)
+    if nonsense_action == "ignore":
+        # Silent ignore - no reply, no further processing
+        return GroupResult(
+            action="nonsense_ignored",
+            payload={"reason": "low_confidence_no_workflow_signal", "step": 7},
+            halt=True,
+        )
+    if nonsense_action == "hil":
+        # Borderline - defer to human
+        draft = {
+            "body": append_footer(
+                "I'm not sure I understood your message. I've forwarded it to our team for review.",
+                step=7,
+                next_step=7,
+                thread_state="Awaiting Manager Review",
+            ),
+            "topic": "nonsense_hil_review",
+            "requires_approval": True,
+        }
+        state.add_draft_message(draft)
+        update_event_metadata(event_entry, current_step=7, thread_state="Awaiting Manager Review")
+        state.set_thread_state("Awaiting Manager Review")
+        state.extras["persist"] = True
+        return GroupResult(
+            action="nonsense_hil_deferred",
+            payload={"reason": "borderline_confidence", "step": 7},
+            halt=True,
+        )
+    # -------------------------------------------------------------------------
 
     structural = _detect_structural_change(state.user_info, event_entry)
     if structural:

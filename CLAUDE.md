@@ -7,6 +7,8 @@ This file provides guidance to Claude 4.5 working on the OpenEvent-AI repository
 - Act as a senior test- and workflow-focused engineer
 - Keep the system aligned with the management plan "Lindy" and Workflow v3/v4 specifications
 - Prioritize deterministic backend behaviour and strong automated tests over ad-hoc changes
+- Maintain clear documentation of bugs in TEAM_GUIDE.md and new features and changes in the DEV_CHANGELOG.md . Always consult TEAM_GUIDE.md before fixing a bug in case it already existed. 
+- For each new session always re-read the git commits since your last session to stay up to date and DEV_CHANGELOG.md for recent changes. Also reread the workflow v4 in backend workflow/specs/ . 
 
 ## Canonical Vocabulary and Concepts
 
@@ -383,7 +385,7 @@ The workflow uses three distinct LLM roles, each with strict boundaries:
 - `OE_LLM_PROFILE`: Profile name from `configs/llm_profiles.json`
 - `OPENAI_API_KEY`: Set via environment or macOS Keychain (see `scripts/run_ci_or_stub.sh`)
 
-**Stubbed Testing:** Tests in `tests/stubs/` provide deterministic LLM responses for regression tests
+**Testing:** Tests in `tests/stubs/` provide deterministic LLM responses for regression tests but do not reflect live behaviour of agent using OpenAI key. So always test with real openai key mimicking real user flow as it happens in the real world (not just backend but UX and user perspective). The challenge of this application is making it generally useful and not having to specifically hardcode each new scenario. We are looking for a sustainable , long and general solution for all kind of client responses (focusing on 2 languages for now but planning multilingual usage for the future).
 
 ## Important Implementation Notes
 
@@ -404,3 +406,4 @@ The workflow uses three distinct LLM roles, each with strict boundaries:
 3. **Step Skipping:** Workflow enforces strict prerequisites; cannot skip to Step 5 without completing Steps 1-4
 4. **Hash Mismatches:** If `room_eval_hash` doesn't match `requirements_hash`, Step 3 blocks until re-approved
 5. **Pytest Test Selection:** Default runs `v4` tests only; use `-m "v4 or legacy"` to include all
+6. **LLM Stub vs Live:** Tests in `tests/stubs/` use stubbed LLM responses; always validate critical flows with live OpenAI key mimicking real client interactions from workflow start to end (offer confirmation).

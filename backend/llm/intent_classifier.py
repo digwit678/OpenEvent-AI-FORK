@@ -5,6 +5,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from backend.domain.vocabulary import IntentLabel
 from backend.workflows.llm.adapter import classify_intent as agent_classify_intent
+from backend.workflows.common.confidence import has_workflow_signal, is_gibberish
 
 _RESUME_PHRASES = {
     "yes",
@@ -306,16 +307,44 @@ def classify_intent(
 ) -> Dict[str, Any]:
     """
     Deterministic classifier producing workflow + Q&A routing hints.
+
+    Early gate: If message has no workflow signal and is gibberish,
+    return "nonsense" immediately to save LLM cost.
     """
 
     normalized = _normalise_text(message)
     current_step = current_step or 2
+
+    # -------------------------------------------------------------------------
+    # EARLY GATE: Catch gibberish BEFORE any LLM calls to save cost
+    # -------------------------------------------------------------------------
+    _has_workflow_signal = has_workflow_signal(message)
+    needs_confidence_gate = False
+
+    if not _has_workflow_signal:
+        if is_gibberish(message):
+            # Pure gibberish (keyboard mash, repeated chars) - ignore immediately
+            return {
+                "primary": "nonsense",
+                "secondary": [],
+                "step_anchor": None,
+                "wants_resume": False,
+                "agent_intent": "nonsense",
+                "agent_confidence": 0.0,
+                "needs_confidence_gate": False,
+            }
+        else:
+            # No workflow signal but not obvious gibberish (could be off-topic)
+            # Flag for post-step-handler confidence check
+            needs_confidence_gate = True
+    # -------------------------------------------------------------------------
 
     classification: Dict[str, Any] = {
         "primary": "general_qna",
         "secondary": [],
         "step_anchor": None,
         "wants_resume": False,
+        "needs_confidence_gate": needs_confidence_gate,
     }
 
     if expect_resume:
