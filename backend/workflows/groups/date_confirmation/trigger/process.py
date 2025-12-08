@@ -54,10 +54,15 @@ from backend.workflows.common.general_qna import (
     enrich_general_qna_step2,
     _fallback_structured_body,
 )
-from backend.workflows.change_propagation import detect_change_type, route_change_on_updated_variable
+from backend.workflows.change_propagation import (
+    detect_change_type,
+    detect_change_type_enhanced,
+    route_change_on_updated_variable,
+)
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.common.types import GroupResult, WorkflowState
+from backend.workflows.common.confidence import check_nonsense_gate
 from backend.workflows.groups.intake.condition.checks import suggest_dates
 from backend.workflows.common.relative_dates import resolve_relative_date
 from backend.workflows.groups.room_availability.condition.decide import room_status_on_date
@@ -772,6 +777,41 @@ def process(state: WorkflowState) -> GroupResult:
         return _apply_step2_hil_decision(state, event_entry, decision)
 
     message_text = _message_text(state)
+
+    # -------------------------------------------------------------------------
+    # NONSENSE GATE: Check for off-topic/nonsense using existing confidence
+    # -------------------------------------------------------------------------
+    nonsense_action = check_nonsense_gate(state.confidence or 0.0, message_text)
+    if nonsense_action == "ignore":
+        # Silent ignore - no reply, no further processing
+        return GroupResult(
+            action="nonsense_ignored",
+            payload={"reason": "low_confidence_no_workflow_signal", "step": 2},
+            halt=True,
+        )
+    if nonsense_action == "hil":
+        # Borderline - defer to human
+        draft = {
+            "body": append_footer(
+                "I'm not sure I understood your message. I've forwarded it to our team for review.",
+                step=2,
+                next_step=2,
+                thread_state="Awaiting Manager Review",
+            ),
+            "topic": "nonsense_hil_review",
+            "requires_approval": True,
+        }
+        state.add_draft_message(draft)
+        update_event_metadata(event_entry, current_step=2, thread_state="Awaiting Manager Review")
+        state.set_thread_state("Awaiting Manager Review")
+        state.extras["persist"] = True
+        return GroupResult(
+            action="nonsense_hil_deferred",
+            payload={"reason": "borderline_confidence", "step": 2},
+            halt=True,
+        )
+    # -------------------------------------------------------------------------
+
     classification = detect_general_room_query(message_text, state)
     state.extras["_general_qna_classification"] = classification
     state.extras["general_qna_detected"] = bool(classification.get("is_general"))
@@ -798,8 +838,10 @@ def process(state: WorkflowState) -> GroupResult:
 
     # [CHANGE DETECTION] Tap incoming stream BEFORE Q&A dispatch to detect client revisions
     # ("actually we're 50 now") and route them back to dependent nodes while hashes stay valid.
+    # Use enhanced detection with dual-condition logic (revision signal + bound target)
     user_info = state.user_info or {}
-    change_type = detect_change_type(event_entry, user_info, message_text=message_text)
+    enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
+    change_type = enhanced_result.change_type if enhanced_result.is_change else None
 
     if change_type is not None:
         # Change detected: route it per DAG rules and skip Q&A dispatch
@@ -895,7 +937,11 @@ def process(state: WorkflowState) -> GroupResult:
                 return _finalize_confirmation(state, event_entry, pending_future_window)
 
     user_info = state.user_info or {}
-    range_pending = _range_query_pending(user_info, event_entry)
+
+    # If the current message contains an explicit date (e.g., "change to 2026-02-28"),
+    # skip range_pending check and try to confirm that date directly
+    message_has_explicit_date = bool(requested_client_dates)
+    range_pending = False if message_has_explicit_date else _range_query_pending(user_info, event_entry)
 
     window = None if range_pending else _resolve_confirmation_window(state, event_entry)
     if window is None:

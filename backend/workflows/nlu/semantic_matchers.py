@@ -3,13 +3,38 @@ from __future__ import annotations
 """
 Semantic pattern matching for client responses.
 Uses regex patterns + fuzzy matching instead of exact keyword lists.
+
+Enhanced with comprehensive EN/DE keyword buckets for detour detection.
 """
 
 import re
 from functools import lru_cache
-from typing import List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from backend.services.rooms import load_room_catalog
+
+# Import comprehensive keyword buckets for enhanced detection
+from backend.workflows.nlu.keyword_buckets import (
+    CHANGE_VERBS_EN,
+    CHANGE_VERBS_DE,
+    REVISION_MARKERS_EN,
+    REVISION_MARKERS_DE,
+    PURE_QA_SIGNALS_EN,
+    PURE_QA_SIGNALS_DE,
+    CONFIRMATION_SIGNALS_EN,
+    CONFIRMATION_SIGNALS_DE,
+    DECLINE_SIGNALS_EN,
+    DECLINE_SIGNALS_DE,
+    TARGET_PATTERNS,
+    detect_language,
+    has_revision_signal,
+    has_bound_target,
+    is_pure_qa,
+    compute_change_intent_score,
+    ChangeIntentResult,
+    DetourMode,
+    MessageIntent,
+)
 
 # ============================================================================
 # ACCEPTANCE / DECLINE / COUNTER PATTERNS
@@ -44,12 +69,23 @@ COUNTER_PATTERNS = [
     r"\b(could\s+you\s+do)\b",
 ]
 
+# Legacy CHANGE_PATTERNS for backward compatibility
+# For enhanced detection, use matches_change_pattern_enhanced() instead
 CHANGE_PATTERNS = [
     r"\b(change|modify|update|adjust|switch|move|shift|reschedule)\b",
     r"\b(instead\s+of|rather\s+than|replace\s+with|swap\s+(out|for))\b",
     r"\b(actually|correction|i\s+meant|sorry)\b",
     r"\b(can|could|would)\s+(we|i|you)\s+(please\s+)?(change|modify|update|adjust)\b",
 ]
+
+# Enhanced change patterns combining all keyword buckets (EN + DE)
+CHANGE_PATTERNS_ENHANCED = []
+for group in CHANGE_VERBS_EN.values():
+    CHANGE_PATTERNS_ENHANCED.extend(group)
+for group in CHANGE_VERBS_DE.values():
+    CHANGE_PATTERNS_ENHANCED.extend(group)
+CHANGE_PATTERNS_ENHANCED.extend(REVISION_MARKERS_EN)
+CHANGE_PATTERNS_ENHANCED.extend(REVISION_MARKERS_DE)
 
 QUESTION_PREFIXES = (
     "do you",
@@ -155,6 +191,63 @@ def matches_change_pattern(text: str) -> Tuple[bool, float, str]:
     return _match_patterns(text, CHANGE_PATTERNS)
 
 
+def matches_change_pattern_enhanced(
+    text: str,
+    event_state: Optional[Dict] = None,
+) -> Tuple[bool, float, str, Optional[ChangeIntentResult]]:
+    """
+    Enhanced change detection using dual-condition logic.
+
+    A message is only a change when BOTH conditions are met:
+    1. Has revision signal (change verb OR revision marker)
+    2. Has bound target (explicit value OR anaphoric reference)
+
+    This prevents false positives on pure Q&A questions like:
+    - "What rooms are free in December?" -> NOT a change
+    - "Do you have parking?" -> NOT a change
+
+    Args:
+        text: Client message text
+        event_state: Optional event state for checking confirmed values
+
+    Returns:
+        (is_match, confidence, matched_pattern, full_result)
+        - full_result contains detailed ChangeIntentResult if change detected
+    """
+    if looks_hypothetical(text):
+        return False, 0.0, "", None
+
+    # Use comprehensive dual-condition detection
+    result = compute_change_intent_score(text, event_state)
+
+    if result.has_change_intent:
+        # Return first matched pattern for compatibility
+        matched = result.revision_signals[0] if result.revision_signals else ""
+        return True, result.score, matched, result
+
+    return False, result.score, "", result
+
+
+def is_pure_qa_message(text: str) -> bool:
+    """
+    Check if message is a pure Q&A question without change intent.
+
+    Use this to filter out messages that should go to Q&A handler
+    instead of triggering a detour.
+
+    Examples that return True:
+    - "What rooms are free in December?"
+    - "Do you have parking?"
+    - "Was kostet das?"
+
+    Examples that return False:
+    - "Can we change the date?"
+    - "Sorry, I meant February 28th"
+    """
+    language = detect_language(text)
+    return is_pure_qa(text, language)
+
+
 def looks_hypothetical(text: str) -> bool:
     """Check if message is a hypothetical question vs actual request."""
     text_lower = (text or "").lower()
@@ -195,14 +288,24 @@ def _room_patterns_from_catalog() -> List[str]:
 
 
 __all__ = [
+    # Pattern matching functions
     "matches_acceptance_pattern",
     "matches_decline_pattern",
     "matches_counter_pattern",
     "matches_change_pattern",
+    "matches_change_pattern_enhanced",  # New: dual-condition detection
+    "is_pure_qa_message",               # New: Q&A filter
     "looks_hypothetical",
     "is_room_selection",
+    # Pattern lists
     "ACCEPTANCE_PATTERNS",
     "DECLINE_PATTERNS",
     "COUNTER_PATTERNS",
     "CHANGE_PATTERNS",
+    "CHANGE_PATTERNS_ENHANCED",         # New: comprehensive EN/DE patterns
+    # Re-exports from keyword_buckets for convenience
+    "ChangeIntentResult",
+    "DetourMode",
+    "MessageIntent",
+    "compute_change_intent_score",
 ]

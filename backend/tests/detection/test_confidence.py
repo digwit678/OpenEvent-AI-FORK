@@ -1,5 +1,5 @@
 from backend.workflows.common.confidence import (
-    CONFIDENCE_DEFER,
+    CONFIDENCE_NONSENSE,
     CONFIDENCE_HIGH,
     CONFIDENCE_LOW,
     CONFIDENCE_MEDIUM,
@@ -10,11 +10,11 @@ from backend.workflows.common.confidence import (
 
 
 def test_should_defer_below_threshold():
-    assert should_defer_to_human(CONFIDENCE_DEFER - 0.01)
+    assert should_defer_to_human(CONFIDENCE_NONSENSE - 0.01)
 
 
 def test_should_not_defer_at_threshold():
-    assert not should_defer_to_human(CONFIDENCE_DEFER)
+    assert not should_defer_to_human(CONFIDENCE_NONSENSE)
 
 
 def test_should_seek_clarification_below_low():

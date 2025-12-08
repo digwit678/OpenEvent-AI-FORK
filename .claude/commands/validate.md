@@ -529,3 +529,4 @@ export TZ=Europe/Zurich
 export PYTHONHASHSEED=1337
 ./scripts/test-all.sh
 ```
+## Document changes/new features in the DEV_CHANGELOG.md and new bugs in the TEAM_GUIDE.md 

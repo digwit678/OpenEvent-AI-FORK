@@ -8,7 +8,11 @@ from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import build_requirements, merge_client_profile, requirements_hash
 from backend.workflows.common.timeutils import format_ts_to_ddmmyyyy, format_iso_date_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.change_propagation import detect_change_type, route_change_on_updated_variable
+from backend.workflows.change_propagation import (
+    detect_change_type,
+    detect_change_type_enhanced,
+    route_change_on_updated_variable,
+)
 import json
 
 from backend.domain import IntentLabel
@@ -760,7 +764,13 @@ def process(state: WorkflowState) -> GroupResult:
     context = context_snapshot(state.db, client, state.client_id)
     state.record_context(context)
 
-    if not is_event_request(intent) or confidence < 0.85:
+    # [SKIP MANUAL REVIEW FOR EXISTING EVENTS]
+    # If there's an existing event at step > 1, we should NOT do "is this an event?"
+    # classification. These messages should flow through to the step-specific handlers
+    # which have their own logic for handling detours, Q&A, confirmations, etc.
+    skip_manual_review_check = linked_event and linked_event.get("current_step", 1) > 1
+
+    if not skip_manual_review_check and (not is_event_request(intent) or confidence < 0.85):
         body_text = message_payload.get("body") or ""
         awaiting_billing = linked_event and (linked_event.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
         if awaiting_billing:
@@ -1022,8 +1032,10 @@ def process(state: WorkflowState) -> GroupResult:
     detoured_to_step2 = False
 
     # Use centralized change propagation system for systematic change detection and routing
+    # Enhanced detection with dual-condition logic (revision signal + bound target)
     message_text = (state.message.subject or "") + "\n" + (state.message.body or "")
-    change_type = detect_change_type(event_entry, user_info, message_text=message_text)
+    enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
+    change_type = enhanced_result.change_type if enhanced_result.is_change else None
 
     if needs_vague_date_confirmation:
         event_entry["range_query_detected"] = True
