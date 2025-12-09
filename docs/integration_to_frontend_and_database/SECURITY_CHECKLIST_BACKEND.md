@@ -258,7 +258,72 @@ class ClientRequest(BaseModel):
 
 ---
 
-## Section 6: Rate Limiting
+## Section 6: Prompt Injection Protection
+
+**🟡 Priority: MVP Recommended**
+
+**What is this?** Prompt injection is an attack where malicious users craft input that manipulates the AI's behavior, potentially bypassing safety measures or extracting sensitive information.
+
+**Risk if not done:** Attackers could manipulate AI responses, extract system prompts, bypass business logic, or cause the AI to behave unexpectedly.
+
+### Current Protections
+
+| Protection | Status | Notes |
+|------------|--------|-------|
+| Human-in-the-Loop (HIL) gate | ✅ Active | All AI responses require manager approval |
+| Regex→NER→LLM pipeline | ✅ Active | Reduces raw text exposure to LLM |
+| Input sanitization utility | ✅ Added | `backend/workflows/llm/sanitize.py` |
+| Prompt injection test suite | ✅ Added | `backend/tests/regression/test_security_prompt_injection.py` |
+
+### Checklist
+
+| # | Question | How to Check | Status |
+|---|----------|--------------|--------|
+| 6.1 | Is user input sanitized before LLM calls? | Review LLM adapter for sanitization | ⬜ Yes  ⬜ No |
+| 6.2 | Are suspicious patterns detected? | Check `check_prompt_injection()` usage | ⬜ Yes  ⬜ No |
+| 6.3 | Are prompt injection tests passing? | Run: `pytest backend/tests/regression/test_security_prompt_injection.py` | ⬜ Pass  ⬜ Fail |
+| 6.4 | Is manager custom prompt feature sandboxed? | If implemented, use enum-based options only | ⬜ Yes  ⬜ N/A |
+
+### Usage Example
+
+```python
+from backend.workflows.llm.sanitize import (
+    sanitize_for_llm,
+    sanitize_message,
+    check_prompt_injection,
+    wrap_user_content,
+)
+
+# Sanitize before LLM call
+safe_body = sanitize_for_llm(email_body, max_length=10000)
+
+# Check for injection attempts
+is_suspicious, pattern = check_prompt_injection(user_message)
+if is_suspicious:
+    log.warning(f"Potential injection detected: {pattern}")
+
+# Wrap user content with delimiters
+wrapped = wrap_user_content(client_notes, label="CLIENT_NOTES")
+```
+
+### Attack Patterns Detected
+
+The sanitization utility detects:
+- Instruction override attempts ("ignore previous instructions")
+- Role hijacking ("you are now", "act as", "pretend to be")
+- System prompt extraction ("reveal your instructions")
+- Delimiter injection (`<system>`, `[SYSTEM]`)
+- DAN-style jailbreaks ("do anything now")
+
+### Files to Review
+
+- `backend/workflows/llm/sanitize.py` - Sanitization utilities
+- `backend/workflows/llm/adapter.py` - Where sanitization should be applied
+- `backend/adapters/agent_adapter.py` - Raw input handling
+
+---
+
+## Section 7: Rate Limiting
 
 **🟡 Priority: MVP Recommended**
 
@@ -291,7 +356,7 @@ async def conversation_endpoint(request: Request):
 
 ---
 
-## Section 7: Logging & Error Handling
+## Section 8: Logging & Error Handling
 
 **🟡 Priority: MVP Recommended**
 
@@ -329,7 +394,7 @@ except Exception as e:
 
 ---
 
-## Section 8: Data Encryption
+## Section 9: Data Encryption
 
 **🟢 Priority: Post-MVP**
 
@@ -358,7 +423,7 @@ These fields contain personally identifiable information:
 
 ---
 
-## Section 9: Quick Self-Test (3 Minutes)
+## Section 10: Quick Self-Test (3 Minutes)
 
 Do these tests yourself right now:
 
@@ -405,7 +470,7 @@ grep -r "sk-proj-" --include="*.py" --include="*.env*" .
 
 ---
 
-## Section 10: Summary Scorecard
+## Section 11: Summary Scorecard
 
 Fill this in after completing the checklist:
 
@@ -416,6 +481,7 @@ Fill this in after completing the checklist:
 | **Dangerous Endpoints Protected** | 🔴 | ⬜ Pass  ⬜ Fail | |
 | **CORS Configured (not `*`)** | 🔴 | ⬜ Pass  ⬜ Fail | |
 | **Multi-Tenant Isolation** | 🔴 | ⬜ Pass  ⬜ Fail | |
+| **Prompt Injection Protection** | 🟡 | ⬜ Pass  ⬜ Fail | |
 | **Rate Limiting Enabled** | 🟡 | ⬜ Pass  ⬜ Fail | |
 | **Input Validation** | 🟡 | ⬜ Pass  ⬜ Fail | |
 | **Secure Logging (no PII)** | 🟡 | ⬜ Pass  ⬜ Fail | |
@@ -430,7 +496,7 @@ Fill this in after completing the checklist:
 
 ---
 
-## Section 11: For Your Developer
+## Section 12: For Your Developer
 
 ### Check for Exposed Secrets
 

@@ -1396,9 +1396,10 @@ def _format_dates_list(dates: List[str], max_count: int) -> Tuple[str, int]:
 
 
 def _format_short_date(iso_date: str) -> str:
+    """Format ISO date to DD.MM.YYYY for display."""
     try:
         parsed = datetime.strptime(iso_date, "%Y-%m-%d")
-        return parsed.strftime("%d.%m.")
+        return parsed.strftime("%d.%m.%Y")
     except ValueError:
         return iso_date
 
