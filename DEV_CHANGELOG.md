@@ -2,6 +2,71 @@
 
 ## 2025-12-09
 
+### Feature: Supabase Integration Layer (Toggle-Based)
+
+**Task: Prepare codebase for frontend/Supabase integration without breaking current functionality**
+
+Created a complete integration layer that can be toggled on/off via environment variable. Current JSON-based workflow continues to work unchanged.
+
+**New Files (`backend/workflows/io/integration/`):**
+
+1. **`config.py`** — Toggle configuration
+   - `OE_INTEGRATION_MODE=json` (default) or `supabase`
+   - Environment-based config for team_id, user_id, Supabase credentials
+   - Feature flags for gradual rollout
+
+2. **`field_mapping.py`** — Column name translations
+   - `organization` → `company`
+   - `chosen_date` → `event_date`
+   - `number_of_participants` → `attendees`
+   - Layout capacity mappings (theatre → theater_capacity)
+
+3. **`uuid_adapter.py`** — UUID handling
+   - Client lookup by email → UUID
+   - Room/product slug → UUID registry
+   - Caching for performance
+
+4. **`status_utils.py`** — Status normalization
+   - `Lead` ↔ `lead` bidirectional conversion
+   - Covers events, clients, offers, tasks
+
+5. **`offer_utils.py`** — Offer formatting
+   - `generate_offer_number()` → `OE-2025-12-XXXX` format
+   - Line item creation helpers
+   - Deposit calculations
+
+6. **`hil_tasks.py`** — HIL task templates
+   - Message approval tasks (MVP requirement)
+   - Offer approval tasks
+   - Room/date confirmation tasks
+
+7. **`supabase_adapter.py`** — Supabase operations
+   - Same interface as `database.py`
+   - Translates internal ↔ Supabase schemas
+
+8. **`adapter.py`** — Main switcher
+   - Routes to JSON or Supabase based on config
+   - `db` proxy for easy usage
+
+**How to Use:**
+
+```bash
+# Current behavior (default)
+export OE_INTEGRATION_MODE=json
+# or just don't set it
+
+# Switch to Supabase
+export OE_INTEGRATION_MODE=supabase
+export OE_SUPABASE_URL=https://xxx.supabase.co
+export OE_SUPABASE_KEY=your-key
+export OE_TEAM_ID=your-team-uuid
+export OE_SYSTEM_USER_ID=your-system-user-uuid
+```
+
+**No changes to existing code required** — integration layer is additive only.
+
+---
+
 ### Change: Room Selection Now Sets Status to Option
 
 **Task: Set event status to Option when room is selected (Step 3)**
