@@ -254,6 +254,7 @@ class SendMessageRequest(BaseModel):
 
 class TaskDecisionRequest(BaseModel):
     notes: Optional[str] = None
+    edited_message: Optional[str] = None  # For AI Reply Approval: manager can edit draft before sending
 
 
 class TaskCleanupRequest(BaseModel):
@@ -853,9 +854,17 @@ async def get_pending_tasks():
 
 @app.post("/api/tasks/{task_id}/approve")
 async def approve_task(task_id: str, request: TaskDecisionRequest):
-    """OpenEvent Action (light-blue): mark a task as approved from the GUI."""
+    """OpenEvent Action (light-blue): mark a task as approved from the GUI.
+
+    For AI Reply Approval tasks, the manager can optionally edit the draft message
+    before sending by providing `edited_message` in the request body.
+    """
     try:
-        result = wf_approve_task_and_send(task_id, manager_notes=request.notes)
+        result = wf_approve_task_and_send(
+            task_id,
+            manager_notes=request.notes,
+            edited_message=request.edited_message,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:

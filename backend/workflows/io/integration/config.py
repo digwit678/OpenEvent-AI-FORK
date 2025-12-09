@@ -19,6 +19,7 @@ Environment Variables:
     OE_TEAM_ID: Team UUID for multi-tenant operations
     OE_SYSTEM_USER_ID: System user UUID for automated writes
     OE_EMAIL_ACCOUNT_ID: Email account UUID for email operations
+    OE_HIL_ALL_LLM_REPLIES: Set to "true" to require HIL approval for all AI replies
 """
 
 from __future__ import annotations
@@ -50,10 +51,17 @@ class IntegrationConfig:
     use_supabase_tasks: bool = False    # Use Supabase for HIL tasks
     use_supabase_emails: bool = False   # Use Supabase for email storage
 
+    # HIL for all LLM replies (default OFF for backwards compatibility)
+    # When True: ALL AI-generated outbound replies go to "AI Reply Approval" HIL queue
+    # When False: Current behavior (only specific actions require HIL)
+    # TODO: Set to True when integrating with OpenEvent frontend for full manager control
+    hil_all_llm_replies: bool = False
+
     @classmethod
     def from_env(cls) -> "IntegrationConfig":
         """Load configuration from environment variables."""
         mode = os.getenv("OE_INTEGRATION_MODE", "json").lower()
+        hil_all_replies = os.getenv("OE_HIL_ALL_LLM_REPLIES", "false").lower() in ("true", "1", "yes")
 
         return cls(
             mode=mode,
@@ -67,6 +75,8 @@ class IntegrationConfig:
             use_supabase_events=mode == "supabase",
             use_supabase_tasks=mode == "supabase",
             use_supabase_emails=mode == "supabase",
+            # HIL toggle for all LLM replies
+            hil_all_llm_replies=hil_all_replies,
         )
 
     def is_supabase_mode(self) -> bool:
@@ -113,3 +123,12 @@ def reload_config() -> None:
     """Reload configuration from environment (useful for testing)."""
     global INTEGRATION_CONFIG
     INTEGRATION_CONFIG = IntegrationConfig.from_env()
+
+
+def is_hil_all_replies_enabled() -> bool:
+    """Check if HIL approval is required for all AI replies.
+
+    When True: ALL AI-generated outbound replies go to "AI Reply Approval" queue
+    When False: Current behavior (only specific actions require HIL approval)
+    """
+    return INTEGRATION_CONFIG.hil_all_llm_replies

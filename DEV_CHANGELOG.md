@@ -1,5 +1,49 @@
 # Development Changelog
 
+## 2025-12-10
+
+### Feature: HIL Toggle for All LLM Replies
+
+**Task: Implement optional HIL approval for every AI-generated outbound reply**
+
+Added a toggle that, when enabled, routes ALL AI-generated replies through a separate "AI Reply Approval" HIL queue before being sent to clients. This is separate from existing HIL flows (offers, dates) which handle client-initiated actions.
+
+**Toggle Configuration:**
+- Environment variable: `OE_HIL_ALL_LLM_REPLIES=true|false`
+- Default: `false` (current behavior unchanged)
+- Set to `true` when integrating with frontend for full manager control
+
+**Files Modified:**
+
+1. **`backend/workflows/io/integration/config.py`**
+   - Added `hil_all_llm_replies` config field
+   - Added `is_hil_all_replies_enabled()` helper function
+
+2. **`backend/domain/vocabulary.py`**
+   - Added `AI_REPLY_APPROVAL` TaskType enum value
+
+3. **`backend/workflows/io/integration/hil_tasks.py`**
+   - Added `AI_REPLY_TASKS = "AI Reply Approval"` category (separate GUI section)
+   - Added `HILAction.APPROVE_AI_REPLY` action type
+   - Added `create_ai_reply_approval_task()` builder function
+   - Fixed: Changed from `pytz` to `zoneinfo.ZoneInfo` for timezone handling
+
+4. **`backend/workflow_email.py`**
+   - Modified `_build_return_payload()` to check toggle
+   - When ON: creates `hil_ai_reply_approval` action instead of `send_reply`
+   - Added `edited_message` parameter to `approve_task_and_send()`
+
+5. **`backend/main.py`**
+   - Added `edited_message` field to `TaskDecisionRequest` model
+   - Updated `/api/tasks/{task_id}/approve` endpoint to pass `edited_message`
+
+**Key Architectural Decisions:**
+- **Separate category**: AI replies go to "AI Reply Approval" category, NOT mixed with client tasks (offers, dates)
+- **Editable**: Manager can edit AI draft before approving
+- **Backwards compatible**: Toggle OFF = exact current behavior
+
+---
+
 ## 2025-12-09
 
 ### Feature: Supabase Integration Layer (Toggle-Based)
