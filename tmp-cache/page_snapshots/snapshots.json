@@ -5691,6 +5691,976 @@
           "- Lakeview Signature Journey \u2014 CHF 118 per event (Rooms: all)"
         ]
       }
+    },
+    "snap_20251209_102721_aa95435f": {
+      "snapshot_id": "snap_20251209_102721_aa95435f",
+      "type": "catering",
+      "created_at": "2025-12-09T10:27:21.649655",
+      "expires_at": "2025-12-16T10:27:21.649655",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "params": {
+        "month": "february",
+        "capacity": "30",
+        "wine_pairing": "true",
+        "courses": "3"
+      },
+      "data": {
+        "menus": [
+          {
+            "name": "Seasonal Garden Trio",
+            "slug": "seasonal-garden-trio",
+            "price_per_person": "CHF 92",
+            "description": "Charred leek tart, truffle risotto, and citrus pavlova matched with Swiss whites.",
+            "availability_window": "Available December\u2013March",
+            "dietary": [
+              "vegetarian",
+              "wine pairing included",
+              "vegetarian"
+            ],
+            "courses": 3,
+            "vegetarian": true,
+            "wine_pairing": true
+          },
+          {
+            "name": "Alpine Roots Degustation",
+            "slug": "alpine-roots-degustation",
+            "price_per_person": "CHF 105",
+            "description": "Roasted beet mille-feuille, herb gnocchi, and warm chocolate tart with alpine wine pairing.",
+            "availability_window": "Available November\u2013February",
+            "dietary": [
+              "vegetarian",
+              "wine pairing included",
+              "vegetarian"
+            ],
+            "courses": 3,
+            "vegetarian": true,
+            "wine_pairing": true
+          },
+          {
+            "name": "Lakeview Signature Journey",
+            "slug": "lakeview-signature-journey",
+            "price_per_person": "CHF 118",
+            "description": "Lake char crudo, veal tenderloin, and Swiss meringue finale with matching wines.",
+            "availability_window": "Available February\u2013April",
+            "dietary": [
+              "wine pairing included",
+              "includes meat & seafood"
+            ],
+            "courses": 3,
+            "vegetarian": false,
+            "wine_pairing": true
+          }
+        ],
+        "title": "Dinner three-course menus with wine pairings: (February)",
+        "request": {
+          "vegetarian": false,
+          "wine_pairing": true,
+          "three_course": true,
+          "month": "february",
+          "menu_requested": true
+        },
+        "month_hint": "february",
+        "full_lines": [
+          "Dinner three-course menus with wine pairings: (February)",
+          "- Seasonal Garden Trio \u2014 CHF 92 per guest (wine pairings included; vegetarian; Available December\u2013March). Charred leek tart, truffle risotto, and citrus pavlova matched with Swiss whites.",
+          "- Alpine Roots Degustation \u2014 CHF 105 per guest (wine pairings included; vegetarian; Available November\u2013February). Roasted beet mille-feuille, herb gnocchi, and warm chocolate tart with alpine wine pairing.",
+          "- Lakeview Signature Journey \u2014 CHF 118 per guest (wine pairings included; includes meat & seafood; Available February\u2013April). Lake char crudo, veal tenderloin, and Swiss meringue finale with matching wines."
+        ]
+      }
+    },
+    "snap_20251209_102742_cf56c1b1": {
+      "snapshot_id": "snap_20251209_102742_cf56c1b1",
+      "type": "rooms",
+      "created_at": "2025-12-09T10:27:42.428944",
+      "expires_at": "2025-12-16T10:27:42.428944",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "params": {
+        "date": "07.02.2026",
+        "capacity": "30"
+      },
+      "data": {
+        "rooms": [
+          {
+            "id": "Room B",
+            "name": "Room B",
+            "capacity": 60,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [
+                "Background Music Package"
+              ],
+              "missing": []
+            },
+            "hint": "Background Music Package",
+            "alternatives": [
+              "07.02.2026",
+              "14.02.2026",
+              "21.02.2026",
+              "28.02.2026",
+              "06.02.2027"
+            ]
+          },
+          {
+            "id": "Room E",
+            "name": "Room E",
+            "capacity": 120,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [
+                "Background Music Package"
+              ],
+              "missing": []
+            },
+            "hint": "Background Music Package",
+            "alternatives": [
+              "07.02.2026",
+              "14.02.2026",
+              "21.02.2026",
+              "28.02.2026",
+              "06.02.2027"
+            ]
+          },
+          {
+            "id": "Room F",
+            "name": "Room F",
+            "capacity": 45,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "missing": []
+            },
+            "hint": "Sound system",
+            "alternatives": [
+              "07.02.2026",
+              "14.02.2026",
+              "21.02.2026",
+              "28.02.2026",
+              "06.02.2027"
+            ]
+          }
+        ],
+        "table_rows": [
+          {
+            "date": "07.02.2026",
+            "room": "Room B",
+            "status": "Available",
+            "hint": "Background Music Package",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-07",
+              "2026-02-14",
+              "2026-02-21",
+              "2026-02-28",
+              "2027-02-06"
+            ],
+            "requirements": {
+              "matched": [
+                "Background Music Package"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "07.02.2026",
+            "room": "Room E",
+            "status": "Available",
+            "hint": "Background Music Package",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-07",
+              "2026-02-14",
+              "2026-02-21",
+              "2026-02-28",
+              "2027-02-06"
+            ],
+            "requirements": {
+              "matched": [
+                "Background Music Package"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "07.02.2026",
+            "room": "Room F",
+            "status": "Available",
+            "hint": "Sound system",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-07",
+              "2026-02-14",
+              "2026-02-21",
+              "2026-02-28",
+              "2027-02-06"
+            ],
+            "requirements": {
+              "matched": [],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "07.02.2026",
+            "room": "Room D",
+            "status": "Available",
+            "hint": "Background Music Package",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-07",
+              "2026-02-14",
+              "2026-02-21",
+              "2026-02-28",
+              "2027-02-06"
+            ],
+            "requirements": {
+              "matched": [
+                "Background Music Package"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "07.02.2026",
+            "room": "Room C",
+            "status": "Available",
+            "hint": "Background Music Package",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-07",
+              "2026-02-14",
+              "2026-02-21",
+              "2026-02-28",
+              "2027-02-06"
+            ],
+            "requirements": {
+              "matched": [
+                "Background Music Package"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2717",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "07.02.2026",
+            "room": "Room A",
+            "status": "Option",
+            "hint": "Background Music Package",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-07",
+              "2026-02-14",
+              "2026-02-21",
+              "2026-02-28",
+              "2027-02-06"
+            ],
+            "requirements": {
+              "matched": [
+                "Background Music Package"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          }
+        ],
+        "selected_room": "Room B",
+        "outcome": "Available",
+        "chosen_date": "07.02.2026",
+        "display_date": "07.02.2026",
+        "participants": 30
+      }
+    },
+    "snap_20251209_102746_b0170e1a": {
+      "snapshot_id": "snap_20251209_102746_b0170e1a",
+      "type": "catering",
+      "created_at": "2025-12-09T10:27:46.487184",
+      "expires_at": "2025-12-16T10:27:46.487184",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "params": {},
+      "data": {
+        "menus": [
+          {
+            "name": "Seasonal Garden Trio",
+            "slug": "seasonal-garden-trio",
+            "price_per_person": "CHF 92",
+            "description": "Charred leek tart, truffle risotto, and citrus pavlova matched with Swiss whites.",
+            "availability_window": "Available December\u2013March",
+            "dietary": [
+              "vegetarian",
+              "wine pairing included",
+              "vegetarian"
+            ],
+            "courses": 3,
+            "vegetarian": true,
+            "wine_pairing": true
+          },
+          {
+            "name": "Alpine Roots Degustation",
+            "slug": "alpine-roots-degustation",
+            "price_per_person": "CHF 105",
+            "description": "Roasted beet mille-feuille, herb gnocchi, and warm chocolate tart with alpine wine pairing.",
+            "availability_window": "Available November\u2013February",
+            "dietary": [
+              "vegetarian",
+              "wine pairing included",
+              "vegetarian"
+            ],
+            "courses": 3,
+            "vegetarian": true,
+            "wine_pairing": true
+          },
+          {
+            "name": "Lakeview Signature Journey",
+            "slug": "lakeview-signature-journey",
+            "price_per_person": "CHF 118",
+            "description": "Lake char crudo, veal tenderloin, and Swiss meringue finale with matching wines.",
+            "availability_window": "Available February\u2013April",
+            "dietary": [
+              "wine pairing included",
+              "includes meat & seafood"
+            ],
+            "courses": 3,
+            "vegetarian": false,
+            "wine_pairing": true
+          }
+        ],
+        "title": "Dinner three-course menus with wine pairings:",
+        "month_hint": null,
+        "lines": [
+          "Dinner three-course menus with wine pairings:",
+          "- Seasonal Garden Trio \u2014 CHF 92 per event (Rooms: all)",
+          "- Alpine Roots Degustation \u2014 CHF 105 per event (Rooms: all)",
+          "- Lakeview Signature Journey \u2014 CHF 118 per event (Rooms: all)"
+        ]
+      }
+    },
+    "snap_20251209_102813_9b2d4102": {
+      "snapshot_id": "snap_20251209_102813_9b2d4102",
+      "type": "catering_catalog",
+      "created_at": "2025-12-09T10:28:13.071525",
+      "expires_at": "2025-12-16T10:28:13.071525",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "params": {},
+      "data": {
+        "catering_alternatives": [
+          {
+            "name": "Seasonal Garden Trio",
+            "unit_price": 92.0,
+            "unit": "per_event",
+            "wish": "menu",
+            "match_pct": 90,
+            "quantity": 1
+          },
+          {
+            "name": "Alpine Roots Degustation",
+            "unit_price": 105.0,
+            "unit": "per_event",
+            "wish": "menu",
+            "match_pct": 90,
+            "quantity": 1
+          },
+          {
+            "name": "Lakeview Signature Journey",
+            "unit_price": 118.0,
+            "unit": "per_event",
+            "wish": "menu",
+            "match_pct": 90,
+            "quantity": 1
+          }
+        ],
+        "room": "Room E",
+        "date": "07.02.2026",
+        "query_params": {}
+      }
+    },
+    "snap_20251209_102813_141e3cca": {
+      "snapshot_id": "snap_20251209_102813_141e3cca",
+      "type": "catering_menu",
+      "created_at": "2025-12-09T10:28:13.078163",
+      "expires_at": "2025-12-16T10:28:13.078163",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "params": {
+        "menu": "Seasonal Garden Trio",
+        "room": "Room E",
+        "date": "07.02.2026"
+      },
+      "data": {
+        "menu": {
+          "name": "Seasonal Garden Trio",
+          "unit_price": 92.0,
+          "unit": "per_event",
+          "wish": "menu",
+          "match_pct": 90,
+          "quantity": 1
+        },
+        "name": "Seasonal Garden Trio",
+        "room": "Room E",
+        "date": "07.02.2026"
+      }
+    },
+    "snap_20251209_102813_9b89fc5c": {
+      "snapshot_id": "snap_20251209_102813_9b89fc5c",
+      "type": "catering_menu",
+      "created_at": "2025-12-09T10:28:13.083958",
+      "expires_at": "2025-12-16T10:28:13.083958",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "params": {
+        "menu": "Alpine Roots Degustation",
+        "room": "Room E",
+        "date": "07.02.2026"
+      },
+      "data": {
+        "menu": {
+          "name": "Alpine Roots Degustation",
+          "unit_price": 105.0,
+          "unit": "per_event",
+          "wish": "menu",
+          "match_pct": 90,
+          "quantity": 1
+        },
+        "name": "Alpine Roots Degustation",
+        "room": "Room E",
+        "date": "07.02.2026"
+      }
+    },
+    "snap_20251209_102813_756d62ee": {
+      "snapshot_id": "snap_20251209_102813_756d62ee",
+      "type": "catering_menu",
+      "created_at": "2025-12-09T10:28:13.089898",
+      "expires_at": "2025-12-16T10:28:13.089898",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "params": {
+        "menu": "Lakeview Signature Journey",
+        "room": "Room E",
+        "date": "07.02.2026"
+      },
+      "data": {
+        "menu": {
+          "name": "Lakeview Signature Journey",
+          "unit_price": 118.0,
+          "unit": "per_event",
+          "wish": "menu",
+          "match_pct": 90,
+          "quantity": 1
+        },
+        "name": "Lakeview Signature Journey",
+        "room": "Room E",
+        "date": "07.02.2026"
+      }
+    },
+    "snap_20251209_162608_f91e1c2e": {
+      "snapshot_id": "snap_20251209_162608_f91e1c2e",
+      "type": "catering",
+      "created_at": "2025-12-09T16:26:08.601275",
+      "expires_at": "2025-12-16T16:26:08.601275",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "params": {
+        "month": "february",
+        "capacity": "30",
+        "wine_pairing": "true",
+        "courses": "3"
+      },
+      "data": {
+        "menus": [
+          {
+            "name": "Seasonal Garden Trio",
+            "slug": "seasonal-garden-trio",
+            "price_per_person": "CHF 92",
+            "description": "Charred leek tart, truffle risotto, and citrus pavlova matched with Swiss whites.",
+            "availability_window": "Available December\u2013March",
+            "dietary": [
+              "vegetarian",
+              "wine pairing included",
+              "vegetarian"
+            ],
+            "courses": 3,
+            "vegetarian": true,
+            "wine_pairing": true
+          },
+          {
+            "name": "Alpine Roots Degustation",
+            "slug": "alpine-roots-degustation",
+            "price_per_person": "CHF 105",
+            "description": "Roasted beet mille-feuille, herb gnocchi, and warm chocolate tart with alpine wine pairing.",
+            "availability_window": "Available November\u2013February",
+            "dietary": [
+              "vegetarian",
+              "wine pairing included",
+              "vegetarian"
+            ],
+            "courses": 3,
+            "vegetarian": true,
+            "wine_pairing": true
+          },
+          {
+            "name": "Lakeview Signature Journey",
+            "slug": "lakeview-signature-journey",
+            "price_per_person": "CHF 118",
+            "description": "Lake char crudo, veal tenderloin, and Swiss meringue finale with matching wines.",
+            "availability_window": "Available February\u2013April",
+            "dietary": [
+              "wine pairing included",
+              "includes meat & seafood"
+            ],
+            "courses": 3,
+            "vegetarian": false,
+            "wine_pairing": true
+          }
+        ],
+        "title": "Dinner three-course menus with wine pairings: (February)",
+        "request": {
+          "vegetarian": false,
+          "wine_pairing": true,
+          "three_course": true,
+          "month": "february",
+          "menu_requested": true
+        },
+        "month_hint": "february",
+        "full_lines": [
+          "Dinner three-course menus with wine pairings: (February)",
+          "- Seasonal Garden Trio \u2014 CHF 92 per guest (wine pairings included; vegetarian; Available December\u2013March). Charred leek tart, truffle risotto, and citrus pavlova matched with Swiss whites.",
+          "- Alpine Roots Degustation \u2014 CHF 105 per guest (wine pairings included; vegetarian; Available November\u2013February). Roasted beet mille-feuille, herb gnocchi, and warm chocolate tart with alpine wine pairing.",
+          "- Lakeview Signature Journey \u2014 CHF 118 per guest (wine pairings included; includes meat & seafood; Available February\u2013April). Lake char crudo, veal tenderloin, and Swiss meringue finale with matching wines."
+        ]
+      }
+    },
+    "snap_20251209_162621_906ec169": {
+      "snapshot_id": "snap_20251209_162621_906ec169",
+      "type": "rooms",
+      "created_at": "2025-12-09T16:26:21.441108",
+      "expires_at": "2025-12-16T16:26:21.441108",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "params": {
+        "date": "14.02.2026",
+        "capacity": "30"
+      },
+      "data": {
+        "rooms": [
+          {
+            "id": "Room A",
+            "name": "Room A",
+            "capacity": 40,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [
+                "Background Music Package"
+              ],
+              "missing": []
+            },
+            "hint": "Background Music Package",
+            "alternatives": [
+              "07.02.2026",
+              "14.02.2026",
+              "21.02.2026",
+              "28.02.2026",
+              "06.02.2027"
+            ]
+          },
+          {
+            "id": "Room B",
+            "name": "Room B",
+            "capacity": 60,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [
+                "Background Music Package"
+              ],
+              "missing": []
+            },
+            "hint": "Background Music Package",
+            "alternatives": [
+              "07.02.2026",
+              "14.02.2026",
+              "21.02.2026",
+              "28.02.2026",
+              "06.02.2027"
+            ]
+          },
+          {
+            "id": "Room F",
+            "name": "Room F",
+            "capacity": 45,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "missing": []
+            },
+            "hint": "Sound system",
+            "alternatives": [
+              "07.02.2026",
+              "14.02.2026",
+              "21.02.2026",
+              "28.02.2026",
+              "06.02.2027"
+            ]
+          }
+        ],
+        "table_rows": [
+          {
+            "date": "14.02.2026",
+            "room": "Room A",
+            "status": "Available",
+            "hint": "Background Music Package",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-07",
+              "2026-02-14",
+              "2026-02-21",
+              "2026-02-28",
+              "2027-02-06"
+            ],
+            "requirements": {
+              "matched": [
+                "Background Music Package"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "14.02.2026",
+            "room": "Room B",
+            "status": "Available",
+            "hint": "Background Music Package",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-07",
+              "2026-02-14",
+              "2026-02-21",
+              "2026-02-28",
+              "2027-02-06"
+            ],
+            "requirements": {
+              "matched": [
+                "Background Music Package"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "14.02.2026",
+            "room": "Room F",
+            "status": "Available",
+            "hint": "Sound system",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-07",
+              "2026-02-14",
+              "2026-02-21",
+              "2026-02-28",
+              "2027-02-06"
+            ],
+            "requirements": {
+              "matched": [],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "14.02.2026",
+            "room": "Room D",
+            "status": "Available",
+            "hint": "Background Music Package",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-07",
+              "2026-02-14",
+              "2026-02-21",
+              "2026-02-28",
+              "2027-02-06"
+            ],
+            "requirements": {
+              "matched": [
+                "Background Music Package"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "14.02.2026",
+            "room": "Room C",
+            "status": "Available",
+            "hint": "Background Music Package",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-07",
+              "2026-02-14",
+              "2026-02-21",
+              "2026-02-28",
+              "2027-02-06"
+            ],
+            "requirements": {
+              "matched": [
+                "Background Music Package"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2717",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "14.02.2026",
+            "room": "Room E",
+            "status": "Option",
+            "hint": "Background Music Package",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-07",
+              "2026-02-14",
+              "2026-02-21",
+              "2026-02-28",
+              "2027-02-06"
+            ],
+            "requirements": {
+              "matched": [
+                "Background Music Package"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          }
+        ],
+        "selected_room": "Room A",
+        "outcome": "Available",
+        "chosen_date": "14.02.2026",
+        "display_date": "14.02.2026",
+        "participants": 30
+      }
+    },
+    "snap_20251209_162626_47d78a30": {
+      "snapshot_id": "snap_20251209_162626_47d78a30",
+      "type": "catering",
+      "created_at": "2025-12-09T16:26:26.337454",
+      "expires_at": "2025-12-16T16:26:26.337454",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "params": {},
+      "data": {
+        "menus": [
+          {
+            "name": "Seasonal Garden Trio",
+            "slug": "seasonal-garden-trio",
+            "price_per_person": "CHF 92",
+            "description": "Charred leek tart, truffle risotto, and citrus pavlova matched with Swiss whites.",
+            "availability_window": "Available December\u2013March",
+            "dietary": [
+              "vegetarian",
+              "wine pairing included",
+              "vegetarian"
+            ],
+            "courses": 3,
+            "vegetarian": true,
+            "wine_pairing": true
+          },
+          {
+            "name": "Alpine Roots Degustation",
+            "slug": "alpine-roots-degustation",
+            "price_per_person": "CHF 105",
+            "description": "Roasted beet mille-feuille, herb gnocchi, and warm chocolate tart with alpine wine pairing.",
+            "availability_window": "Available November\u2013February",
+            "dietary": [
+              "vegetarian",
+              "wine pairing included",
+              "vegetarian"
+            ],
+            "courses": 3,
+            "vegetarian": true,
+            "wine_pairing": true
+          },
+          {
+            "name": "Lakeview Signature Journey",
+            "slug": "lakeview-signature-journey",
+            "price_per_person": "CHF 118",
+            "description": "Lake char crudo, veal tenderloin, and Swiss meringue finale with matching wines.",
+            "availability_window": "Available February\u2013April",
+            "dietary": [
+              "wine pairing included",
+              "includes meat & seafood"
+            ],
+            "courses": 3,
+            "vegetarian": false,
+            "wine_pairing": true
+          }
+        ],
+        "title": "Dinner three-course menus with wine pairings:",
+        "month_hint": null,
+        "lines": [
+          "Dinner three-course menus with wine pairings:",
+          "- Seasonal Garden Trio \u2014 CHF 92 per event (Rooms: all)",
+          "- Alpine Roots Degustation \u2014 CHF 105 per event (Rooms: all)",
+          "- Lakeview Signature Journey \u2014 CHF 118 per event (Rooms: all)"
+        ]
+      }
+    },
+    "snap_20251209_162644_72d93f81": {
+      "snapshot_id": "snap_20251209_162644_72d93f81",
+      "type": "catering_catalog",
+      "created_at": "2025-12-09T16:26:44.445008",
+      "expires_at": "2025-12-16T16:26:44.445008",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "params": {},
+      "data": {
+        "catering_alternatives": [
+          {
+            "name": "Seasonal Garden Trio",
+            "unit_price": 92.0,
+            "unit": "per_event",
+            "wish": "menu",
+            "match_pct": 90,
+            "quantity": 1
+          },
+          {
+            "name": "Alpine Roots Degustation",
+            "unit_price": 105.0,
+            "unit": "per_event",
+            "wish": "menu",
+            "match_pct": 90,
+            "quantity": 1
+          },
+          {
+            "name": "Lakeview Signature Journey",
+            "unit_price": 118.0,
+            "unit": "per_event",
+            "wish": "menu",
+            "match_pct": 90,
+            "quantity": 1
+          }
+        ],
+        "room": "Room A",
+        "date": "14.02.2026",
+        "query_params": {}
+      }
+    },
+    "snap_20251209_162644_6a955fa4": {
+      "snapshot_id": "snap_20251209_162644_6a955fa4",
+      "type": "catering_menu",
+      "created_at": "2025-12-09T16:26:44.452158",
+      "expires_at": "2025-12-16T16:26:44.452158",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "params": {
+        "menu": "Seasonal Garden Trio",
+        "room": "Room A",
+        "date": "14.02.2026"
+      },
+      "data": {
+        "menu": {
+          "name": "Seasonal Garden Trio",
+          "unit_price": 92.0,
+          "unit": "per_event",
+          "wish": "menu",
+          "match_pct": 90,
+          "quantity": 1
+        },
+        "name": "Seasonal Garden Trio",
+        "room": "Room A",
+        "date": "14.02.2026"
+      }
+    },
+    "snap_20251209_162644_28e8c41c": {
+      "snapshot_id": "snap_20251209_162644_28e8c41c",
+      "type": "catering_menu",
+      "created_at": "2025-12-09T16:26:44.458403",
+      "expires_at": "2025-12-16T16:26:44.458403",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "params": {
+        "menu": "Alpine Roots Degustation",
+        "room": "Room A",
+        "date": "14.02.2026"
+      },
+      "data": {
+        "menu": {
+          "name": "Alpine Roots Degustation",
+          "unit_price": 105.0,
+          "unit": "per_event",
+          "wish": "menu",
+          "match_pct": 90,
+          "quantity": 1
+        },
+        "name": "Alpine Roots Degustation",
+        "room": "Room A",
+        "date": "14.02.2026"
+      }
+    },
+    "snap_20251209_162644_87ecd700": {
+      "snapshot_id": "snap_20251209_162644_87ecd700",
+      "type": "catering_menu",
+      "created_at": "2025-12-09T16:26:44.464130",
+      "expires_at": "2025-12-16T16:26:44.464130",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "params": {
+        "menu": "Lakeview Signature Journey",
+        "room": "Room A",
+        "date": "14.02.2026"
+      },
+      "data": {
+        "menu": {
+          "name": "Lakeview Signature Journey",
+          "unit_price": 118.0,
+          "unit": "per_event",
+          "wish": "menu",
+          "match_pct": 90,
+          "quantity": 1
+        },
+        "name": "Lakeview Signature Journey",
+        "room": "Room A",
+        "date": "14.02.2026"
+      }
     }
   }
 }

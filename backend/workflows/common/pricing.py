@@ -1,12 +1,199 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from backend.utils import json_io
 from backend.workflows.groups.room_availability.db_pers import load_rooms_config
+
+
+# ---------------------------------------------------------------------------
+# Deposit Calculation Functions
+# ---------------------------------------------------------------------------
+# These functions calculate deposit amounts based on the global deposit
+# configuration set by the manager. The deposit is applied to offers and
+# must be paid before the client can confirm the booking.
+#
+# See OPEN_DECISIONS.md for related design decisions:
+# - DECISION-001: Deposit Changes After Payment
+# - DECISION-002: LLM vs Template for Deposit Reminders
+# - DECISION-003: Deposit Payment Verification
+# ---------------------------------------------------------------------------
+
+# Swiss VAT rate (8.1% as of 2024)
+SWISS_VAT_RATE = 0.081
+
+
+def calculate_vat_included(gross_amount: float) -> float:
+    """Calculate the VAT portion included in a gross amount (Swiss VAT 8.1%)."""
+    return round(gross_amount * SWISS_VAT_RATE / (1 + SWISS_VAT_RATE), 2)
+
+
+def calculate_deposit_amount(
+    total_amount: float,
+    deposit_config: Dict[str, Any],
+) -> Optional[float]:
+    """
+    Calculate the deposit amount based on configuration.
+
+    Args:
+        total_amount: The total offer amount in CHF
+        deposit_config: The global deposit configuration dict containing:
+            - deposit_enabled: bool
+            - deposit_type: "percentage" | "fixed"
+            - deposit_percentage: int (1-100)
+            - deposit_fixed_amount: float
+
+    Returns:
+        The deposit amount in CHF, or None if deposit is not enabled.
+    """
+    if not deposit_config or not deposit_config.get("deposit_enabled"):
+        return None
+
+    deposit_type = deposit_config.get("deposit_type", "percentage")
+
+    if deposit_type == "fixed":
+        fixed_amount = deposit_config.get("deposit_fixed_amount", 0.0)
+        return round(float(fixed_amount), 2) if fixed_amount else None
+
+    # Percentage-based deposit
+    percentage = deposit_config.get("deposit_percentage", 30)
+    if not percentage or percentage <= 0:
+        return None
+
+    deposit = total_amount * (percentage / 100.0)
+    return round(deposit, 2)
+
+
+def calculate_deposit_due_date(
+    deposit_config: Dict[str, Any],
+    from_date: Optional[datetime] = None,
+) -> Optional[str]:
+    """
+    Calculate the deposit due date based on configuration.
+
+    Args:
+        deposit_config: The global deposit configuration dict containing:
+            - deposit_deadline_days: int (days until payment due)
+        from_date: The date to calculate from (defaults to today)
+
+    Returns:
+        The due date as ISO string (YYYY-MM-DD), or None if not configured.
+    """
+    if not deposit_config or not deposit_config.get("deposit_enabled"):
+        return None
+
+    deadline_days = deposit_config.get("deposit_deadline_days", 10)
+    if not deadline_days or deadline_days <= 0:
+        deadline_days = 10
+
+    base_date = from_date or datetime.now()
+    due_date = base_date + timedelta(days=deadline_days)
+    return due_date.strftime("%Y-%m-%d")
+
+
+def build_deposit_info(
+    total_amount: float,
+    deposit_config: Dict[str, Any],
+    from_date: Optional[datetime] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Build complete deposit information for an offer.
+
+    Args:
+        total_amount: The total offer amount in CHF
+        deposit_config: The global deposit configuration
+        from_date: The date to calculate due date from
+
+    Returns:
+        A dict with deposit details, or None if deposit not enabled:
+        {
+            "deposit_required": True,
+            "deposit_amount": float,
+            "deposit_vat_included": float,
+            "deposit_type": "percentage" | "fixed",
+            "deposit_percentage": int | None,
+            "deposit_due_date": "YYYY-MM-DD",
+            "deposit_deadline_days": int,
+            "deposit_paid": False,
+            "deposit_paid_at": None
+        }
+    """
+    if not deposit_config or not deposit_config.get("deposit_enabled"):
+        return None
+
+    deposit_amount = calculate_deposit_amount(total_amount, deposit_config)
+    if deposit_amount is None or deposit_amount <= 0:
+        return None
+
+    due_date = calculate_deposit_due_date(deposit_config, from_date)
+
+    return {
+        "deposit_required": True,
+        "deposit_amount": deposit_amount,
+        "deposit_vat_included": calculate_vat_included(deposit_amount),
+        "deposit_type": deposit_config.get("deposit_type", "percentage"),
+        "deposit_percentage": deposit_config.get("deposit_percentage") if deposit_config.get("deposit_type") == "percentage" else None,
+        "deposit_due_date": due_date,
+        "deposit_deadline_days": deposit_config.get("deposit_deadline_days", 10),
+        "deposit_paid": False,
+        "deposit_paid_at": None,
+    }
+
+
+def format_deposit_for_offer(deposit_info: Dict[str, Any]) -> str:
+    """
+    Format deposit information for inclusion in offer message.
+
+    Returns a markdown string like:
+    ---
+    **Payment Terms:**
+    - Deposit required: CHF 150.00 (30% of total)
+    - VAT included: CHF 11.17
+    - Due by: 18 December 2025
+    - Balance due: Upon event completion
+    """
+    if not deposit_info or not deposit_info.get("deposit_required"):
+        return ""
+
+    amount = deposit_info.get("deposit_amount", 0)
+    vat = deposit_info.get("deposit_vat_included", 0)
+    due_date = deposit_info.get("deposit_due_date")
+    deposit_type = deposit_info.get("deposit_type", "percentage")
+    percentage = deposit_info.get("deposit_percentage")
+
+    # Format the deposit description
+    if deposit_type == "percentage" and percentage:
+        deposit_desc = f"CHF {amount:,.2f} ({percentage}% of total)"
+    else:
+        deposit_desc = f"CHF {amount:,.2f}"
+
+    # Format due date nicely
+    due_date_formatted = due_date
+    if due_date:
+        try:
+            dt = datetime.strptime(due_date, "%Y-%m-%d")
+            due_date_formatted = dt.strftime("%d %B %Y")
+        except ValueError:
+            pass
+
+    lines = [
+        "",
+        "---",
+        "**Payment Terms:**",
+        f"- Deposit required: {deposit_desc}",
+        f"- VAT included: CHF {vat:,.2f}",
+    ]
+
+    if due_date_formatted:
+        lines.append(f"- Due by: {due_date_formatted}")
+
+    lines.append("- Balance due: Upon event completion")
+
+    return "\n".join(lines)
 
 ROOM_RATE_FALLBACKS: Dict[str, float] = {
     "room a": 500.0,

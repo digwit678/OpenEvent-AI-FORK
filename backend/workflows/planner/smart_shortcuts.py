@@ -960,13 +960,14 @@ class _ShortcutPlanner:
             room_eval_hash=requirements_hash_value,
             current_step=4,
             thread_state="In Progress",
+            status="Option",  # Room selected → calendar blocked as Option
         )
         self.event.pop("room_pending_decision", None)
         append_audit_entry(self.event, 3, 4, "room_locked_via_shortcut")
         self.state.current_step = 4
         self.state.extras["persist"] = True
         self.telemetry.executed_intents.append("room_selection")
-        self.summary_lines.append(f"• Room locked: {selected} ({status})")
+        self.summary_lines.append(f"• Room locked: {selected} ({status}) → Status: Option")
         self.room_checked = True
         return True
 

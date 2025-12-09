@@ -30,6 +30,11 @@ from backend.workflows.change_propagation import (
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
+from backend.workflows.common.conflict import (
+    ConflictType,
+    detect_conflict_type,
+    compose_soft_conflict_warning,
+)
 from backend.debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate, trace_state, trace_step, set_subloop, trace_marker, trace_general_qa_status
 from backend.utils.profiler import profile_step
 from backend.utils.pseudolinks import generate_room_details_link, generate_qna_link
@@ -872,6 +877,7 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
         room_eval_hash=requirements_hash,
         current_step=4,
         thread_state=next_thread_state,
+        status="Option",  # Room selected → calendar blocked as Option
     )
     _reset_room_attempts(event_entry)
     trace_gate(
@@ -879,7 +885,7 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
         "Step3_Room",
         "room_selected",
         True,
-        {"locked_room_id": selected_room},
+        {"locked_room_id": selected_room, "status": "Option"},
     )
     trace_gate(
         thread_id,
@@ -892,7 +898,7 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
         thread_id,
         "Step3_Room",
         "db.events.lock_room",
-        {"locked_room_id": selected_room, "room_eval_hash": requirements_hash},
+        {"locked_room_id": selected_room, "room_eval_hash": requirements_hash, "status": "Option"},
     )
     append_audit_entry(event_entry, 3, 4, "room_hil_approved")
     event_entry.pop("room_pending_decision", None)
@@ -1454,6 +1460,61 @@ def handle_select_room_action(
         return GroupResult(action="room_select_missing", payload=payload, halt=True)
 
     event_id = event_entry["event_id"]
+
+    # [SOFT CONFLICT CHECK] Detect if another client has an Option on this room/date
+    chosen_date = date or event_entry.get("chosen_date") or ""
+    conflict_type, conflict_info = detect_conflict_type(
+        db=state.db,
+        event_id=event_id,
+        room_id=room,
+        event_date=chosen_date,
+        action="select",  # Client is selecting (becoming Option)
+    )
+
+    # Handle soft conflict: create HIL notification but don't block the client
+    soft_conflict_note = ""
+    if conflict_type == ConflictType.SOFT and conflict_info:
+        # Create HIL notification task for manager (NOT blocking)
+        tasks = state.db.setdefault("tasks", {})
+        from datetime import datetime as dt
+        task_id = f"soft_conflict_{event_id}_{dt.now().strftime('%Y%m%d%H%M%S')}"
+        tasks[task_id] = {
+            "type": "soft_room_conflict_notification",
+            "status": "pending",
+            "created_at": dt.now().isoformat(),
+            "event_id": event_id,
+            "data": {
+                "room_id": room,
+                "event_date": chosen_date,
+                "client_1": {
+                    "event_id": conflict_info.get("conflicting_event_id"),
+                    "email": conflict_info.get("conflicting_client_email"),
+                    "name": conflict_info.get("conflicting_client_name"),
+                    "status": conflict_info.get("status"),
+                },
+                "client_2": {
+                    "event_id": event_id,
+                    "email": event_entry.get("client_email"),
+                    "name": event_entry.get("client_name"),
+                    "status": "Option (new)",
+                },
+            },
+            "description": (
+                f"Soft Conflict: {room} on {chosen_date}\n\n"
+                f"Client 1: {conflict_info.get('conflicting_client_email')} (already {conflict_info.get('status')})\n"
+                f"Client 2: {event_entry.get('client_email')} (newly selecting)\n\n"
+                f"Both clients now have Option status on this room. "
+                f"Monitor and resolve before either tries to confirm."
+            ),
+        }
+        # Mark event with soft conflict flag (for later hard conflict detection)
+        event_entry["has_conflict"] = True
+        event_entry["conflict_with"] = conflict_info.get("conflicting_event_id")
+        event_entry["conflict_type"] = "soft"
+        event_entry["conflict_task_id"] = task_id
+        # NOTE: Neither client is notified - manager just gets visibility
+        state.extras["persist"] = True
+
     update_event_room(
         state.db,
         event_id,
@@ -1470,6 +1531,7 @@ def handle_select_room_action(
         room_eval_hash=requirements_hash,
         current_step=4,
         thread_state="Awaiting Client",
+        status="Option",  # Room selected → calendar blocked as Option
     )
     _reset_room_attempts(event_entry)
 

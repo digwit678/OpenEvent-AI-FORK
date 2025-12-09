@@ -4,12 +4,12 @@
       "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
       "created_at": "2025-12-03T16:10:55.455909",
       "status": "Lead",
-      "current_step": 3,
-      "caller_step": 5,
-      "thread_state": "Awaiting Client",
-      "chosen_date": "28.02.2026",
+      "current_step": 7,
+      "caller_step": null,
+      "thread_state": "In Progress",
+      "chosen_date": "14.02.2026",
       "date_confirmed": true,
-      "locked_room_id": null,
+      "locked_room_id": "Room A",
       "requirements": {
         "number_of_participants": 30,
         "seating_layout": null,
@@ -21,7 +21,7 @@
         "preferred_room": "Room A"
       },
       "requirements_hash": "ee5d6192ffe2b13d65b8778efdf314431e90648d5ea114272e389a601443fe1e",
-      "room_eval_hash": null,
+      "room_eval_hash": "ee5d6192ffe2b13d65b8778efdf314431e90648d5ea114272e389a601443fe1e",
       "offer_id": null,
       "audit": [
         {
@@ -583,6 +583,118 @@
           "from_step": 2,
           "to_step": 3,
           "reason": "date_confirmed"
+        },
+        {
+          "ts": "2025-12-09T10:27:21Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-12-09T10:27:21Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-12-09T10:27:42Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_updated"
+        },
+        {
+          "ts": "2025-12-09T10:27:42Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 3,
+          "reason": "date_confirmed"
+        },
+        {
+          "ts": "2025-12-09T10:28:13Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 4,
+          "reason": "room_choice_captured"
+        },
+        {
+          "ts": "2025-12-09T10:28:16Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_generated"
+        },
+        {
+          "ts": "2025-12-09T16:26:08Z",
+          "actor": "system",
+          "from_step": 5,
+          "to_step": 2,
+          "reason": "date_pending_vague_request"
+        },
+        {
+          "ts": "2025-12-09T16:26:08Z",
+          "actor": "system",
+          "from_step": 5,
+          "to_step": 2,
+          "reason": "date_missing"
+        },
+        {
+          "ts": "2025-12-09T16:26:21Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 2,
+          "reason": "date_updated"
+        },
+        {
+          "ts": "2025-12-09T16:26:21Z",
+          "actor": "system",
+          "from_step": 2,
+          "to_step": 3,
+          "reason": "date_confirmed"
+        },
+        {
+          "ts": "2025-12-09T16:26:44Z",
+          "actor": "system",
+          "from_step": 3,
+          "to_step": 4,
+          "reason": "room_choice_captured"
+        },
+        {
+          "ts": "2025-12-09T16:26:47Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_generated"
+        },
+        {
+          "ts": "2025-12-09T16:28:18Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_accept_blocked_missing_billing"
+        },
+        {
+          "ts": "2025-12-09T16:29:10Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 5,
+          "reason": "offer_accept_pending_hil_auto"
+        },
+        {
+          "ts": "2025-12-09T16:29:20Z",
+          "actor": "system",
+          "from_step": 5,
+          "to_step": 6,
+          "reason": "offer_accepted_hil"
+        },
+        {
+          "ts": "2025-12-09T16:29:20Z",
+          "actor": "system",
+          "from_step": 6,
+          "to_step": 7,
+          "reason": "transition_ready"
         }
       ],
       "review_state": {
@@ -591,14 +703,14 @@
         "message": null
       },
       "event_data": {
-        "Date Email Received": "03.12.2025",
+        "Date Email Received": "09.12.2025",
         "Status": "Lead",
-        "Event Date": "28.02.2026",
-        "Name": "Not specified",
+        "Event Date": "14.02.2026",
+        "Name": "Laura Labs",
         "Email": "laura.meier@bluewin.ch",
-        "Phone": "2026022818",
+        "Phone": "2026021418",
         "Company": "Not specified",
-        "Billing Address": "Not Specified",
+        "Billing Address": "Laura Labs, Bahnhofstrasse 74, 8001 Zurich, Zurich",
         "Start Time": "18:00",
         "End Time": "22:00",
         "Preferred Room": "Room A",
@@ -625,17 +737,23 @@
         "829c322d-89d3-4947-8ea8-0161ea9d987e",
         "df1ef2f2-b757-4a5d-afdd-f9b04f19b62b",
         "c58e0873-5b87-418e-bc9f-ac9b023c1d73",
-        "6c31a863-8975-4b11-a668-54a108441127"
+        "6c31a863-8975-4b11-a668-54a108441127",
+        "d880ecdf-0a06-428b-a4a6-3a58bd1313cd",
+        "64f8eaa4-024b-4322-922a-275c83bff05c",
+        "77201f0a-a598-4a8b-a884-064f20da34ee",
+        "7b9bb235-6a65-4fc0-ab54-d63ed804ca80",
+        "b603ef94-fb4b-40e1-b76d-c9002890b25e",
+        "07a5713f-3528-4584-91a4-e971b382cab5"
       ],
       "captured": {
         "contact": {
-          "phone": "2026022818"
+          "phone": "2026021418"
         },
-        "preferred_room": "Room A"
+        "preferred_room": "Room E"
       },
       "verified": {
-        "date": "2026-02-28",
-        "event_date": "28.02.2026",
+        "date": "2026-02-14",
+        "event_date": "14.02.2026",
         "start_time": "18:00",
         "end_time": "22:00"
       },
@@ -710,28 +828,48 @@
         "6c31a863-8975-4b11-a668-54a108441127:start_time",
         "6c31a863-8975-4b11-a668-54a108441127:end_time",
         "6c31a863-8975-4b11-a668-54a108441127:preferred_room",
-        "6c31a863-8975-4b11-a668-54a108441127:contact.phone"
+        "6c31a863-8975-4b11-a668-54a108441127:contact.phone",
+        "d880ecdf-0a06-428b-a4a6-3a58bd1313cd:start_time",
+        "d880ecdf-0a06-428b-a4a6-3a58bd1313cd:end_time",
+        "d880ecdf-0a06-428b-a4a6-3a58bd1313cd:preferred_room",
+        "d880ecdf-0a06-428b-a4a6-3a58bd1313cd:contact.phone",
+        "64f8eaa4-024b-4322-922a-275c83bff05c:date",
+        "64f8eaa4-024b-4322-922a-275c83bff05c:event_date",
+        "64f8eaa4-024b-4322-922a-275c83bff05c:start_time",
+        "64f8eaa4-024b-4322-922a-275c83bff05c:end_time",
+        "64f8eaa4-024b-4322-922a-275c83bff05c:preferred_room",
+        "64f8eaa4-024b-4322-922a-275c83bff05c:contact.phone",
+        "77201f0a-a598-4a8b-a884-064f20da34ee:start_time",
+        "77201f0a-a598-4a8b-a884-064f20da34ee:end_time",
+        "77201f0a-a598-4a8b-a884-064f20da34ee:preferred_room",
+        "77201f0a-a598-4a8b-a884-064f20da34ee:contact.phone",
+        "7b9bb235-6a65-4fc0-ab54-d63ed804ca80:date",
+        "7b9bb235-6a65-4fc0-ab54-d63ed804ca80:event_date",
+        "7b9bb235-6a65-4fc0-ab54-d63ed804ca80:start_time",
+        "7b9bb235-6a65-4fc0-ab54-d63ed804ca80:end_time",
+        "7b9bb235-6a65-4fc0-ab54-d63ed804ca80:preferred_room",
+        "7b9bb235-6a65-4fc0-ab54-d63ed804ca80:contact.phone"
       ],
       "deferred_intents": [
         "contact_update",
         "room_selection"
       ],
       "calendar_event_id": "openevent-83ef1bf1-663e-4dc1-bde4-0538dc715497",
-      "current_step_stage": "step_3",
+      "current_step_stage": "step_5",
       "caller_step_stage": null,
-      "subflow_group": "room_availability",
+      "subflow_group": "negotiation",
       "requested_window": {
-        "display_date": "28.02.2026",
-        "date_iso": "2026-02-28",
+        "display_date": "14.02.2026",
+        "date_iso": "2026-02-14",
         "start_time": "18:00",
         "end_time": "22:00",
-        "start": "2026-02-28T18:00:00+01:00",
-        "end": "2026-02-28T22:00:00+01:00",
+        "start": "2026-02-14T18:00:00+01:00",
+        "end": "2026-02-14T22:00:00+01:00",
         "tz": "Europe/Zurich",
-        "hash": "68544e5f9f2683b51f3e8e2e1b5295677cdcc946318d3b804e59d7dabc978013",
+        "hash": "bc818a36c14dbb62f2a367d6d16fe89e4b879502305ac78fbf0681bdb0c100c2",
         "times_inherited": false,
-        "source_message_id": "6c31a863-8975-4b11-a668-54a108441127",
-        "updated_at": "2025-12-03T17:00:26Z",
+        "source_message_id": "7b9bb235-6a65-4fc0-ab54-d63ed804ca80",
+        "updated_at": "2025-12-09T16:26:21Z",
         "cached": false
       },
       "offer_hash": null,
@@ -777,7 +915,7 @@
         {
           "offer_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497-OFFER-3",
           "version": 3,
-          "status": "Draft",
+          "status": "Superseded",
           "created_at": "2025-12-03T16:47:40+00:00",
           "total_amount": 680.0,
           "pricing_inputs": {
@@ -790,11 +928,50 @@
                 "amount": 180.0
               }
             ]
-          }
+          },
+          "superseded_at": "2025-12-09T10:28:13+00:00"
+        },
+        {
+          "offer_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497-OFFER-4",
+          "version": 4,
+          "status": "Superseded",
+          "created_at": "2025-12-09T10:28:13+00:00",
+          "total_amount": 680.0,
+          "pricing_inputs": {
+            "base_rate": 500.0,
+            "line_items": [
+              {
+                "description": "Background Music Package",
+                "quantity": 1,
+                "unit_price": 180.0,
+                "amount": 180.0
+              }
+            ]
+          },
+          "superseded_at": "2025-12-09T16:26:44+00:00"
+        },
+        {
+          "offer_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497-OFFER-5",
+          "version": 5,
+          "status": "Accepted",
+          "created_at": "2025-12-09T16:26:44+00:00",
+          "total_amount": 680.0,
+          "pricing_inputs": {
+            "base_rate": 500.0,
+            "line_items": [
+              {
+                "description": "Background Music Package",
+                "quantity": 1,
+                "unit_price": 180.0,
+                "amount": 180.0
+              }
+            ]
+          },
+          "accepted_at": "2025-12-09T16:29:20+00:00"
         }
       ],
-      "current_offer_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497-OFFER-3",
-      "offer_sequence": 3,
+      "current_offer_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497-OFFER-5",
+      "offer_sequence": 5,
       "products": [
         {
           "name": "Background Music Package",
@@ -812,7 +989,7 @@
         "counter_count": 0,
         "manual_review_task_id": null
       },
-      "transition_ready": false,
+      "transition_ready": true,
       "calendar_blocks": [],
       "deposit_state": {
         "required": false,
@@ -1800,14 +1977,48 @@
             "source_message_id": "6c31a863-8975-4b11-a668-54a108441127",
             "reused": false
           }
+        },
+        {
+          "ts": "2025-12-09T10:27:42Z",
+          "actor": "workflow",
+          "action": "date_confirmed",
+          "details": {
+            "intent": "other",
+            "requested_window": {
+              "date": "2026-02-07",
+              "start": "2026-02-07T18:00:00+01:00",
+              "end": "2026-02-07T22:00:00+01:00",
+              "tz": "Europe/Zurich"
+            },
+            "times_inherited": false,
+            "source_message_id": "64f8eaa4-024b-4322-922a-275c83bff05c",
+            "reused": false
+          }
+        },
+        {
+          "ts": "2025-12-09T16:26:21Z",
+          "actor": "workflow",
+          "action": "date_confirmed",
+          "details": {
+            "intent": "other",
+            "requested_window": {
+              "date": "2026-02-14",
+              "start": "2026-02-14T18:00:00+01:00",
+              "end": "2026-02-14T22:00:00+01:00",
+              "tz": "Europe/Zurich"
+            },
+            "times_inherited": false,
+            "source_message_id": "7b9bb235-6a65-4fc0-ab54-d63ed804ca80",
+            "reused": false
+          }
         }
       ],
-      "room_proposal_attempts": 6,
+      "room_proposal_attempts": 8,
       "room_pending_decision": {
-        "selected_room": "Room B",
+        "selected_room": "Room A",
         "selected_status": "Available",
-        "requirements_hash": "ee5d6192ffe2b13d65b8778efdf314431e90648d5ea114272e389a601443fe1e",
-        "summary": "Room availability summary — Room A: Option; Room B: Available; Room C: Available; Room D: Available; Room E: Available; Room F: Available.",
+        "requirements_hash": "f20e94fb5cc7238935c88701f589a5f3ea3124f36a21321e6ba4fc58dc238573",
+        "summary": "Room availability summary — Room A: Available; Room B: Available; Room C: Available; Room D: Available; Room E: Option; Room F: Available.",
         "hint": "Background Music Package",
         "available_dates": [
           "2026-02-07",
@@ -1819,21 +2030,15 @@
       },
       "room_status": "Available",
       "billing_details": {
-        "name_or_company": "Not Specified",
-        "street": null,
-        "postal_code": null,
-        "city": null,
-        "country": "Not Specified",
+        "name_or_company": "Laura Labs",
+        "street": "Bahnhofstrasse 74",
+        "postal_code": "8001",
+        "city": "Zurich",
+        "country": "Zurich",
         "vat": null,
-        "raw": "Not Specified"
+        "raw": "Laura Labs, Bahnhofstrasse 74, 8001 Zurich"
       },
-      "billing_validation": {
-        "missing": [
-          "street",
-          "postal_code",
-          "city"
-        ]
-      },
+      "billing_validation": {},
       "pricing_inputs": {
         "base_rate": 500.0,
         "line_items": [
@@ -1845,8 +2050,21 @@
           }
         ]
       },
-      "offer_status": "Draft",
-      "date_proposal_history": []
+      "offer_status": "Accepted",
+      "date_proposal_history": [],
+      "billing_requirements": {
+        "awaiting_billing_for_accept": false,
+        "last_missing": []
+      },
+      "hil_history": [
+        {
+          "task_id": "37fa8568-5543-4b36-a068-6ec6f36fa9d3",
+          "approved_at": "2025-12-09T16:29:20.846968Z",
+          "notes": null,
+          "step": 5,
+          "decision": "approved"
+        }
+      ]
     }
   ],
   "clients": {
@@ -4482,6 +4700,1086 @@
             "window": null,
             "event_date": null
           }
+        },
+        {
+          "msg_id": "d880ecdf-0a06-428b-a4a6-3a58bd1313cd",
+          "ts": "2025-12-09T10:27:19.739477Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.\n\nWe’re",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              30
+            ],
+            "window": {
+              "month": "February",
+              "weekdays_hint": [
+                30
+              ]
+            },
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "sound system",
+                "background music"
+              ],
+              "keywords": [
+                "sound",
+                "system",
+                "background",
+                "music"
+              ],
+              "default_hint": "sound system",
+              "products": [
+                "background music"
+              ],
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 3.0,
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 3.0,
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 3.0,
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 3.0,
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 3.0,
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 3.0,
+                "Room B": 3.0,
+                "Room C": 3.0,
+                "Room D": 3.0,
+                "Room E": 3.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                "Room B": {
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                "Room C": {
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                "Room D": {
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                "Room E": {
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "msg_id": "64f8eaa4-024b-4322-922a-275c83bff05c",
+          "ts": "2025-12-09T10:27:42.410222Z",
+          "subject": "Client follow-up (2025-12-09 10:27)",
+          "body_preview": "2026-02-07 18:00–22:00",
+          "intent": "other",
+          "confidence": 0.2,
+          "user_info": {
+            "date": "2026-02-07",
+            "start_time": "18:00",
+            "end_time": "22:00",
+            "city": null,
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "2026020718",
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": "07.02.2026"
+          }
+        },
+        {
+          "msg_id": "c5d96180-0f97-4bf1-9791-47a6772982ab",
+          "ts": "2025-12-09T10:28:13.050865Z",
+          "subject": "Client follow-up (2025-12-09 10:28)",
+          "body_preview": "take Room E",
+          "intent": "other",
+          "confidence": 0.30000000000000004,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": "Room E",
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null,
+            "_room_choice_detected": true
+          }
+        },
+        {
+          "msg_id": "77201f0a-a598-4a8b-a884-064f20da34ee",
+          "ts": "2025-12-09T16:26:06.354081Z",
+          "subject": "Subject: Private Dinner Event – Date Options in February",
+          "body_preview": "Subject: Private Dinner Event – Date Options in February\n\nHello,\n\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.\n\nWe’re",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "start_time": null,
+            "end_time": null,
+            "city": "February",
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "+41782224455",
+            "company": null,
+            "language": null,
+            "notes": "sound system",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              30
+            ],
+            "window": {
+              "month": "February",
+              "weekdays_hint": [
+                30
+              ]
+            },
+            "vague_month": "february",
+            "vague_weekday": "saturday",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "sound system",
+                "background music"
+              ],
+              "keywords": [
+                "sound",
+                "system",
+                "background",
+                "music"
+              ],
+              "default_hint": "sound system",
+              "products": [
+                "background music"
+              ],
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 3.0,
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 3.0,
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 3.0,
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 3.0,
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 3.0,
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 3.0,
+                "Room B": 3.0,
+                "Room C": 3.0,
+                "Room D": 3.0,
+                "Room E": 3.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                "Room B": {
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                "Room C": {
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                "Room D": {
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                "Room E": {
+                  "matched": [
+                    "Background Music Package"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "sound system",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "background music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Background Music Package",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "background music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "Background Music",
+                      "product": "Wireless Microphone",
+                      "score": 0.5
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "msg_id": "7b9bb235-6a65-4fc0-ab54-d63ed804ca80",
+          "ts": "2025-12-09T16:26:21.421932Z",
+          "subject": "Client follow-up (2025-12-09 16:26)",
+          "body_preview": "2026-02-14 18:00–22:00",
+          "intent": "other",
+          "confidence": 0.2,
+          "user_info": {
+            "date": "2026-02-14",
+            "start_time": "18:00",
+            "end_time": "22:00",
+            "city": null,
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": "2026021418",
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": "14.02.2026"
+          }
+        },
+        {
+          "msg_id": "63990a22-604b-40c1-a70a-2f98c5ca02a0",
+          "ts": "2025-12-09T16:26:44.424584Z",
+          "subject": "Client follow-up (2025-12-09 16:26)",
+          "body_preview": "Room A",
+          "intent": "other",
+          "confidence": 0.30000000000000004,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": "Room A",
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null,
+            "_room_choice_detected": true
+          }
+        },
+        {
+          "msg_id": "b603ef94-fb4b-40e1-b76d-c9002890b25e",
+          "ts": "2025-12-09T16:28:18.472968Z",
+          "subject": "Client follow-up (2025-12-09 16:28)",
+          "body_preview": "ok thats fine",
+          "intent": "event_request",
+          "confidence": 0.99,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "07a5713f-3528-4584-91a4-e971b382cab5",
+          "ts": "2025-12-09T16:29:05.577615Z",
+          "subject": "Client follow-up (2025-12-09 16:29)",
+          "body_preview": "Laura Labs, Bahnhofstrasse 74, 8001 Zurich",
+          "intent": "other",
+          "confidence": 0.2,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null
+          }
         }
       ],
       "event_ids": [
@@ -4587,6 +5885,66 @@
         "requirements_hash": "ee5d6192ffe2b13d65b8778efdf314431e90648d5ea114272e389a601443fe1e",
         "room_eval_hash": null,
         "thread_id": "bfdcf085-3ae8-484b-83cd-bb6f335cdfbf"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "092d8ed3-276f-4434-b94b-002466d465d2",
+      "created_at": "2025-12-09T10:27:21.656613",
+      "type": "date_confirmation_message",
+      "status": "done",
+      "client_id": "laura.meier@bluewin.ch",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "payload": {
+        "step_id": 2,
+        "intent": "event_request",
+        "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+        "draft_msg": "Hello,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nSaturdays available in February 2026: 07, 14, 21, 28\n\n\nFull menu details: <a href=\"http://localhost:3000/info/qna?snapshot_id=snap_20251209_102721_aa95435f\" target=\"_blank\" rel=\"noopener noreferrer\">View Catering information</a>\n\nDinner three-course menus with wine pairings: (February)\n- Seasonal Garden Trio — CHF 92 per event (Rooms: all)\n- Alpine Roots Degustation — CHF 105 per event (Rooms: all)\n- Lakeview Signature Journey — CHF 118 per event (Rooms: all)\n\nAVAILABLE DATES:\n- 2026-02-07 18:00–22:00\n- 2026-02-14 18:00–22:00\n- 2026-02-21 18:00–22:00\n- 2026-02-28 18:00–22:00\n\nNEXT STEP:\n- Tell me which date works best so I can move to Room Availability.\n- Or share another day/time and I'll check availability.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+        "language": null,
+        "caller_step": 5,
+        "requirements_hash": "ee5d6192ffe2b13d65b8778efdf314431e90648d5ea114272e389a601443fe1e",
+        "room_eval_hash": null,
+        "thread_id": "bccb9aa8-9927-4899-b727-fe630563ab11"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "a2ee5b14-f2e7-4073-bad1-eacc6eef8410",
+      "created_at": "2025-12-09T16:26:08.606063",
+      "type": "date_confirmation_message",
+      "status": "done",
+      "client_id": "laura.meier@bluewin.ch",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "payload": {
+        "step_id": 2,
+        "intent": "event_request",
+        "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+        "draft_msg": "Hello,\n\nThanks for the briefing — here are the next available slots that fit your preferred window.\n\nSaturdays available in February 2026: 07, 14, 21, 28\n\n\nFull menu details: <a href=\"http://localhost:3000/info/qna?snapshot_id=snap_20251209_162608_f91e1c2e\" target=\"_blank\" rel=\"noopener noreferrer\">View Catering information</a>\n\nDinner three-course menus with wine pairings: (February)\n- Seasonal Garden Trio — CHF 92 per event (Rooms: all)\n- Alpine Roots Degustation — CHF 105 per event (Rooms: all)\n- Lakeview Signature Journey — CHF 118 per event (Rooms: all)\n\nAVAILABLE DATES:\n- 2026-02-07 18:00–22:00\n- 2026-02-14 18:00–22:00\n- 2026-02-21 18:00–22:00\n- 2026-02-28 18:00–22:00\n\nNEXT STEP:\n- Tell me which date works best so I can move to Room Availability.\n- Or share another day/time and I'll check availability.\n\n---\nStep: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "f20e94fb5cc7238935c88701f589a5f3ea3124f36a21321e6ba4fc58dc238573",
+        "room_eval_hash": null,
+        "thread_id": "1373f9d1-671b-4981-8933-5b96c64ccdb4"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "37fa8568-5543-4b36-a068-6ec6f36fa9d3",
+      "created_at": "2025-12-09T16:29:10.310815",
+      "type": "offer_message",
+      "status": "approved",
+      "client_id": "laura.meier@bluewin.ch",
+      "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+      "payload": {
+        "step_id": 5,
+        "intent": "other",
+        "event_id": "83ef1bf1-663e-4dc1-bde4-0538dc715497",
+        "draft_msg": "Client accepted the offer. Please approve to proceed to confirmation.\n\nOffer draft for 14.02.2026 · Room A\n\nClient: Laura Labs · laura.meier@bluewin.ch\nBilling address: Laura Labs, Bahnhofstrasse 74, 8001 Zurich, Zurich\n\n**Included products**\n- 1× Background Music Package (match 100%, for \"sound system\") · CHF 180.00 (per event)\n\n---\n**Total: CHF 680.00**\n---\n\n**Suggestions for you**\n\n*Other close matches you can add:*\n- Wireless Microphone (50% match, covers \"background music\") · CHF 25.00\n\nPlease review and approve to confirm.\n\n---\nStep: 5 Event Preparation · Next: 5 Event Preparation · State: Waiting on HIL",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "ee5d6192ffe2b13d65b8778efdf314431e90648d5ea114272e389a601443fe1e",
+        "room_eval_hash": "ee5d6192ffe2b13d65b8778efdf314431e90648d5ea114272e389a601443fe1e",
+        "thread_id": "1373f9d1-671b-4981-8933-5b96c64ccdb4"
       },
       "notes": ""
     }
