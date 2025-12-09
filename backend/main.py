@@ -64,10 +64,13 @@ DEBUG_TRACE_ENABLED = is_trace_enabled()
 
 GUI_ADAPTER = ClientGUIAdapter()
 
-# CORS for frontend
+# CORS for frontend - configurable origins for security
+# Default allows localhost:3000 for local development
+# Set ALLOWED_ORIGINS env var for production (comma-separated list)
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -911,7 +914,17 @@ async def reset_client_data(request: ClientResetRequest):
     - Client entry from 'clients' dict
     - All events where client_id matches the email
     - All tasks associated with those events
+
+    SECURITY: This endpoint is disabled by default.
+    Set ENABLE_DANGEROUS_ENDPOINTS=true to enable (never in production!).
     """
+    # Production guard - disabled unless explicitly enabled
+    if os.getenv("ENABLE_DANGEROUS_ENDPOINTS", "false").lower() != "true":
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is disabled. Set ENABLE_DANGEROUS_ENDPOINTS=true to enable (development only)."
+        )
+
     email = request.email.lower().strip()
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")
