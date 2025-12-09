@@ -24,7 +24,7 @@ from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
-from backend.workflows.common.pricing import derive_room_rate, normalise_rate
+from backend.workflows.common.pricing import build_deposit_info, derive_room_rate, normalise_rate
 from backend.workflows.nlu import detect_general_room_query
 from backend.debug.hooks import trace_db_write, trace_detour, trace_gate, trace_state, trace_step, trace_marker, trace_general_qa_status, set_subloop
 from backend.debug.trace import set_hil_open
@@ -325,6 +325,13 @@ def process(state: WorkflowState) -> GroupResult:
     pricing_inputs = _rebuild_pricing_inputs(event_entry, state.user_info)
 
     offer_id, offer_version, total_amount = _record_offer(event_entry, pricing_inputs, state.user_info, thread_id)
+
+    # Attach deposit info based on global deposit configuration
+    deposit_config = (state.db.get("config") or {}).get("global_deposit") or {}
+    deposit_info = build_deposit_info(total_amount, deposit_config)
+    if deposit_info:
+        event_entry["deposit_info"] = deposit_info
+
     summary_lines = _compose_offer_summary(event_entry, total_amount, state)
     billing_display = format_billing_display(
         event_entry.get("billing_details") or {},

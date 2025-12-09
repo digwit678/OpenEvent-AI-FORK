@@ -5,6 +5,7 @@ import type { KeyboardEvent } from 'react';
 import { Send, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import DebugPanel from './components/DebugPanel';
+import DepositSettings from './components/DepositSettings';
 
 const BACKEND_BASE =
   (process.env.NEXT_PUBLIC_BACKEND_BASE || 'http://localhost:8000').replace(/\/$/, '');
@@ -27,12 +28,22 @@ interface EventInfo {
   [key: string]: string;
 }
 
+interface DepositInfo {
+  deposit_required: boolean;
+  deposit_amount?: number | null;
+  deposit_vat_included?: number | null;
+  deposit_due_date?: string | null;
+  deposit_paid: boolean;
+  deposit_paid_at?: string | null;
+}
+
 interface PendingTaskPayload {
   snippet?: string | null;
   suggested_dates?: string[] | null;
   thread_id?: string | null;
   draft_body?: string | null;
   step_id?: number | null;
+  current_step?: number | null;
   event_summary?: {
     client_name?: string | null;
     company?: string | null;
@@ -41,6 +52,8 @@ interface PendingTaskPayload {
     chosen_date?: string | null;
     locked_room?: string | null;
     offer_total?: number | null;
+    deposit_info?: DepositInfo | null;
+    current_step?: number | null;
   } | null;
 }
 
@@ -229,6 +242,7 @@ export default function EmailThreadUI() {
   const [backendHealthy, setBackendHealthy] = useState<boolean | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [debugEnabled, setDebugEnabled] = useState(false);
+  const [depositPayingFor, setDepositPayingFor] = useState<string | null>(null);
 
   const inputDebounce = useMemo(() => debounce((value: string) => setInputText(value), 80), []);
 
@@ -729,6 +743,37 @@ export default function EmailThreadUI() {
     }
   }, [sessionId]);
 
+  /**
+   * Handle deposit payment (mock) - Client clicks to mark deposit as paid
+   * Only works at Step 4 (offer step). On detour, button is greyed out.
+   * See OPEN_DECISIONS.md DECISION-003 for production payment verification options.
+   */
+  const handlePayDeposit = useCallback(
+    async (eventId: string, depositAmount: number) => {
+      setDepositPayingFor(eventId);
+      try {
+        await requestJSON(`${API_BASE}/event/deposit/pay`, {
+          method: 'POST',
+          body: JSON.stringify({ event_id: eventId }),
+        });
+        // Refresh tasks to update deposit status
+        await refreshTasks();
+        alert(
+          `Deposit of CHF ${depositAmount.toLocaleString('de-CH', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })} marked as paid. You can now proceed with the confirmation.`
+        );
+      } catch (error) {
+        console.error('Error paying deposit:', error);
+        alert('Error processing deposit payment. Please try again.');
+      } finally {
+        setDepositPayingFor(null);
+      }
+    },
+    [refreshTasks]
+  );
+
   const handleKeyPress = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -758,6 +803,25 @@ export default function EmailThreadUI() {
     }
     return Object.entries(eventInfo).filter(([key, value]) => shouldDisplayEventField(key, value));
   }, [eventInfo, isComplete]);
+
+  // Check if there's an unpaid deposit that blocks confirmation
+  // This looks at all pending tasks for the current session to find deposit requirements
+  const unpaidDepositInfo = useMemo(() => {
+    for (const task of tasks) {
+      const depositInfo = task.payload?.event_summary?.deposit_info;
+      if (depositInfo?.deposit_required && !depositInfo.deposit_paid) {
+        return {
+          amount: depositInfo.deposit_amount ?? 0,
+          dueDate: depositInfo.deposit_due_date,
+        };
+      }
+    }
+    return null;
+  }, [tasks]);
+
+  // Block confirmation if deposit is required but not paid
+  // See OPEN_DECISIONS.md DECISION-002 for why we use template message instead of LLM
+  const canConfirmBooking = !unpaidDepositInfo;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -869,11 +933,37 @@ export default function EmailThreadUI() {
                 Click Accept to save this booking to our system, or Reject to discard.
               </p>
             </div>
+            {/* Deposit reminder - uses template message per OPEN_DECISIONS.md DECISION-002 */}
+            {unpaidDepositInfo && (
+              <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
+                <p className="text-yellow-800 font-medium">
+                  To confirm your booking, please complete the deposit payment first.
+                </p>
+                <p className="text-yellow-700 text-sm mt-1">
+                  Once your deposit of CHF{' '}
+                  {unpaidDepositInfo.amount.toLocaleString('de-CH', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}{' '}
+                  is received, you can proceed with the confirmation.
+                </p>
+                <p className="text-yellow-600 text-xs mt-2">
+                  If you have any questions about the payment process, please let us know.
+                </p>
+              </div>
+            )}
             <div className="flex gap-4 justify-center">
               <button
                 onClick={acceptBooking}
-                disabled={isLoading}
-                className="flex items-center gap-2 px-8 py-4 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white rounded-xl font-bold text-lg shadow-lg transition-all transform hover:scale-105 disabled:cursor-not-allowed"
+                disabled={isLoading || !canConfirmBooking}
+                title={!canConfirmBooking ? 'Deposit payment required before confirmation' : undefined}
+                className={`flex items-center gap-2 px-8 py-4 ${
+                  canConfirmBooking
+                    ? 'bg-green-500 hover:bg-green-600'
+                    : 'bg-gray-300 cursor-not-allowed'
+                } disabled:bg-gray-300 text-white rounded-xl font-bold text-lg shadow-lg transition-all transform ${
+                  canConfirmBooking ? 'hover:scale-105' : ''
+                } disabled:cursor-not-allowed`}
               >
                 <CheckCircle className="w-6 h-6" />
                 Accept & Save Booking
@@ -981,6 +1071,11 @@ export default function EmailThreadUI() {
         </>
       )}
 
+      {/* Manager Settings Section */}
+      <div className="mt-4 w-full">
+        <DepositSettings compact />
+      </div>
+
       <div className="mt-2 w-full">
         <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
           <div className="flex items-center justify-between mb-2">
@@ -1016,6 +1111,15 @@ export default function EmailThreadUI() {
                 const offerTotal =
                   typeof eventSummary?.offer_total === 'number' ? eventSummary.offer_total : null;
                 const canAction = ['ask_for_date', 'manual_review', 'offer_message', 'room_availability_message', 'date_confirmation_message'].includes(task.type);
+
+                // Deposit info for Pay Deposit button
+                const depositInfo = eventSummary?.deposit_info;
+                const currentStep = eventSummary?.current_step ?? task.payload?.step_id;
+                const showDepositButton = depositInfo?.deposit_required && typeof depositInfo.deposit_amount === 'number';
+                const depositPaid = depositInfo?.deposit_paid ?? false;
+                // Button is enabled only at Step 4 (offer step) and when deposit is not already paid
+                const canPayDeposit = currentStep === 4 && !depositPaid;
+
                 return (
                   <div key={task.task_id} className="p-3 bg-gray-50 border border-gray-200 rounded-md">
                     <div className="text-sm font-semibold text-gray-800">{task.type}</div>
@@ -1051,6 +1155,24 @@ export default function EmailThreadUI() {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
                             })}
+                          </div>
+                        )}
+                        {/* Deposit info display */}
+                        {depositInfo?.deposit_required && (
+                          <div className={`mt-2 p-2 rounded border ${depositPaid ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                            <div className="font-semibold text-gray-800">
+                              Deposit: CHF{' '}
+                              {(depositInfo.deposit_amount ?? 0).toLocaleString('de-CH', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </div>
+                            {depositInfo.deposit_due_date && (
+                              <div className="text-gray-600">Due: {depositInfo.deposit_due_date}</div>
+                            )}
+                            <div className={`font-medium ${depositPaid ? 'text-green-700' : 'text-yellow-700'}`}>
+                              Status: {depositPaid ? 'Paid' : 'Pending'}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1106,6 +1228,49 @@ export default function EmailThreadUI() {
                           </button>
                         </div>
                       </>
+                    )}
+                    {/* Pay Deposit button - Client action, only visible at Step 4 when deposit is required */}
+                    {showDepositButton && task.event_id && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-600">
+                            {depositPaid
+                              ? 'Deposit paid - ready for confirmation'
+                              : currentStep === 4
+                              ? 'Pay deposit to proceed with confirmation'
+                              : 'Deposit payment available at Step 4 (offer step)'}
+                          </span>
+                          <button
+                            onClick={() =>
+                              handlePayDeposit(task.event_id!, depositInfo!.deposit_amount!)
+                            }
+                            disabled={!canPayDeposit || depositPayingFor === task.event_id}
+                            title={
+                              depositPaid
+                                ? 'Deposit already paid'
+                                : currentStep !== 4
+                                ? 'Deposit can only be paid at Step 4 (offer step)'
+                                : 'Click to pay deposit'
+                            }
+                            className={`px-4 py-2 text-xs font-semibold rounded transition ${
+                              depositPaid
+                                ? 'bg-green-100 text-green-700 cursor-default'
+                                : canPayDeposit
+                                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                                : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                            }`}
+                          >
+                            {depositPayingFor === task.event_id
+                              ? 'Processing...'
+                              : depositPaid
+                              ? 'Deposit Paid'
+                              : `Pay Deposit (CHF ${(depositInfo!.deposit_amount ?? 0).toLocaleString(
+                                  'de-CH',
+                                  { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                                )})`}
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 );

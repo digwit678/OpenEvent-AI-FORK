@@ -261,6 +261,33 @@ class ClientResetRequest(BaseModel):
     email: str
 
 
+class GlobalDepositConfig(BaseModel):
+    """
+    Global deposit configuration applied to all offers by default.
+
+    INTEGRATION NOTE FOR FRONTEND INTEGRATORS:
+    ==========================================
+    This config is stored in the workflow database under "config.global_deposit".
+    When creating offers, the workflow will use these settings unless overridden
+    by room-specific deposit settings (future feature).
+
+    The data format matches the real OpenEvent frontend's deposit structure:
+    - deposit_enabled: boolean - Whether to require deposit
+    - deposit_type: "percentage" | "fixed" - How to calculate deposit
+    - deposit_percentage: number (1-100) - Percentage of offer total
+    - deposit_fixed_amount: number - Fixed CHF amount
+    - deposit_deadline_days: number - Days until payment due
+
+    For room-specific deposits (future integration), see:
+    - POST /api/config/room-deposit/{room_id} (inactive, prepared for integration)
+    """
+    deposit_enabled: bool = False
+    deposit_type: str = "percentage"  # "percentage" or "fixed"
+    deposit_percentage: int = 30
+    deposit_fixed_amount: float = 0.0
+    deposit_deadline_days: int = 10
+
+
 class ConfirmDateRequest(BaseModel):
     date: Optional[str] = None
 
@@ -755,6 +782,7 @@ async def get_pending_tasks():
                 "chosen_date": event_entry.get("chosen_date"),
                 "locked_room": event_entry.get("locked_room_id"),
                 "line_items": _line_items(event_entry),
+                "current_step": event_entry.get("current_step", 1),
             }
             try:
                 from backend.workflows.groups.negotiation_close import _determine_offer_total
@@ -764,6 +792,18 @@ async def get_pending_tasks():
                 total_amount = None
             if total_amount not in (None, 0):
                 event_summary["offer_total"] = total_amount
+
+            # Include deposit info for client-side payment button
+            deposit_info = event_entry.get("deposit_info")
+            if deposit_info:
+                event_summary["deposit_info"] = {
+                    "deposit_required": deposit_info.get("deposit_required", False),
+                    "deposit_amount": deposit_info.get("deposit_amount"),
+                    "deposit_vat_included": deposit_info.get("deposit_vat_included"),
+                    "deposit_due_date": deposit_info.get("deposit_due_date"),
+                    "deposit_paid": deposit_info.get("deposit_paid", False),
+                    "deposit_paid_at": deposit_info.get("deposit_paid_at"),
+                }
 
         record = {
             "task_id": task.get("task_id"),
@@ -1368,6 +1408,275 @@ async def list_snapshots_endpoint(
 async def workflow_health():
     """Minimal health check for workflow integration."""
     return {"db_path": str(WF_DB_PATH), "ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Global Deposit Configuration Endpoints
+# ---------------------------------------------------------------------------
+# These endpoints allow the manager to configure global deposit settings
+# that apply to all offers by default.
+#
+# INTEGRATION NOTE FOR FRONTEND INTEGRATORS:
+# ==========================================
+# The global deposit config is stored in the workflow database under
+# "config.global_deposit". When the integrated frontend is ready:
+# 1. The workflow will read this config when generating offers
+# 2. Room-specific deposits can override the global setting (see inactive
+#    endpoints below)
+# 3. The data format matches the real frontend's deposit structure
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/config/global-deposit")
+async def get_global_deposit_config():
+    """
+    Get the current global deposit configuration.
+
+    Returns default values if not yet configured.
+    """
+    try:
+        db = wf_load_db()
+        config = db.get("config", {}).get("global_deposit", {})
+        return {
+            "deposit_enabled": config.get("deposit_enabled", False),
+            "deposit_type": config.get("deposit_type", "percentage"),
+            "deposit_percentage": config.get("deposit_percentage", 30),
+            "deposit_fixed_amount": config.get("deposit_fixed_amount", 0.0),
+            "deposit_deadline_days": config.get("deposit_deadline_days", 10),
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load deposit config: {exc}"
+        ) from exc
+
+
+@app.post("/api/config/global-deposit")
+async def set_global_deposit_config(config: GlobalDepositConfig):
+    """
+    Set the global deposit configuration.
+
+    This setting applies to all offers unless overridden by room-specific
+    deposit settings (future feature).
+    """
+    try:
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+        db["config"]["global_deposit"] = {
+            "deposit_enabled": config.deposit_enabled,
+            "deposit_type": config.deposit_type,
+            "deposit_percentage": config.deposit_percentage,
+            "deposit_fixed_amount": config.deposit_fixed_amount,
+            "deposit_deadline_days": config.deposit_deadline_days,
+            "updated_at": _now_iso(),
+        }
+        wf_save_db(db)
+        print(f"[Config] Global deposit updated: enabled={config.deposit_enabled} type={config.deposit_type}")
+        return {"status": "ok", "config": db["config"]["global_deposit"]}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save deposit config: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Room-Specific Deposit Endpoints (INACTIVE - For Future Integration)
+# ---------------------------------------------------------------------------
+# INTEGRATION NOTE FOR FRONTEND INTEGRATORS:
+# ==========================================
+# These endpoints are prepared for future integration with the main OpenEvent
+# frontend. They allow setting deposit requirements per room, which override
+# the global deposit setting.
+#
+# To activate:
+# 1. Uncomment the endpoints below
+# 2. Add the corresponding UI in the Rooms Setup page
+# 3. Update the offer generation logic to check room-specific deposits first
+#
+# Data structure (stored in db.config.room_deposits[room_id]):
+# {
+#   "deposit_required": boolean,
+#   "deposit_percent": number (1-100),
+#   "updated_at": ISO timestamp
+# }
+# ---------------------------------------------------------------------------
+
+# @app.get("/api/config/room-deposit/{room_id}")
+# async def get_room_deposit_config(room_id: str):
+#     """
+#     Get deposit configuration for a specific room.
+#
+#     INACTIVE - Uncomment when integrating with main frontend.
+#     """
+#     try:
+#         db = wf_load_db()
+#         room_deposits = db.get("config", {}).get("room_deposits", {})
+#         config = room_deposits.get(room_id, {})
+#         return {
+#             "room_id": room_id,
+#             "deposit_required": config.get("deposit_required", False),
+#             "deposit_percent": config.get("deposit_percent", None),
+#             "updated_at": config.get("updated_at"),
+#         }
+#     except Exception as exc:
+#         raise HTTPException(
+#             status_code=500, detail=f"Failed to load room deposit config: {exc}"
+#         ) from exc
+#
+#
+# @app.post("/api/config/room-deposit/{room_id}")
+# async def set_room_deposit_config(room_id: str, deposit_required: bool, deposit_percent: Optional[int] = None):
+#     """
+#     Set deposit configuration for a specific room.
+#
+#     INACTIVE - Uncomment when integrating with main frontend.
+#
+#     This overrides the global deposit setting for offers using this room.
+#     """
+#     try:
+#         db = wf_load_db()
+#         if "config" not in db:
+#             db["config"] = {}
+#         if "room_deposits" not in db["config"]:
+#             db["config"]["room_deposits"] = {}
+#         db["config"]["room_deposits"][room_id] = {
+#             "deposit_required": deposit_required,
+#             "deposit_percent": deposit_percent,
+#             "updated_at": _now_iso(),
+#         }
+#         wf_save_db(db)
+#         print(f"[Config] Room deposit updated: room={room_id} required={deposit_required} percent={deposit_percent}")
+#         return {"status": "ok", "room_id": room_id, "config": db["config"]["room_deposits"][room_id]}
+#     except Exception as exc:
+#         raise HTTPException(
+#             status_code=500, detail=f"Failed to save room deposit config: {exc}"
+#         ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Deposit Payment Endpoints
+# ---------------------------------------------------------------------------
+# These endpoints handle the mock deposit payment flow for testing.
+# In production, this would integrate with a payment gateway.
+#
+# See OPEN_DECISIONS.md DECISION-003 for production payment verification options.
+# ---------------------------------------------------------------------------
+
+
+class DepositPaymentRequest(BaseModel):
+    """Request to mark a deposit as paid."""
+    event_id: str
+
+
+@app.post("/api/event/deposit/pay")
+async def pay_deposit(request: DepositPaymentRequest):
+    """
+    Mark the deposit as paid for an event.
+
+    This is a mock endpoint for testing. In production, this would be
+    triggered by a payment gateway webhook after successful payment.
+
+    Requirements:
+    - Event must exist
+    - Event must be at Step 4 (offer step)
+    - Deposit must be required (configured by manager)
+    - Deposit must not already be paid
+
+    See OPEN_DECISIONS.md DECISION-001 for handling deposit changes after payment.
+    """
+    try:
+        db = wf_load_db()
+        events = db.get("events") or {}
+        event_entry = events.get(request.event_id)
+
+        if not event_entry:
+            raise HTTPException(status_code=404, detail="Event not found")
+
+        current_step = event_entry.get("current_step", 1)
+        if current_step != 4:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Deposit can only be paid at Step 4 (offer). Current step: {current_step}"
+            )
+
+        deposit_info = event_entry.get("deposit_info")
+        if not deposit_info or not deposit_info.get("deposit_required"):
+            raise HTTPException(
+                status_code=400,
+                detail="No deposit is required for this event"
+            )
+
+        if deposit_info.get("deposit_paid"):
+            return {
+                "status": "already_paid",
+                "event_id": request.event_id,
+                "deposit_paid_at": deposit_info.get("deposit_paid_at"),
+            }
+
+        # Mark deposit as paid
+        deposit_info["deposit_paid"] = True
+        deposit_info["deposit_paid_at"] = _now_iso()
+        event_entry["deposit_info"] = deposit_info
+
+        wf_save_db(db)
+        print(f"[Deposit] Event {request.event_id}: Deposit marked as paid")
+
+        return {
+            "status": "ok",
+            "event_id": request.event_id,
+            "deposit_amount": deposit_info.get("deposit_amount"),
+            "deposit_paid_at": deposit_info.get("deposit_paid_at"),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to process deposit payment: {exc}"
+        ) from exc
+
+
+@app.get("/api/event/{event_id}/deposit")
+async def get_deposit_status(event_id: str):
+    """
+    Get the deposit status for an event.
+
+    Returns deposit info including:
+    - Whether deposit is required
+    - Deposit amount and due date
+    - Whether deposit has been paid
+    """
+    try:
+        db = wf_load_db()
+        events = db.get("events") or {}
+        event_entry = events.get(event_id)
+
+        if not event_entry:
+            raise HTTPException(status_code=404, detail="Event not found")
+
+        deposit_info = event_entry.get("deposit_info")
+        current_step = event_entry.get("current_step", 1)
+
+        if not deposit_info:
+            return {
+                "event_id": event_id,
+                "deposit_required": False,
+                "current_step": current_step,
+            }
+
+        return {
+            "event_id": event_id,
+            "current_step": current_step,
+            **deposit_info,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get deposit status: {exc}"
+        ) from exc
+
 
 @app.post("/api/reject-booking/{session_id}")
 async def reject_booking(session_id: str):

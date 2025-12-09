@@ -1,5 +1,259 @@
 # Development Changelog
 
+## 2025-12-09
+
+### Change: Room Selection Now Sets Status to Option
+
+**Task: Set event status to Option when room is selected (Step 3)**
+
+Previously, events stayed as "Lead" all the way through offer sending, only becoming "Option" when client explicitly confirmed. This made conflict detection impossible until very late.
+
+**New Behavior:**
+- Step 1-2 (Intake, Date): Status = **Lead**
+- Step 3 (Room selected): Status = **Option** ← Calendar blocked!
+- Step 5-7 (Confirmation): Status = **Confirmed**
+
+**Files Modified:**
+- `backend/workflows/planner/smart_shortcuts.py` — `_apply_room_selection()` now sets `status="Option"`
+- `backend/workflows/groups/room_availability/trigger/process.py` — Two room selection paths now set `status="Option"`
+
+**Impact:**
+- Conflict detection now works at room selection time (not just confirmation)
+- Calendar shows "Option" blocks earlier in the booking process
+- Soft conflicts can be detected between two clients both selecting same room
+
+---
+
+### Feature: Room Conflict Detection and Resolution
+
+**Task: Implement conflict handling for room reservations between multiple clients**
+
+Implemented a comprehensive conflict detection system that handles two scenarios:
+1. **Soft Conflict (Option + Option)**: Two clients both have Option status on same room/date
+2. **Hard Conflict (Option + Confirm)**: Client tries to confirm when another has Option
+
+**New Files:**
+
+1. **Conflict Detection Module** (`backend/workflows/common/conflict.py`)
+   - `ConflictType` enum: NONE, SOFT, HARD
+   - `detect_room_conflict()` — Check if another event has same room locked on same date
+   - `detect_conflict_type()` — Distinguish soft vs hard conflicts based on action
+   - `get_available_rooms_on_date()` — Get rooms NOT locked by other events
+   - `compose_soft_conflict_warning()` — Warning for Option + Option scenario
+   - `compose_hard_conflict_block()` — Block message for Option + Confirm scenario
+   - `compose_conflict_warning_message()` — General conflict warning
+   - `compose_conflict_hil_task()` — Create HIL task for conflict resolution
+   - `handle_soft_conflict()` — Proceed with warning, create HIL notification
+   - `handle_hard_conflict()` — Block or create HIL task based on client reason
+   - `handle_loser_event()` — Redirect loser to Step 2 or 3
+   - `notify_conflict_resolution()` — Resolve and notify both clients
+   - `compose_winner_message()` — Message for winning client
+
+2. **Conflict Tests** (`backend/tests/flow/test_room_conflict.py`)
+   - 26 tests covering: detection, soft/hard handling, HIL tasks, loser paths, full flows
+   - Tests for both scenarios (Option+Option, Option+Confirm)
+
+**Backend Integration:**
+
+1. **Room Availability (Step 3)** (`backend/workflows/groups/room_availability/trigger/process.py`)
+   - Added soft conflict detection in `handle_select_room_action()`
+   - When conflict detected: creates `soft_room_conflict_notification` HIL task
+   - Neither client is notified — manager just gets visibility
+   - Client still becomes Option (proceeds with warning flag)
+
+2. **Offer Confirmation (Step 4/5)** (`backend/workflows/groups/event_confirmation/db_pers/post_offer.py`)
+   - Added hard conflict detection in `_handle_confirm()`
+   - If conflict found: blocks confirmation, asks for reason
+   - If client insists with reason: creates `room_conflict_resolution` HIL task
+   - Client waits for manager decision before confirmation can proceed
+
+**Documentation Updates:**
+
+1. **MANAGER_INTEGRATION_GUIDE.md** — Updated Decision 8 with:
+   - Two conflict scenarios (Soft vs Hard)
+   - Detailed flowchart showing conflict resolution
+   - Open questions for soft conflict handling:
+     - A) Keep current (HIL notify only)
+     - B) Suggest alternative room
+     - C) Block Client 2
+     - D) Manager chooses response
+   - Open question for manager manual input form
+
+**Conflict Flow Summary:**
+
+```
+SOFT (Option + Option):
+Client 2 selects room → HIL notification sent → Client 2 becomes Option → No blocking
+
+HARD (Option + Confirm):
+Client 2 confirms → Blocked → Ask for reason → HIL task created → Manager decides →
+Winner proceeds / Loser redirected to Step 2 or 3
+```
+
+### Enhancement: Deposit Integration at Step 4
+
+**Task: Attach deposit_info to events when offers are created**
+
+**Backend Changes:**
+
+1. **Offer Processing** (`backend/workflows/groups/offer/trigger/process.py`)
+   - Import `build_deposit_info` from pricing module
+   - After offer is recorded, call `build_deposit_info()` with global deposit config
+   - Attach `deposit_info` to event entry at Step 4
+
+---
+
+## 2025-12-08
+
+### Feature: Deposit Payment Workflow Integration
+
+**Task: Complete deposit payment flow with mock payment and confirmation blocking**
+
+Extended the deposit feature to include client-side payment flow, deposit status tracking, and confirmation gatekeeping. The system now requires deposit payment before allowing offer confirmation.
+
+**Backend Changes:**
+
+1. **Deposit Payment Endpoints** (`backend/main.py`)
+   - `POST /api/event/deposit/pay` — Mark deposit as paid (mock payment for testing)
+     - Only works at Step 4 (offer step)
+     - Validates event exists and is at correct step
+     - Updates event's `deposit_info.deposit_paid` and `deposit_info.deposit_paid_at`
+   - `GET /api/event/{event_id}/deposit` — Get deposit status for an event
+   - `DepositPaymentRequest` Pydantic model for payment requests
+
+2. **Event Summary Enhancement** (`backend/main.py`)
+   - Updated `/api/tasks/pending` to include `deposit_info` and `current_step` in event_summary
+   - Deposit info includes: amount, VAT, due date, paid status, payment timestamp
+
+3. **Pricing Module** (`backend/workflows/common/pricing.py`)
+   - `SWISS_VAT_RATE = 0.081` constant
+   - `calculate_deposit_amount()` — Compute deposit from total based on config
+   - `calculate_deposit_due_date()` — Compute due date from deadline days
+   - `build_deposit_info()` — Build complete deposit info dict
+   - `format_deposit_for_offer()` — Format deposit for offer text
+
+**Frontend Changes:**
+
+1. **Interfaces** (`atelier-ai-frontend/app/page.tsx`)
+   - `DepositInfo` interface with all deposit fields
+   - Updated `PendingTaskPayload` to include `deposit_info` and `current_step`
+
+2. **Pay Deposit Button** (`atelier-ai-frontend/app/page.tsx`)
+   - Appears in Tasks panel when deposit is required
+   - Only enabled at Step 4 (offer step)
+   - Greyed out on detour (not at Step 4)
+   - Shows deposit amount, due date, and payment status
+   - Calls `POST /api/event/deposit/pay` on click
+   - State transitions: Pending → Processing → Paid
+
+3. **Confirmation Blocking** (`atelier-ai-frontend/app/page.tsx`)
+   - `unpaidDepositInfo` computed value checks all tasks for unpaid deposits
+   - `canConfirmBooking` gate prevents Accept button if deposit unpaid
+   - Shows template-based reminder message (not LLM) per DECISION-002
+   - Accept button disabled with tooltip when deposit required
+
+4. **Deposit Status Display** (`atelier-ai-frontend/app/page.tsx`)
+   - Yellow box (pending) / Green box (paid) in task cards
+   - Shows deposit amount, due date, and status
+   - Updates in real-time after payment
+
+**Template Message (per DECISION-002):**
+```
+To confirm your booking, please complete the deposit payment first.
+Once your deposit of {amount} is received, you can proceed with the confirmation.
+
+If you have any questions about the payment process, please let us know.
+```
+
+**Decision Tracking:**
+- Created `OPEN_DECISIONS.md` with:
+  - DECISION-001: Deposit changes after payment (open)
+  - DECISION-002: LLM vs template for reminders (decided: template)
+  - DECISION-003: Payment verification in production (open)
+  - DECISION-004: Deposit display format (decided)
+
+**Workflow Rules:**
+- Deposit button only visible when `deposit_info.deposit_required = true`
+- Button only enabled at Step 4 (offer step)
+- On detour (step changes), button is greyed out (payment status persists but re-payment may be needed)
+- Accept button blocked until deposit marked as paid
+
+**Files touched:**
+- `backend/main.py` (deposit endpoints, event summary)
+- `backend/workflows/common/pricing.py` (deposit calculations)
+- `atelier-ai-frontend/app/page.tsx` (Pay Deposit button, confirmation blocking)
+- `OPEN_DECISIONS.md` (new file for decision tracking)
+
+---
+
+### Feature: Global Deposit Configuration for Manager
+
+**Task: Add deposit settings to manager section for integration readiness**
+
+Implemented a global deposit configuration system that allows managers to set default deposit requirements for all offers. The feature is designed to integrate seamlessly with the main OpenEvent frontend.
+
+**Frontend Changes:**
+
+1. **DepositSettings Component** (`atelier-ai-frontend/app/components/DepositSettings.tsx`) - NEW
+   - Toggle to enable/disable deposit requirement
+   - Deposit type selection: Percentage or Fixed Amount
+   - Percentage input (1-100%) or Fixed CHF amount
+   - Payment deadline selector (7/10/14/30 days)
+   - Preview box showing calculated deposit
+   - Compact mode for inline display
+   - Full edit mode with save/cancel
+
+2. **Main Page Integration** (`atelier-ai-frontend/app/page.tsx`)
+   - Added DepositSettings component in manager section
+   - Displays above the Tasks panel in compact mode
+
+3. **RoomDepositSettings Component** (`atelier-ai-frontend/app/components/RoomDepositSettings.tsx`) - NEW (INACTIVE)
+   - Prepared for future integration with room-specific deposits
+   - Inline and full display modes
+   - Not imported anywhere (inactive) with integration comments
+
+**Backend Changes:**
+
+1. **Pydantic Model** (`backend/main.py`)
+   - `GlobalDepositConfig` model with deposit_enabled, deposit_type, deposit_percentage, deposit_fixed_amount, deposit_deadline_days
+
+2. **API Endpoints** (`backend/main.py`)
+   - `GET /api/config/global-deposit` — Get current deposit config
+   - `POST /api/config/global-deposit` — Save deposit config
+
+3. **Room-Specific Endpoints** (INACTIVE - commented out)
+   - `GET /api/config/room-deposit/{room_id}` — Prepared for integration
+   - `POST /api/config/room-deposit/{room_id}` — Prepared for integration
+
+**Data Format (matches real frontend):**
+```typescript
+{
+  deposit_enabled: boolean,
+  deposit_type: "percentage" | "fixed",
+  deposit_percentage: number,      // 1-100
+  deposit_fixed_amount: number,    // CHF
+  deposit_deadline_days: number    // days until payment due
+}
+```
+
+**Storage:**
+- Global deposit stored in workflow database under `config.global_deposit`
+- Room-specific deposits (future) under `config.room_deposits[room_id]`
+
+**Integration Notes:**
+- All components include detailed comments for frontend integrators
+- Data formats match the real OpenEvent frontend's deposit structure
+- Room-specific deposits can override global setting when activated
+- Search for "INTEGRATION NOTE" or "RoomDepositSettings" when ready to integrate
+
+**Files touched:**
+- `atelier-ai-frontend/app/components/DepositSettings.tsx` (NEW)
+- `atelier-ai-frontend/app/components/RoomDepositSettings.tsx` (NEW - inactive)
+- `atelier-ai-frontend/app/page.tsx`
+- `backend/main.py`
+
+---
+
 ## 2025-12-03
 
 ### Fix: Step 5 (Negotiation) Now Detects Date Changes from Message Text
