@@ -82,7 +82,7 @@ Maintain a lightweight log in DEV_CHANGELOG.md at repo root:
 - Files touched
 - Tests added/updated
 
-If DEV_CHANGELOG.md does not exist, create it with a simple chronological list, newest entries at the top.
+newest entries at the top.
 
 ## Testing Principles (High Priority)
 
@@ -129,7 +129,7 @@ Add assertions or tests so that such paths are detectable and fail loudly in tes
 
 ## When in Doubt
 
-- Re-read Workflow v3 TO TEXT and TEAM_GUIDE.md
+- Re-read Workflow v3 TO TEXT , FRONTEND_REFERENCE.md and TEAM_GUIDE.md
 - Prefer adding or strengthening tests before changing logic
 - If something feels like a "shortcut", check shortcut_workflow_request.txt and qna_shortcuts_debugger.md before proceeding
 
@@ -398,6 +398,8 @@ The workflow uses three distinct LLM roles, each with strict boundaries:
 **Time Handling:** All dates use Europe/Zurich timezone. Tests use `freezegun` for deterministic time (`tests/utils/timezone.py`).
 
 **Detour Recovery:** After detour (e.g., Step 3 → Step 2 for new date → Step 3), system preserves all prior metadata and only re-runs dependent steps.
+
+**Open Decisions:** Write questions which arent clear regarding logic, UX into the OPEN_DECISIONS.md file at the repo root and the docs/integration_to_frontend_and_database/MANAGER_INTEGRATION_GUIDE.md 
 
 ## Common Gotchas
 

@@ -273,57 +273,110 @@ app.add_middleware(
 
 ### Frontend / Supabase Security (Co-Founder's Side)
 
-| Item | Status | Priority | Notes |
-|------|--------|----------|-------|
-| **Row Level Security (RLS)** | ❓ Unknown | Critical | All tables MUST have RLS policies |
-| **API key type** | ❓ Unknown | Critical | Use `service_role` for backend, `anon` for frontend |
-| **Auth flow** | ❓ Unknown | Critical | How are users authenticated? |
-| **Team isolation** | ❓ Unknown | Critical | RLS must filter by `team_id` |
-| **HTTPS only** | ❓ Unknown | Critical | Supabase enforces this |
-| **Backup strategy** | ❓ Unknown | Medium | Regular database backups |
+#### Security Checklist for Co-Founder
 
-#### Supabase RLS Policies Needed
+**Please answer YES/NO to each question. If unsure, ask your developer to check.**
+
+---
+
+**1. DATA ISOLATION (Critical - prevents users seeing other teams' data)**
+
+| Question | How to Check | Answer |
+|----------|--------------|--------|
+| Is Row Level Security (RLS) turned ON for the `events` table? | Supabase Dashboard → Table Editor → events → click "RLS" button → should say "RLS enabled" | ⬜ Yes / ⬜ No |
+| Is RLS turned ON for the `clients` table? | Same as above for clients table | ⬜ Yes / ⬜ No |
+| Is RLS turned ON for the `tasks` table? | Same as above for tasks table | ⬜ Yes / ⬜ No |
+| Is RLS turned ON for the `offers` table? | Same as above for offers table | ⬜ Yes / ⬜ No |
+| Is RLS turned ON for the `emails` table? | Same as above for emails table | ⬜ Yes / ⬜ No |
+| Is RLS turned ON for the `rooms` table? | Same as above for rooms table | ⬜ Yes / ⬜ No |
+
+**Why this matters:** If RLS is OFF, any logged-in user can see ALL data from ALL teams. With RLS ON, users only see their own team's data.
+
+---
+
+**2. API KEY SECURITY (Critical - prevents unauthorized access)**
+
+| Question | How to Check | Answer |
+|----------|--------------|--------|
+| Which API key is used in the frontend code? | Search frontend code for "supabase" - should find `anon` key, NOT `service_role` | ⬜ anon / ⬜ service_role |
+| Is the `service_role` key stored anywhere in frontend/public code? | Search all frontend files for the service_role key value - should find NOTHING | ⬜ Not found (good) / ⬜ Found (bad!) |
+
+**Why this matters:** The `service_role` key bypasses ALL security. If it's in frontend code, anyone can extract it and access everything.
+
+**Rule:**
+- ✅ `anon` key = OK for frontend (browser)
+- ✅ `service_role` key = OK for backend only (our Python server)
+- ❌ `service_role` key in frontend = SECURITY HOLE
+
+---
+
+**3. USER AUTHENTICATION (Critical - ensures only real users access the system)**
+
+| Question | How to Check | Answer |
+|----------|--------------|--------|
+| Do users have to log in to access the app? | Try opening the app in incognito - should redirect to login | ⬜ Yes / ⬜ No |
+| Is the login using Supabase Auth? | Check if login goes through Supabase | ⬜ Yes / ⬜ Other |
+| Can users only see their own team's data after login? | Log in as Team A user, check if Team B data is visible | ⬜ Isolated / ⬜ Can see other teams |
+
+---
+
+**4. BACKUPS (Medium - protects against data loss)**
+
+| Question | How to Check | Answer |
+|----------|--------------|--------|
+| Are automatic backups enabled? | Supabase Dashboard → Settings → Database → Backups | ⬜ Yes / ⬜ No |
+| How often are backups made? | Same location | Daily / Weekly / _____ |
+| Has a backup restore ever been tested? | Ask your developer | ⬜ Yes / ⬜ No |
+
+---
+
+**5. QUICK SECURITY TEST (Do this yourself in 2 minutes)**
+
+1. Open the app in your browser
+2. Open Developer Tools (F12 or right-click → Inspect)
+3. Go to "Network" tab
+4. Refresh the page
+5. Look for requests to `supabase.co`
+6. Click on one and look at "Headers"
+
+**Check:** The `apikey` header should be a long string starting with `eyJ...`. This is the `anon` key (safe).
+
+**Red flag:** If you see a different key that gives you access to everything, that's the `service_role` key in the frontend (dangerous).
+
+---
+
+#### Summary for Non-Technical Review
+
+| Area | What Could Go Wrong | How Bad | Easy to Check? |
+|------|---------------------|---------|----------------|
+| RLS Off | User A sees User B's private event data | Very Bad | Yes - Supabase Dashboard |
+| Wrong API Key | Hackers get full database access | Critical | Yes - Browser Dev Tools |
+| No Login | Anyone on internet can access data | Critical | Yes - Try incognito |
+| No Backups | All data lost if something breaks | Bad | Yes - Supabase Dashboard |
+
+---
+
+#### If You Need Help
+
+Ask your developer to run these SQL queries in Supabase SQL Editor:
 
 ```sql
--- Example: Events table RLS
-ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+-- Check which tables have RLS enabled
+SELECT tablename, rowsecurity
+FROM pg_tables
+WHERE schemaname = 'public';
 
--- Users can only see their team's events
-CREATE POLICY "Users can view own team events" ON events
-    FOR SELECT USING (team_id = auth.jwt() ->> 'team_id');
-
--- Users can only insert to their team
-CREATE POLICY "Users can insert own team events" ON events
-    FOR INSERT WITH CHECK (team_id = auth.jwt() ->> 'team_id');
-
--- Same pattern for: clients, tasks, offers, emails
+-- Check existing RLS policies
+SELECT tablename, policyname, cmd, qual
+FROM pg_policies
+WHERE schemaname = 'public';
 ```
 
-#### Service Role Key Security
+**Expected result:** All main tables (events, clients, tasks, offers, emails, rooms) should show `rowsecurity = true` and have policies listed.
 
-```
-⚠️ CRITICAL: service_role key bypasses RLS
-
-DO:
-- Use service_role ONLY in backend (server-side)
-- Store in environment variables
-- Never expose in frontend code
-- Never commit to git
-
-DON'T:
-- Put in frontend JavaScript
-- Share in documentation
-- Use in client-side code
-```
-
-#### Questions for Co-Founder
-
-1. Are RLS policies enabled on all tables?
-2. Which key should we use: `anon` or `service_role`?
-3. How does team_id get into the JWT for RLS?
-4. Is there audit logging on Supabase?
-
-**Estimated effort (their side):** 1-3 days depending on current RLS state
+**Estimated effort (their side):**
+- If RLS already enabled: ✅ Just verify (30 min)
+- If RLS needs to be added: 1-3 days of developer work
 
 ---
 
