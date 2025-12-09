@@ -13,11 +13,10 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
-import pytz
 
-
-ZURICH_TZ = pytz.timezone("Europe/Zurich")
+ZURICH_TZ = ZoneInfo("Europe/Zurich")
 
 
 # =============================================================================
@@ -30,6 +29,9 @@ class TaskCategory:
     EMAIL_TASKS = "Email Tasks"
     CLIENT_FOLLOWUPS = "Client Follow-ups"
     INVOICE_TASKS = "Invoice Tasks"
+    # NEW: Separate category for AI reply approval (when OE_HIL_ALL_LLM_REPLIES=true)
+    # This keeps AI replies separate from client-initiated tasks
+    AI_REPLY_TASKS = "AI Reply Approval"
 
 
 class TaskPriority:
@@ -52,6 +54,8 @@ class HILAction:
     APPROVE_PRODUCTS = "approve_products"
     MANUAL_REVIEW = "manual_review"
     CONFIRM_EVENT = "confirm_event"
+    # NEW: AI reply approval (when OE_HIL_ALL_LLM_REPLIES=true)
+    APPROVE_AI_REPLY = "approve_ai_reply"
 
 
 # =============================================================================
@@ -331,6 +335,74 @@ def create_confirmation_task(
             "event_details": event_details,
             "requires_deposit": requires_deposit,
             "deposit_amount": deposit_amount,
+            "created_at": datetime.now(ZURICH_TZ).isoformat(),
+        },
+    }
+
+
+def create_ai_reply_approval_task(
+    team_id: str,
+    user_id: str,
+    event_id: str,
+    client_name: str,
+    client_email: str,
+    draft_message: str,
+    workflow_step: int,
+    context: Optional[Dict[str, Any]] = None,
+    priority: str = TaskPriority.HIGH,
+) -> Dict[str, Any]:
+    """
+    Create a task for approving an AI-generated reply (when toggle is ON).
+
+    This is used when OE_HIL_ALL_LLM_REPLIES=true to require manager approval
+    for ALL AI-generated outbound messages before they are sent to clients.
+
+    This task goes to a SEPARATE category "AI Reply Approval" to keep it
+    distinct from client-initiated tasks like offer approvals.
+
+    Args:
+        team_id: Team UUID
+        user_id: System user UUID (who created the task)
+        event_id: Event UUID this reply relates to
+        client_name: Name of the client
+        client_email: Email of the client
+        draft_message: The AI-generated reply text
+        workflow_step: Current workflow step (1-7)
+        context: Additional context (event status, etc.)
+        priority: Task priority (default: high)
+
+    Returns:
+        Task record ready for insertion (JSON or Supabase)
+    """
+    step_names = {
+        1: "Intake",
+        2: "Date Confirmation",
+        3: "Room Availability",
+        4: "Offer",
+        5: "Negotiation",
+        6: "Transition",
+        7: "Confirmation",
+    }
+    step_name = step_names.get(workflow_step, f"Step {workflow_step}")
+
+    return {
+        "title": f"Review AI reply to {client_name} ({step_name})",
+        "description": f"Review and optionally edit AI-generated reply before sending. Step: {step_name}",
+        "category": TaskCategory.AI_REPLY_TASKS,
+        "priority": priority,
+        "team_id": team_id,
+        "user_id": user_id,
+        "event_id": event_id,
+        "client_name": client_name,
+        "status": "pending",
+        "payload": {
+            "action": HILAction.APPROVE_AI_REPLY,
+            "draft_message": draft_message,
+            "recipient_email": client_email,
+            "workflow_step": workflow_step,
+            "step_name": step_name,
+            "context": context or {},
+            "editable": True,  # Manager can edit before approving
             "created_at": datetime.now(ZURICH_TZ).isoformat(),
         },
     }

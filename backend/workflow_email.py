@@ -21,6 +21,7 @@ from backend.workflows.groups.event_confirmation.trigger import process as proce
 from backend.workflows.io import database as db_io
 from backend.workflows.io.database import update_event_metadata
 from backend.workflows.io import tasks as task_io
+from backend.workflows.io.integration.config import is_hil_all_replies_enabled
 from backend.workflows.llm import adapter as llm_adapter
 from backend.workflows.planner import maybe_run_smart_shortcuts
 from backend.workflows.nlu import (
@@ -424,8 +425,16 @@ def approve_task_and_send(
     db_path: Path = DB_PATH,
     *,
     manager_notes: Optional[str] = None,
+    edited_message: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """[OpenEvent Action] Approve a pending HIL task and emit the send_reply payload used in tests."""
+    """[OpenEvent Action] Approve a pending HIL task and emit the send_reply payload used in tests.
+
+    Args:
+        task_id: The HIL task ID to approve
+        db_path: Path to the database file
+        manager_notes: Optional notes from the manager (appended to message)
+        edited_message: Optional edited message text (replaces original draft when provided)
+    """
 
     path = Path(db_path)
     lock_path = _resolve_lock_path(path)
@@ -513,6 +522,16 @@ def approve_task_and_send(
     draft = target_request.get("draft") or {}
     body_text = draft.get("body_markdown") or draft.get("body") or ""
     headers = draft.get("headers") or []
+
+    # If manager provided an edited message, use it instead of the original draft
+    # This is used for AI Reply Approval when manager edits the AI-generated text
+    if edited_message is not None:
+        body_text = edited_message.strip()
+        draft = dict(draft)
+        draft["body_markdown"] = body_text
+        draft["body"] = body_text
+        draft["edited_by_manager"] = True
+
     assistant_draft = {"headers": headers, "body": body_text, "body_markdown": body_text}
 
     note_text = (manager_notes or "").strip()
@@ -968,9 +987,27 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
     trace_payload = payload.setdefault("trace", {})
     trace_payload["subloops"] = list(state.subloops_trace)
     if state.draft_messages:
-        if any(not flag for flag in requires_approval_flags):
+        # Check if HIL approval is required for ALL LLM replies (toggle)
+        if is_hil_all_replies_enabled():
+            # When toggle ON: ALL AI-generated replies go to separate "AI Reply Approval" queue
+            # This allows managers to review/edit EVERY outbound message before it reaches clients
+            latest_draft = state.draft_messages[-1]
+            draft_body = latest_draft.get("body_markdown") or latest_draft.get("body") or ""
+            draft_step = latest_draft.get("step", state.current_step)
+            hil_ai_payload = {
+                "event_id": event_entry.get("event_id") if event_entry else None,
+                "client_name": event_entry.get("client_name", "Client") if event_entry else "Client",
+                "client_email": event_entry.get("client_id") if event_entry else None,
+                "draft_message": draft_body,
+                "workflow_step": draft_step,
+                "editable": True,  # Manager can edit before approving
+            }
+            actions_out.append({"type": "hil_ai_reply_approval", "payload": hil_ai_payload})
+        elif any(not flag for flag in requires_approval_flags):
+            # Toggle OFF + no approval needed: send directly (current behavior)
             actions_out.append({"type": "send_reply"})
         elif event_entry:
+            # Toggle OFF + approval needed: route to step-specific HIL (current behavior)
             hil_type = _hil_action_type_for_step(state.draft_messages[-1].get("step"))
             if hil_type:
                 hil_payload = {
