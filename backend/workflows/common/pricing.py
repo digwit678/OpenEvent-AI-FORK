@@ -37,7 +37,7 @@ from backend.workflows.groups.room_availability.db_pers import load_rooms_config
 # load it on startup. The default should be deposit_enabled=False until
 # explicitly configured by the manager.
 #
-# See OPEN_DECISIONS.md for related design decisions:
+# See docs/internal/OPEN_DECISIONS.md for related design decisions:
 # - DECISION-001: Deposit Changes After Payment
 # - DECISION-002: LLM vs Template for Deposit Reminders
 # - DECISION-003: Deposit Payment Verification
