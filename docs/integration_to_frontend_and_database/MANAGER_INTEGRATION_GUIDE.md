@@ -461,15 +461,38 @@ Things you need to configure before launch.
 
 ## Task 4: Document Your Team ID
 
-**What:** Your database supports multiple venues/organizations (multi-tenant). We need your team's unique identifier.
+**What:** We need to identify your venue in the database so the AI accesses the correct rooms, products, and events.
 
-**Why This Matters:** Every query filters by `team_id` to ensure Venue A can't see Venue B's data. The AI workflow needs to know which team's rooms, products, and events to access.
+**Current Status:** For MVP, this repo supports **single-tenant** mode (one venue). Multi-tenant support (multiple venues/organizations sharing the platform) is planned for later.
 
-**Steps:**
+### For MVP (Single Venue)
 
-1. Go to Supabase → `teams` table
-2. Find your venue's row (there's probably only one if you're a single venue)
-3. Copy the `id`: ________________
+Since you're the only venue using the system right now, you have two options:
+
+| Option | What to Do | When to Use |
+|--------|------------|-------------|
+| **A** | Check if `teams` table exists | If your Supabase already has a teams table |
+| **B** | Skip for now | If no teams table exists yet |
+
+**If Option A (teams table exists):**
+
+1. Go to Supabase Dashboard → Table Editor
+2. Look for a `teams` table
+3. If it exists, find your venue's row and copy the `id`: ________________
+
+**If Option B (no teams table):**
+
+- No action needed for MVP
+- The AI workflow will operate without team filtering
+- We'll add this when multi-tenant support is built
+
+### Future: Multi-Tenant Support
+
+When we add multi-tenant support later, every database query will filter by `team_id` so that:
+- Venue A can't see Venue B's data
+- Each venue's AI only accesses their own rooms, clients, and events
+
+**For now:** Just note whether the `teams` table exists: ☐ Yes (ID: ________) / ☐ No (skip)
 
 ---
 
@@ -480,7 +503,7 @@ Before testing:
 - [ ] Deposit settings configured (global or per-room)
 - [ ] AI identity user created, ID saved: ________________
 - [ ] Email account connected, ID saved: ________________
-- [ ] Team ID saved: ________________
+- [ ] Team ID: ☐ Saved: ________ / ☐ Skipped (no teams table)
 
 ---
 
@@ -845,8 +868,7 @@ The AI workflow code uses some different names internally than your database. Th
   - ID: ________________
 - [ ] Email account connected
   - ID: ________________
-- [ ] Team ID saved
-  - ID: ________________
+- [ ] Team ID: ☐ Saved: ________ / ☐ Skipped (no teams table for MVP)
 - [ ] (If Tech A = Add) Workflow columns added to events
 
 ---
@@ -875,6 +897,6 @@ The AI workflow code uses some different names internally than your database. Th
 
 ---
 
-*Document version: 8.0 | Last updated: 2025-12-09*
+*Document version: 8.1 | Last updated: 2025-12-10*
 
 **Questions?** Ask the dev team!
