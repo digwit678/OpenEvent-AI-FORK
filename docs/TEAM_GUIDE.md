@@ -353,6 +353,26 @@ Changed `draft_message["requires_approval"] = True` to `draft_message["requires_
 - Re-evaluate room availability for the new date
 - Return to the caller step (or proceed forward)
 
+### Date Mismatch: Feb 7 becomes Feb 20 (Open - Investigating)
+**Symptoms:** Client confirms "2026-02-07 18:00–22:00" in Step 2, but Step 3 room availability message shows "Rooms for 30 people on 20.02.2026" instead of 07.02.2026.
+
+**Observed:**
+- Client input: "2026-02-07 18:00–22:00"
+- System output: "Rooms for 30 people on 20.02.2026" and "Room B on None" in offer title
+- Three separate issues: wrong day (7 → 20), wrong format in some places, "None" appearing in offer title
+
+**Suspected Cause:** Date parsing or storage corruption somewhere in the Step 2 → Step 3 transition. Possibly:
+1. Date extraction parsing error (confusing day/month)
+2. DD.MM.YYYY vs YYYY-MM-DD format conversion issue
+3. `chosen_date` getting corrupted during step transition
+
+**Files to investigate:**
+- `backend/workflows/groups/date_confirmation/trigger/process.py` - date parsing and storage
+- `backend/workflows/common/datetime_parse.py` - date format conversions
+- `backend/workflows/groups/room_availability/trigger/process.py` - date retrieval for room search
+
+**Reproduction:** Start new event → provide dates in February → confirm "2026-02-07" → check if Step 3 shows correct date.
+
 ---
 
 ## Test Suite Status
