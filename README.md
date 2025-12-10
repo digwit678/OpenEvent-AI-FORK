@@ -198,7 +198,7 @@ Key environment variables (create a `.env` file):
 
 ### HIL Toggle for AI Reply Approval
 
-By default, the system only requires HIL (Human-in-the-Loop) approval for critical actions like sending offers or confirming bookings. However, during development or when fine-tuning AI responses, you may want to review **every** AI-generated reply before it reaches the client.
+By default, the system only requires HIL (Human-in-the-Loop) approval for critical actions like sending offers or confirming bookings. However, during MVP testing with customers or when fine-tuning AI responses, you may want to review **every** AI-generated reply before it reaches the client.
 
 **Enable the toggle:**
 ```bash
