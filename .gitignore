@@ -19,7 +19,7 @@ tmp-integration/*.jsonl
 
 # Manual UX artifacts
 manual_ux_conversation.json
-artifacts/*.json
+tests/artifacts/*.json
 
 # Local dev env & logs
 atelier-ai-frontend/.env.local
