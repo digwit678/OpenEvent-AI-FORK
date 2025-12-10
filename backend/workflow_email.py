@@ -441,7 +441,76 @@ def approve_task_and_send(
     db = db_io.load_db(path, lock_path=lock_path)
     update_task_status(db, task_id, TaskStatus.APPROVED)
 
-    target_event: Optional[Dict[str, Any]] = None
+    # First, check if this is an AI Reply Approval task (these are NOT in pending_hil_requests)
+    task_record = None
+    for task in db.get("tasks", []):
+        if task.get("task_id") == task_id:
+            task_record = task
+            break
+
+    # Handle AI Reply Approval tasks separately
+    if task_record and task_record.get("type") == TaskType.AI_REPLY_APPROVAL.value:
+        payload = task_record.get("payload") or {}
+        event_id = payload.get("event_id")
+        thread_id = payload.get("thread_id")
+        draft_body = payload.get("draft_body", "")
+        step_id = payload.get("step_id")
+
+        # Use edited message if provided, otherwise use original draft
+        body_text = edited_message.strip() if edited_message else draft_body
+
+        # Append manager notes if provided
+        note_text = (manager_notes or "").strip()
+        if note_text and body_text:
+            body_text = f"{body_text.rstrip()}\n\nManager note:\n{note_text}"
+
+        # Find the event for context (optional)
+        target_event = None
+        for event in db.get("events", []):
+            if event.get("event_id") == event_id:
+                target_event = event
+                break
+
+        # Update hil_history on the event if found
+        if target_event:
+            target_event.setdefault("hil_history", []).append(
+                {
+                    "task_id": task_id,
+                    "approved_at": datetime.utcnow().isoformat() + "Z",
+                    "notes": manager_notes,
+                    "step": step_id,
+                    "decision": "approved",
+                    "task_type": "ai_reply_approval",
+                    "edited": bool(edited_message),
+                }
+            )
+            set_hil_open(thread_id, False)
+
+        db_io.save_db(db, path, lock_path=lock_path)
+
+        draft = {
+            "body": body_text,
+            "body_markdown": body_text,
+            "headers": [],
+            "edited_by_manager": bool(edited_message),
+        }
+        assistant_draft = {"headers": [], "body": body_text, "body_markdown": body_text}
+
+        return {
+            "action": "send_reply",
+            "event_id": event_id,
+            "thread_state": target_event.get("thread_state") if target_event else None,
+            "draft": draft,
+            "res": {
+                "assistant_draft": assistant_draft,
+                "assistant_draft_text": body_text,
+            },
+            "actions": [{"type": "send_reply"}],
+            "thread_id": thread_id,
+        }
+
+    # Original logic for step-specific HIL tasks (stored in pending_hil_requests)
+    target_event = None
     target_request: Optional[Dict[str, Any]] = None
     for event in db.get("events", []):
         pending = event.get("pending_hil_requests") or []
@@ -579,7 +648,60 @@ def reject_task_and_send(
     db = db_io.load_db(path, lock_path=lock_path)
     update_task_status(db, task_id, TaskStatus.REJECTED, manager_notes)
 
-    target_event: Optional[Dict[str, Any]] = None
+    # First, check if this is an AI Reply Approval task (these are NOT in pending_hil_requests)
+    task_record = None
+    for task in db.get("tasks", []):
+        if task.get("task_id") == task_id:
+            task_record = task
+            break
+
+    # Handle AI Reply Approval rejections separately
+    if task_record and task_record.get("type") == TaskType.AI_REPLY_APPROVAL.value:
+        payload = task_record.get("payload") or {}
+        event_id = payload.get("event_id")
+        thread_id = payload.get("thread_id")
+        step_id = payload.get("step_id")
+
+        # Find the event for context (optional)
+        target_event = None
+        for event in db.get("events", []):
+            if event.get("event_id") == event_id:
+                target_event = event
+                break
+
+        # Update hil_history on the event if found
+        if target_event:
+            target_event.setdefault("hil_history", []).append(
+                {
+                    "task_id": task_id,
+                    "rejected_at": datetime.utcnow().isoformat() + "Z",
+                    "notes": manager_notes,
+                    "step": step_id,
+                    "decision": "rejected",
+                    "task_type": "ai_reply_approval",
+                }
+            )
+            set_hil_open(thread_id, False)
+
+        db_io.save_db(db, path, lock_path=lock_path)
+
+        # Rejected AI reply = no message sent to client
+        return {
+            "action": "discarded",
+            "event_id": event_id,
+            "thread_state": target_event.get("thread_state") if target_event else None,
+            "draft": None,
+            "res": {
+                "assistant_draft": None,
+                "assistant_draft_text": "",
+            },
+            "actions": [],
+            "thread_id": thread_id,
+            "manager_notes": manager_notes,
+        }
+
+    # Original logic for step-specific HIL tasks (stored in pending_hil_requests)
+    target_event = None
     target_request: Optional[Dict[str, Any]] = None
     for event in db.get("events", []):
         pending = event.get("pending_hil_requests") or []
@@ -916,6 +1038,10 @@ def task_cli_loop(db_path: Path = DB_PATH) -> None:
         print("4) Mark task done")
         print("5) Exit")
         choice = input("Select option: ").strip()
+
+
+
+
         if choice == "1":
             db = load_db(db_path)
             pending = list_pending_tasks(db)
@@ -962,13 +1088,19 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
     res_meta = payload.setdefault("res", {})
     actions_out = payload.setdefault("actions", [])
     requires_approval_flags: List[bool] = []
+    # Check FIRST if HIL approval is required for ALL LLM replies (toggle)
+    # This must be checked BEFORE _enqueue_hil_tasks to avoid creating duplicate tasks
+    hil_all_replies_on = is_hil_all_replies_enabled()
     if state.draft_messages:
         payload["draft_messages"] = state.draft_messages
+        # ALWAYS create step-specific HIL tasks (offer confirmation, special requests, etc.)
+        # These are the original workflow HIL tasks - they work regardless of the AI reply toggle
         if event_entry:
             _enqueue_hil_tasks(state, event_entry)
         requires_approval_flags = [draft.get("requires_approval", True) for draft in state.draft_messages]
     else:
         payload.setdefault("draft_messages", [])
+
     if state.draft_messages:
         latest_draft = next(
             (draft for draft in reversed(state.draft_messages) if draft.get("requires_approval")),
@@ -976,8 +1108,17 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
         )
         draft_body = latest_draft.get("body_markdown") or latest_draft.get("body") or ""
         draft_headers = list(latest_draft.get("headers") or [])
-        res_meta["assistant_draft"] = {"headers": draft_headers, "body": draft_body}
-        res_meta["assistant_draft_text"] = draft_body
+
+        # When HIL toggle is ON: DON'T include message in response (it goes to approval queue only)
+        # When HIL toggle is OFF: Include message in response for immediate display
+        if hil_all_replies_on:
+            # Message pending approval - don't send to client chat yet
+            res_meta["assistant_draft"] = None
+            res_meta["assistant_draft_text"] = ""
+            res_meta["pending_hil_approval"] = True  # Flag for frontend
+        else:
+            res_meta["assistant_draft"] = {"headers": draft_headers, "body": draft_body}
+            res_meta["assistant_draft_text"] = draft_body
     else:
         res_meta.setdefault("assistant_draft", None)
         res_meta.setdefault("assistant_draft_text", "")
@@ -988,13 +1129,56 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
     trace_payload["subloops"] = list(state.subloops_trace)
     if state.draft_messages:
         # Check if HIL approval is required for ALL LLM replies (toggle)
-        if is_hil_all_replies_enabled():
+        if hil_all_replies_on:
             # When toggle ON: ALL AI-generated replies go to separate "AI Reply Approval" queue
             # This allows managers to review/edit EVERY outbound message before it reaches clients
             latest_draft = state.draft_messages[-1]
             draft_body = latest_draft.get("body_markdown") or latest_draft.get("body") or ""
             draft_step = latest_draft.get("step", state.current_step)
+            thread_id = _thread_identifier(state)
+
+            # Check if there's already a PENDING ai_reply_approval task for this thread
+            # This prevents duplicate tasks from being created
+            existing_pending_task = None
+            for task in state.db.get("tasks", []):
+                if (task.get("type") == TaskType.AI_REPLY_APPROVAL.value
+                    and task.get("status") == TaskStatus.PENDING.value
+                    and task.get("payload", {}).get("thread_id") == thread_id):
+                    existing_pending_task = task
+                    break
+
+            if existing_pending_task:
+                # Update existing task with new draft instead of creating duplicate
+                existing_pending_task["payload"]["draft_body"] = draft_body
+                existing_pending_task["payload"]["step_id"] = draft_step
+                task_id = existing_pending_task.get("task_id")
+            else:
+                # Create task for AI reply approval
+                client_id = state.client_id or (state.message.from_email or "unknown@example.com").lower()
+                task_payload = {
+                    "step_id": draft_step,
+                    "draft_body": draft_body,
+                    "thread_id": thread_id,
+                    "event_id": event_entry.get("event_id") if event_entry else None,
+                    "editable": True,  # Manager can edit before approving
+                    "event_summary": {
+                        "client_name": event_entry.get("client_name", "Client") if event_entry else "Client",
+                        "email": event_entry.get("client_id") if event_entry else None,
+                        "company": (event_entry.get("event_data") or {}).get("Organization") if event_entry else None,
+                        "chosen_date": event_entry.get("chosen_date") if event_entry else None,
+                        "locked_room": event_entry.get("locked_room") if event_entry else None,
+                    },
+                }
+                task_id = enqueue_task(
+                    state.db,
+                    TaskType.AI_REPLY_APPROVAL,
+                    client_id,
+                    event_entry.get("event_id") if event_entry else None,
+                    task_payload,
+                )
+
             hil_ai_payload = {
+                "task_id": task_id,
                 "event_id": event_entry.get("event_id") if event_entry else None,
                 "client_name": event_entry.get("client_name", "Client") if event_entry else "Client",
                 "client_email": event_entry.get("client_id") if event_entry else None,

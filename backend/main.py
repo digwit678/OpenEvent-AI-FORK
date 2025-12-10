@@ -48,6 +48,7 @@ from backend.workflow_email import (
     reject_task_and_send as wf_reject_task_and_send,
     cleanup_tasks as wf_cleanup_tasks,
 )
+from backend.workflows.io.integration.config import is_hil_all_replies_enabled
 from backend.api.debug import (
     debug_get_trace,
     debug_get_timeline,
@@ -175,6 +176,13 @@ def _extract_workflow_reply(wf_res: Dict[str, Any]) -> tuple[str, List[Dict[str,
             "I'll let you know as soon as it's reviewed."
         )
         return waiting_text, wf_res.get("actions") or []
+
+    # Check if HIL approval for ALL LLM replies is enabled - don't show message until approved
+    res_meta = wf_res.get("res") or {}
+    if res_meta.get("pending_hil_approval"):
+        # Message is pending manager approval - return empty string (no chat message)
+        # The frontend will show the task in the approval queue instead
+        return "", wf_res.get("actions") or []
 
     drafts = wf_res.get("draft_messages") or []
     if drafts:
@@ -586,7 +594,11 @@ async def start_conversation(request: StartConversationRequest):
     conversation_state.conversation_history.append({"role": "user", "content": request.email_body or ""})
 
     assistant_reply, action_items = _extract_workflow_reply(wf_res)
-    if not assistant_reply:
+    # Only use fallback message if reply is empty AND HIL approval is NOT pending
+    # When HIL approval is pending, we want NO message in the chat
+    res_meta = wf_res.get("res") or {}
+    hil_pending = res_meta.get("pending_hil_approval", False)
+    if not assistant_reply and not hil_pending:
         assistant_reply = "Thanks for your message. I'll follow up shortly with availability details."
 
     conversation_state.event_id = wf_res.get("event_id") or event_id
@@ -692,17 +704,24 @@ async def send_message(request: SendMessageRequest):
         }
 
     assistant_reply, action_items = _extract_workflow_reply(wf_res)
-    if not assistant_reply:
-        assistant_reply = "Thanks for the update. I’ll keep you posted as I gather the details."
+    # Only use fallback message if reply is empty AND HIL approval is NOT pending
+    # When HIL approval is pending, we want NO message in the chat
+    res_meta = wf_res.get("res") or {}
+    hil_pending = res_meta.get("pending_hil_approval", False)
+    if not assistant_reply and not hil_pending:
+        assistant_reply = "Thanks for the update. I'll keep you posted as I gather the details."
 
-    step3_payload = pop_step3_payload(request.session_id)
-    if step3_payload:
-        body_pref = step3_payload.get("body_markdown") or step3_payload.get("body")
-        if body_pref:
-            assistant_reply = body_pref
-        actions_override = step3_payload.get("actions") or []
-        if actions_override:
-            action_items = actions_override
+    # Only apply step3_payload override if HIL is NOT pending
+    # When HIL is pending, the message is in the approval queue and should not appear in chat
+    if not hil_pending:
+        step3_payload = pop_step3_payload(request.session_id)
+        if step3_payload:
+            body_pref = step3_payload.get("body_markdown") or step3_payload.get("body")
+            if body_pref:
+                assistant_reply = body_pref
+            actions_override = step3_payload.get("actions") or []
+            if actions_override:
+                action_items = actions_override
 
     conversation_state.event_id = wf_res.get("event_id") or conversation_state.event_id
     conversation_state.event_info = _update_event_info_from_db(
@@ -713,6 +732,30 @@ async def send_message(request: SendMessageRequest):
 
     pending_actions = {"type": "workflow_actions", "actions": action_items} if action_items else None
 
+    # Include deposit_info from the event for frontend payment button
+    # IMPORTANT: Only send deposit_info at Step 4+ (after offer is generated with pricing)
+    deposit_info = None
+    if conversation_state.event_id:
+        try:
+            db = wf_load_db()
+            for event in db.get("events") or []:
+                if event.get("event_id") == conversation_state.event_id:
+                    current_step = event.get("current_step", 1)
+                    # Only include deposit info at Step 4+ (after room selection and offer generation)
+                    if current_step >= 4:
+                        raw_deposit = event.get("deposit_info")
+                        if raw_deposit and raw_deposit.get("deposit_required"):
+                            deposit_info = {
+                                "deposit_required": raw_deposit.get("deposit_required", False),
+                                "deposit_amount": raw_deposit.get("deposit_amount"),
+                                "deposit_due_date": raw_deposit.get("deposit_due_date"),
+                                "deposit_paid": raw_deposit.get("deposit_paid", False),
+                                "event_id": conversation_state.event_id,
+                            }
+                    break
+        except Exception:
+            pass
+
     return {
         "session_id": request.session_id,
         "workflow_type": conversation_state.workflow_type,
@@ -720,6 +763,7 @@ async def send_message(request: SendMessageRequest):
         "is_complete": conversation_state.is_complete,
         "event_info": conversation_state.event_info.dict(),
         "pending_actions": pending_actions,
+        "deposit_info": deposit_info,
     }
 
 
@@ -1432,6 +1476,19 @@ async def workflow_health():
     return {"db_path": str(WF_DB_PATH), "ok": True}
 
 
+@app.get("/api/workflow/hil-status")
+async def get_hil_status():
+    """Get the HIL toggle status for AI reply approval.
+
+    Returns whether the OE_HIL_ALL_LLM_REPLIES toggle is enabled.
+    When enabled, all AI replies require manager approval before
+    being sent to the client.
+    """
+    return {
+        "hil_all_replies_enabled": is_hil_all_replies_enabled(),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Global Deposit Configuration Endpoints
 # ---------------------------------------------------------------------------
@@ -1608,17 +1665,23 @@ async def pay_deposit(request: DepositPaymentRequest):
     """
     try:
         db = wf_load_db()
-        events = db.get("events") or {}
-        event_entry = events.get(request.event_id)
+        events = db.get("events") or []
+        event_entry = None
+        event_index = None
+        for idx, event in enumerate(events):
+            if event.get("event_id") == request.event_id:
+                event_entry = event
+                event_index = idx
+                break
 
         if not event_entry:
             raise HTTPException(status_code=404, detail="Event not found")
 
         current_step = event_entry.get("current_step", 1)
-        if current_step != 4:
+        if current_step not in (4, 5):
             raise HTTPException(
                 status_code=400,
-                detail=f"Deposit can only be paid at Step 4 (offer). Current step: {current_step}"
+                detail=f"Deposit can only be paid at Step 4 (offer) or Step 5 (negotiation). Current step: {current_step}"
             )
 
         deposit_info = event_entry.get("deposit_info")

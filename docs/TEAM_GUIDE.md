@@ -85,6 +85,64 @@ Each step applies an entry guard, deterministic actions, and explicit exits/deto
 | 7 – Confirmation | `backend/workflows/groups/event_confirmation/trigger/process.py` | `process` & `_process_hil_confirmation`【F:backend/workflows/groups/event_confirmation/trigger/process.py†L25-L360】 |
 | Router | `backend/workflow_email.py` | `process_msg` loop【F:backend/workflow_email.py†L86-L145】 |
 
+## HIL Toggle System (AI Reply Approval)
+
+**Last Updated:** 2025-12-10
+
+The system supports two tiers of Human-in-the-Loop (HIL) approval for client-facing messages:
+
+### Two-Tier HIL Architecture
+
+| Tier | Task Type | When Created | Purpose |
+|------|-----------|--------------|---------|
+| **1. Step-Specific HIL** | `date_confirmation_message`, `room_availability_message`, `offer_message`, `special_request`, `too_many_attempts` | **ALWAYS** (via `_enqueue_hil_tasks`) | Original workflow gates: offer confirmation, special manager requests, >3 failed attempts |
+| **2. AI Reply Approval** | `ai_reply_approval` | **ONLY when `OE_HIL_ALL_LLM_REPLIES=true`** | NEW optional gate: approve ALL AI-generated messages before sending |
+
+### Environment Variable
+
+```bash
+# Enable AI reply approval for all messages (Tier 2)
+export OE_HIL_ALL_LLM_REPLIES=true
+
+# Disable (default) - only step-specific HIL gates active (Tier 1)
+unset OE_HIL_ALL_LLM_REPLIES
+```
+
+### Important Distinction
+
+**Toggle OFF** (`OE_HIL_ALL_LLM_REPLIES` unset/false):
+- AI messages go directly to clients (no extra approval step)
+- Step-specific HIL tasks STILL work (offer confirmation, special requests, too many attempts)
+- This is the **original behavior** - nothing new
+
+**Toggle ON** (`OE_HIL_ALL_LLM_REPLIES=true`):
+- EVERY AI-generated message goes to manager approval queue first
+- Step-specific HIL tasks ALSO work (both tiers active)
+- Adds an EXTRA approval layer on top of existing workflow
+
+### Frontend UI
+
+| Section | Color | Visibility |
+|---------|-------|------------|
+| Manager AI Reply Approval | Green | Only when `OE_HIL_ALL_LLM_REPLIES=true` |
+| Client HIL Tasks (step-specific) | Purple | Always (when tasks exist) |
+
+### Key Code Paths
+
+| Logic | Location |
+|-------|----------|
+| Step-specific task creation | `backend/workflow_email.py:_enqueue_hil_tasks()` — ALWAYS runs |
+| AI reply approval task creation | `backend/workflow_email.py:1130-1188` — only when toggle ON |
+| Task deduplication | Checks for existing PENDING `ai_reply_approval` task for same thread |
+
+### Common Gotcha
+
+Never skip `_enqueue_hil_tasks()` when the AI reply toggle is ON. Both task creation paths must run independently:
+1. `_enqueue_hil_tasks()` for step-specific HIL tasks (always)
+2. `ai_reply_approval` task creation for the toggle (when enabled)
+
+---
+
 ## Agent Tools Layer (AGENT_MODE=openai)
 
 When `AGENT_MODE=openai` is set, the system uses OpenAI function-calling for tool execution instead of the deterministic workflow. Tools are bounded per step to enforce the same workflow constraints as the deterministic path.
@@ -218,6 +276,16 @@ The `_autofill_products_from_preferences` function in `backend/workflows/groups/
 2. Acceptance in Steps 4–5 is gated on a complete billing address (name/company, street, postal code, city, country). If a client confirms before sharing it, we prompt for the missing pieces, keep the thread on “Awaiting Client,” and auto-submit the offer for HIL as soon as the address is provided—no second confirmation needed.【F:backend/workflows/groups/offer/trigger/process.py†L70-L140】【F:backend/workflows/groups/negotiation_close.py†L85-L190】
 
 **UX:** When billing is missing, the assistant politely lists the missing fields and waits; once the address is captured, the offer confirmation resumes automatically and the HIL view includes the full billing line.
+
+### Step 2 Date Confirmation Unconditionally Requiring HIL (Fixed)
+**Symptoms:** Every date option message in Step 2 went to HIL for manager approval, even when the client hadn't reached 3 failed attempts. All date confirmation drafts showed up in the manager panel regardless of escalation status.
+
+**Root Cause:** In commit b59100ce (Nov 17, 2025 - "enforce hybrid Q&A + gatekeeping confirmations"), the code added HIL escalation logic for Step 2 after 3 failed attempts. However, line 1595 was set to `requires_approval = True` unconditionally, while the thread_state was correctly conditional on `escalate_to_hil`. This mismatch meant all date drafts had `requires_approval=True` even when not escalating.
+
+**Fix Applied:**
+Changed `draft_message["requires_approval"] = True` to `draft_message["requires_approval"] = escalate_to_hil` so that only escalation cases (≥3 attempts) route to HIL.【F:backend/workflows/groups/date_confirmation/trigger/process.py†L1595-L1597】
+
+**Regression Guard:** Step 2 date options should go directly to the client (no HIL task created) unless `date_proposal_attempts >= 3`. If you see a Step-2 date task in the manager panel before 3 attempts, check that `requires_approval` is tied to `escalate_to_hil`.
 
 **Regression watchouts (Nov 25):**
 - Address fragments (e.g., “Postal code: 8000; Country: Switzerland”) are now treated as billing updates on an existing event, so we stay on Step 4/5 instead of manual review. Room-choice replies stay room choices; we no longer overwrite billing with room labels, and we only display billing once at least some required fields are present.【F:backend/workflows/groups/intake/trigger/process.py†L600-L666】【F:backend/workflows/groups/offer/trigger/process.py†L60-L120】【F:backend/workflows/groups/negotiation_close.py†L70-L140】

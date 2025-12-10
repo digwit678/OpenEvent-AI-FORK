@@ -223,20 +223,28 @@ def _detect_structural_change(user_info: Dict[str, Any], event_entry: Dict[str, 
 
 
 def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:
+    # Check deposit_info (new schema) first, then fall back to deposit_state (legacy)
+    deposit_info = event_entry.get("deposit_info") or {}
     deposit_state = event_entry.setdefault(
         "deposit_state", {"required": False, "percent": 0, "status": "not_required", "due_amount": 0.0}
     )
+
+    # Bridge: Use deposit_info if available, otherwise fall back to deposit_state
+    deposit_required = deposit_info.get("deposit_required") or deposit_state.get("required", False)
+    deposit_paid = deposit_info.get("deposit_paid", False) or deposit_state.get("status") == "paid"
+    deposit_amount = deposit_info.get("deposit_amount") or deposit_state.get("due_amount", 0.0)
+    deposit_percent = deposit_info.get("deposit_percentage") or deposit_state.get("percent", 0)
+
     conf_state = event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})
     room_name = event_entry.get("locked_room_id") or event_entry.get("room_pending_decision", {}).get("selected_room")
     event_date = event_entry.get("chosen_date") or event_entry.get("event_data", {}).get("Event Date")
 
-    if deposit_state.get("required") and deposit_state.get("status") != "paid":
+    if deposit_required and not deposit_paid:
         deposit_state["status"] = "requested"
-        amount = deposit_state.get("due_amount")
-        if amount:
-            amount_text = f"CHF {amount:,.2f}".rstrip("0").rstrip(".")
-        elif deposit_state.get("percent"):
-            amount_text = f"a {deposit_state['percent']}% deposit"
+        if deposit_amount:
+            amount_text = f"CHF {deposit_amount:,.2f}".rstrip("0").rstrip(".")
+        elif deposit_percent:
+            amount_text = f"a {deposit_percent}% deposit"
         else:
             amount_text = "the agreed deposit"
         message = (

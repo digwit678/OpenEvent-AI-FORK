@@ -2,6 +2,186 @@
 
 ## 2025-12-10
 
+### Feature: Client Deposit Payment Button (Frontend + Backend)
+
+**Task: Allow clients to pay deposits directly from the chat interface**
+
+Added a "Pay Deposit" button that appears in the client chat UI when a deposit is required and unpaid. The button only appears at Step 4+ (after room selection and offer generation) since the deposit amount is calculated relative to the room price.
+
+**Backend Changes (`backend/main.py`):**
+
+1. **New Endpoint: `POST /api/event/deposit/pay`**
+   - Accepts `event_id` from request body
+   - Validates event exists and is at Step 4 or 5
+   - Sets `deposit_info.deposit_paid = True` in the event record
+   - Returns success message with amount paid
+
+2. **Deposit Info in `/api/send-message` Response**
+   - Added `deposit_info` field to response payload
+   - **Step validation**: Only sends `deposit_info` when `current_step >= 4`
+   - This prevents the Pay Deposit button from appearing before the offer is generated
+   - Fields: `deposit_required`, `deposit_amount`, `deposit_due_date`, `deposit_paid`, `event_id`
+
+**Frontend Changes (`atelier-ai-frontend/app/page.tsx`):**
+
+1. **`sessionDepositInfo` State**
+   - New state to track deposit info from workflow response
+   - Updated in `handleSendMessage` when backend returns `deposit_info`
+
+2. **`unpaidDepositInfo` Memo**
+   - Combines deposit info from two sources:
+     - HIL tasks (`task.payload.event_summary.deposit_info`)
+     - Workflow response (`sessionDepositInfo`)
+   - Step validation: Only shows button when `currentStep >= 4`
+   - Returns null if deposit is paid or not required
+
+3. **Pay Deposit Button**
+   - Yellow/amber button in chat footer area
+   - Shows amount (e.g., "Pay Deposit: CHF 204.00")
+   - Includes due date if available
+   - Calls `POST /api/event/deposit/pay` on click
+   - Updates UI state on success
+
+**Files Modified:**
+- `backend/main.py:735-767` (deposit_info in send-message response)
+- `backend/main.py:1655-1720` (deposit payment endpoint)
+- `atelier-ai-frontend/app/page.tsx:228-232` (sessionDepositInfo state)
+- `atelier-ai-frontend/app/page.tsx:864-890` (unpaidDepositInfo memo)
+- `atelier-ai-frontend/app/page.tsx:1050-1100` (Pay Deposit button UI)
+
+---
+
+### Fix: Deposit Payment Endpoint 500 Error (List vs Dict)
+
+**Bug:** Clicking "Pay Deposit" returned 500 Internal Server Error.
+
+**Root Cause:** The deposit payment endpoint tried to call `.get(event_id)` on the events collection, but events are stored as a list, not a dictionary.
+
+**Fix:** Changed to iterate through the list to find the event by `event_id`:
+```python
+# Before (broken)
+event_entry = events.get(request.event_id)
+
+# After (fixed)
+events = db.get("events") or []
+event_entry = None
+for idx, event in enumerate(events):
+    if event.get("event_id") == request.event_id:
+        event_entry = event
+        event_index = idx
+        break
+```
+
+**Files Modified:**
+- `backend/main.py:1668-1675`
+
+---
+
+### Fix: Deposit Payment Endpoint 400 Error (Step Validation)
+
+**Bug:** After fixing the 500 error, clicking "Pay Deposit" returned 400 Bad Request.
+
+**Root Cause:** The endpoint only allowed deposit payment at Step 4, but after offer acceptance the event advances to Step 5.
+
+**Fix:** Changed step validation to allow both Step 4 and Step 5:
+```python
+# Before (too strict)
+if current_step != 4:
+    raise HTTPException(status_code=400, ...)
+
+# After (correct)
+if current_step not in (4, 5):
+    raise HTTPException(status_code=400, ...)
+```
+
+**Files Modified:**
+- `backend/main.py:1681`
+
+---
+
+### Fix: Pay Deposit Button Showing Too Early (Step 2)
+
+**Bug:** The "Pay Deposit" button appeared at Step 2 (date selection), before any offer or pricing was calculated.
+
+**Root Cause:** Backend was sending `deposit_info` in the `/api/send-message` response regardless of the current step, as long as it existed in the event record.
+
+**Fix:** Added step validation to only send `deposit_info` at Step 4+:
+```python
+current_step = event.get("current_step", 1)
+# Only include deposit info at Step 4+ (after room selection and offer generation)
+if current_step >= 4:
+    # ... include deposit_info
+```
+
+**Files Modified:**
+- `backend/main.py:743-757`
+- `atelier-ai-frontend/app/page.tsx:870-878` (additional frontend validation for tasks)
+
+---
+
+### Fix: Deposit Config Not Persisting in Database
+
+**Root Cause:** The `save_db()` function in `backend/workflows/io/database.py` was explicitly constructing the output dict with only `events`, `clients`, and `tasks`, discarding the `config` section. When the API set the deposit config via POST `/api/config/global-deposit`, it was saved initially, but any subsequent workflow database save would overwrite it without the config.
+
+**Fix:** Added `config` key to the `out_db` dictionary in `save_db()`:
+```python
+out_db = {
+    "events": db.get("events", []),
+    "clients": db.get("clients", {}),
+    "tasks": db.get("tasks", []),
+    "config": db.get("config", {}),  # NEW: preserve config section
+}
+```
+
+**Files Modified:**
+- `backend/workflows/io/database.py:117-122`
+
+**Verified with E2E Test:**
+- Full Laura workflow (Steps 1-5) with 30% deposit configured
+- Deposit info now correctly attached to event: CHF 204.00 (30% of CHF 680.00)
+- Config persists across workflow saves
+- HIL task contains full message with products and pricing
+
+---
+
+### Fix: Frontend HIL Task Using Wrong Field Name
+
+**Issue:** Frontend was looking for `draft_msg` but backend sends `draft_body` for full message content.
+
+**Fix:** Changed priority in `page.tsx:1183-1184`:
+```typescript
+const draftMsg = task.payload?.draft_body || (task.payload as any)?.draft_msg || task.payload?.snippet || '';
+```
+
+**Files Modified:**
+- `atelier-ai-frontend/app/page.tsx:1183-1184`
+
+---
+
+### Fix: Step 2 Date Confirmation Unconditionally Requiring HIL
+
+**Root Cause:** Commit b59100ce (Nov 17, 2025) introduced `requires_approval = True` unconditionally for date confirmation drafts, while the intent was only to escalate to HIL after ≥3 failed attempts. The `thread_state` was correctly conditional on `escalate_to_hil`, but `requires_approval` was not.
+
+**Fix:** Changed line 1595 in `backend/workflows/groups/date_confirmation/trigger/process.py`:
+- Before: `draft_message["requires_approval"] = True`
+- After: `draft_message["requires_approval"] = escalate_to_hil`
+
+**Files Modified:**
+- `backend/workflows/groups/date_confirmation/trigger/process.py:1595-1597`
+- `docs/TEAM_GUIDE.md` (added bug documentation)
+
+### Fix: Frontend HIL Task Display (Full Messages)
+
+**Issue:** HIL task messages were truncated with collapsible UI, making it hard to review full drafts.
+
+**Fix:** Changed frontend to show full `draft_msg` instead of truncated `snippet`:
+- Priority changed from `snippet || draft_msg` to `draft_msg || snippet`
+- Removed collapsible `<details>` element
+- Removed `max-h-40` height limit
+
+**Files Modified:**
+- `atelier-ai-frontend/app/page.tsx:~1183`
+
 ### Feature: HIL Toggle for All LLM Replies
 
 **Task: Implement optional HIL approval for every AI-generated outbound reply**
@@ -41,6 +221,14 @@ Added a toggle that, when enabled, routes ALL AI-generated replies through a sep
 - **Separate category**: AI replies go to "AI Reply Approval" category, NOT mixed with client tasks (offers, dates)
 - **Editable**: Manager can edit AI draft before approving
 - **Backwards compatible**: Toggle OFF = exact current behavior
+- **Two-tier HIL**: Step-specific tasks (Tier 1) ALWAYS run via `_enqueue_hil_tasks()`. AI reply approval (Tier 2) is ADDITIONAL when toggle ON. Never skip Tier 1 for Tier 2.
+
+**Frontend Changes:**
+- AI Reply Approval section (green, right column): Only visible when toggle ON
+- Client HIL Tasks section (purple, below chat): Always visible when step-specific tasks exist
+
+**Documentation:**
+- Added "HIL Toggle System" section to `docs/TEAM_GUIDE.md`
 
 ---
 

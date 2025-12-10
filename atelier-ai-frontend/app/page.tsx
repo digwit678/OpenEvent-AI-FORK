@@ -72,6 +72,14 @@ interface PendingActions {
   date?: string;
 }
 
+interface WorkflowDepositInfo {
+  deposit_required: boolean;
+  deposit_amount: number | null;
+  deposit_due_date: string | null;
+  deposit_paid: boolean;
+  event_id: string | null;
+}
+
 interface WorkflowReply {
   session_id?: string | null;
   workflow_type?: string | null;
@@ -79,6 +87,7 @@ interface WorkflowReply {
   is_complete: boolean;
   event_info?: EventInfo | null;
   pending_actions?: PendingActions | null;
+  deposit_info?: DepositInfo | null;
 }
 
 function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
@@ -234,6 +243,7 @@ export default function EmailThreadUI() {
   const [tasks, setTasks] = useState<PendingTask[]>([]);
   const [taskActionId, setTaskActionId] = useState<string | null>(null);
   const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
+  const [taskEditedMessages, setTaskEditedMessages] = useState<Record<string, string>>({});
   const [cleanupLoading, setCleanupLoading] = useState(false);
   const [resetClientLoading, setResetClientLoading] = useState(false);
   const [clientEmail, setClientEmail] = useState<string | null>(null);
@@ -243,6 +253,9 @@ export default function EmailThreadUI() {
   const [backendError, setBackendError] = useState<string | null>(null);
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [depositPayingFor, setDepositPayingFor] = useState<string | null>(null);
+  const [hilToggleEnabled, setHilToggleEnabled] = useState<boolean | null>(null);
+  // Track deposit info from workflow response (for when no HIL task exists yet)
+  const [sessionDepositInfo, setSessionDepositInfo] = useState<WorkflowDepositInfo | null>(null);
 
   const inputDebounce = useMemo(() => debounce((value: string) => setInputText(value), 80), []);
 
@@ -344,15 +357,27 @@ export default function EmailThreadUI() {
     [stopStreaming, updateMessageAt]
   );
 
+  const removeMessage = useCallback((messageId: string) => {
+    setMessages((prev) => prev.filter((msg) => msg.id !== messageId));
+  }, []);
+
   const handleAssistantReply = useCallback(
     async (messageId: string, reply: WorkflowReply) => {
-      await streamMessageContent(messageId, reply.response || '');
-      updateMessageAt(messageId, (msg) => ({
-        ...msg,
-        streaming: false,
-        timestamp: new Date(),
-        meta: buildMeta(reply.pending_actions) ?? msg.meta,
-      }));
+      const responseText = reply.response || '';
+
+      // If response is empty (e.g., HIL pending), remove the placeholder message
+      // The actual message will be added when manager approves
+      if (!responseText.trim()) {
+        removeMessage(messageId);
+      } else {
+        await streamMessageContent(messageId, responseText);
+        updateMessageAt(messageId, (msg) => ({
+          ...msg,
+          streaming: false,
+          timestamp: new Date(),
+          meta: buildMeta(reply.pending_actions) ?? msg.meta,
+        }));
+      }
 
       if (reply.workflow_type) {
         setWorkflowType(reply.workflow_type);
@@ -363,9 +388,19 @@ export default function EmailThreadUI() {
       if (reply.event_info !== undefined) {
         setEventInfo(reply.event_info ?? null);
       }
+      // Store deposit info from workflow response for Pay Deposit button
+      if (reply.deposit_info) {
+        setSessionDepositInfo({
+          deposit_required: reply.deposit_info.deposit_required,
+          deposit_amount: reply.deposit_info.deposit_amount ?? null,
+          deposit_due_date: reply.deposit_info.deposit_due_date ?? null,
+          deposit_paid: reply.deposit_info.deposit_paid,
+          event_id: (reply.deposit_info as any).event_id ?? null,
+        });
+      }
       setIsComplete(reply.is_complete);
     },
-    [streamMessageContent, updateMessageAt]
+    [streamMessageContent, updateMessageAt, removeMessage]
   );
 
   const refreshTasks = useCallback(async () => {
@@ -439,6 +474,17 @@ export default function EmailThreadUI() {
     }
   }, [clientEmail, refreshTasks]);
 
+  // Fetch HIL toggle status from backend
+  const fetchHilStatus = useCallback(async () => {
+    try {
+      const data = await requestJSON<{ hil_all_replies_enabled: boolean }>(`${API_BASE}/workflow/hil-status`);
+      setHilToggleEnabled(data.hil_all_replies_enabled);
+    } catch (err) {
+      console.warn('Failed to fetch HIL status:', err);
+      setHilToggleEnabled(false);
+    }
+  }, []);
+
   useEffect(() => {
     isMountedRef.current = true;
     // Ping backend health and start polling only when reachable
@@ -460,6 +506,7 @@ export default function EmailThreadUI() {
     checkHealth().then(() => {
       if (backendHealthy !== false) {
         refreshTasks().catch(() => undefined);
+        fetchHilStatus().catch(() => undefined);
       }
     });
     const healthInterval = window.setInterval(() => {
@@ -477,7 +524,7 @@ export default function EmailThreadUI() {
       window.clearInterval(healthInterval);
       window.clearInterval(tasksInterval);
     };
-  }, [refreshTasks, stopStreaming, backendHealthy]);
+  }, [refreshTasks, stopStreaming, backendHealthy, fetchHilStatus]);
 
   useEffect(() => {
     if (!isUserNearBottom) {
@@ -605,13 +652,20 @@ export default function EmailThreadUI() {
       }
       setTaskActionId(task.task_id);
       try {
+        // For AI reply approval tasks, include the edited message if it differs from original
+        const isAiReplyApproval = task.type === 'ai_reply_approval';
+        const editedMessage = isAiReplyApproval ? taskEditedMessages[task.task_id] : undefined;
+
         const response = await fetch(`${API_BASE}/tasks/${task.task_id}/${decision}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
           },
-          body: JSON.stringify({ notes: taskNotes[task.task_id] || undefined }),
+          body: JSON.stringify({
+            notes: taskNotes[task.task_id] || undefined,
+            edited_message: editedMessage || undefined,
+          }),
         });
 
         if (response.status === 404) {
@@ -644,7 +698,7 @@ export default function EmailThreadUI() {
         setTaskActionId(null);
       }
     },
-    [appendMessage, refreshTasks, sessionId, taskNotes]
+    [appendMessage, refreshTasks, sessionId, taskNotes, taskEditedMessages]
   );
 
   const handleConfirmDate = useCallback(
@@ -756,8 +810,9 @@ export default function EmailThreadUI() {
           method: 'POST',
           body: JSON.stringify({ event_id: eventId }),
         });
-        // Refresh tasks to update deposit status
+        // Refresh tasks and update session deposit info to hide the button
         await refreshTasks();
+        setSessionDepositInfo((prev) => prev ? { ...prev, deposit_paid: true } : null);
         alert(
           `Deposit of CHF ${depositAmount.toLocaleString('de-CH', {
             minimumFractionDigits: 2,
@@ -805,77 +860,104 @@ export default function EmailThreadUI() {
   }, [eventInfo, isComplete]);
 
   // Check if there's an unpaid deposit that blocks confirmation
-  // This looks at all pending tasks for the current session to find deposit requirements
+  // Check both: (1) pending tasks and (2) workflow response deposit_info (for when no HIL task exists)
+  // IMPORTANT: Only show deposit at Step 4+ (after room selection, when offer is generated)
   const unpaidDepositInfo = useMemo(() => {
+    // First check tasks (from pending HIL)
     for (const task of tasks) {
-      const depositInfo = task.payload?.event_summary?.deposit_info;
-      if (depositInfo?.deposit_required && !depositInfo.deposit_paid) {
+      const eventSummary = task.payload?.event_summary;
+      const depositInfo = eventSummary?.deposit_info;
+      const currentStep = eventSummary?.current_step ?? 1;
+      // Only show deposit button at Step 4+ (after room selection and offer generation)
+      if (currentStep >= 4 && depositInfo?.deposit_required && !depositInfo.deposit_paid) {
         return {
           amount: depositInfo.deposit_amount ?? 0,
           dueDate: depositInfo.deposit_due_date,
+          eventId: task.event_id,
         };
       }
     }
+    // Then check sessionDepositInfo (from workflow response, for when no HIL task exists)
+    // Backend only sends deposit_info at Step 4+, so this is already step-validated
+    if (sessionDepositInfo?.deposit_required && !sessionDepositInfo.deposit_paid) {
+      return {
+        amount: sessionDepositInfo.deposit_amount ?? 0,
+        dueDate: sessionDepositInfo.deposit_due_date,
+        eventId: sessionDepositInfo.event_id,
+      };
+    }
     return null;
-  }, [tasks]);
+  }, [tasks, sessionDepositInfo]);
 
   // Block confirmation if deposit is required but not paid
   // See OPEN_DECISIONS.md DECISION-002 for why we use template message instead of LLM
   const canConfirmBooking = !unpaidDepositInfo;
 
+  // Filter tasks to current session only
+  const sessionTasks = useMemo(() => {
+    if (!sessionId) return [];
+    return tasks.filter((task) => task.payload?.thread_id === sessionId);
+  }, [tasks, sessionId]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className={debugEnabled ? 'mx-auto max-w-[1200px] flex gap-6 items-start' : 'mx-auto max-w-4xl'}>
-        <div className={debugEnabled ? 'flex-1' : 'w-full'}>
-          <div className="bg-white rounded-t-2xl shadow-lg p-6 border-b">
-            <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
-              🎭 OpenEvent - AI Event Manager
-            </h1>
-            <p className="text-gray-600 mt-2">
-              {!hasStarted
-                ? 'Paste a client email below to start the conversation'
-                : 'Conversation in progress with Shami, Event Manager'}
-            </p>
-            {workflowType && (
-              <div className="mt-2 inline-block">
-                <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                  Workflow: {workflowType}
-                </span>
-              </div>
-            )}
-          </div>
-
+      {/* Header */}
+      <div className="mx-auto max-w-[1800px] mb-4">
+        <div className="bg-white rounded-2xl shadow-lg p-4">
+          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
+            🎭 OpenEvent - AI Event Manager
+          </h1>
+          <p className="text-gray-600 mt-1 text-sm">
+            {!hasStarted
+              ? 'Paste a client email below to start the conversation'
+              : 'Conversation in progress with Shami, Event Manager'}
+          </p>
+          {workflowType && (
+            <span className="mt-2 inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+              Workflow: {workflowType}
+            </span>
+          )}
+        </div>
         {backendHealthy === false && (
           <div className="mt-2 p-3 bg-red-50 border border-red-300 text-red-700 rounded">
-            Backend unreachable: {backendError || `Failed to fetch ${API_BASE}`} — please ensure the server is running and NEXT_PUBLIC_BACKEND_BASE is correct.
+            Backend unreachable: {backendError || `Failed to fetch ${API_BASE}`}
           </div>
         )}
+      </div>
 
-        <div
-          ref={threadRef}
-          className="bg-white shadow-lg"
-          style={{ minHeight: '500px', maxHeight: '600px', overflowY: 'auto' }}
-          onScroll={(event) => handleThreadScroll(event.currentTarget)}
-        >
-          <div className="p-6 space-y-6">
-            {visibleMessages.length === 0 && (
-              <div className="text-center py-12 text-gray-400">
-                <p className="text-lg">No messages yet...</p>
-                <p className="text-sm mt-2">Start by pasting a client inquiry email below</p>
-              </div>
-            )}
+      {/* Two-Column Layout: Client Chat (Left) + Manager Section (Right) */}
+      <div className="mx-auto max-w-[1800px] flex gap-6">
+        {/* LEFT COLUMN: Client Chat */}
+        <div className="flex-1 min-w-0">
+          <div className="bg-gradient-to-b from-blue-600 to-blue-700 rounded-t-2xl p-3">
+            <h2 className="text-white font-bold text-lg flex items-center gap-2">
+              👤 Client Chat
+            </h2>
+            <p className="text-blue-100 text-xs">Messages between client and AI assistant</p>
+          </div>
+          <div
+            ref={threadRef}
+            className="bg-white shadow-lg border-x border-gray-200"
+            style={{ height: '500px', overflowY: 'auto' }}
+            onScroll={(event) => handleThreadScroll(event.currentTarget)}
+          >
+            <div className="p-4 space-y-4">
+              {visibleMessages.length === 0 && (
+                <div className="text-center py-16 text-gray-400">
+                  <p className="text-lg">No messages yet...</p>
+                  <p className="text-sm mt-2">Start by pasting a client inquiry email below</p>
+                </div>
+              )}
 
-            {visibleMessages.map((msg, idx) => {
-              const absoluteIndex = messageOffset + idx;
-              return (
+              {visibleMessages.map((msg, idx) => (
                 <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] ${msg.role === 'user' ? 'order-2' : 'order-1'}`}>
+                  <div className={`max-w-[80%] ${msg.role === 'user' ? 'order-2' : 'order-1'}`}>
                     <div
                       className={`text-xs font-semibold mb-1 ${
                         msg.role === 'user' ? 'text-right text-blue-600' : 'text-left text-gray-600'
                       }`}
                     >
-                      {msg.role === 'user' ? '👤 Client' : '🎭 Shami (Event Manager)'}
+                      {msg.role === 'user' ? '👤 Client' : '🎭 Shami'}
                     </div>
                     <div
                       className={`rounded-2xl px-4 py-3 shadow-sm ${
@@ -890,14 +972,14 @@ export default function EmailThreadUI() {
                           <button
                             onClick={() => handleConfirmDate(msg.meta?.confirmDate ?? '', msg.id)}
                             disabled={isLoading || !sessionId}
-                            className="px-3 py-1 text-xs font-semibold rounded bg-green-600 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            className="px-3 py-1 text-xs font-semibold rounded bg-green-600 text-white disabled:bg-gray-300"
                           >
                             Confirm date
                           </button>
                           <button
                             onClick={() => handleChangeDate(msg.id)}
                             disabled={isLoading}
-                            className="px-3 py-1 text-xs font-semibold rounded border border-gray-400 text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed"
+                            className="px-3 py-1 text-xs font-semibold rounded border border-gray-400 text-gray-700 hover:bg-gray-200"
                           >
                             Change date
                           </button>
@@ -909,374 +991,391 @@ export default function EmailThreadUI() {
                     </div>
                   </div>
                 </div>
-              );
-            })}
+              ))}
 
-            {assistantTyping && (
-              <div className="flex justify-start">
-                <div className="bg-gray-100 rounded-2xl px-4 py-3 border border-gray-200">
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span className="text-sm">Shami is typing...</span>
+              {assistantTyping && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-100 rounded-2xl px-4 py-3 border border-gray-200">
+                    <div className="flex items-center gap-2 text-gray-600">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm">Shami is typing...</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {isComplete && (
-          <div className="bg-gradient-to-r from-green-50 to-blue-50 p-6 border-t border-gray-200">
-            <div className="text-center mb-4">
-              <p className="text-lg font-semibold text-gray-800">✅ Ready to finalize your booking!</p>
-              <p className="text-sm text-gray-600 mt-1">
-                Click Accept to save this booking to our system, or Reject to discard.
-              </p>
-            </div>
-            {/* Deposit reminder - uses template message per OPEN_DECISIONS.md DECISION-002 */}
-            {unpaidDepositInfo && (
-              <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
-                <p className="text-yellow-800 font-medium">
-                  To confirm your booking, please complete the deposit payment first.
-                </p>
-                <p className="text-yellow-700 text-sm mt-1">
-                  Once your deposit of CHF{' '}
-                  {unpaidDepositInfo.amount.toLocaleString('de-CH', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}{' '}
-                  is received, you can proceed with the confirmation.
-                </p>
-                <p className="text-yellow-600 text-xs mt-2">
-                  If you have any questions about the payment process, please let us know.
-                </p>
-              </div>
-            )}
-            <div className="flex gap-4 justify-center">
-              <button
-                onClick={acceptBooking}
-                disabled={isLoading || !canConfirmBooking}
-                title={!canConfirmBooking ? 'Deposit payment required before confirmation' : undefined}
-                className={`flex items-center gap-2 px-8 py-4 ${
-                  canConfirmBooking
-                    ? 'bg-green-500 hover:bg-green-600'
-                    : 'bg-gray-300 cursor-not-allowed'
-                } disabled:bg-gray-300 text-white rounded-xl font-bold text-lg shadow-lg transition-all transform ${
-                  canConfirmBooking ? 'hover:scale-105' : ''
-                } disabled:cursor-not-allowed`}
-              >
-                <CheckCircle className="w-6 h-6" />
-                Accept & Save Booking
-              </button>
-              <button
-                onClick={rejectBooking}
-                disabled={isLoading}
-                className="flex items-center gap-2 px-8 py-4 bg-red-500 hover:bg-red-600 disabled:bg-gray-300 text-white rounded-xl font-bold text-lg shadow-lg transition-all transform hover:scale-105 disabled:cursor-not-allowed"
-              >
-                <XCircle className="w-6 h-6" />
-                Reject & Discard
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="bg-white rounded-b-2xl shadow-lg p-4 border-t">
-          <div className="flex gap-3">
-            <textarea
-              value={draftInput}
-              onChange={(e) => handleInputChange(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder={!hasStarted ? "Paste the client's email here to start..." : 'Type your response as the client...'}
-              className="flex-1 resize-none border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              rows={3}
-              disabled={isLoading || isComplete}
-            />
-            <button
-              onClick={!hasStarted ? () => startConversation().catch(() => undefined) : () => sendMessage().catch(() => undefined)}
-              disabled={isLoading || isComplete || !draftInput.trim()}
-              className="px-6 py-3 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded-xl font-semibold shadow-md transition-all flex items-center gap-2 disabled:cursor-not-allowed"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Sending...
-                </>
-              ) : (
-                <>
-                  <Send className="w-5 h-5" />
-                  Send
-                </>
               )}
-            </button>
-          </div>
-          <div className="text-xs text-gray-500 mt-2">Press Enter to send • Shift+Enter for new line</div>
-        </div>
-
-        {filteredEventInfo.length > 0 && (
-          <div className="mt-4 bg-white rounded-2xl shadow-lg p-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">📋 Information Collected So Far</h3>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              {filteredEventInfo.map(([key, value]) => (
-                <div key={key} className="flex flex-col">
-                  <span className="text-gray-600 text-xs uppercase tracking-wide">{key.replace(/_/g, ' ')}</span>
-                  <span className="font-semibold text-gray-800 mt-1">{value}</span>
-                </div>
-              ))}
             </div>
           </div>
-        )}
-        </div>
-        {debugEnabled && (
-          <div className="hidden lg:block w-[420px] sticky top-4">
-            <DebugPanel
-              threadId={sessionId}
-              pollMs={1500}
-              initialManagerView={searchParams.get('manager') === '1'}
-            />
-          </div>
-        )}
-      </div>
 
-      {debugEnabled && (
-        <>
-          <div className="mt-4 p-4 bg-yellow-50 border-2 border-yellow-400 rounded-lg w-full">
-            <h3 className="font-bold text-lg mb-2">🐛 DEBUG INFO</h3>
-            <div className="grid grid-cols-2 gap-2 text-sm font-mono">
-              <div>
-                sessionId: <span className="font-bold">{sessionId || 'null'}</span>
-              </div>
-              <div>
-                isComplete: <span className="font-bold text-red-600">{isComplete ? 'TRUE' : 'FALSE'}</span>
-              </div>
-              <div>
-                isLoading: <span className="font-bold">{isLoading ? 'TRUE' : 'FALSE'}</span>
-              </div>
-              <div>
-                hasStarted: <span className="font-bold">{hasStarted ? 'TRUE' : 'FALSE'}</span>
-              </div>
-              <div>
-                workflowType: <span className="font-bold">{workflowType || 'null'}</span>
-              </div>
-              <div>
-                messages: <span className="font-bold">{messages.length}</span>
-              </div>
-              <div>
-                debouncedInputLength: <span className="font-bold">{inputText.trim().length}</span>
+          {/* Deposit Payment Section - shows when deposit is required but not paid */}
+          {unpaidDepositInfo && !isComplete && (
+            <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-4 border-x border-gray-200">
+              <div className="text-center">
+                <p className="font-semibold text-yellow-800 mb-2">
+                  💰 Deposit Required: CHF {unpaidDepositInfo.amount.toLocaleString('de-CH', { minimumFractionDigits: 2 })}
+                </p>
+                <p className="text-sm text-yellow-700 mb-3">
+                  Pay the deposit to confirm your booking
+                </p>
+                {unpaidDepositInfo.eventId && (
+                  <button
+                    onClick={() => handlePayDeposit(unpaidDepositInfo.eventId!, unpaidDepositInfo.amount)}
+                    disabled={depositPayingFor === unpaidDepositInfo.eventId}
+                    className="px-6 py-2 bg-yellow-600 text-white rounded-xl font-semibold hover:bg-yellow-700 disabled:opacity-50 transition shadow-md"
+                  >
+                    {depositPayingFor === unpaidDepositInfo.eventId ? 'Processing...' : 'Pay Deposit'}
+                  </button>
+                )}
               </div>
             </div>
-            <div className="mt-2 p-2 bg-white rounded">
-              <strong>Should show buttons?</strong> {isComplete ? '✅ YES' : '❌ NO'}
+          )}
+
+          {isComplete && (
+            <div className="bg-gradient-to-r from-green-50 to-blue-50 p-4 border-x border-gray-200">
+              <div className="text-center mb-3">
+                <p className="font-semibold text-gray-800">✅ Ready to finalize your booking!</p>
+              </div>
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={acceptBooking}
+                  disabled={isLoading || !canConfirmBooking}
+                  className={`flex items-center gap-2 px-6 py-2 ${
+                    canConfirmBooking ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-300'
+                  } text-white rounded-xl font-bold shadow-lg`}
+                >
+                  <CheckCircle className="w-5 h-5" />
+                  Accept
+                </button>
+                <button
+                  onClick={rejectBooking}
+                  disabled={isLoading}
+                  className="flex items-center gap-2 px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold shadow-lg"
+                >
+                  <XCircle className="w-5 h-5" />
+                  Reject
+                </button>
+              </div>
             </div>
-          </div>
-        </>
-      )}
+          )}
 
-      {/* Manager Settings Section */}
-      <div className="mt-4 w-full">
-        <DepositSettings compact />
-      </div>
-
-      <div className="mt-2 w-full">
-        <div className="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold text-base">📝 Tasks</h3>
-            <div className="flex gap-2">
+          <div className="bg-white rounded-b-2xl shadow-lg p-4 border border-gray-200">
+            <div className="flex gap-3">
+              <textarea
+                value={draftInput}
+                onChange={(e) => handleInputChange(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder={!hasStarted ? "Paste the client's email here to start..." : 'Type your response as the client...'}
+                className="flex-1 resize-none border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                rows={3}
+                disabled={isLoading || isComplete}
+              />
               <button
-                onClick={() => clearResolvedTasks().catch(() => undefined)}
-                disabled={cleanupLoading || tasks.length === 0}
-                className="px-3 py-1 text-xs font-semibold rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
+                onClick={!hasStarted ? () => startConversation().catch(() => undefined) : () => sendMessage().catch(() => undefined)}
+                disabled={isLoading || isComplete || !draftInput.trim()}
+                className="px-6 py-3 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded-xl font-semibold shadow-md flex items-center gap-2"
               >
-                {cleanupLoading ? 'Clearing…' : 'Clear resolved'}
-              </button>
-              <button
-                onClick={() => resetClientData().catch(() => undefined)}
-                disabled={resetClientLoading || !clientEmail}
-                className="px-3 py-1 text-xs font-semibold rounded-full border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
-                title={clientEmail ? `Reset data for ${clientEmail}` : 'Start a conversation first'}
-              >
-                {resetClientLoading ? 'Resetting…' : '🗑️ Reset Client'}
+                {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                Send
               </button>
             </div>
+            <div className="text-xs text-gray-500 mt-2">Press Enter to send • Shift+Enter for new line</div>
           </div>
-          {tasks.length === 0 ? (
-            <p className="text-xs text-gray-500">No pending tasks.</p>
-          ) : (
-            <div className="space-y-2">
-              {tasks.map((task) => {
-                const suggestedDates = Array.isArray(task.payload?.suggested_dates)
-                  ? task.payload!.suggested_dates!.filter((date): date is string => Boolean(date))
-                  : [];
-                const draftBody = task.payload?.draft_body ? task.payload.draft_body.trim() : '';
-                const eventSummary = task.payload?.event_summary;
-                const offerTotal =
-                  typeof eventSummary?.offer_total === 'number' ? eventSummary.offer_total : null;
-                const canAction = ['ask_for_date', 'manual_review', 'offer_message', 'room_availability_message', 'date_confirmation_message'].includes(task.type);
 
-                // Deposit info for Pay Deposit button
-                const depositInfo = eventSummary?.deposit_info;
-                const currentStep = eventSummary?.current_step ?? task.payload?.step_id;
-                const showDepositButton = depositInfo?.deposit_required && typeof depositInfo.deposit_amount === 'number';
-                const depositPaid = depositInfo?.deposit_paid ?? false;
-                // Button is enabled only at Step 4 (offer step) and when deposit is not already paid
-                const canPayDeposit = currentStep === 4 && !depositPaid;
+          {filteredEventInfo.length > 0 && (
+            <div className="mt-4 bg-white rounded-2xl shadow-lg p-4">
+              <h3 className="font-bold text-gray-800 mb-3">📋 Information Collected</h3>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {filteredEventInfo.map(([key, value]) => (
+                  <div key={key} className="flex flex-col">
+                    <span className="text-gray-500 text-xs uppercase">{key.replace(/_/g, ' ')}</span>
+                    <span className="font-semibold text-gray-800">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
-                return (
-                  <div key={task.task_id} className="p-3 bg-gray-50 border border-gray-200 rounded-md">
-                    <div className="text-sm font-semibold text-gray-800">{task.type}</div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      Client: {task.client_id || 'unknown'} | Created:{' '}
-                      {task.created_at ? new Date(task.created_at).toLocaleString() : 'n/a'}{' '}
-                      {task.payload?.step_id ? `| Step ${task.payload.step_id}` : ''}
-                    </div>
-                    {eventSummary && (
-                      <div className="text-xs text-gray-700 mt-2 space-y-1">
-                        {eventSummary.client_name && <div>Contact: {eventSummary.client_name}</div>}
-                        {eventSummary.company && <div>Company: {eventSummary.company}</div>}
-                        {eventSummary.email && <div>Email: {eventSummary.email}</div>}
-                        {eventSummary.billing_address && (
-                          <div>Billing: {eventSummary.billing_address}</div>
-                        )}
-                        {eventSummary.locked_room && <div>Room: {eventSummary.locked_room}</div>}
-                        {eventSummary.chosen_date && <div>Date: {eventSummary.chosen_date}</div>}
-                        {Array.isArray(eventSummary.line_items) && eventSummary.line_items.length > 0 && (
-                          <div className="mt-1">
-                            <div className="font-semibold">Line items:</div>
-                            <ul className="list-disc list-inside space-y-0.5">
-                              {eventSummary.line_items.map((item: string, idx: number) => (
-                                <li key={idx}>{item}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        {offerTotal !== null && (
-                          <div>
-                            Offer total: CHF{' '}
-                            {offerTotal.toLocaleString('de-CH', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
-                          </div>
-                        )}
-                        {/* Deposit info display */}
-                        {depositInfo?.deposit_required && (
-                          <div className={`mt-2 p-2 rounded border ${depositPaid ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
-                            <div className="font-semibold text-gray-800">
-                              Deposit: CHF{' '}
-                              {(depositInfo.deposit_amount ?? 0).toLocaleString('de-CH', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
-                            </div>
-                            {depositInfo.deposit_due_date && (
-                              <div className="text-gray-600">Due: {depositInfo.deposit_due_date}</div>
-                            )}
-                            <div className={`font-medium ${depositPaid ? 'text-green-700' : 'text-yellow-700'}`}>
-                              Status: {depositPaid ? 'Paid' : 'Pending'}
-                            </div>
-                          </div>
-                        )}
+        {/* RIGHT COLUMN: Manager / AI Reply Approval Section */}
+        {/* Only show when HIL toggle is enabled; completely hidden when disabled */}
+        {hilToggleEnabled && (
+          <div className="w-[500px] flex-shrink-0">
+            <div className="bg-gradient-to-b from-green-600 to-green-700 rounded-t-2xl p-3">
+              <h2 className="text-white font-bold text-lg flex items-center gap-2">
+                🤖 Manager - AI Reply Approval
+                {hilToggleEnabled && <span className="px-2 py-0.5 bg-green-500 rounded text-xs">ON</span>}
+              </h2>
+              <p className="text-green-100 text-xs">Review and approve AI responses before they reach clients</p>
+            </div>
+            <div
+              className="bg-white shadow-lg border-x border-b border-gray-200 rounded-b-2xl"
+              style={{ minHeight: '400px', maxHeight: '500px', overflowY: 'auto' }}
+            >
+              <div className="p-4 space-y-4">
+                {sessionTasks.length === 0 ? (
+                  <div className="text-center py-16 text-gray-400">
+                    <div className="text-4xl mb-3">📭</div>
+                    <p className="text-lg font-medium">No pending approvals</p>
+                    <p className="text-sm mt-2">
+                      {!sessionId
+                        ? 'Start a conversation to see AI reply approvals here'
+                        : 'AI-generated replies will appear here for your approval'}
+                    </p>
+                  </div>
+                ) : (
+                sessionTasks.map((task) => {
+                  const draftBody = task.payload?.draft_body ? task.payload.draft_body.trim() : '';
+                  const eventSummary = task.payload?.event_summary;
+                  const isAiReplyApproval = task.type === 'ai_reply_approval';
+                  const canAction = ['ask_for_date', 'manual_review', 'offer_message', 'room_availability_message', 'date_confirmation_message', 'ai_reply_approval'].includes(task.type);
+
+                  return (
+                    <div key={task.task_id} className="p-4 bg-green-50 border-2 border-green-200 rounded-xl">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-bold text-green-800 uppercase">{task.type.replace(/_/g, ' ')}</span>
+                        <span className="text-xs text-green-600">Step {task.payload?.step_id || '?'}</span>
                       </div>
-                    )}
-                    {suggestedDates.length > 0 && (
-                      <div className="text-xs text-gray-700 mt-2">Suggested dates: {suggestedDates.join(', ')}</div>
-                    )}
-                    {task.payload?.snippet && (
-                      <div className="text-xs text-gray-600 mt-1 italic">"{task.payload.snippet}"</div>
-                    )}
-                    {task.payload?.thread_id && (
-                      <div className="text-xs text-gray-500 mt-1">Thread: {task.payload.thread_id}</div>
-                    )}
-                    {draftBody && (
-                      <details className="mt-2">
-                        <summary className="text-xs text-gray-700 cursor-pointer">
-                          Review request details
-                        </summary>
-                        <pre className="mt-1 text-xs bg-white border border-gray-200 rounded p-2 whitespace-pre-wrap max-h-48 overflow-auto">
-                          {draftBody}
-                        </pre>
-                      </details>
-                    )}
-                    {canAction && (
-                      <>
+                      {eventSummary && (
+                        <div className="text-xs text-gray-600 mb-3 space-y-1">
+                          {eventSummary.client_name && <div>Contact: {eventSummary.client_name}</div>}
+                          {eventSummary.email && <div>Email: {eventSummary.email}</div>}
+                          {eventSummary.chosen_date && <div>Date: {eventSummary.chosen_date}</div>}
+                        </div>
+                      )}
+
+                      {/* AI Reply Approval: Editable message field */}
+                      {isAiReplyApproval && draftBody && (
                         <div className="mt-2">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-semibold text-green-800">AI-Generated Message:</span>
+                            <span className="text-xs text-green-600">Edit before approving</span>
+                          </div>
+                          <textarea
+                            value={taskEditedMessages[task.task_id] ?? draftBody}
+                            onChange={(e) =>
+                              setTaskEditedMessages((prev) => ({
+                                ...prev,
+                                [task.task_id!]: e.target.value,
+                              }))
+                            }
+                            className="w-full text-sm p-3 border-2 border-green-300 rounded-lg bg-white font-mono"
+                            rows={Math.min(10, Math.max(4, draftBody.split('\n').length + 1))}
+                          />
+                          {taskEditedMessages[task.task_id] && taskEditedMessages[task.task_id] !== draftBody && (
+                            <div className="mt-1 text-xs text-orange-600 font-semibold">✏️ Modified from original</div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Non-AI tasks: Show read-only details */}
+                      {!isAiReplyApproval && draftBody && (
+                        <details className="mt-2">
+                          <summary className="text-xs text-gray-700 cursor-pointer">View details</summary>
+                          <pre className="mt-1 text-xs bg-white border border-gray-200 rounded p-2 whitespace-pre-wrap max-h-32 overflow-auto">
+                            {draftBody}
+                          </pre>
+                        </details>
+                      )}
+
+                      {canAction && (
+                        <div className="mt-4">
                           <textarea
                             value={taskNotes[task.task_id] || ''}
                             onChange={(e) =>
                               setTaskNotes((prev) => ({ ...prev, [task.task_id!]: e.target.value }))
                             }
-                            placeholder="Optional manager notes (sent with decision)"
-                            className="w-full text-xs p-2 border border-gray-300 rounded-md"
+                            placeholder="Optional manager notes..."
+                            className="w-full text-xs p-2 border border-gray-300 rounded-md mb-3"
                             rows={2}
                           />
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => handleTaskAction(task, 'approve')}
+                              disabled={taskActionId === task.task_id}
+                              className="flex-1 px-4 py-2 text-sm font-bold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-300"
+                            >
+                              {taskActionId === task.task_id ? 'Sending...' : '✅ Approve & Send'}
+                            </button>
+                            <button
+                              onClick={() => handleTaskAction(task, 'reject')}
+                              disabled={taskActionId === task.task_id}
+                              className="px-4 py-2 text-sm font-bold rounded-lg border-2 border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              ❌ Discard
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex gap-2 mt-2">
-                          <button
-                            onClick={() => handleTaskAction(task, 'approve')}
-                            disabled={taskActionId === task.task_id}
-                            title="Approve"
-                            className="px-3 py-1 text-xs font-semibold rounded bg-green-600 text-white disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-1"
-                          >
-                            {taskActionId === task.task_id ? 'Saving...' : 'Approve'}
-                          </button>
-                          <button
-                            onClick={() => handleTaskAction(task, 'reject')}
-                            disabled={taskActionId === task.task_id}
-                            title="Reject"
-                            className="px-3 py-1 text-xs font-semibold rounded border border-gray-400 text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed flex items-center gap-1"
-                          >
-                            {taskActionId === task.task_id ? 'Saving...' : 'Reject'}
-                          </button>
-                        </div>
-                      </>
-                    )}
-                    {/* Pay Deposit button - Client action, only visible at Step 4 when deposit is required */}
-                    {showDepositButton && task.event_id && (
-                      <div className="mt-3 pt-3 border-t border-gray-200">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-600">
-                            {depositPaid
-                              ? 'Deposit paid - ready for confirmation'
-                              : currentStep === 4
-                              ? 'Pay deposit to proceed with confirmation'
-                              : 'Deposit payment available at Step 4 (offer step)'}
-                          </span>
-                          <button
-                            onClick={() =>
-                              handlePayDeposit(task.event_id!, depositInfo!.deposit_amount!)
-                            }
-                            disabled={!canPayDeposit || depositPayingFor === task.event_id}
-                            title={
-                              depositPaid
-                                ? 'Deposit already paid'
-                                : currentStep !== 4
-                                ? 'Deposit can only be paid at Step 4 (offer step)'
-                                : 'Click to pay deposit'
-                            }
-                            className={`px-4 py-2 text-xs font-semibold rounded transition ${
-                              depositPaid
-                                ? 'bg-green-100 text-green-700 cursor-default'
-                                : canPayDeposit
-                                ? 'bg-blue-500 text-white hover:bg-blue-600'
-                                : 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                            }`}
-                          >
-                            {depositPayingFor === task.event_id
-                              ? 'Processing...'
-                              : depositPaid
-                              ? 'Deposit Paid'
-                              : `Pay Deposit (CHF ${(depositInfo!.deposit_amount ?? 0).toLocaleString(
-                                  'de-CH',
-                                  { minimumFractionDigits: 2, maximumFractionDigits: 2 }
-                                )})`}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                      )}
+                    </div>
+                  );
+                })
+              )}
+              </div>
             </div>
-          )}
+          </div>
+        )}
+      </div>
+
+      {/* Client HIL Tasks Section (step-specific approvals - always visible) */}
+      {/* These are the original workflow tasks like date confirmation, room availability, etc. */}
+      {(() => {
+        // Filter to non-AI-reply tasks for the current session
+        const clientHilTasks = sessionTasks.filter((task) => task.type !== 'ai_reply_approval');
+        if (clientHilTasks.length === 0) return null;
+
+        return (
+          <div className="mx-auto max-w-[1800px] mt-4">
+            <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+              <div className="bg-gradient-to-b from-purple-600 to-purple-700 p-3">
+                <h2 className="text-white font-bold text-lg flex items-center gap-2">
+                  📋 Manager Tasks - Client Approvals
+                </h2>
+                <p className="text-purple-100 text-xs">Review and approve workflow step messages</p>
+              </div>
+              <div className="p-4 space-y-4">
+                {clientHilTasks.map((task) => {
+                  // Use draft_body (from backend) which contains the full message
+                  const draftMsg = task.payload?.draft_body || (task.payload as any)?.draft_msg || task.payload?.snippet || '';
+                  const eventSummary = task.payload?.event_summary;
+                  const depositInfo = eventSummary?.deposit_info;
+                  const canAction = ['ask_for_date', 'manual_review', 'offer_message', 'room_availability_message', 'date_confirmation_message'].includes(task.type);
+
+                  return (
+                    <div key={task.task_id} className="p-4 bg-purple-50 border-2 border-purple-200 rounded-xl">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-bold text-purple-800 uppercase">{task.type.replace(/_/g, ' ')}</span>
+                        <span className="text-xs text-purple-600">Step {task.payload?.step_id || task.payload?.current_step || '?'}</span>
+                      </div>
+
+                      {eventSummary && (
+                        <div className="text-xs text-gray-600 mb-3 space-y-1">
+                          {eventSummary.client_name && <div>Contact: {eventSummary.client_name}</div>}
+                          {eventSummary.email && <div>Email: {eventSummary.email}</div>}
+                          {eventSummary.chosen_date && <div>Date: {eventSummary.chosen_date}</div>}
+                          {eventSummary.locked_room && <div>Room: {eventSummary.locked_room}</div>}
+                        </div>
+                      )}
+
+                      {depositInfo?.deposit_required && (
+                        <div className={`mb-3 p-2 rounded-lg text-xs ${depositInfo.deposit_paid ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                          <div className="font-semibold">
+                            Deposit: CHF {(depositInfo.deposit_amount ?? 0).toLocaleString('de-CH', { minimumFractionDigits: 2 })}
+                            {depositInfo.deposit_paid ? ' ✅ Paid' : ' ⏳ Pending'}
+                          </div>
+                          {!depositInfo.deposit_paid && depositInfo.deposit_due_date && (
+                            <div>Due: {depositInfo.deposit_due_date}</div>
+                          )}
+                          {!depositInfo.deposit_paid && task.event_id && (
+                            <button
+                              onClick={() => handlePayDeposit(task.event_id!, depositInfo.deposit_amount ?? 0)}
+                              disabled={depositPayingFor === task.event_id}
+                              className="mt-2 px-3 py-1 bg-yellow-600 text-white rounded text-xs font-semibold hover:bg-yellow-700 disabled:opacity-50"
+                            >
+                              {depositPayingFor === task.event_id ? 'Processing...' : 'Mark Deposit Paid'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {draftMsg && (
+                        <div className="mt-2">
+                          <div className="text-xs font-semibold text-purple-800 mb-1">Draft Message:</div>
+                          <pre className="text-xs bg-white border border-gray-200 rounded p-3 whitespace-pre-wrap">
+                            {draftMsg}
+                          </pre>
+                        </div>
+                      )}
+
+                      {canAction && (
+                        <div className="mt-4">
+                          <textarea
+                            value={taskNotes[task.task_id] || ''}
+                            onChange={(e) =>
+                              setTaskNotes((prev) => ({ ...prev, [task.task_id!]: e.target.value }))
+                            }
+                            placeholder="Optional manager notes..."
+                            className="w-full text-xs p-2 border border-gray-300 rounded-md mb-3"
+                            rows={2}
+                          />
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => handleTaskAction(task, 'approve')}
+                              disabled={taskActionId === task.task_id}
+                              className="flex-1 px-4 py-2 text-sm font-bold rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:bg-gray-300"
+                            >
+                              {taskActionId === task.task_id ? 'Sending...' : '✅ Approve & Send'}
+                            </button>
+                            <button
+                              onClick={() => handleTaskAction(task, 'reject')}
+                              disabled={taskActionId === task.task_id}
+                              className="px-4 py-2 text-sm font-bold rounded-lg border-2 border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              ❌ Reject
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {debugEnabled && (
+        <div className="mt-4 p-4 bg-yellow-50 border-2 border-yellow-400 rounded-lg">
+          <h3 className="font-bold text-lg mb-2">🐛 DEBUG INFO</h3>
+          <div className="grid grid-cols-2 gap-2 text-sm font-mono">
+            <div>
+              sessionId: <span className="font-bold">{sessionId || 'null'}</span>
+            </div>
+            <div>
+              isComplete: <span className="font-bold text-red-600">{isComplete ? 'TRUE' : 'FALSE'}</span>
+            </div>
+            <div>
+              isLoading: <span className="font-bold">{isLoading ? 'TRUE' : 'FALSE'}</span>
+            </div>
+            <div>
+              hasStarted: <span className="font-bold">{hasStarted ? 'TRUE' : 'FALSE'}</span>
+            </div>
+            <div>
+              workflowType: <span className="font-bold">{workflowType || 'null'}</span>
+            </div>
+            <div>
+              messages: <span className="font-bold">{messages.length}</span>
+            </div>
+            <div>
+              debouncedInputLength: <span className="font-bold">{inputText.trim().length}</span>
+            </div>
+          </div>
+          <div className="mt-2 p-2 bg-white rounded">
+            <strong>Should show buttons?</strong> {isComplete ? '✅ YES' : '❌ NO'}
+          </div>
+        </div>
+      )}
+
+      {/* Manager Settings Section */}
+      <div className="mx-auto max-w-[1800px] mt-4 flex gap-4">
+        <div className="flex-1">
+          <DepositSettings compact />
+        </div>
+        <div className="flex gap-2 items-start">
+          <button
+            onClick={() => clearResolvedTasks().catch(() => undefined)}
+            disabled={cleanupLoading || tasks.length === 0}
+            className="px-3 py-2 text-xs font-semibold rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
+          >
+            {cleanupLoading ? 'Clearing...' : 'Clear Tasks'}
+          </button>
+          <button
+            onClick={() => resetClientData().catch(() => undefined)}
+            disabled={resetClientLoading || !clientEmail}
+            className="px-3 py-2 text-xs font-semibold rounded-lg border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
+            title={clientEmail ? `Reset data for ${clientEmail}` : 'Start a conversation first'}
+          >
+            {resetClientLoading ? 'Resetting...' : 'Reset Client'}
+          </button>
         </div>
       </div>
     </div>

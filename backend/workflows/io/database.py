@@ -118,6 +118,7 @@ def save_db(db: Dict[str, Any], path: Path, lock_path: Optional[Path] = None) ->
         "events": db.get("events", []),
         "clients": db.get("clients", {}),
         "tasks": db.get("tasks", []),
+        "config": db.get("config", {}),
     }
     with FileLock(lock_candidate):
         tmp_fd, tmp_path = tempfile.mkstemp(prefix=path.name, suffix=".tmp", dir=path.parent)
