@@ -2,7 +2,6 @@
 
 OpenEvent-AI is a sophisticated, full-stack system designed to automate the end-to-end venue booking flow for "The Atelier". It combines the flexibility of Large Language Models (LLMs) with the reliability of deterministic state machines to handle inquiries, negotiate offers, and confirm bookings with "Human-In-The-Loop" (HIL) oversight.
 
-
 ## 🚀 Overview
 
 The system ingests client inquiries (currently simulated via chat), maintains a deterministic event record, and coordinates every step of the booking process. Unlike simple chatbots, OpenEvent-AI is built on a **workflow engine** that tracks the lifecycle of an event from a "Lead" to a "Confirmed" booking.
@@ -43,6 +42,47 @@ A **Python FastAPI** application that acts as the brain. It exposes endpoints fo
 
 ---
 
+## 🕵️ Detectors & Cost Efficiency
+
+The system avoids "always-on" LLM calls by using a tiered detection architecture. Cheap, fast methods (Regex/Keywords) run first; expensive LLMs run only when necessary.
+
+### 1. Intent Classifier (The Main Router)
+*   **Purpose:** Decides if a message is an event request, a confirmation, or a question.
+*   **Mechanism:**
+    1.  **Gibberish Gate (Regex):** Immediately catches keyboard mashing ("asdfghjkl"). **Cost: $0**.
+    2.  **Resume Check (Keywords):** Detects simple confirmations ("yes", "ok", "proceed"). **Cost: $0**.
+    3.  **LLM Classifier:** Only runs if previous checks fail. Uses a specialized prompt to categorize intent.
+
+### 2. General Q&A Classifier
+*   **Purpose:** Detects vague availability questions (e.g., "What do you have free in March?").
+*   **Mechanism:**
+    1.  **Quick Scan (Regex):** Checks for question marks, month names, and "availability" keywords.
+    2.  **LLM Extractor:** Only fires if the scan finds potential constraints (e.g., "March", "30 people") that need structured extraction.
+*   **Efficiency:** Questions like "Do you have parking?" are caught by keywords and routed to the FAQ module without an extraction LLM call.
+
+### 3. Change & Detour Detector
+*   **Purpose:** Detects when a user wants to change a previously agreed variable (Date, Room, Requirements).
+*   **Mechanism:** **Dual-Condition Logic**. A change is only triggered if **BOTH** are present:
+    1.  **Revision Signal:** A verb like "change", "switch", "actually", "instead".
+    2.  **Bound Target:** A reference to a variable ("date", "room") or a specific value ("2025-05-20").
+*   **Efficiency:** Prevents false positives. A message like "What dates are free?" (Question) is not mistaken for "Change date" (Action).
+
+### 4. Nonsense / Off-Topic Gate
+*   **Purpose:** Silently ignores irrelevant messages to save costs and avoid confusing users.
+*   **Mechanism:**
+    1.  **Signal Check:** Scans for *any* workflow-relevant keyword (dates, numbers, "booking").
+    2.  **Confidence Check:** If no signal is found and the LLM confidence is < 15%, the message is silently ignored.
+*   **Cost:** **$0**. Uses existing confidence scores; no new LLM call.
+
+### 5. Safety Sandwich (Hallucination Detector)
+*   **Purpose:** Ensures the LLM doesn't invent prices or facts.
+*   **Mechanism:**
+    1.  **Deterministic Input:** Python calculates the exact price list.
+    2.  **LLM Generation:** The AI writes the email body.
+    3.  **Regex Verification:** The system scans the output. If the prices/dates don't match the input, it forces a retry or falls back to a template.
+
+---
+
 ## 🧠 Core Concepts
 
 ### The 7-Step Workflow
@@ -54,21 +94,9 @@ A **Python FastAPI** application that acts as the brain. It exposes endpoints fo
 6.  **Transition**: Final prerequisites check.
 7.  **Confirmation**: Payment processing and final booking confirmation.
 
-### Detectors & Gates
-- **Detectors**: Instead of a giant "AI Prompt", the system uses targeted classifiers. For example, `detect_structural_change` checks if a user is trying to change a previously agreed date.
+### Entry & Hash Guards
 - **Entry Guards**: Each step has strict entry requirements (e.g., "You cannot enter Step 3 without a confirmed date in Step 2").
-- **Hash Guards**: To save compute and API costs, steps calculate a "requirements hash". If the user's input hasn't changed the requirements, the expensive calculation is skipped.
-
-### Detours
-Real conversations aren't linear. "Detours" allow the workflow to react to non-linear requests.
-*   *Example*: A user at Step 5 (Negotiation) says "Wait, is Room A available instead?".
-*   *Action*: The **Change Propagation** module detects the intent, rewinds the state to Step 3 (Room Availability), re-runs availability, and then attempts to return to the latest possible step.
-
-### Safety Sandwich
-To ensure trust:
-1.  **Deterministic Input**: We calculate the exact price: `CHF 500`.
-2.  **LLM "Verbalizer"**: We ask the AI to write a polite message including "CHF 500".
-3.  **Deterministic Verifier**: We scan the AI's output. If it wrote "CHF 400" or "500 Euros", the system rejects the draft and forces a correction or fallback.
+- **Hash Guards**: To save compute and API costs, steps calculate a "requirements hash". If the user's input hasn't changed the requirements, the expensive availability calculation is skipped.
 
 ---
 
@@ -79,12 +107,11 @@ To ensure trust:
 ├── atelier-ai-frontend/    # Next.js Frontend application
 ├── backend/                # Python Backend application
 │   ├── api/                # FastAPI endpoints
-│   ├── agents/             # Legacy & specialized agent tools
 │   ├── main.py             # App entry point
 │   ├── workflow_email.py   # Core State Machine Orchestrator
 │   └── workflows/          # Business Logic
 │       ├── groups/         # Step implementations (intake, offer, etc.)
-│       ├── nlu/            # Detectors & Classifiers
+│       ├── nlu/            # Detectors & Classifiers (Regex + LLM)
 │       └── io/             # Database & Task Management
 ├── docs/                   # Detailed documentation & rules
 └── tests/                  # Pytest suite
