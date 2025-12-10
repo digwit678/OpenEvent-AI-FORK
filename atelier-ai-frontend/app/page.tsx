@@ -920,10 +920,10 @@ export default function EmailThreadUI() {
   }, [tasks, sessionId]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+    <div className="min-h-screen bg-gradient-to-br from-[#bcdfff] via-[#dff0ff] to-[#f7fbff] p-4">
       {/* Header */}
       <div className="mx-auto max-w-[1800px] mb-4">
-        <div className="bg-white rounded-2xl shadow-lg p-4">
+        <div className="rounded-2xl shadow-xl p-4 border border-[#c4dafc] bg-[#edf4ff]">
           <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
             🎭 OpenEvent - AI Event Manager
           </h1>
@@ -949,7 +949,7 @@ export default function EmailThreadUI() {
       <div className="mx-auto max-w-[1800px] flex gap-6">
         {/* LEFT COLUMN: Client Chat */}
         <div className="flex-1 min-w-0">
-          <div className="bg-gradient-to-b from-blue-600 to-blue-700 rounded-t-2xl p-3">
+          <div className="bg-gradient-to-b from-[#d2e7ff] to-[#99c2ff] rounded-t-2xl p-3">
             <h2 className="text-white font-bold text-lg flex items-center gap-2">
               👤 Client Chat
             </h2>
@@ -957,7 +957,7 @@ export default function EmailThreadUI() {
           </div>
           <div
             ref={threadRef}
-            className="bg-white shadow-lg border-x border-gray-200"
+            className="bg-[#e9f2ff] shadow-xl border border-[#c4dafc]"
             style={{ height: '500px', overflowY: 'auto' }}
             onScroll={(event) => handleThreadScroll(event.currentTarget)}
           >
@@ -983,7 +983,7 @@ export default function EmailThreadUI() {
                       className={`rounded-2xl px-4 py-3 shadow-sm ${
                         msg.role === 'user'
                           ? 'bg-blue-500 text-white'
-                          : 'bg-gray-100 text-gray-800 border border-gray-200'
+                          : 'bg-[#eaf1ff] text-gray-800 border border-[#cddfff]'
                       } ${msg.streaming ? 'animate-pulse' : ''}`}
                     >
                       <div className="text-sm leading-relaxed">{renderMessageContent(msg.content)}</div>
@@ -1015,7 +1015,7 @@ export default function EmailThreadUI() {
 
               {assistantTyping && (
                 <div className="flex justify-start">
-                  <div className="bg-gray-100 rounded-2xl px-4 py-3 border border-gray-200">
+          <div className="bg-[#eaf1ff] rounded-2xl px-4 py-3 border border-[#cddfff]">
                     <div className="flex items-center gap-2 text-gray-600">
                       <Loader2 className="w-4 h-4 animate-spin" />
                       <span className="text-sm">Shami is typing...</span>
@@ -1050,7 +1050,7 @@ export default function EmailThreadUI() {
           )}
 
           {isComplete && (
-            <div className="bg-gradient-to-r from-green-50 to-blue-50 p-4 border-x border-gray-200">
+            <div className="bg-gradient-to-r from-green-50 to-blue-50 p-4 border border-[#c4dafc]">
               <div className="text-center mb-3">
                 <p className="font-semibold text-gray-800">✅ Ready to finalize your booking!</p>
               </div>
@@ -1077,14 +1077,14 @@ export default function EmailThreadUI() {
             </div>
           )}
 
-          <div className="bg-white rounded-b-2xl shadow-lg p-4 border border-gray-200">
+          <div className="bg-[#e8f1ff] rounded-b-2xl shadow-lg p-4 border border-[#c4dafc]">
             <div className="flex gap-3">
               <textarea
                 value={draftInput}
                 onChange={(e) => handleInputChange(e.target.value)}
                 onKeyPress={handleKeyPress}
                 placeholder={!hasStarted ? "Paste the client's email here to start..." : 'Type your response as the client...'}
-                className="flex-1 resize-none border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                className="flex-1 resize-none border border-[#89aef5] rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#3f78e0] text-sm bg-[#c3d5ff] text-gray-900"
                 rows={3}
                 disabled={isLoading || isComplete}
               />
@@ -1101,7 +1101,7 @@ export default function EmailThreadUI() {
           </div>
 
           {filteredEventInfo.length > 0 && (
-            <div className="mt-4 bg-white rounded-2xl shadow-lg p-4">
+            <div className="mt-4 bg-[#f2f6ff] rounded-2xl shadow-lg p-4 border border-[#d3e4ff]">
               <h3 className="font-bold text-gray-800 mb-3">📋 Information Collected</h3>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 {filteredEventInfo.map(([key, value]) => (
@@ -1119,7 +1119,7 @@ export default function EmailThreadUI() {
         {/* Only show when HIL toggle is enabled; completely hidden when disabled */}
         {hilToggleEnabled && (
           <div className="w-[500px] flex-shrink-0">
-            <div className="bg-gradient-to-b from-green-600 to-green-700 rounded-t-2xl p-3">
+            <div className="bg-gradient-to-b from-[#7fc2ff] to-[#4d8ef5] rounded-t-2xl p-3">
               <h2 className="text-white font-bold text-lg flex items-center gap-2">
                 🤖 Manager - AI Reply Approval
                 {hilToggleEnabled && <span className="px-2 py-0.5 bg-green-500 rounded text-xs">ON</span>}
@@ -1127,7 +1127,7 @@ export default function EmailThreadUI() {
               <p className="text-green-100 text-xs">Review and approve AI responses before they reach clients</p>
             </div>
             <div
-              className="bg-white shadow-lg border-x border-b border-gray-200 rounded-b-2xl"
+              className="bg-[#f9fbff] shadow-xl border border-[#c4dafc] rounded-b-2xl"
               style={{ minHeight: '400px', maxHeight: '500px', overflowY: 'auto' }}
             >
               <div className="p-4 space-y-4">
@@ -1149,10 +1149,10 @@ export default function EmailThreadUI() {
                   const canAction = ['ask_for_date', 'manual_review', 'offer_message', 'room_availability_message', 'date_confirmation_message', 'ai_reply_approval'].includes(task.type);
 
                   return (
-                    <div key={task.task_id} className="p-4 bg-green-50 border-2 border-green-200 rounded-xl">
+                    <div key={task.task_id} className="p-4 bg-[#f3f7ff] border-2 border-[#c9dcff] rounded-xl">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-bold text-green-800 uppercase">{task.type.replace(/_/g, ' ')}</span>
-                        <span className="text-xs text-green-600">Step {task.payload?.step_id || '?'}</span>
+                        <span className="text-sm font-bold text-[#2b5ea8] uppercase">{task.type.replace(/_/g, ' ')}</span>
+                        <span className="text-xs text-[#4874c0]">Step {task.payload?.step_id || '?'}</span>
                       </div>
                       {eventSummary && (
                         <div className="text-xs text-gray-600 mb-3 space-y-1">
@@ -1208,7 +1208,7 @@ export default function EmailThreadUI() {
                               setTaskNotes((prev) => ({ ...prev, [task.task_id!]: e.target.value }))
                             }
                             placeholder="Optional manager notes..."
-                            className="w-full text-xs p-2 border border-gray-300 rounded-md mb-3"
+                            className="w-full text-xs p-2 border border-[#c4dafc] rounded-md mb-3 bg-white"
                             rows={2}
                           />
                           <div className="flex gap-3">
@@ -1248,12 +1248,12 @@ export default function EmailThreadUI() {
 
         return (
           <div className="mx-auto max-w-[1800px] mt-4">
-            <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-              <div className="bg-gradient-to-b from-purple-600 to-purple-700 p-3">
+            <div className="bg-[#f1f6ff] rounded-2xl shadow-lg overflow-hidden border border-[#c4dafc]">
+              <div className="bg-gradient-to-b from-[#7c90ff] to-[#4f5ed8] p-3">
                 <h2 className="text-white font-bold text-lg flex items-center gap-2">
                   📋 Manager Tasks - Client Approvals
                 </h2>
-                <p className="text-purple-100 text-xs">Review and approve workflow step messages</p>
+                <p className="text-blue-100 text-xs">Review and approve workflow step messages</p>
               </div>
               <div className="p-4 space-y-4">
                 {clientHilTasks.map((task) => {
@@ -1264,10 +1264,10 @@ export default function EmailThreadUI() {
                   const canAction = ['ask_for_date', 'manual_review', 'offer_message', 'room_availability_message', 'date_confirmation_message'].includes(task.type);
 
                   return (
-                    <div key={task.task_id} className="p-4 bg-purple-50 border-2 border-purple-200 rounded-xl">
+                    <div key={task.task_id} className="p-4 bg-[#eef2ff] border-2 border-[#c3cef9] rounded-xl">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-bold text-purple-800 uppercase">{task.type.replace(/_/g, ' ')}</span>
-                        <span className="text-xs text-purple-600">Step {task.payload?.step_id || task.payload?.current_step || '?'}</span>
+                        <span className="text-sm font-bold text-[#2b47a3] uppercase">{task.type.replace(/_/g, ' ')}</span>
+                        <span className="text-xs text-[#4a63c6]">Step {task.payload?.step_id || task.payload?.current_step || '?'}</span>
                       </div>
 
                       {eventSummary && (
@@ -1306,8 +1306,8 @@ export default function EmailThreadUI() {
 
                       {draftMsg && (
                         <div className="mt-2">
-                          <div className="text-xs font-semibold text-purple-800 mb-1">Draft Message:</div>
-                          <pre className="text-xs bg-white border border-gray-200 rounded p-3 whitespace-pre-wrap">
+                          <div className="text-xs font-semibold text-[#2b47a3] mb-1">Draft Message:</div>
+                          <pre className="text-xs bg-white border border-[#d3ddfb] rounded p-3 whitespace-pre-wrap">
                             {draftMsg}
                           </pre>
                         </div>
@@ -1321,7 +1321,7 @@ export default function EmailThreadUI() {
                               setTaskNotes((prev) => ({ ...prev, [task.task_id!]: e.target.value }))
                             }
                             placeholder="Optional manager notes..."
-                            className="w-full text-xs p-2 border border-gray-300 rounded-md mb-3"
+                            className="w-full text-xs p-2 border border-[#c4dafc] rounded-md mb-3 bg-white"
                             rows={2}
                           />
                           <div className="flex gap-3">
