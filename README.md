@@ -233,7 +233,7 @@ curl http://localhost:8000/api/config/hil-status
 For deeper dives into specific subsystems:
 - **[Workflow Rules](docs/workflow_rules.md)**: The "Constitution" of the booking logic.
 - **[Team Guide](docs/TEAM_GUIDE.md)**: Best practices and troubleshooting.
-- **[Integration Guide](docs/INTEGRATION_PREPARATION_GUIDE.md)**: How to deploy and connect to real infrastructure.
+- **[Integration Guide](docs/integration_to_frontend_and_database/INTEGRATION_PREPARATION_GUIDE.md)**: How to deploy and connect to real infrastructure.
 - **[Dev Changelog](DEV_CHANGELOG.md)**: Day-by-day summary of new features, fixes, and experiments.
 - **[Open Decisions](docs/internal/OPEN_DECISIONS.md)**: Documented architecture choices and the reasoning behind them.
 - **[Change Propagation Readme](docs/internal/CHANGE_PROPAGATION_README.md)**: How updates move through the repo and what to touch when.
