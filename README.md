@@ -131,18 +131,30 @@ p implementations (intake, offer, etc.)
 
 ### 1. Setup Backend
 ```bash
-cd backend
-# Create virtual environment (optional but recommended)
+# From project root - create virtual environment (optional but recommended)
 python -m venv venv
 source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements-dev.txt
 
-# Run the API
-# Note: Ensure you are in the project root
-export PYTHONPATH=$PYTHONPATH:.
+# Option A: Use the dev environment script (recommended for macOS)
+# This sets PYTHONPATH and loads OPENAI_API_KEY from macOS Keychain
+source scripts/oe_env.sh
 uvicorn backend.main:app --reload --port 8000
+
+# Option B: Manual setup
+export PYTHONPATH=$(pwd)
+export OPENAI_API_KEY=your_api_key_here
+uvicorn backend.main:app --reload --port 8000
+```
+
+**Storing API Key in macOS Keychain (optional):**
+```bash
+# Add key to Keychain (one-time setup)
+security add-generic-password -a "$USER" -s 'openevent-api-test-key' -w 'sk-your-key-here'
+
+# Then source scripts/oe_env.sh will auto-load it
 ```
 
 ### 2. Setup Frontend
@@ -171,12 +183,49 @@ pytest backend/tests/workflows/test_workflow_v3_alignment.py
 - **Supabase Integration**: Can be toggled via `OE_INTEGRATION_MODE=supabase`.
 - **Site Visit Logic**: Dedicated sub-flow for handling venue tours.
 - **Deposit Configuration**: Managers can now set global deposit rules.
+- **HIL Toggle for AI Replies**: Optional review of all AI-generated responses before sending.
 
 ### Configuration
 Key environment variables (create a `.env` file):
-- `OPENAI_API_KEY`: Required for NLU and Verbalizer.
-- `OE_INTEGRATION_MODE`: `json` (default) or `supabase`.
-- `WF_DEBUG_STATE`: Set to `1` for verbose workflow logging.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENAI_API_KEY` | (required) | API key for NLU and Verbalizer |
+| `OE_INTEGRATION_MODE` | `json` | `json` (local files) or `supabase` (production) |
+| `OE_HIL_ALL_LLM_REPLIES` | `false` | Require approval for ALL AI responses (see below) |
+| `WF_DEBUG_STATE` | `0` | Set to `1` for verbose workflow logging |
+| `VERBALIZER_TONE` | `professional` | Message tone: `professional` or `plain` |
+
+### HIL Toggle for AI Reply Approval
+
+By default, the system only requires HIL (Human-in-the-Loop) approval for critical actions like sending offers or confirming bookings. However, during development or when fine-tuning AI responses, you may want to review **every** AI-generated reply before it reaches the client.
+
+**Enable the toggle:**
+```bash
+# Option 1: Set in .env file
+OE_HIL_ALL_LLM_REPLIES=true
+
+# Option 2: Export before starting the backend
+export OE_HIL_ALL_LLM_REPLIES=true
+uvicorn backend.main:app --reload --port 8000
+```
+
+**What happens when enabled:**
+- All AI-generated outbound messages create a "AI Reply Approval" task
+- Messages appear in a dedicated queue in the Manager UI
+- The manager can approve (send as-is), edit, or reject the response
+- Messages are NOT sent to clients until explicitly approved
+
+**When to use:**
+- **Development**: Testing new prompt templates or LLM configurations
+- **Training**: Reviewing AI quality before going live
+- **High-stakes clients**: When extra oversight is needed
+
+**Check current status:**
+```bash
+curl http://localhost:8000/api/config/hil-status
+# Returns: {"hil_all_replies_enabled": true/false}
+```
 
 ---
 
