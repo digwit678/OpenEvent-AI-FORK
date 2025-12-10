@@ -1638,7 +1638,7 @@ async def set_global_deposit_config(config: GlobalDepositConfig):
 # These endpoints handle the mock deposit payment flow for testing.
 # In production, this would integrate with a payment gateway.
 #
-# See OPEN_DECISIONS.md DECISION-003 for production payment verification options.
+# See docs/internal/OPEN_DECISIONS.md DECISION-003 for production payment verification options.
 # ---------------------------------------------------------------------------
 
 
@@ -1661,7 +1661,7 @@ async def pay_deposit(request: DepositPaymentRequest):
     - Deposit must be required (configured by manager)
     - Deposit must not already be paid
 
-    See OPEN_DECISIONS.md DECISION-001 for handling deposit changes after payment.
+    See docs/internal/OPEN_DECISIONS.md DECISION-001 for handling deposit changes after payment.
     """
     try:
         db = wf_load_db()

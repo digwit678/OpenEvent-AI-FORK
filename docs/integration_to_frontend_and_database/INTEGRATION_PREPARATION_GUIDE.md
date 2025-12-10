@@ -64,4 +64,4 @@ When integrating the "Mail Section" of the platform:
     *   Sends via Manager A's SMTP server.
 
 ### 10.4 Developer Plan
-A detailed technical plan for enabling this feature is available in `implementation_plans/MULTI_TENANT_EXPANSION_PLAN.md`.
+A detailed technical plan for enabling this feature is available in `docs/plans/MULTI_TENANT_EXPANSION_PLAN.md`.
