@@ -17,6 +17,26 @@ from backend.workflows.groups.room_availability.db_pers import load_rooms_config
 # configuration set by the manager. The deposit is applied to offers and
 # must be paid before the client can confirm the booking.
 #
+# INTEGRATION NOTE (for Supabase/production):
+# ------------------------------------------
+# By default, deposit is DISABLED (deposit_enabled=False). Deposits are only
+# applied when the manager configures them via the frontend settings panel.
+#
+# Two deposit types are supported:
+# 1. FIXED: A fixed CHF amount (e.g., CHF 500)
+#    - Set deposit_type="fixed" and deposit_fixed_amount=500.0
+#    - Amount does NOT depend on room price or offer total
+#
+# 2. PERCENTAGE: A percentage of the selected room's price / offer total
+#    - Set deposit_type="percentage" and deposit_percentage=30 (for 30%)
+#    - Amount is calculated as: total_amount * (percentage / 100.0)
+#    - Example: 30% of CHF 680 room = CHF 204 deposit
+#
+# The frontend settings panel allows managers to toggle between these modes.
+# When integrating with Supabase, store the config in a settings table and
+# load it on startup. The default should be deposit_enabled=False until
+# explicitly configured by the manager.
+#
 # See OPEN_DECISIONS.md for related design decisions:
 # - DECISION-001: Deposit Changes After Payment
 # - DECISION-002: LLM vs Template for Deposit Reminders

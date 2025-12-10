@@ -1139,6 +1139,10 @@ export default function EmailThreadUI() {
                           {eventSummary.client_name && <div>Contact: {eventSummary.client_name}</div>}
                           {eventSummary.email && <div>Email: {eventSummary.email}</div>}
                           {eventSummary.chosen_date && <div>Date: {eventSummary.chosen_date}</div>}
+                          {/* Billing address: show prompt if missing */}
+                          <div className={eventSummary.billing_address ? '' : 'text-orange-600 font-medium'}>
+                            Billing: {eventSummary.billing_address || 'Please provide before confirming'}
+                          </div>
                         </div>
                       )}
 
@@ -1252,6 +1256,10 @@ export default function EmailThreadUI() {
                           {eventSummary.email && <div>Email: {eventSummary.email}</div>}
                           {eventSummary.chosen_date && <div>Date: {eventSummary.chosen_date}</div>}
                           {eventSummary.locked_room && <div>Room: {eventSummary.locked_room}</div>}
+                          {/* Billing address: show prompt if missing, otherwise show address */}
+                          <div className={eventSummary.billing_address ? '' : 'text-orange-600 font-medium'}>
+                            Billing: {eventSummary.billing_address || 'Please provide before confirming'}
+                          </div>
                         </div>
                       )}
 
