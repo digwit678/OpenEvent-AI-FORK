@@ -820,7 +820,7 @@ export default function EmailThreadUI() {
   /**
    * Handle deposit payment (mock) - Client clicks to mark deposit as paid
    * Only works at Step 4 (offer step). On detour, button is greyed out.
-   * See OPEN_DECISIONS.md DECISION-003 for production payment verification options.
+   * See docs/internal/OPEN_DECISIONS.md DECISION-003 for production payment verification options.
    */
   const handlePayDeposit = useCallback(
     async (eventId: string, depositAmount: number) => {
@@ -910,7 +910,7 @@ export default function EmailThreadUI() {
   }, [tasks, sessionDepositInfo]);
 
   // Block confirmation if deposit is required but not paid
-  // See OPEN_DECISIONS.md DECISION-002 for why we use template message instead of LLM
+  // See docs/internal/OPEN_DECISIONS.md DECISION-002 for why we use template message instead of LLM
   const canConfirmBooking = !unpaidDepositInfo;
 
   // Filter tasks to current session only

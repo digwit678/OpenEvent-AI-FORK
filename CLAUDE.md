@@ -399,7 +399,7 @@ The workflow uses three distinct LLM roles, each with strict boundaries:
 
 **Detour Recovery:** After detour (e.g., Step 3 → Step 2 for new date → Step 3), system preserves all prior metadata and only re-runs dependent steps.
 
-**Open Decisions:** Write questions which arent clear regarding logic, UX into the OPEN_DECISIONS.md file at the repo root and the docs/integration_to_frontend_and_database/MANAGER_INTEGRATION_GUIDE.md 
+**Open Decisions:** Write questions which arent clear regarding logic, UX into docs/internal/OPEN_DECISIONS.md and docs/integration_to_frontend_and_database/MANAGER_INTEGRATION_GUIDE.md 
 
 ## Common Gotchas
 
