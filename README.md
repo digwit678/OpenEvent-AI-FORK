@@ -21,13 +21,13 @@ The system is composed of two main applications:
 
 ```mermaid
 graph TD
-    A[Client Frontend (Next.js)] -->|REST API| B[Backend API (FastAPI)]
+    A["Client Frontend (Next.js)"] -->|REST API| B["Backend API (FastAPI)"]
     B -->|Responses| A
-    B --> C[Workflow Engine (Python)]
+    B --> C["Workflow Engine (Python)"]
     C --> B
-    C --> D[LLM Adapter (OpenAI)]
-    C --> E[Data Store (JSON / Supabase)]
-    C --> F[Calendar & Inventory]
+    C --> D["LLM Adapter (OpenAI)"]
+    C --> E["Data Store (JSON / Supabase)"]
+    C --> F["Calendar & Inventory"]
 ```
 
 ### 1. Frontend (`atelier-ai-frontend/`)
