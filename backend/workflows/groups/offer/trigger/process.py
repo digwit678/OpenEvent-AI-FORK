@@ -1266,8 +1266,10 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, sta
         f"**Total: CHF {display_total:,.2f}**",
     ])
 
+    # Add deposit info on separate lines after total (if enabled)
     if deposit_required and deposit_amount:
-        lines.append(f"**Deposit to reserve: CHF {deposit_amount:,.2f}** (required before confirmation)")
+        lines.append("---")  # Separator between total and deposit
+        lines.append(f"Deposit to reserve: CHF {deposit_amount:,.2f} (required before confirmation)")
         if deposit_due_date:
             lines.append(f"Deposit due by: {deposit_due_date}")
 

@@ -1,6 +1,102 @@
 # Development Changelog
 
+## 2025-12-11
+
+### Feature: Duplicate Message Detection (UX)
+
+**Task: Prevent confusing duplicate responses when client accidentally resends the same message**
+
+Added detection for identical consecutive messages from clients. When a client sends the exact same message twice in a row (e.g., accidentally pasting the same email), the system now responds with a friendly clarification instead of processing the duplicate.
+
+**Response:**
+> "I notice this is the same message as before. Is there something specific you'd like to add or clarify? I'm happy to help with any questions or changes."
+
+**Exclusions:** Duplicate detection is skipped for:
+- Detours (when `caller_step` is set)
+- Step 1 (intake - new events)
+
+**Files Modified:**
+- `backend/workflow_email.py:889-925` - Added duplicate detection logic after intake processing
+
+---
+
+### Enhancement: Offer Formatting - Deposit on Separate Lines
+
+**Task: Improve readability of deposit information in offer emails**
+
+Added visual separator between total and deposit info for clearer presentation:
+
+```
+Total: CHF 680.00
+---
+Deposit to reserve: CHF 204.00 (required before confirmation)
+Deposit due by: 2025-12-24
+```
+
+**Files Modified:**
+- `backend/workflows/groups/offer/trigger/process.py:1269-1274` - Added `---` separator between total and deposit
+
+---
+
 ## 2025-12-10
+
+### Enhancement: Room Search Intent Detection System (NLU)
+
+**Task: Improve detection precision, eliminate overlap, and add missing intent categories**
+
+Consolidated duplicate patterns from multiple modules into `keyword_buckets.py` (single source of truth) and added 5 new room search intent categories based on industry best practices.
+
+**Files Modified:**
+
+1. **`backend/workflows/nlu/keyword_buckets.py`** (lines 751-930)
+   - Added `ACTION_REQUEST_PATTERNS`, `AVAILABILITY_TOKENS`, `RESUME_PHRASES` (consolidated)
+   - Added `RoomSearchIntent` enum with 6 intent types
+   - Added `OPTION_KEYWORDS` (EN/DE) - soft holds, tentative bookings
+   - Added `CAPACITY_KEYWORDS` (EN/DE) - capacity/fit questions
+   - Added `ALTERNATIVE_KEYWORDS` (EN/DE) - waitlist, alternatives
+   - Added `ENHANCED_CONFIRMATION_KEYWORDS` (EN/DE) - strong confirmations
+   - Added `AVAILABILITY_KEYWORDS` (EN/DE) - availability checks
+
+2. **`backend/llm/intent_classifier.py`**
+   - Updated imports to use consolidated patterns from keyword_buckets
+   - Added 5 new Q&A types: `check_availability`, `request_option`, `check_capacity`, `check_alternatives`, `confirm_booking`
+   - Updated `_step_anchor_from_qna()` routing for new types
+
+3. **`backend/workflows/nlu/general_qna_classifier.py`** (line 38)
+   - Updated import to use `ACTION_REQUEST_PATTERNS` from keyword_buckets
+
+4. **`backend/workflows/nlu/__init__.py`**
+   - Added exports for all new shared patterns
+
+**Tests Added:**
+
+- **`backend/tests/detection/test_room_search_intents.py`** (NEW - 44 tests)
+  - `TestRequestOptionDetection` (7 tests)
+  - `TestConfirmBookingDetection` (7 tests)
+  - `TestCheckCapacityDetection` (7 tests)
+  - `TestCheckAlternativesDetection` (8 tests)
+  - `TestCheckAvailabilityDetection` (4 tests)
+  - `TestStepAnchorRouting` (5 tests)
+  - `TestIntentDisambiguation` (3 tests)
+  - `TestNoFalsePositives` (3 tests)
+
+**Files Deleted:**
+
+- `backend/workflows/nlu/room_search_keywords.py` - content merged into keyword_buckets.py
+
+**Why Each Change Improves Detection:**
+
+| Change | Improvement |
+|--------|-------------|
+| Consolidate `_ACTION_PATTERNS` | Single source, no drift between modules |
+| Add `REQUEST_OPTION` | Distinguishes "hold it" from "is it free?" |
+| Add `CHECK_CAPACITY` | Direct capacity queries don't go through generic Q&A |
+| Add `CHECK_ALTERNATIVES` | Waitlist/fallback requests get proper handling |
+| Add `CONFIRM_BOOKING` | Strong signals like "green light" boost confidence |
+| Fix `_step_anchor_from_qna` | New types route to correct workflow steps |
+| Bilingual keywords (EN/DE) | German clients get same precision as English |
+
+---
 
 ### Feature: Client Deposit Payment Button (Frontend + Backend)
 
