@@ -13,6 +13,36 @@ from backend.workflows.groups.room_availability.trigger.process import (
 )
 from backend.workflows.common.capacity import fits_capacity
 
+TOOL_SCHEMA: Dict[str, Dict[str, Any]] = {
+    "tool_room_status_on_date": {
+        "type": "object",
+        "properties": {
+            "date": {"type": "string", "pattern": r"^\\d{2}\\.\\d{2}\\.\\d{4}$"},
+            "room": {"type": "string"},
+        },
+        "required": ["date", "room"],
+        "additionalProperties": False,
+    },
+    "tool_capacity_check": {
+        "type": "object",
+        "properties": {
+            "room": {"type": "string"},
+            "attendees": {"type": ["integer", "null"], "minimum": 1},
+            "layout": {"type": ["string", "null"]},
+        },
+        "required": ["room"],
+        "additionalProperties": False,
+    },
+    "tool_evaluate_rooms": {
+        "type": "object",
+        "properties": {
+            "date": {"type": "string", "pattern": r"^\\d{2}\\.\\d{2}\\.\\d{4}$"},
+        },
+        "required": ["date"],
+        "additionalProperties": False,
+    },
+}
+
 
 class RoomStatusInput(BaseModel):
     date: str = Field(..., description="Requested date in DD.MM.YYYY format.")

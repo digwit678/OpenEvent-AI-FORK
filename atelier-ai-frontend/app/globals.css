@@ -13,6 +13,7 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: linear-gradient(135deg, #c5e3ff 0%, #e4f1ff 55%, #f9fcff 100%);
 }
 
 /* Custom scrollbar */

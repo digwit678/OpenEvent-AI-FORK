@@ -168,3 +168,76 @@ def test_product_update_preserves_requirements_hash(
     updated_event = state.event_entry
     assert updated_event["requirements_hash"] == req_hash
     assert updated_event.get("requirements") == requirements
+
+
+def test_product_update_detected_when_intent_is_event_request(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    intake_module = importlib.import_module("backend.workflows.groups.intake.trigger.process")
+
+    # Classifier already thinks this is an event; heuristic product parser must still run.
+    monkeypatch.setattr(intake_module, "classify_intent", lambda _payload: (IntentLabel.EVENT_REQUEST, 0.96))
+    monkeypatch.setattr(intake_module, "extract_user_information", lambda _payload: {})
+
+    manual_review_called = {"value": False}
+
+    def _fake_enqueue(*_args, **_kwargs):
+        manual_review_called["value"] = True
+        return "TASK-MANUAL"
+
+    monkeypatch.setattr(intake_module, "enqueue_manual_review_task", _fake_enqueue)
+
+    requirements = {"number_of_participants": 30}
+    req_hash = requirements_hash(requirements)
+    existing_event = {
+        "event_id": "EVT-OFFER",
+        "client_id": "laura.meier@bluewin.ch",
+        "current_step": 5,
+        "thread_state": "Awaiting Client",
+        "date_confirmed": True,
+        "chosen_date": "06.03.2026",
+        "locked_room_id": "Room B",
+        "room_eval_hash": req_hash,
+        "requirements": requirements,
+        "requirements_hash": req_hash,
+        "products": [
+            {"name": "Background Music Package", "quantity": 1, "unit_price": 180.0},
+            {"name": "Wireless Microphone", "quantity": 1, "unit_price": 25.0},
+        ],
+        "offers": [],
+        "event_data": {"Email": "laura.meier@bluewin.ch"},
+    }
+    db = {
+        "events": [existing_event],
+        "clients": {
+            "laura.meier@bluewin.ch": {
+                "profile": {"name": None, "org": None, "phone": None},
+                "history": [],
+                "event_ids": [existing_event["event_id"]],
+            }
+        },
+        "tasks": [],
+    }
+
+    message = IncomingMessage(
+        msg_id="msg-product-update-2",
+        from_name="Laura",
+        from_email="laura.meier@bluewin.ch",
+        subject="Re: Offer update",
+        body="pls add another wireless mic",
+        ts="2025-11-25T00:07:36Z",
+    )
+
+    state = _state(tmp_path, db, message)
+    result = intake_module.process(state)
+
+    assert manual_review_called["value"] is False, "Product edit should not fall back to manual review"
+    assert result.action != "manual_review_enqueued"
+    assert state.intent == IntentLabel.EVENT_REQUEST
+    assert state.intent_detail == "event_intake_product_update"
+    products_add = state.user_info.get("products_add") or []
+    names = {item["name"] for item in products_add}
+    assert "Wireless Microphone" in names
+    quantities = {item.get("quantity") for item in products_add}
+    assert 1 in quantities, "Parser should treat 'another' as a single additional unit"

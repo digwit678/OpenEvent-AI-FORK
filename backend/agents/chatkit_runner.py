@@ -11,11 +11,13 @@ from pydantic import ValidationError
 
 from backend.agents.guardrails import safe_envelope
 from backend.agents.openevent_agent import OpenEventAgent
+from backend.utils.openai_key import SECRET_NAME, load_openai_api_key
 from backend.agents.tools.dates import (
     SuggestDatesInput,
     ParseDateIntentInput,
     tool_suggest_dates,
     tool_parse_date_intent,
+    TOOL_SCHEMA as DATES_TOOL_SCHEMA,
 )
 from backend.agents.tools.rooms import (
     EvaluateRoomsInput,
@@ -24,6 +26,7 @@ from backend.agents.tools.rooms import (
     tool_evaluate_rooms,
     tool_room_status_on_date,
     tool_capacity_check,
+    TOOL_SCHEMA as ROOMS_TOOL_SCHEMA,
 )
 from backend.agents.tools.offer import (
     ComposeOfferInput,
@@ -41,10 +44,11 @@ from backend.agents.tools.offer import (
     tool_list_catering,
     tool_list_products,
     tool_send_offer,
+    TOOL_SCHEMA as OFFER_TOOL_SCHEMA,
 )
-from backend.agents.tools.negotiation import NegotiationInput, tool_negotiate_offer
-from backend.agents.tools.transition import TransitionInput, tool_transition_sync
-from backend.agents.tools.confirmation import ConfirmationInput, tool_classify_confirmation
+from backend.agents.tools.negotiation import NegotiationInput, tool_negotiate_offer, TOOL_SCHEMA as NEGOTIATION_TOOL_SCHEMA
+from backend.agents.tools.transition import TransitionInput, tool_transition_sync, TOOL_SCHEMA as TRANSITION_TOOL_SCHEMA
+from backend.agents.tools.confirmation import ConfirmationInput, tool_classify_confirmation, TOOL_SCHEMA as CONFIRM_TOOL_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +88,26 @@ CLIENT_STOP_AT_TOOLS: Set[str] = {
     "client_see_catering",
     "client_see_products",
 }
+
+# OpenAI tool schema for chat-completions fallback (matches ENGINE_TOOL_ALLOWLIST keys)
+OPENAI_TOOLS_SCHEMA: List[Dict[str, Any]] = [
+    {"type": "function", "function": {"name": "tool_suggest_dates", "parameters": DATES_TOOL_SCHEMA["tool_suggest_dates"]}},
+    {"type": "function", "function": {"name": "tool_parse_date_intent", "parameters": DATES_TOOL_SCHEMA["tool_parse_date_intent"]}},
+    {"type": "function", "function": {"name": "tool_room_status_on_date", "parameters": ROOMS_TOOL_SCHEMA["tool_room_status_on_date"]}},
+    {"type": "function", "function": {"name": "tool_capacity_check", "parameters": ROOMS_TOOL_SCHEMA["tool_capacity_check"]}},
+    {"type": "function", "function": {"name": "tool_evaluate_rooms", "parameters": ROOMS_TOOL_SCHEMA["tool_evaluate_rooms"]}},
+    {"type": "function", "function": {"name": "tool_list_products", "parameters": OFFER_TOOL_SCHEMA["tool_list_products"]}},
+    {"type": "function", "function": {"name": "tool_list_catering", "parameters": OFFER_TOOL_SCHEMA["tool_list_catering"]}},
+    {"type": "function", "function": {"name": "tool_build_offer_draft", "parameters": OFFER_TOOL_SCHEMA["tool_build_offer_draft"]}},
+    {"type": "function", "function": {"name": "tool_persist_offer", "parameters": OFFER_TOOL_SCHEMA["tool_persist_offer"]}},
+    {"type": "function", "function": {"name": "tool_add_product_to_offer", "parameters": OFFER_TOOL_SCHEMA["tool_add_product_to_offer"]}},
+    {"type": "function", "function": {"name": "tool_remove_product_from_offer", "parameters": OFFER_TOOL_SCHEMA["tool_remove_product_from_offer"]}},
+    {"type": "function", "function": {"name": "tool_send_offer", "parameters": OFFER_TOOL_SCHEMA["tool_send_offer"]}},
+    {"type": "function", "function": {"name": "tool_negotiate_offer", "parameters": NEGOTIATION_TOOL_SCHEMA["tool_negotiate_offer"]}},
+    {"type": "function", "function": {"name": "tool_transition_sync", "parameters": TRANSITION_TOOL_SCHEMA["tool_transition_sync"]}},
+    {"type": "function", "function": {"name": "tool_follow_up_suggest", "parameters": OFFER_TOOL_SCHEMA["tool_follow_up_suggest"]}},
+    {"type": "function", "function": {"name": "tool_classify_confirmation", "parameters": CONFIRM_TOOL_SCHEMA["tool_classify_confirmation"]}},
+]
 
 
 TOOL_SCHEMAS: Dict[str, Dict[str, Any]] = {
@@ -660,6 +684,21 @@ def execute_tool_call(
     }
 
 
+def load_default_db_for_tools() -> Dict[str, Any]:
+    """
+    Helper to load the workflow DB for agent tool execution. Tools are
+    deterministic and should share the same backing store as the workflow.
+    """
+
+    from backend.workflow_email import get_default_db  # pylint: disable=import-outside-toplevel
+
+    try:
+        return get_default_db()
+    except Exception:
+        # As a safety net, return an empty db to avoid crashing agent calls.
+        return {"events": [], "tasks": []}
+
+
 async def _fallback_stream(thread_id: str, message: Dict[str, Any], state: Dict[str, Any]) -> AsyncGenerator[str, None]:
     """
     Deterministic fallback path when the Agents SDK is unavailable.
@@ -694,7 +733,11 @@ async def run_streamed(thread_id: str, message: Dict[str, Any], state: Dict[str,
     try:  # pragma: no cover - SDK path exercised only in integration runs
         from openai import OpenAI  # type: ignore
 
-        client = OpenAI()
+        api_key = load_openai_api_key(required=False)
+        if not api_key:
+            raise RuntimeError(f"Environment variable '{SECRET_NAME}' is required for streamed agent mode.")
+
+        client = OpenAI(api_key=api_key)
         allowed_tools = [{"type": "function", "function": {"name": tool}} for tool in policy.allowed_tools]
         stop_tools = [{"type": "function", "function": {"name": tool}} for tool in CLIENT_STOP_AT_TOOLS]
         system_instructions = (

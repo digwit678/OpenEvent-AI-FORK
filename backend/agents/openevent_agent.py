@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from backend.workflow_email import process_msg as workflow_process_msg
 from backend.agents.guardrails import safe_envelope
 from backend.workflows.common.prompts import FOOTER_SEPARATOR
+from backend.utils.openai_key import load_openai_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class OpenEventAgent:
 
     def __init__(self) -> None:
         self._sdk_available = False
+        self._chat_supported = False
         self._client = None
         self._agent_id: Optional[str] = None
         self._sessions: Dict[str, Dict[str, Any]] = {}
@@ -41,12 +43,27 @@ class OpenEventAgent:
         try:  # pragma: no cover - optional dependency probe
             from openai import OpenAI  # type: ignore
 
-            self._client = OpenAI()
-            self._sdk_available = True
-            logger.info("OpenAI Agents SDK detected. Agent orchestration enabled.")
+            api_key = load_openai_api_key(required=False)
+            if not api_key:
+                self._client = None
+                self._sdk_available = False
+                self._chat_supported = False
+                logger.info("OpenAI API key missing; using workflow fallback.")
+                return
+
+            self._client = OpenAI(api_key=api_key)
+            self._sdk_available = hasattr(self._client, "agents")
+            self._chat_supported = hasattr(self._client, "chat")
+            if self._sdk_available:
+                logger.info("OpenAI Agents SDK detected. Agent orchestration enabled.")
+            elif self._chat_supported:
+                logger.info("OpenAI chat completions detected; using lightweight agent runner.")
+            else:
+                logger.info("OpenAI client present but no agents/chat support; using workflow fallback.")
         except Exception as exc:  # pragma: no cover - optional dependency probe
             self._client = None
             self._sdk_available = False
+            self._chat_supported = False
             logger.info("Agents SDK unavailable (%s); using workflow fallback.", exc)
 
     def _ensure_agent(self) -> Optional[str]:
@@ -146,6 +163,11 @@ class OpenEventAgent:
                 return self._run_via_agent(session, message)
             except Exception as exc:  # pragma: no cover - network guarded
                 logger.warning("Agents SDK execution failed (%s); falling back.", exc)
+        elif self._chat_supported and self._client:
+            try:
+                return self._run_via_chat(session, message)
+            except Exception as exc:
+                logger.warning("Chat-based agent execution failed (%s); falling back.", exc)
 
         return self._run_fallback(message)
 
@@ -169,6 +191,160 @@ class OpenEventAgent:
             return validated
         except Exception as exc:  # pragma: no cover - network guarded
             raise RuntimeError(f"Agents SDK run failed: {exc}") from exc
+
+    def _run_via_chat(self, session: Dict[str, Any], message: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Lightweight agent runner using chat completions when the Agents SDK
+        surface is unavailable in the installed OpenAI version.
+        """
+        assert self._client is not None
+
+        # Always rehydrate from DB to ensure state is current for this turn.
+        self._hydrate_session_from_db(session)
+        state = session.get("state") or {}
+
+        # If no event/workflow state exists after hydration, use the deterministic
+        # workflow to seed the event and get a first-turn response.
+        if not state.get("current_step"):
+            seeded = self._run_fallback(message)
+            self._hydrate_session_from_payload(session, seeded.get("payload", {}))
+            return seeded
+
+        from backend.agents import chatkit_runner as _runner  # pylint: disable=import-outside-toplevel
+
+        history: List[Dict[str, Any]] = session.get("history", []) or []
+        messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": self._SYSTEM_PROMPT},
+            *history,
+            {"role": "user", "content": message.get("body", "")},
+        ]
+
+        response = self._client.chat.completions.create(  # type: ignore[attr-defined]
+            model="gpt-4.1-mini",
+            messages=messages,
+            temperature=0.2,
+            tools=_runner.OPENAI_TOOLS_SCHEMA,
+        )
+
+        choice = response.choices[0].message  # type: ignore[index]
+        tool_calls = choice.tool_calls or []
+
+        # If the LLM requested tools, execute deterministically and return a safe envelope.
+        if tool_calls:
+            session_state = session.get("state", {}) or {}
+            db = _runner.load_default_db_for_tools()
+            tool_messages: List[Dict[str, Any]] = []
+            for call in tool_calls:
+                name = call.function.name
+                try:
+                    arguments = json.loads(call.function.arguments or "{}")
+                except Exception:
+                    arguments = {}
+                try:
+                    result = _runner.execute_tool_call(name, call.id, arguments, session_state, db)
+                    # Refresh session state from db after a successful tool call.
+                    self._hydrate_session_from_db(session)
+                except Exception as exc:
+                    # Surface a deterministic tool error envelope instead of crashing
+                    payload = {
+                        "assistant_text": "I hit an issue while running a tool; a manager will review.",
+                        "requires_hil": True,
+                        "action": "tool_error",
+                        "payload": {"tool": name, "reason": str(exc)},
+                    }
+                    return safe_envelope(payload)
+                tool_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "name": name,
+                        "content": json.dumps(result.get("content", {}), ensure_ascii=False),
+                    }
+                )
+                # Persist state delta if present
+                self._persist_thread_delta(session, result.get("content"))
+
+            # Mirror tool results back to the client in a deterministic envelope.
+            payload = {
+                "assistant_text": "Processed tool calls.",
+                "requires_hil": True,
+                "action": "tool_calls_executed",
+                "payload": {"tool_messages": tool_messages},
+            }
+            # Persist minimal history for follow-up turns.
+            session["history"] = [
+                *history[-4:],
+                {"role": "user", "content": message.get("body", "")},
+            ]
+            return safe_envelope(payload)
+
+        # No tool calls: attempt JSON parse, else wrap raw text.
+        content = choice.content
+        if isinstance(content, list):
+            content_text = "".join(part.get("text", "") if isinstance(part, dict) else str(part) for part in content)
+        else:
+            content_text = str(content or "")
+
+        try:
+            parsed = json.loads(content_text)
+        except Exception:
+            parsed = {
+                "assistant_text": content_text or "Thanks, I’ll check that now.",
+                "requires_hil": True,
+                "action": "agent_reply",
+                "payload": {"raw_message": content_text},
+            }
+
+        session["history"] = [
+            *history[-4:],  # cap memory growth
+            {"role": "user", "content": message.get("body", "")},
+            {"role": "assistant", "content": content_text},
+        ]
+
+        return safe_envelope(parsed if isinstance(parsed, dict) else {"assistant_text": content_text, "requires_hil": True, "action": "agent_reply", "payload": {}})
+
+    def _hydrate_session_from_payload(self, session: Dict[str, Any], payload: Dict[str, Any]) -> None:
+        state = session.setdefault("state", {})
+        state.update(
+            {
+                "event_id": payload.get("event_id") or state.get("event_id"),
+                "current_step": payload.get("current_step") or state.get("current_step"),
+                "caller_step": payload.get("caller_step") or state.get("caller_step"),
+                "requirements_hash": payload.get("requirements_hash") or state.get("requirements_hash"),
+                "room_eval_hash": payload.get("room_eval_hash") or state.get("room_eval_hash"),
+                "offer_hash": payload.get("offer_hash") or state.get("offer_hash"),
+                "status": payload.get("status") or payload.get("thread_state") or state.get("status"),
+            }
+        )
+
+    def _hydrate_session_from_db(self, session: Dict[str, Any]) -> None:
+        try:
+            from backend.workflow_email import get_default_db  # pylint: disable=import-outside-toplevel
+        except Exception:
+            return
+
+        db = get_default_db()
+        state = session.setdefault("state", {})
+        event_id = state.get("event_id")
+        candidate = None
+        if event_id:
+            for evt in db.get("events", []):
+                if evt.get("event_id") == event_id:
+                    candidate = evt
+                    break
+        if not candidate:
+            return
+        state.update(
+            {
+                "event_id": candidate.get("event_id"),
+                "current_step": candidate.get("current_step"),
+                "caller_step": candidate.get("caller_step"),
+                "requirements_hash": candidate.get("requirements_hash"),
+                "room_eval_hash": candidate.get("room_eval_hash"),
+                "offer_hash": candidate.get("offer_hash"),
+                "status": candidate.get("status") or candidate.get("thread_state"),
+            }
+        )
 
     def _run_fallback(self, message: Dict[str, Any]) -> Dict[str, Any]:
         wf_res = workflow_process_msg(message)

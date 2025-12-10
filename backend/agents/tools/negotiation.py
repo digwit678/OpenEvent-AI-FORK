@@ -6,6 +6,20 @@ from pydantic import BaseModel, Field
 
 from backend.workflow_email import process_msg as workflow_process_msg
 
+TOOL_SCHEMA: Dict[str, Dict[str, Any]] = {
+    "tool_negotiate_offer": {
+        "type": "object",
+        "properties": {
+            "event_id": {"type": "string"},
+            "client_email": {"type": "string"},
+            "message": {"type": "string"},
+            "msg_id": {"type": ["string", "null"]},
+        },
+        "required": ["event_id", "client_email", "message"],
+        "additionalProperties": False,
+    }
+}
+
 
 class NegotiationInput(BaseModel):
     """Proxy parameters for negotiation handling."""
@@ -42,4 +56,3 @@ def tool_negotiate_offer(params: NegotiationInput) -> NegotiationOutput:
     payload = {k: v for k, v in result.items() if k != "draft_messages"}
     payload["draft_messages"] = result.get("draft_messages") or []
     return NegotiationOutput(action=action, payload=payload)
-

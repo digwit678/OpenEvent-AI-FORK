@@ -133,6 +133,14 @@ def normalise_product_payload(
         else:
             item = {"name": name}
 
+        unit = raw.get("unit")
+        if unit:
+            item["unit"] = unit
+        if raw.get("category"):
+            item["category"] = raw.get("category")
+        if raw.get("wish"):
+            item["wish"] = raw.get("wish")
+
         qty = raw.get("quantity")
         if qty is not None:
             try:
@@ -141,6 +149,12 @@ def normalise_product_payload(
                 pass
         elif record and record.unit == "per_person" and participant_count:
             item["quantity"] = participant_count
+        elif item.get("unit") == "per_person" and participant_count:
+            # Custom payload with explicit per-person unit
+            item["quantity"] = participant_count
+        else:
+            # Default to a single unit so downstream math does not explode quantities
+            item["quantity"] = item.get("quantity", 1)
 
         price = raw.get("unit_price")
         if price is not None:

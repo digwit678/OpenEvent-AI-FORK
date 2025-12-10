@@ -17,6 +17,11 @@ except ImportError:  # pragma: no cover
 from backend.domain import EventStatus, TaskStatus, TaskType
 from backend.workflows.io.database import last_event_for_email
 from backend.workflows.io.tasks import enqueue_task as _enqueue_task
+from backend.workflows.common.conflict import (
+    ConflictType,
+    detect_conflict_type,
+    handle_hard_conflict,
+)
 
 from .. import OpenEventAction
 
@@ -728,6 +733,45 @@ class HandlePostOfferRoute(OpenEventAction):
         message_id: str,
         client_id: str,
     ) -> Dict[str, Any]:
+        # [HARD CONFLICT CHECK] Detect if another client has Option/Confirmed on same room/date
+        event_id = event_entry.get("event_id") if event_entry else None
+        room_id = event_data.get("Preferred Room") or event_data.get("locked_room_id")
+        event_date = event_data.get("Event Date") or event_data.get("chosen_date")
+
+        if event_id and room_id and event_date:
+            conflict_type, conflict_info = detect_conflict_type(
+                db=db,
+                event_id=event_id,
+                room_id=room_id,
+                event_date=event_date,
+                action="confirm",  # Client is trying to confirm
+            )
+
+            if conflict_type == ConflictType.HARD and conflict_info:
+                # Check if client already provided a reason (from previous message or classification)
+                client_reason = classification.get("extracted_fields", {}).get("conflict_reason")
+
+                result = handle_hard_conflict(
+                    db=db,
+                    event_id=event_id,
+                    conflict_info=conflict_info,
+                    client_reason=client_reason,
+                )
+
+                if result["action"] == "ask_for_reason":
+                    # Block confirmation, ask for reason
+                    _ensure_status(event_data, EventStatus.OPTION)
+                    message = result["message"]
+                    note = "confirm: conflict-blocked"
+                    return {"message": message, "note": note}
+
+                elif result["action"] == "hil_task_created":
+                    # HIL task created, wait for resolution
+                    _ensure_status(event_data, EventStatus.OPTION)
+                    message = result["message"]
+                    note = "confirm: conflict-hil-pending"
+                    return {"message": message, "note": note}
+
         deposit_req = _deposit_required(event_data)
         deposit_paid = _deposit_paid(event_data)
         manager_status = _manager_status(event_data)

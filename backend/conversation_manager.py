@@ -4,7 +4,6 @@
 # Intake/Date/Availability live in backend/workflows/groups/* and are orchestrated by workflow_email.py.
 
 import json
-import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -14,13 +13,14 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from backend.domain import ConversationState, EventInformation, IntentLabel
+from backend.utils.openai_key import load_openai_api_key
 from backend.workflow_email import DB_PATH as WF_DB_PATH, load_db as wf_load_db, save_db as wf_save_db
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 from backend.workflows.groups.room_availability.trigger import process as step3_process
 
 load_dotenv(override=False)
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=load_openai_api_key())
 
 # In-memory storage for demo
 active_conversations: dict[str, ConversationState] = {}

@@ -7,6 +7,7 @@ from calendar import monthrange
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 import datetime as dt
 import re
+import logging
 
 from backend.domain import TaskStatus, TaskType
 from backend.debug.hooks import (
@@ -35,17 +36,33 @@ from backend.workflows.common.sorting import rank_rooms
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.gatekeeper import refresh_gatekeeper
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
-from backend.workflows.common.menu_options import build_menu_payload, format_menu_line
+from backend.workflows.common.menu_options import (
+    build_menu_payload,
+    build_menu_title,
+    extract_menu_request,
+    format_menu_line,
+    format_menu_line_short,
+    MENU_CONTENT_CHAR_THRESHOLD,
+    normalize_menu_for_display,
+    select_menu_options,
+)
+from backend.utils.pseudolinks import generate_qna_link
+from backend.utils.page_snapshots import create_snapshot
 from backend.workflows.common.general_qna import (
     append_general_qna_to_primary,
     render_general_qna_reply,
     enrich_general_qna_step2,
     _fallback_structured_body,
 )
-from backend.workflows.change_propagation import detect_change_type, route_change_on_updated_variable
+from backend.workflows.change_propagation import (
+    detect_change_type,
+    detect_change_type_enhanced,
+    route_change_on_updated_variable,
+)
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.common.types import GroupResult, WorkflowState
+from backend.workflows.common.confidence import check_nonsense_gate
 from backend.workflows.groups.intake.condition.checks import suggest_dates
 from backend.workflows.common.relative_dates import resolve_relative_date
 from backend.workflows.groups.room_availability.condition.decide import room_status_on_date
@@ -61,11 +78,14 @@ from backend.workflows.nlu import detect_general_room_query
 from backend.utils.profiler import profile_step
 from backend.services.availability import calendar_free, next_five_venue_dates, validate_window
 from backend.utils.dates import MONTH_INDEX_TO_NAME, from_hints
+from backend.utils.calendar_events import update_calendar_event_status
 from backend.workflow.state import WorkflowStep, default_subflow, write_stage
 
 from ..condition.decide import is_valid_ddmmyyyy
 
 __workflow_role__ = "trigger"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -282,8 +302,12 @@ def _client_requested_dates(state: WorkflowState) -> List[str]:
 
     text = _message_text(state)
     reference_day = _reference_date_from_state(state)
+    explicit_pattern = re.compile(
+        r"(\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|may|june|july|august|september|october|november|december)\b)",
+        re.IGNORECASE,
+    )
     iso_values: List[str] = []
-    if text:
+    if text and explicit_pattern.search(text):
         seen: set[str] = set()
         for value in parse_all_dates(text, fallback_year=reference_day.year):
             iso = value.isoformat()
@@ -327,6 +351,130 @@ def _preface_with_apology(text: Optional[str]) -> Optional[str]:
     if first.isalpha() and first.isupper():
         softened = first.lower() + stripped[1:]
     return f"Sorry, {softened}"
+
+
+def _clean_weekdays_hint(raw: Any) -> List[int]:
+    cleaned: List[int] = []
+    if not isinstance(raw, (list, tuple, set)):
+        return cleaned
+    for value in raw:
+        try:
+            hint_int = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= hint_int <= 7:
+            cleaned.append(hint_int)
+    return cleaned
+
+
+def _clear_invalid_weekdays_hint(event_entry: Dict[str, Any]) -> None:
+    """Strip invalid weekday hints that can be polluted by participant counts."""
+
+    weekdays_hint = event_entry.get("weekdays_hint")
+    cleaned = _clean_weekdays_hint(weekdays_hint)
+    if cleaned != weekdays_hint:
+        if cleaned:
+            event_entry["weekdays_hint"] = cleaned
+        else:
+            event_entry.pop("weekdays_hint", None)
+
+
+def _append_menu_options_if_requested(state: WorkflowState, message_lines: List[str], month_hint: Optional[str]) -> None:
+    """Attach a menu suggestion block when the client asks about menus.
+
+    If the full content exceeds the display threshold, uses abbreviated format
+    and adds a link to the full catering info page.
+    """
+    request = extract_menu_request((state.message.body or "") + "\n" + (state.message.subject or ""))
+    if not request or not request.get("menu_requested"):
+        return
+
+    options = select_menu_options(request, month_hint=month_hint or request.get("month"))
+    if not options:
+        return
+
+    title = build_menu_title(request)
+    if month_hint:
+        title = f"{title} ({_format_label_text(str(month_hint))})"
+
+    # First render full content to check length
+    full_lines = [title]
+    for option in options:
+        rendered = format_menu_line(option, month_hint=month_hint)
+        if rendered:
+            full_lines.append(rendered if rendered.lstrip().startswith("-") else f"- {rendered}")
+
+    combined_len = len("\n".join(full_lines))
+
+    # Build link params from workflow state (non-Q&A path)
+    query_params: Dict[str, str] = {}
+    event_entry = state.event_entry or {}
+    user_info = state.user_info or {}
+    requirements = event_entry.get("requirements") or {}
+
+    # Date/month from workflow state
+    chosen_date = event_entry.get("chosen_date")
+    if chosen_date:
+        query_params["date"] = str(chosen_date)
+    elif month_hint:
+        query_params["month"] = str(month_hint).lower()
+    elif request.get("month"):
+        query_params["month"] = str(request["month"]).lower()
+
+    # Capacity from requirements or user_info
+    capacity = (
+        requirements.get("number_of_participants")
+        or requirements.get("participants")
+        or user_info.get("participants")
+    )
+    if capacity:
+        try:
+            query_params["capacity"] = str(int(capacity))
+        except (TypeError, ValueError):
+            pass
+
+    # Menu request attributes
+    if request.get("vegetarian"):
+        query_params["vegetarian"] = "true"
+    if request.get("wine_pairing"):
+        query_params["wine_pairing"] = "true"
+    if request.get("three_course"):
+        query_params["courses"] = "3"
+
+    # Create snapshot with full menu data for persistent link
+    # Normalize menus to frontend display format (name, price_per_person, availability_window, etc.)
+    snapshot_data = {
+        "menus": [normalize_menu_for_display(opt) for opt in options],
+        "title": title,
+        "request": request,
+        "month_hint": month_hint,
+        "full_lines": full_lines,
+    }
+    snapshot_id = create_snapshot(
+        snapshot_type="catering",
+        data=snapshot_data,
+        event_id=getattr(state, "event_id", None),
+        params=query_params,
+    )
+    shortcut_link = generate_qna_link("Catering", query_params=query_params if query_params else None, snapshot_id=snapshot_id)
+
+    if combined_len > MENU_CONTENT_CHAR_THRESHOLD:
+        # Use abbreviated format with link
+        message_lines.append("")
+        message_lines.append(f"Full menu details: {shortcut_link}")
+        message_lines.append("")
+        message_lines.append(title)
+        for option in options:
+            rendered = format_menu_line_short(option)
+            if rendered:
+                message_lines.append(rendered)
+        state.extras["menu_shortcut"] = {"link": shortcut_link, "threshold": MENU_CONTENT_CHAR_THRESHOLD}
+    else:
+        # Full content fits, but still add link at the end for reference
+        message_lines.append("")
+        message_lines.extend(full_lines)
+        message_lines.append("")
+        message_lines.append(f"Full menu details: {shortcut_link}")
 
 
 def _maybe_append_general_qna(
@@ -629,6 +777,41 @@ def process(state: WorkflowState) -> GroupResult:
         return _apply_step2_hil_decision(state, event_entry, decision)
 
     message_text = _message_text(state)
+
+    # -------------------------------------------------------------------------
+    # NONSENSE GATE: Check for off-topic/nonsense using existing confidence
+    # -------------------------------------------------------------------------
+    nonsense_action = check_nonsense_gate(state.confidence or 0.0, message_text)
+    if nonsense_action == "ignore":
+        # Silent ignore - no reply, no further processing
+        return GroupResult(
+            action="nonsense_ignored",
+            payload={"reason": "low_confidence_no_workflow_signal", "step": 2},
+            halt=True,
+        )
+    if nonsense_action == "hil":
+        # Borderline - defer to human
+        draft = {
+            "body": append_footer(
+                "I'm not sure I understood your message. I've forwarded it to our team for review.",
+                step=2,
+                next_step=2,
+                thread_state="Awaiting Manager Review",
+            ),
+            "topic": "nonsense_hil_review",
+            "requires_approval": True,
+        }
+        state.add_draft_message(draft)
+        update_event_metadata(event_entry, current_step=2, thread_state="Awaiting Manager Review")
+        state.set_thread_state("Awaiting Manager Review")
+        state.extras["persist"] = True
+        return GroupResult(
+            action="nonsense_hil_deferred",
+            payload={"reason": "borderline_confidence", "step": 2},
+            halt=True,
+        )
+    # -------------------------------------------------------------------------
+
     classification = detect_general_room_query(message_text, state)
     state.extras["_general_qna_classification"] = classification
     state.extras["general_qna_detected"] = bool(classification.get("is_general"))
@@ -655,8 +838,10 @@ def process(state: WorkflowState) -> GroupResult:
 
     # [CHANGE DETECTION] Tap incoming stream BEFORE Q&A dispatch to detect client revisions
     # ("actually we're 50 now") and route them back to dependent nodes while hashes stay valid.
+    # Use enhanced detection with dual-condition logic (revision signal + bound target)
     user_info = state.user_info or {}
-    change_type = detect_change_type(event_entry, user_info, message_text=message_text)
+    enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
+    change_type = enhanced_result.change_type if enhanced_result.is_change else None
 
     if change_type is not None:
         # Change detected: route it per DAG rules and skip Q&A dispatch
@@ -752,7 +937,11 @@ def process(state: WorkflowState) -> GroupResult:
                 return _finalize_confirmation(state, event_entry, pending_future_window)
 
     user_info = state.user_info or {}
-    range_pending = _range_query_pending(user_info, event_entry)
+
+    # If the current message contains an explicit date (e.g., "change to 2026-02-28"),
+    # skip range_pending check and try to confirm that date directly
+    message_has_explicit_date = bool(requested_client_dates)
+    range_pending = False if message_has_explicit_date else _range_query_pending(user_info, event_entry)
 
     window = None if range_pending else _resolve_confirmation_window(state, event_entry)
     if window is None:
@@ -1158,6 +1347,27 @@ def _present_candidate_dates(
     else:
         slot_text = "18:00–22:00"
 
+    if week_scope and week_scope.get("weekdays_hint"):
+        hint_order = []
+        for hint in week_scope["weekdays_hint"]:
+            try:
+                hint_order.append(int(hint))
+            except (TypeError, ValueError):
+                continue
+        if hint_order:
+            prioritized: List[str] = []
+            remaining = list(formatted_dates)
+            for day_hint in hint_order:
+                for iso_value in list(remaining):
+                    try:
+                        day_val = datetime.fromisoformat(iso_value).day
+                    except ValueError:
+                        continue
+                    if day_val == day_hint and iso_value not in prioritized:
+                        prioritized.append(iso_value)
+                        remaining.remove(iso_value)
+            formatted_dates = prioritized + [val for val in formatted_dates if val not in prioritized]
+
     greeting = _compose_greeting(state)
     message_lines: List[str] = [greeting, ""]
 
@@ -1284,6 +1494,8 @@ def _present_candidate_dates(
                 )
             message_lines.append("")
 
+    _append_menu_options_if_requested(state, message_lines, month_hint_value or month_for_line)
+
     message_lines.extend(["", "AVAILABLE DATES:"])
     if not formatted_dates:
         message_lines.append("Sorry, none of the nearby slots are free at the moment—here's the broader set I'm monitoring:")
@@ -1296,14 +1508,35 @@ def _present_candidate_dates(
     next_step_lines = ["", "NEXT STEP:"]
     if future_display:
         next_step_lines.append(f"Say yes if {future_display} works, or share another option you'd like me to check.")
-    next_step_lines.append("- Let me know which date works best so I can lock it in and shortlist the best rooms.")
-    next_step_lines.append("- Or share another day/time preference and I'll check availability right away.")
+    next_step_lines.append("- Tell me which date works best so I can move to Room Availability.")
+    next_step_lines.append("- Or share another day/time and I'll check availability.")
     message_lines.extend(next_step_lines)
     prompt = "\n".join(message_lines)
 
     weekday_hint = weekday_hint_value
     time_hint = user_info.get("vague_time_of_day") or event_entry.get("vague_time_of_day")
     time_display = str(time_hint).strip().capitalize() if time_hint else slot_text
+
+    if week_scope and week_scope.get("weekdays_hint"):
+        hint_order = []
+        for hint in week_scope["weekdays_hint"]:
+            try:
+                hint_order.append(int(hint))
+            except (TypeError, ValueError):
+                continue
+        if hint_order:
+            prioritized: List[str] = []
+            remaining = list(formatted_dates)
+            for day_hint in hint_order:
+                for iso_value in list(remaining):
+                    try:
+                        day_val = datetime.fromisoformat(iso_value).day
+                    except ValueError:
+                        continue
+                    if day_val == day_hint and iso_value not in prioritized:
+                        prioritized.append(iso_value)
+                        remaining.remove(iso_value)
+            formatted_dates = prioritized + [val for val in formatted_dates if val not in prioritized]
     table_rows: List[Dict[str, Any]] = []
     actions_payload: List[Dict[str, Any]] = []
     for iso_value in formatted_dates[:5]:
@@ -1335,7 +1568,9 @@ def _present_candidate_dates(
 
     _trace_candidate_gate(_thread_id(state), formatted_dates[:5])
 
-    headers = [date_header_label]
+    headers = ["Availability overview"]
+    if date_header_label:
+        headers.append(date_header_label)
     if escalate_to_hil:
         headers.append("Manual follow-up required")
     draft_message = {
@@ -1357,7 +1592,9 @@ def _present_candidate_dates(
     }
     thread_state_label = "Waiting on HIL" if escalate_to_hil else "Awaiting Client Response"
     draft_message["thread_state"] = thread_state_label
-    draft_message["requires_approval"] = True
+    # Only require HIL approval when escalating (client can't find date, needs manual help)
+    # Normal date options go directly to client
+    draft_message["requires_approval"] = escalate_to_hil
     if escalate_to_hil:
         draft_message["hil_reason"] = "Client can't find suitable date, needs manual help"
     if actions_payload:
@@ -1408,6 +1645,20 @@ def _present_candidate_dates(
     state.telemetry.answered_question_first = True
     state.telemetry.gatekeeper_passed = dict(gatekeeper)
     payload["gatekeeper_passed"] = dict(gatekeeper)
+    message_text = f"{state.message.subject or ''} {state.message.body or ''}"
+    lowered_msg = message_text.lower()
+    question_triggers = (
+        "?" in message_text,
+        "please advise" in lowered_msg,
+        "could you" in lowered_msg,
+        "can you" in lowered_msg,
+        "would you" in lowered_msg,
+        "let me know" in lowered_msg,
+    )
+    if any(question_triggers) or state.extras.get("general_qna_detected"):
+        state.intent_detail = "event_intake_with_question"
+    elif not state.intent_detail:
+        state.intent_detail = "event_intake"
     return GroupResult(action="date_options_proposed", payload=payload, halt=True)
 
 
@@ -1493,7 +1744,7 @@ def _message_signals_confirmation(text: str) -> bool:
     # Treat bare mentions of supported dates/times as confirmations.
     tokens = _extract_candidate_tokens(text or "")
     if tokens:
-        parsed = parse_first_date(tokens)
+        parsed = parse_first_date(tokens, allow_relative=True)
         if parsed:
             return True
     return False
@@ -1707,8 +1958,8 @@ def _determine_date(
         if ddmmyyyy and is_valid_ddmmyyyy(ddmmyyyy):
             return ddmmyyyy, iso_candidate
 
-    parsed = parse_first_date(body_text, reference=reference_day, allow_relative=False) or parse_first_date(
-        subject_text, reference=reference_day, allow_relative=False
+    parsed = parse_first_date(body_text, reference=reference_day, allow_relative=True) or parse_first_date(
+        subject_text, reference=reference_day, allow_relative=True
     )
     if parsed:
         return parsed.strftime("%d.%m.%Y"), parsed.isoformat()
@@ -2042,6 +2293,14 @@ def _finalize_confirmation(
         requirements_hash=new_req_hash,
         thread_state="In Progress",
     )
+    if event_entry.get("calendar_event_id"):
+        try:
+            update_calendar_event_status(event_entry.get("event_id", ""), event_entry.get("status", ""), "lead")
+            from backend.utils.calendar_events import create_calendar_event
+
+            create_calendar_event(event_entry, "lead")
+        except Exception as exc:  # pragma: no cover - best-effort calendar logging
+            logger.warning("Failed to update calendar event: %s", exc)
     if not reuse_previous:
         update_event_metadata(
             event_entry,
@@ -2359,6 +2618,7 @@ def _is_weekend_token(token: Optional[Any]) -> bool:
 def _resolve_week_scope(state: WorkflowState, reference_day: date) -> Optional[Dict[str, Any]]:
     user_info = state.user_info or {}
     event_entry = state.event_entry or {}
+    _clear_invalid_weekdays_hint(event_entry)
     window_scope: Dict[str, Any] = {}
     for candidate in (event_entry.get("window_scope"), user_info.get("window")):
         if isinstance(candidate, dict):
@@ -2374,11 +2634,12 @@ def _resolve_week_scope(state: WorkflowState, reference_day: date) -> Optional[D
         or user_info.get("week_index")
         or event_entry.get("week_index")
     )
-    weekdays_hint = (
+    weekdays_hint_raw = (
         window_scope.get("weekdays_hint")
         or user_info.get("weekdays_hint")
         or event_entry.get("weekdays_hint")
     )
+    weekdays_hint = _clean_weekdays_hint(weekdays_hint_raw)
     weekday_token = (
         window_scope.get("weekday")
         or user_info.get("vague_weekday")
@@ -3021,6 +3282,8 @@ def _present_general_room_qna(
     ]
     if qa_payload:
         state.turn_notes["general_qa"] = qa_payload
+        event_entry.setdefault("general_qa_payload", qa_payload)
+        state.extras["persist"] = True
         trace_general_qa_status(
             resolved_thread_id,
             "payload_attached",

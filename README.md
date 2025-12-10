@@ -1,88 +1,184 @@
-# OpenEvent Workflow
+# OpenEvent-AI: The Autonomous Venue Booking Engine
 
-## Purpose & Scope
-OpenEvent automates The Atelier’s end-to-end venue booking flow: it ingests client emails, maintains a deterministic event record, and coordinates human-in-the-loop approvals so every outbound message aligns with the Management Plan and Workflow v3 blueprint.【F:backend/workflows/groups/intake/trigger/process.py†L30-L207】【F:backend/workflow_email.py†L86-L145】 The pipeline tracks venue statuses (Lead → Option → Confirmed) while preserving audit trails and reversible detours across Steps 1–7.【F:backend/domain/models.py†L24-L60】【F:backend/workflows/groups/event_confirmation/trigger/process.py†L293-L360】
+OpenEvent-AI is a sophisticated, full-stack system designed to automate the end-to-end venue booking flow for "The Atelier". It combines the flexibility of Large Language Models (LLMs) with the reliability of deterministic state machines to handle inquiries, negotiate offers, and confirm bookings with "Human-In-The-Loop" (HIL) oversight.
 
-## Workflow at a Glance
-1. **Step 1 – Intake:** Classify intent, capture client context, seed requirements, and detour if the date or room needs clarification.【F:backend/workflows/groups/intake/trigger/process.py†L33-L184】  
-2. **Step 2 – Date Confirmation:** Offer deterministic slots or log a confirmed date and link it to the event record.【F:backend/workflows/groups/date_confirmation/trigger/process.py†L44-L159】  
-3. **Step 3 – Room Availability:** Evaluate room inventory, cache decisions, and stage HIL approvals before locking a room.【F:backend/workflows/groups/room_availability/trigger/process.py†L60-L316】  
-4. **Step 4 – Offer:** Normalize products, compose pricing, version offers, and queue a draft for review.【F:backend/workflows/groups/offer/trigger/process.py†L39-L233】  
-5. **Step 5 – Negotiation:** Interpret replies (accept / decline / counter / clarification) and route structural changes back to prior steps.【F:backend/workflows/groups/negotiation_close.py†L47-L200】  
-6. **Step 6 – Transition Checkpoint:** Block confirmation until date, room, offer, and deposit prerequisites are satisfied.【F:backend/workflows/groups/transition_checkpoint.py†L28-L88】  
-7. **Step 7 – Confirmation:** Manage deposits, reserves, site visits, declines, and final confirmations through audited HIL gates.【F:backend/workflows/groups/event_confirmation/trigger/process.py†L71-L360】
+## 🚀 Overview
 
-## How to Review a Message Like the System
-1. **Load state:** Fetch the event’s `current_step`, `caller_step`, and `thread_state` from the database (mirroring `process_msg`).【F:backend/workflow_email.py†L102-L145】  
-2. **Apply entry guard:** Inspect the step’s entry checks (date present, room locked, etc.) and decide whether to detour using the same conditions the code enforces.【F:backend/workflows/groups/intake/trigger/process.py†L122-L184】【F:backend/workflows/groups/transition_checkpoint.py†L28-L70】  
-3. **Decide action:** Follow the step’s deterministic branch (e.g., accept vs. counter) and honour any HIL gate before sending drafts.【F:backend/workflows/groups/negotiation_close.py†L75-L200】【F:backend/workflows/groups/event_confirmation/trigger/process.py†L75-L360】  
-4. **Persist safely:** Update metadata, hashes, and audit logs exactly as the helper methods do so later steps can validate caching and status transitions.【F:backend/workflows/groups/room_availability/trigger/process.py†L95-L315】【F:backend/workflows/groups/offer/trigger/process.py†L201-L233】
+The system ingests client inquiries (currently simulated via chat), maintains a deterministic event record, and coordinates every step of the booking process. Unlike simple chatbots, OpenEvent-AI is built on a **workflow engine** that tracks the lifecycle of an event from a "Lead" to a "Confirmed" booking.
 
-## Local Verification
-Run the curated workflow regression suites with a stubbed LLM adapter:
-```bash
-# Core parity checks (Steps 1–3)
-pytest backend/tests/workflows/test_workflow_v3_alignment.py::test_intake_guard_manual_review \
-       backend/tests/workflows/test_workflow_v3_alignment.py::test_step2_five_date_loop_and_confirmation \
-       backend/tests/workflows/test_workflow_v3_alignment.py::test_happy_path_step3_to_4_hil_gate
+### Key Features
+- **Deterministic Workflow**: A 7-step state machine ensures no inquiry is lost and every booking follows the strict business rules.
+- **Hybrid AI/Logic**: Uses LLMs for Natural Language Understanding (NLU) and drafting responses, but relies on rigid Python logic for pricing, availability, and state transitions.
+- **"Safety Sandwich"**: A unique architectural pattern where LLM outputs are "sandwiched" between deterministic fact-extraction and verification layers to prevent hallucinations (e.g., inventing prices or rooms).
+- **Human-In-The-Loop (HIL)**: Critical actions (sending offers, confirming dates) generate "Tasks" that require manager approval before proceeding.
+- **Seamless Detours**: Clients can change their minds (e.g., "Actually, I need a bigger room") at any point, and the system intelligently "detours" to the previous necessary step without losing context.
 
-# Offer-to-confirmation scenarios (Steps 4–7)
-pytest backend/tests/workflows/test_workflow_v3_steps_4_to_7.py
+---
+
+## 🏗 Architecture
+
+The system is composed of two main applications:
+
+```mermaid
+graph TD
+    A[Client Frontend (Next.js)] <-->|REST API| B[Backend API (FastAPI)]
+    B <--> C[Workflow Engine (Python)]
+    C <--> D[LLM Adapter (OpenAI)]
+    C <--> E[Data Store (JSON / Supabase)]
+    C <--> F[Calendar & Inventory]
 ```
-These suites stub the agent adapter, feed deterministic inputs, and assert persisted fields, audit events, and draft requirements at every stage.【F:backend/tests/workflows/test_workflow_v3_alignment.py†L16-L148】【F:backend/tests/workflows/test_workflow_v3_steps_4_to_7.py†L33-L318】
 
-## Privacy & Data-Access Model (Developer Focus)
-- **Identity:** Clients are keyed by lowercased email, ensuring per-user isolation across client, event, and task collections.【F:backend/workflows/io/database.py†L131-L173】  
-- **Context budget:** Context snapshots include profile, last five history previews, the latest event, and a `context_hash` for cache validation—no other users’ data is ever injected.【F:backend/workflows/io/database.py†L190-L206】  
-- **History redaction:** Message previews are capped at 160 characters and store intent/confidence, not full bodies.【F:backend/workflows/io/database.py†L149-L164】  
-- **LLM boundary:** Trigger groups pass curated JSON (intent classification, structured fields, pricing inputs) to adapters; drafts remain HIL-gated before any outbound send.【F:backend/workflows/groups/intake/llm/analysis.py†L10-L20】【F:backend/workflows/groups/offer/trigger/process.py†L39-L93】【F:backend/workflows/common/types.py†L75-L80】  
-- **No unscoped reads:** Helpers such as `last_event_for_email` and `find_event_idx` always filter by the current email, preventing cross-user leakage even when names collide.【F:backend/workflows/io/database.py†L175-L227】
+### 1. Frontend (`atelier-ai-frontend/`)
+A **Next.js 15** application that serves as the user interface for:
+- **Clients**: To chat with the AI assistant.
+- **Managers**: To review HIL tasks, configure global settings (deposits, pricing), and monitor active events.
 
-## Glossary
-- **Lead / Option / Confirmed:** Event lifecycle statuses stored in metadata and mirrored into `event_data` for legacy tooling.【F:backend/domain/models.py†L24-L60】【F:backend/workflows/io/database.py†L242-L259】  
-- **Caller Step:** Previous step recorded before a detour so the workflow can return after satisfying prerequisites.【F:backend/workflows/groups/intake/trigger/process.py†L122-L205】【F:backend/workflows/groups/negotiation_close.py†L51-L176】  
-- **Requirements Hash:** Stable hash of seating, participants, duration, special needs, and preferred room used to cache room evaluations.【F:backend/workflows/groups/intake/trigger/process.py†L111-L175】  
-- **Room Eval Hash:** Stored once HIL approves Step 3, proving the locked room matches the current requirements.【F:backend/workflows/groups/room_availability/trigger/process.py†L287-L315】  
-- **Transition Ready:** Boolean flag set by Step 6 to signal confirmation prerequisites are met.【F:backend/workflows/groups/transition_checkpoint.py†L54-L70】  
-- **Context Hash:** SHA256 signature of the bounded client snapshot for cache keys and auditing.【F:backend/workflows/io/database.py†L190-L206】
+### 2. Backend (`backend/`)
+A **Python FastAPI** application that acts as the brain. It exposes endpoints for the frontend and hosts the `workflow_email.py` orchestrator.
 
-## Self-Tests (Copy/Paste Scenarios)
-Use the stubbed agent harness from the tests or the CLI adapter to simulate these flows.
+- **Orchestrator (`backend/workflow_email.py`)**: The central nervous system. It receives messages, loads state, executes the current step's logic, and persists the result.
+- **Groups (`backend/workflows/groups/`)**: Logic is divided into "Groups" corresponding to workflow steps (e.g., `intake`, `room_availability`, `offer`).
+- **NLU/Detectors (`backend/workflows/nlu/`)**: Specialized modules that analyze text to detect intents (e.g., `site_visit_detector`, `general_qna_classifier`).
 
-**A. No date → ask_for_date task → confirm → proceed**  
-1. Send a low-information inquiry without a date; expect `manual_review_enqueued` or `date_options_proposed` with candidate slots.  
-2. Reply with `info={"date": "2025-03-15"}` to confirm the date; expect Step 3 hand-off.  
-3. Verify event metadata stores `chosen_date` and `date_confirmed=True`.【F:backend/tests/workflows/test_workflow_v3_alignment.py†L91-L114】【F:backend/workflows/groups/intake/trigger/process.py†L157-L168】
+---
 
-**B. Date provided → Step 3 availability OK → Step 4 offer**  
-1. Send an intake message with ISO date, participants, and preferred room.  
-2. Confirm HIL approval for the room (`hil_approve_step=3`); expect `offer_draft_prepared`.  
-3. Check event `current_step==5`, `locked_room_id` set, and hashes aligned.【F:backend/tests/workflows/test_workflow_v3_alignment.py†L117-L148】【F:backend/tests/workflows/test_workflow_v3_steps_4_to_7.py†L39-L64】
+## 🕵️ Detectors & Cost Efficiency
 
-**C. Room unavailable → alternatives → detour to Step 2 → resume Step 3**  
-1. Trigger Step 3 with feedback `room_feedback="not_good_enough"` and higher participant count to demand a larger room.  
-2. Observe alternative dates appended to the draft and `caller_step` recorded.  
-3. Follow the detour to Step 2 to pick a new date, then re-run Step 3 and approve via HIL.【F:backend/workflows/groups/room_availability/trigger/process.py†L83-L205】【F:backend/tests/workflows/test_workflow_v3_steps_4_to_7.py†L97-L134】
+The system avoids "always-on" LLM calls by using a tiered detection architecture. Cheap, fast methods (Regex/Keywords) run first; expensive LLMs run only when necessary.
 
-**D. Product updates loop → refreshed offer → acceptance**  
-1. After `_bootstrap_to_offer`, send `products_add` updates; ensure offer version increments and prior drafts are superseded.  
-2. Reply “We accept the offer” to enter Step 6 with acceptance draft queued.【F:backend/tests/workflows/test_workflow_v3_steps_4_to_7.py†L69-L118】【F:backend/workflows/groups/offer/trigger/process.py†L201-L233】【F:backend/workflows/groups/negotiation_close.py†L75-L116】
+### 1. Intent Classifier (The Main Router)
+*   **Purpose:** Decides if a message is an event request, a confirmation, or a question.
+*   **Mechanism:**
+    1.  **Gibberish Gate (Regex):** Immediately catches keyboard mashing ("asdfghjkl"). **Cost: $0**.
+    2.  **Resume Check (Keywords):** Detects simple confirmations ("yes", "ok", "proceed"). **Cost: $0**.
+    3.  **LLM Classifier:** Only runs if previous checks fail. Uses a specialized prompt to categorize intent.
 
-**E. Negotiation counter → manual review → accept → Steps 6 & 7**  
-1. Submit four consecutive counteroffers; the fourth should enqueue `negotiation_manual_review`.  
-2. After manager review, send an acceptance and confirm Step 6 unlocks Step 7 via `transition_ready`.【F:backend/tests/workflows/test_workflow_v3_steps_4_to_7.py†L115-L188】【F:backend/workflows/groups/transition_checkpoint.py†L28-L70】
+### 2. General Q&A Classifier
+*   **Purpose:** Detects vague availability questions (e.g., "What do you have free in March?").
+*   **Mechanism:**
+    1.  **Quick Scan (Regex):** Checks for question marks, month names, and "availability" keywords.
+    2.  **LLM Extractor:** Only fires if the scan finds potential constraints (e.g., "March", "30 people") that need structured extraction.
+*   **Efficiency:** Questions like "Do you have parking?" are caught by keywords and routed to the FAQ module without an extraction LLM call.
 
-**F. Deposit required → Option → deposit paid → Confirmed**  
-1. Mark `deposit_state={"required": True, "percent": 30, "status": "required"}` before confirmation.  
-2. Client confirms; expect `confirmation_deposit_requested` and status staying Option.  
-3. After a “deposit paid” reply and HIL approval, ensure status advances to Confirmed.【F:backend/tests/workflows/test_workflow_v3_steps_4_to_7.py†L252-L274】【F:backend/workflows/groups/event_confirmation/trigger/process.py†L150-L233】
+### 3. Change & Detour Detector
+*   **Purpose:** Detects when a user wants to change a previously agreed variable (Date, Room, Requirements).
+*   **Mechanism:** **Dual-Condition Logic**. A change is only triggered if **BOTH** are present:
+    1.  **Revision Signal:** A verb like "change", "switch", "actually", "instead".
+    2.  **Bound Target:** A reference to a variable ("date", "room") or a specific value ("2025-05-20").
+*   **Efficiency:** Prevents false positives. A message like "What dates are free?" (Question) is not mistaken for "Change date" (Action).
 
-**G. Context reuse: same user later → prior preferences surfaced**  
-1. Send two separate leads from the same email; confirm history previews and last event details appear in the context payload.  
-2. Verify `context_hash` changes only when history/profile updates occur.【F:backend/workflows/io/database.py†L149-L206】【F:backend/workflows/groups/intake/trigger/process.py†L41-L205】
+### 4. Nonsense / Off-Topic Gate
+*   **Purpose:** Silently ignores irrelevant messages to save costs and avoid confusing users.
+*   **Mechanism:**
+    1.  **Signal Check:** Scans for *any* workflow-relevant keyword (dates, numbers, "booking").
+    2.  **Confidence Check:** If no signal is found and the LLM confidence is < 15%, the message is silently ignored.
+*   **Cost:** **$0**. Uses existing confidence scores; no new LLM call.
 
-**H. Isolation: different user, similar name/email typo → no leakage**  
-1. Create events for `client@example.com` and `client+1@example.com`.  
-2. Confirm lookups via `last_event_for_email` and `find_event_idx` keep records separate, even if names match.  
-3. Ensure context snapshots never include the other client’s history.【F:backend/workflows/io/database.py†L175-L227】【F:backend/workflows/io/database.py†L190-L206】
+### 5. Safety Sandwich (Hallucination Detector)
+*   **Purpose:** Ensures the LLM doesn't invent prices or facts.
+*   **Mechanism:**
+    1.  **Deterministic Input:** Python calculates the exact price list.
+    2.  **LLM Generation:** The AI writes the email body.
+    3.  **Regex Verification:** The system scans the output. If the prices/dates don't match the input, it forces a retry or falls back to a template.
 
+---
+
+## 🧠 Core Concepts
+
+### The 7-Step Workflow
+1.  **Intake**: Classify intent, capture contact info, and understand requirements.
+2.  **Date Confirmation**: Propose and lock in a specific date.
+3.  **Room Availability**: Check inventory, handle conflicts, and select a room.
+4.  **Offer**: Generate a priced offer (PDF/Text) with deposits and policies.
+5.  **Negotiation**: Handle counter-offers and questions.
+6.  **Transition**: Final prerequisites check.
+7.  **Confirmation**: Payment processing and final booking confirmation.
+
+### Entry & Hash Guards
+- **Entry Guards**: Each step has strict entry requirements (e.g., "You cannot enter Step 3 without a confirmed date in Step 2").
+- **Hash Guards**: To save compute and API costs, steps calculate a "requirements hash". If the user's input hasn't changed the requirements, the expensive availability calculation is skipped.
+
+---
+
+## 📂 Project Structure
+
+```text
+/
+├── atelier-ai-frontend/    # Next.js Frontend application
+├── backend/                # Python Backend application
+│   ├── api/                # FastAPI endpoints
+│   ├── main.py             # App entry point
+│   ├── workflow_email.py   # Core State Machine Orchestrator
+│   └── workflows/          # Business Logic
+│       ├── groups/         # Step implementations (intake, offer, etc.)
+│       ├── nlu/            # Detectors & Classifiers (Regex + LLM)
+│       └── io/             # Database & Task Management
+├── docs/                   # Detailed documentation & rules
+└── tests/                  # Pytest suite
+```
+
+---
+
+## 🚦 Getting Started
+
+### Prerequisites
+- **Python 3.10+**
+- **Node.js 18+**
+- **OpenAI API Key** (Set as `OPENAI_API_KEY` env var)
+
+### 1. Setup Backend
+```bash
+cd backend
+# Create virtual environment (optional but recommended)
+python -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements-dev.txt
+
+# Run the API
+# Note: Ensure you are in the project root
+export PYTHONPATH=$PYTHONPATH:.
+uvicorn backend.main:app --reload --port 8000
+```
+
+### 2. Setup Frontend
+```bash
+cd atelier-ai-frontend
+npm install
+npm run dev
+```
+The frontend will be available at `http://localhost:3000`.
+
+### 3. Run Tests
+The project has a comprehensive regression suite.
+```bash
+# Run all tests
+pytest
+
+# Run specific workflow tests
+pytest backend/tests/workflows/test_workflow_v3_alignment.py
+```
+
+---
+
+## 🛠 Current Status & Configuration
+
+### Recent Updates
+- **Supabase Integration**: Can be toggled via `OE_INTEGRATION_MODE=supabase`.
+- **Site Visit Logic**: Dedicated sub-flow for handling venue tours.
+- **Deposit Configuration**: Managers can now set global deposit rules.
+
+### Configuration
+Key environment variables (create a `.env` file):
+- `OPENAI_API_KEY`: Required for NLU and Verbalizer.
+- `OE_INTEGRATION_MODE`: `json` (default) or `supabase`.
+- `WF_DEBUG_STATE`: Set to `1` for verbose workflow logging.
+
+---
+
+## 📚 Documentation
+For deeper dives into specific subsystems:
+- **[Workflow Rules](docs/workflow_rules.md)**: The "Constitution" of the booking logic.
+- **[Team Guide](docs/TEAM_GUIDE.md)**: Best practices and troubleshooting.
+- **[Integration Guide](docs/INTEGRATION_PREPARATION_GUIDE.md)**: How to deploy and connect to real infrastructure.

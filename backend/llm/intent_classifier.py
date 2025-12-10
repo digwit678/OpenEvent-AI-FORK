@@ -5,6 +5,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from backend.domain.vocabulary import IntentLabel
 from backend.workflows.llm.adapter import classify_intent as agent_classify_intent
+from backend.workflows.common.confidence import has_workflow_signal, is_gibberish
 
 _RESUME_PHRASES = {
     "yes",
@@ -154,10 +155,10 @@ _QNA_KEYWORDS: Dict[str, Sequence[str]] = {
         "parking",
         "car park",
         "where to park",
-        "policy",
-        "rules",
-        "access",
+        " park",  # "can guests park" - note leading space to avoid matching "park" in other contexts
+        "park?",  # "where can guests park?"
         "loading dock",
+        "access",
     ),
 }
 
@@ -176,6 +177,14 @@ _QUESTION_PREFIXES = (
     "how",
 )
 
+_ACTION_PATTERNS = (
+    r"\bsend\s+(me\s+)?(the\s+|a\s+)?",
+    r"\bprovide\s+(me\s+with\s+)?",
+    r"\bgive\s+(me|us)\b",
+    r"\bemail\s+(me|us)\b",
+    r"\bforward\s+(me|us)\b",
+)
+
 
 def _normalise_text(message: str) -> str:
     return re.sub(r"\s+", " ", (message or "").strip().lower())
@@ -190,6 +199,8 @@ def _detect_room_mentions(text: str) -> bool:
 
 
 def _detect_qna_types(text: str) -> List[str]:
+    if is_action_request(text):
+        return []
     matches: List[str] = []
     for qna_type, keywords in _QNA_KEYWORDS.items():
         if _matches_any(text, keywords):
@@ -226,6 +237,7 @@ def _has_offer_action(text: str) -> bool:
 _MANAGER_PATTERNS = (
     r"\b(escalate|escalation)\b",
     r"\b(speak|talk|chat)\s+(to|with)\s+(a|the)\s+(manager|human|person)\b",
+    r"\b(speak|talk|chat)\s+(to|with)\s+(a\s+)?real\s+person\b",
     r"\bneed\s+(a|the)\s+(manager|human)\b",
     r"\bconnect\s+me\s+with\s+(someone|a person)\b",
 )
@@ -233,6 +245,11 @@ _MANAGER_PATTERNS = (
 
 def _looks_like_manager_request(text: str) -> bool:
     return any(re.search(pattern, text) for pattern in _MANAGER_PATTERNS)
+
+
+def is_action_request(text: str) -> bool:
+    """Check if message is requesting an action vs asking a question."""
+    return any(re.search(pattern, text) for pattern in _ACTION_PATTERNS)
 
 
 _EVENT_INTENTS = {
@@ -290,16 +307,44 @@ def classify_intent(
 ) -> Dict[str, Any]:
     """
     Deterministic classifier producing workflow + Q&A routing hints.
+
+    Early gate: If message has no workflow signal and is gibberish,
+    return "nonsense" immediately to save LLM cost.
     """
 
     normalized = _normalise_text(message)
     current_step = current_step or 2
+
+    # -------------------------------------------------------------------------
+    # EARLY GATE: Catch gibberish BEFORE any LLM calls to save cost
+    # -------------------------------------------------------------------------
+    _has_workflow_signal = has_workflow_signal(message)
+    needs_confidence_gate = False
+
+    if not _has_workflow_signal:
+        if is_gibberish(message):
+            # Pure gibberish (keyboard mash, repeated chars) - ignore immediately
+            return {
+                "primary": "nonsense",
+                "secondary": [],
+                "step_anchor": None,
+                "wants_resume": False,
+                "agent_intent": "nonsense",
+                "agent_confidence": 0.0,
+                "needs_confidence_gate": False,
+            }
+        else:
+            # No workflow signal but not obvious gibberish (could be off-topic)
+            # Flag for post-step-handler confidence check
+            needs_confidence_gate = True
+    # -------------------------------------------------------------------------
 
     classification: Dict[str, Any] = {
         "primary": "general_qna",
         "secondary": [],
         "step_anchor": None,
         "wants_resume": False,
+        "needs_confidence_gate": needs_confidence_gate,
     }
 
     if expect_resume:

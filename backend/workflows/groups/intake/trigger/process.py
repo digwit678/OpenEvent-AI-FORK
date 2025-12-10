@@ -8,7 +8,11 @@ from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import build_requirements, merge_client_profile, requirements_hash
 from backend.workflows.common.timeutils import format_ts_to_ddmmyyyy, format_iso_date_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.change_propagation import detect_change_type, route_change_on_updated_variable
+from backend.workflows.change_propagation import (
+    detect_change_type,
+    detect_change_type_enhanced,
+    route_change_on_updated_variable,
+)
 import json
 
 from backend.domain import IntentLabel
@@ -44,7 +48,8 @@ from backend.workflows.nlu.preferences import extract_preferences
 from backend.workflows.groups.room_availability import handle_select_room_action
 from ..billing_flow import handle_billing_capture
 from backend.workflows.common.datetime_parse import parse_first_date, parse_time_range
-from backend.services.products import list_product_records, normalise_product_payload
+from backend.services.products import list_product_records, merge_product_requests, normalise_product_payload
+from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
 
 __workflow_role__ = "trigger"
 
@@ -127,6 +132,38 @@ _PRODUCT_REMOVE_KEYWORDS = (
 _KEYWORD_REGEX_CACHE: Dict[str, re.Pattern[str]] = {}
 _PRODUCT_TOKEN_REGEX_CACHE: Dict[str, re.Pattern[str]] = {}
 
+def _menu_price_value(raw: Any) -> Optional[float]:
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        text = str(raw).lower().replace("chf", "").replace(" ", "")
+        text = text.replace(",", "").strip()
+        try:
+            return float(text)
+        except (TypeError, ValueError):
+            return None
+
+
+def _detect_menu_choice(message_text: str) -> Optional[Dict[str, Any]]:
+    if not message_text:
+        return None
+    lowered = message_text.lower()
+    for menu in DINNER_MENU_OPTIONS:
+        name = str(menu.get("menu_name") or "")
+        if not name:
+            continue
+        if name.lower() in lowered:
+            price_value = _menu_price_value(menu.get("price"))
+            return {
+                "name": name,
+                "price": price_value,
+                "unit": "per_event",
+                "month": menu.get("available_months"),
+            }
+    return None
+
 def _fallback_year_from_ts(ts: Optional[str]) -> int:
     if not ts:
         return datetime.utcnow().year
@@ -198,7 +235,7 @@ def _detect_room_choice(message_text: str, linked_event: Optional[Dict[str, Any]
         current_step = int(linked_event.get("current_step") or 0)
     except (TypeError, ValueError):
         current_step = 0
-    if current_step != 3:
+    if current_step < 3:
         return None
 
     rooms = load_rooms()
@@ -322,6 +359,26 @@ def _extract_quantity_from_window(window: str, token: str) -> Optional[int]:
         return None
 
 
+def _menu_token_candidates(name: str) -> List[str]:
+    """Return token variants to match a dinner menu mention in free text."""
+
+    tokens: List[str] = []
+    lowered = name.strip().lower()
+    if not lowered:
+        return tokens
+    tokens.append(lowered)
+    if not lowered.endswith("s"):
+        tokens.append(f"{lowered}s")
+    parts = lowered.split()
+    if parts:
+        last = parts[-1]
+        if len(last) >= 3:
+            tokens.append(last)
+            if not last.endswith("s"):
+                tokens.append(f"{last}s")
+    return tokens
+
+
 def _detect_product_update_request(
     message_payload: Dict[str, Any],
     user_info: Dict[str, Any],
@@ -334,6 +391,9 @@ def _detect_product_update_request(
         return False
 
     participant_count = _participants_from_event(linked_event)
+    existing_additions = user_info.get("products_add")
+    existing_removals = user_info.get("products_remove")
+    existing_ops = bool(existing_additions or existing_removals)
     additions: List[Dict[str, Any]] = []
     removals: List[str] = []
     catalog = list_product_records()
@@ -396,31 +456,150 @@ def _detect_product_update_request(
             payload: Dict[str, Any] = {"name": record.name}
             if quantity:
                 payload["quantity"] = quantity
-            elif linked_event:
-                existing_products = linked_event.get("products") or []
-                for existing in existing_products:
-                    existing_name = str(existing.get("name") or "").strip().lower()
-                    if not existing_name:
-                        continue
-                    if existing_name != primary:
-                        continue
-                    try:
-                        base_qty = int(str(existing.get("quantity") or 0).strip())
-                    except (TypeError, ValueError):
-                        base_qty = 0
-                    if base_qty > 0:
-                        payload["quantity"] = base_qty + 1
-                    break
+            else:
+                # Default to a single additional unit; downstream upsert increments existing quantity.
+                payload["quantity"] = 1
             additions.append(payload)
 
+    # Also detect dinner menu selections/removals so they behave like standard products.
+    for menu in DINNER_MENU_OPTIONS:
+        name = str(menu.get("menu_name") or "").strip()
+        if not name:
+            continue
+        matched_idx: Optional[int] = None
+        matched_token: Optional[str] = None
+        for token_candidate in _menu_token_candidates(name):
+            idx = _match_product_token(text, token_candidate)
+            if idx is not None:
+                matched_idx = idx
+                matched_token = token_candidate
+                break
+        if matched_idx is None or matched_token is None:
+            continue
+        before = text[:matched_idx]
+        if before.count("(") > before.count(")"):
+            continue
+        window_start = max(0, matched_idx - 80)
+        window_end = min(len(text), matched_idx + len(matched_token) + 80)
+        window = text[window_start:window_end]
+        if _contains_keyword(window, _PRODUCT_REMOVE_KEYWORDS):
+            removals.append(name)
+            continue
+        quantity = _extract_quantity_from_window(window, matched_token) or 1
+        additions.append(
+            {
+                "name": name,
+                "quantity": 1 if str(menu.get("unit") or "").strip().lower() == "per_event" else quantity,
+                "unit_price": _menu_price_value(menu.get("price")),
+                "unit": menu.get("unit") or "per_event",
+                "category": "Catering",
+                "wish": "menu",
+            }
+        )
+
+    combined_additions: List[Dict[str, Any]] = []
+    if existing_additions:
+        combined_additions.extend(
+            normalise_product_payload(existing_additions, participant_count=participant_count)
+        )
     if additions:
         normalised = normalise_product_payload(additions, participant_count=participant_count)
         if normalised:
-            user_info["products_add"] = normalised
-    if removals:
-        user_info["products_remove"] = removals
+            combined_additions = (
+                merge_product_requests(combined_additions, normalised) if combined_additions else normalised
+            )
+    if combined_additions:
+        user_info["products_add"] = combined_additions
 
-    return bool(additions or removals)
+    combined_removals: List[str] = []
+    removal_seen = set()
+    if isinstance(existing_removals, list):
+        for entry in existing_removals:
+            name = entry.get("name") if isinstance(entry, dict) else entry
+            text_name = str(name or "").strip()
+            if text_name:
+                lowered = text_name.lower()
+                if lowered not in removal_seen:
+                    removal_seen.add(lowered)
+                    combined_removals.append(text_name)
+    if removals:
+        for name in removals:
+            lowered = name.lower()
+            if lowered not in removal_seen:
+                removal_seen.add(lowered)
+                combined_removals.append(name)
+    if combined_removals:
+        user_info["products_remove"] = combined_removals
+
+    return bool(additions or removals or combined_additions or combined_removals or existing_ops)
+
+
+def _normalize_quotes(text: str) -> str:
+    """Normalize typographic apostrophes/quotes for downstream keyword checks."""
+
+    if not text:
+        return ""
+    return (
+        text.replace("\u2019", "'")
+        .replace("\u2018", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+        .replace("\u00a0", " ")
+    )
+
+
+def _looks_like_offer_acceptance(text: str) -> bool:
+    """
+    Heuristic: short, declarative acknowledgements without question marks that contain approval verbs.
+    """
+
+    if not text:
+        return False
+    normalized = _normalize_quotes(text).lower()
+    if "?" in normalized:
+        return False
+    if len(normalized) > 200:
+        return False
+
+    accept_re = re.compile(
+        r"\b("
+        r"accept(?:ed)?|"
+        r"approv(?:e|ed|al)|"
+        r"confirm(?:ed)?|"
+        r"proceed|continue|go ahead|"
+        r"send (?:it|to client)|please send|ok to send|"
+        r"all good|looks good|sounds good|good to go|"
+        r"(?:that'?s|thats) fine|fine for me"
+        r")\b"
+    )
+    if accept_re.search(normalized):
+        return True
+
+    # Fallback to legacy tokens for odd phrasing.
+    accept_tokens = (
+        "accept",
+        "accepted",
+        "confirm",
+        "confirmed",
+        "approve",
+        "approved",
+        "continue",
+        "please send",
+        "send it",
+        "send to client",
+        "ok to send",
+        "go ahead",
+        "proceed",
+        "that's fine",
+        "thats fine",
+        "fine for me",
+        "sounds good",
+        "good to go",
+        "ok thats fine",
+        "ok that's fine",
+        "all good",
+    )
+    return any(token in normalized for token in accept_tokens)
 
 
 @trace_step("Step1_Intake")
@@ -484,7 +663,6 @@ def process(state: WorkflowState) -> GroupResult:
     preferences = extract_preferences(user_info, raw_text=raw_pref_text or None)
     if preferences:
         user_info["preferences"] = preferences
-    state.user_info = user_info
     if intent == IntentLabel.EVENT_REQUEST and _has_same_turn_shortcut(user_info):
         state.intent_detail = "event_intake_shortcut"
         state.extras["shortcut_detected"] = True
@@ -499,7 +677,8 @@ def process(state: WorkflowState) -> GroupResult:
     state.client = client
     state.client_id = (message_payload.get("from_email") or "").lower()
     linked_event = last_event_for_email(state.db, state.client_id)
-    body_text = message_payload.get("body") or ""
+    body_text_raw = message_payload.get("body") or ""
+    body_text = _normalize_quotes(body_text_raw)
     fallback_year = _fallback_year_from_ts(message_payload.get("ts"))
 
     confirmation_detected = False
@@ -518,14 +697,91 @@ def process(state: WorkflowState) -> GroupResult:
             user_info["start_time"] = start_time
         if end_time and "end_time" not in user_info:
             user_info["end_time"] = end_time
+    # Capture short acceptances on existing offers to avoid manual-review loops.
+    acceptance_detected = linked_event and _looks_like_offer_acceptance(body_text)
+    if acceptance_detected:
+        intent = IntentLabel.EVENT_REQUEST
+        confidence = max(confidence, 0.99)
+        state.intent = intent
+        state.confidence = confidence
+        if state.intent_detail in (None, "intake"):
+            state.intent_detail = "event_intake_negotiation_accept"
+        # Always route acceptances through HIL so the manager can approve/decline before confirmation.
+        target_step = max(linked_event.get("current_step") or 0, 5)
+        user_info.setdefault("hil_approve_step", target_step)
+        update_event_metadata(
+            linked_event,
+            current_step=target_step,
+            thread_state="Waiting on HIL",
+            caller_step=None,
+        )
+        state.extras["persist"] = True
+    # Early room-choice detection so we don't rely on classifier confidence
+    early_room_choice = _detect_room_choice(body_text, linked_event)
+    if early_room_choice:
+        user_info["room"] = early_room_choice
+        user_info["_room_choice_detected"] = True
+        state.extras["room_choice_selected"] = early_room_choice
+
+    # Capture explicit menu selection (e.g., "Room E with Seasonal Garden Trio")
+    menu_choice = _detect_menu_choice(body_text)
+    if menu_choice:
+        user_info["menu_choice"] = menu_choice["name"]
+        participants = _participants_from_event(linked_event) or user_info.get("participants")
+        try:
+            participants = int(participants) if participants is not None else None
+        except (TypeError, ValueError):
+            participants = None
+        if menu_choice.get("price"):
+            product_payload = {
+                "name": menu_choice["name"],
+                "quantity": 1 if menu_choice.get("unit") == "per_event" else (participants or 1),
+                "unit_price": menu_choice["price"],
+                "unit": menu_choice.get("unit") or "per_event",
+                "category": "Catering",
+                "wish": "menu",
+            }
+            existing = user_info.get("products_add") or []
+            if isinstance(existing, list):
+                user_info["products_add"] = existing + [product_payload]
+            else:
+                user_info["products_add"] = [product_payload]
+
+    product_update_detected = _detect_product_update_request(message_payload, user_info, linked_event)
+    if product_update_detected:
+        state.extras["product_update_detected"] = True
+        if not is_event_request(intent):
+            intent = IntentLabel.EVENT_REQUEST
+            confidence = max(confidence, 0.9)
+            state.intent = intent
+            state.confidence = confidence
+            state.intent_detail = "event_intake_product_update"
+        elif state.intent_detail in (None, "intake", "event_intake"):
+            state.intent_detail = "event_intake_product_update"
+    state.user_info = user_info
     append_history(client, message_payload, intent.value, confidence, user_info)
 
     context = context_snapshot(state.db, client, state.client_id)
     state.record_context(context)
 
-    if not is_event_request(intent) or confidence < 0.85:
+    # [SKIP MANUAL REVIEW FOR EXISTING EVENTS]
+    # If there's an existing event at step > 1, we should NOT do "is this an event?"
+    # classification. These messages should flow through to the step-specific handlers
+    # which have their own logic for handling detours, Q&A, confirmations, etc.
+    skip_manual_review_check = linked_event and linked_event.get("current_step", 1) > 1
+
+    if not skip_manual_review_check and (not is_event_request(intent) or confidence < 0.85):
         body_text = message_payload.get("body") or ""
-        if _looks_like_gate_confirmation(body_text, linked_event):
+        awaiting_billing = linked_event and (linked_event.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
+        if awaiting_billing:
+            intent = IntentLabel.EVENT_REQUEST
+            confidence = max(confidence, 0.9)
+            state.intent = intent
+            state.confidence = confidence
+            state.intent_detail = "event_intake_billing_update"
+            if body_text.strip() and _looks_like_billing_fragment(body_text):
+                user_info["billing_address"] = body_text.strip()
+        elif _looks_like_gate_confirmation(body_text, linked_event):
             intent = IntentLabel.EVENT_REQUEST
             confidence = max(confidence, 0.95)
             state.intent = intent
@@ -549,80 +805,105 @@ def process(state: WorkflowState) -> GroupResult:
                 state.confidence = confidence
                 state.intent_detail = "event_intake_room_choice"
                 user_info["room"] = room_choice
+                user_info["_room_choice_detected"] = True
                 state.extras["room_choice_selected"] = room_choice
-            elif _detect_product_update_request(message_payload, user_info, linked_event):
-                intent = IntentLabel.EVENT_REQUEST
-                confidence = max(confidence, 0.9)
-                state.intent = intent
-                state.confidence = confidence
-                state.intent_detail = "event_intake_product_update"
-                state.extras["product_update_detected"] = True
+                # Only lock immediately if no room is currently locked; otherwise let Step 3 handle a switch.
+                if linked_event:
+                    locked = linked_event.get("locked_room_id")
+                    if not locked:
+                        req_hash = linked_event.get("requirements_hash")
+                        update_event_metadata(
+                            linked_event,
+                            locked_room_id=room_choice,
+                            room_eval_hash=req_hash,
+                            room_status="Available",
+                            caller_step=None,
+                        )
             else:
-                trace_marker(
-                    thread_id,
-                    "CONDITIONAL_HIL",
-                    detail="manual_review_required",
-                    data={"intent": intent.value, "confidence": round(confidence, 3)},
-                    owner_step=owner_step,
-                )
-                linked_event_id = linked_event.get("event_id") if linked_event else None
-                task_payload: Dict[str, Any] = {
-                    "subject": message_payload.get("subject"),
-                    "snippet": (message_payload.get("body") or "")[:200],
-                    "ts": message_payload.get("ts"),
-                    "reason": "manual_review_required",
-                    "thread_id": thread_id,
-                }
-                task_id = enqueue_manual_review_task(
-                    state.db,
-                    state.client_id,
-                    linked_event_id,
-                    task_payload,
-                )
-                state.extras.update({"task_id": task_id, "persist": True})
-                clarification = (
-                    "Thanks for your message. A member of our team will review it shortly "
-                    "to make sure it reaches the right place."
-                )
-                clarification = append_footer(
-                    clarification,
-                    step=1,
-                    next_step="Team review (HIL)",
-                    thread_state="Waiting on HIL",
-                )
-                state.add_draft_message(
-                    {
-                        "body": clarification,
-                        "step": 1,
-                        "topic": "manual_review",
-                    }
-                )
-                state.set_thread_state("Waiting on HIL")
-                if os.getenv("OE_DEBUG") == "1":
-                    print(
-                        "[DEBUG] manual_review_enqueued:",
-                        f"conf={confidence:.2f}",
-                        f"parsed_date={user_info.get('date')}",
-                        f"intent={intent.value}",
+                if _looks_like_billing_fragment(body_text):
+                    intent = IntentLabel.EVENT_REQUEST
+                    confidence = max(confidence, 0.92)
+                    state.intent = intent
+                    state.confidence = confidence
+                    state.intent_detail = "event_intake_billing_capture"
+                    user_info["billing_address"] = body_text.strip()
+                if not is_event_request(intent) or confidence < 0.85:
+                    trace_marker(
+                        thread_id,
+                        "CONDITIONAL_HIL",
+                        detail="manual_review_required",
+                        data={"intent": intent.value, "confidence": round(confidence, 3)},
+                        owner_step=owner_step,
                     )
-                payload = {
-                    "client_id": state.client_id,
-                    "event_id": linked_event_id,
-                    "intent": intent.value,
-                    "confidence": round(confidence, 3),
-                    "persisted": True,
-                    "task_id": task_id,
-                    "user_info": user_info,
-                    "context": context,
-                    "draft_messages": state.draft_messages,
-                    "thread_state": state.thread_state,
-                }
-                return GroupResult(action="manual_review_enqueued", payload=payload, halt=True)
+                    linked_event_id = linked_event.get("event_id") if linked_event else None
+                    task_payload: Dict[str, Any] = {
+                        "subject": message_payload.get("subject"),
+                        "snippet": (message_payload.get("body") or "")[:200],
+                        "ts": message_payload.get("ts"),
+                        "reason": "manual_review_required",
+                        "thread_id": thread_id,
+                    }
+                    task_id = enqueue_manual_review_task(
+                        state.db,
+                        state.client_id,
+                        linked_event_id,
+                        task_payload,
+                    )
+                    state.extras.update({"task_id": task_id, "persist": True})
+                    clarification = (
+                        "Thanks for your message. A member of our team will review it shortly "
+                        "to make sure it reaches the right place."
+                    )
+                    clarification = append_footer(
+                        clarification,
+                        step=1,
+                        next_step="Team review (HIL)",
+                        thread_state="Waiting on HIL",
+                    )
+                    state.add_draft_message(
+                        {
+                            "body": clarification,
+                            "step": 1,
+                            "topic": "manual_review",
+                        }
+                    )
+                    state.set_thread_state("Waiting on HIL")
+                    if os.getenv("OE_DEBUG") == "1":
+                        print(
+                            "[DEBUG] manual_review_enqueued:",
+                            f"conf={confidence:.2f}",
+                            f"parsed_date={user_info.get('date')}",
+                            f"intent={intent.value}",
+                        )
+                    payload = {
+                        "client_id": state.client_id,
+                        "event_id": linked_event_id,
+                        "intent": intent.value,
+                        "confidence": round(confidence, 3),
+                        "persisted": True,
+                        "task_id": task_id,
+                        "user_info": user_info,
+                        "context": context,
+                        "draft_messages": state.draft_messages,
+                        "thread_state": state.thread_state,
+                    }
+                    return GroupResult(action="manual_review_enqueued", payload=payload, halt=True)
 
     event_entry = _ensure_event_record(state, message_payload, user_info)
+    if event_entry.get("pending_hil_requests"):
+        event_entry["pending_hil_requests"] = []
+        state.extras["persist"] = True
+
     if merge_client_profile(event_entry, user_info):
         state.extras["persist"] = True
     handle_billing_capture(state, event_entry)
+    menu_choice_name = user_info.get("menu_choice")
+    if menu_choice_name:
+        catering_list = event_entry.setdefault("selected_catering", [])
+        if menu_choice_name not in catering_list:
+            catering_list.append(menu_choice_name)
+            event_entry.setdefault("event_data", {})["Catering Preference"] = menu_choice_name
+            state.extras["persist"] = True
     state.event_entry = event_entry
     state.event_id = event_entry["event_id"]
     state.current_step = event_entry.get("current_step")
@@ -718,12 +999,31 @@ def process(state: WorkflowState) -> GroupResult:
             or user_info.get("event_date")
             or user_info.get("date")
         )
-        return handle_select_room_action(
-            state,
-            room=room_choice_selected,
-            status=status_value,
-            date=chosen_date,
+        update_event_metadata(
+            event_entry,
+            locked_room_id=room_choice_selected,
+            room_status=status_value,
+            room_eval_hash=event_entry.get("requirements_hash"),
+            caller_step=None,
+            current_step=4,
+            thread_state="Awaiting Client",
         )
+        event_entry.setdefault("event_data", {})["Preferred Room"] = room_choice_selected
+        append_audit_entry(event_entry, state.current_step or 1, 4, "room_choice_captured")
+        state.current_step = 4
+        state.caller_step = None
+        state.set_thread_state("Awaiting Client")
+        state.extras["persist"] = True
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": intent.value,
+            "confidence": round(confidence, 3),
+            "locked_room_id": room_choice_selected,
+            "thread_state": state.thread_state,
+            "persisted": True,
+        }
+        return GroupResult(action="room_choice_captured", payload=payload, halt=False)
 
     new_preferred_room = requirements.get("preferred_room")
 
@@ -732,8 +1032,10 @@ def process(state: WorkflowState) -> GroupResult:
     detoured_to_step2 = False
 
     # Use centralized change propagation system for systematic change detection and routing
+    # Enhanced detection with dual-condition logic (revision signal + bound target)
     message_text = (state.message.subject or "") + "\n" + (state.message.body or "")
-    change_type = detect_change_type(event_entry, user_info, message_text=message_text)
+    enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
+    change_type = enhanced_result.change_type if enhanced_result.is_change else None
 
     if needs_vague_date_confirmation:
         event_entry["range_query_detected"] = True
@@ -854,7 +1156,8 @@ def process(state: WorkflowState) -> GroupResult:
 
     tag_message(event_entry, message_payload.get("msg_id"))
 
-    update_event_metadata(event_entry, thread_state="Waiting on HIL")
+    if not event_entry.get("thread_state"):
+        update_event_metadata(event_entry, thread_state="Awaiting Client")
 
     state.current_step = event_entry.get("current_step")
     state.caller_step = event_entry.get("caller_step")
@@ -921,6 +1224,19 @@ def _ensure_event_record(
     )
     update_event_metadata(event_entry, status=event_entry.get("status", "Lead"))
     return event_entry
+
+
+def _looks_like_billing_fragment(text: str) -> bool:
+    if not text:
+        return False
+    lowered = text.lower()
+    if lowered.startswith("room "):
+        return False
+    keywords = ("postal", "postcode", "zip", "street", "avenue", "road", "switzerland", " ch", "city", "country")
+    if any(k in lowered for k in keywords):
+        return True
+    digit_groups = sum(1 for token in lowered.replace(",", " ").split() if token.isdigit() and len(token) >= 3)
+    return digit_groups >= 1
 
 
 def _trace_user_entities(state: WorkflowState, message_payload: Dict[str, Any], user_info: Dict[str, Any]) -> None:
