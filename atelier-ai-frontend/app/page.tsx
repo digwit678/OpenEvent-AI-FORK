@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Send, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
+import ReactMarkdown from 'react-markdown';
+import rehypeRaw from 'rehype-raw';
 import DebugPanel from './components/DebugPanel';
 import DepositSettings from './components/DepositSettings';
 
@@ -182,48 +184,66 @@ function shouldDisplayEventField(key: string, value: string): boolean {
 }
 
 function renderMessageContent(content: string): React.ReactNode {
-  // Parse HTML anchor tags and convert them to clickable React links
-  const anchorRegex = /<a\s+href="([^"]+)"[^>]*>(.*?)<\/a>/g;
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match;
-  let keyCounter = 0;
-
-  while ((match = anchorRegex.exec(content)) !== null) {
-    // Add text before the link
-    if (match.index > lastIndex) {
-      parts.push(content.substring(lastIndex, match.index));
-    }
-
-    // Add the link as a clickable anchor
-    const href = match[1];
-    const linkText = match[2];
-    parts.push(
-      <a
-        key={`link-${keyCounter++}`}
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{ color: '#0066cc', textDecoration: 'underline', cursor: 'pointer' }}
-      >
-        {linkText}
-      </a>
-    );
-
-    lastIndex = anchorRegex.lastIndex;
-  }
-
-  // Add remaining text after the last link
-  if (lastIndex < content.length) {
-    parts.push(content.substring(lastIndex));
-  }
-
-  // If no links were found, return the content as-is
-  if (parts.length === 0) {
-    return content;
-  }
-
-  return <>{parts}</>;
+  // Use ReactMarkdown to render markdown (bold, italic, links, lists, etc.)
+  // rehypeRaw enables rendering of raw HTML tags (like <a> from backend)
+  return (
+    <ReactMarkdown
+      rehypePlugins={[rehypeRaw]}
+      components={{
+        // Custom link rendering for security and styling
+        a: ({ href, children }) => (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 underline hover:text-blue-800"
+          >
+            {children}
+          </a>
+        ),
+        // Style bold text
+        strong: ({ children }) => (
+          <strong className="font-semibold">{children}</strong>
+        ),
+        // Style italic text
+        em: ({ children }) => (
+          <em className="italic">{children}</em>
+        ),
+        // Style paragraphs with proper spacing
+        p: ({ children }) => (
+          <p className="mb-2 last:mb-0">{children}</p>
+        ),
+        // Style unordered lists
+        ul: ({ children }) => (
+          <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>
+        ),
+        // Style ordered lists
+        ol: ({ children }) => (
+          <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>
+        ),
+        // Style list items
+        li: ({ children }) => (
+          <li className="ml-2">{children}</li>
+        ),
+        // Style headings
+        h1: ({ children }) => (
+          <h1 className="text-lg font-bold mb-2">{children}</h1>
+        ),
+        h2: ({ children }) => (
+          <h2 className="text-base font-bold mb-2">{children}</h2>
+        ),
+        h3: ({ children }) => (
+          <h3 className="text-sm font-bold mb-1">{children}</h3>
+        ),
+        // Horizontal rule
+        hr: () => (
+          <hr className="my-3 border-gray-300" />
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
 }
 
 export default function EmailThreadUI() {
@@ -966,7 +986,7 @@ export default function EmailThreadUI() {
                           : 'bg-gray-100 text-gray-800 border border-gray-200'
                       } ${msg.streaming ? 'animate-pulse' : ''}`}
                     >
-                      <div className="whitespace-pre-wrap text-sm leading-relaxed">{renderMessageContent(msg.content)}</div>
+                      <div className="text-sm leading-relaxed">{renderMessageContent(msg.content)}</div>
                       {msg.role === 'assistant' && msg.meta?.confirmDate && (
                         <div className="flex gap-2 mt-3">
                           <button
