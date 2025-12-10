@@ -1592,7 +1592,9 @@ def _present_candidate_dates(
     }
     thread_state_label = "Waiting on HIL" if escalate_to_hil else "Awaiting Client Response"
     draft_message["thread_state"] = thread_state_label
-    draft_message["requires_approval"] = True
+    # Only require HIL approval when escalating (client can't find date, needs manual help)
+    # Normal date options go directly to client
+    draft_message["requires_approval"] = escalate_to_hil
     if escalate_to_hil:
         draft_message["hil_reason"] = "Client can't find suitable date, needs manual help"
     if actions_payload:

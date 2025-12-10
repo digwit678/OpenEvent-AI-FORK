@@ -269,6 +269,53 @@ def process(state: WorkflowState) -> GroupResult:
             }
             return GroupResult(action="offer_accept_requires_billing", payload=payload, halt=True)
 
+        # Check if deposit is required but not paid
+        deposit_info = event_entry.get("deposit_info") or {}
+        deposit_required = deposit_info.get("deposit_required", False)
+        deposit_paid = deposit_info.get("deposit_paid", False)
+        deposit_amount = deposit_info.get("deposit_amount", 0)
+
+        if deposit_required and not deposit_paid and deposit_amount > 0:
+            # Friendly reminder: deposit must be paid before confirmation
+            deposit_reminder = {
+                "body_markdown": (
+                    f"Thank you for wanting to confirm! Before I can proceed with your booking, "
+                    f"please complete the deposit payment of CHF {deposit_amount:,.2f}. "
+                    f"Once the deposit is received, I'll immediately send your confirmation for final approval. "
+                    f"You can pay the deposit using the payment option shown in the offer."
+                ),
+                "step": 4,
+                "topic": "deposit_reminder",
+                "next_step": "Awaiting deposit payment",
+                "thread_state": "Awaiting Client",
+                "requires_approval": False,
+            }
+            state.add_draft_message(deposit_reminder)
+            append_audit_entry(event_entry, previous_step, 4, "offer_accept_blocked_deposit_unpaid")
+            update_event_metadata(
+                event_entry,
+                current_step=4,
+                thread_state="Awaiting Client",
+                transition_ready=False,
+            )
+            state.current_step = 4
+            state.set_thread_state("Awaiting Client")
+            set_hil_open(thread_id, False)
+            state.extras["persist"] = True
+
+            payload = {
+                "client_id": state.client_id,
+                "event_id": event_entry.get("event_id"),
+                "intent": state.intent.value if state.intent else None,
+                "confidence": round(state.confidence or 0.0, 3),
+                "deposit_required": deposit_amount,
+                "draft_messages": state.draft_messages,
+                "thread_state": state.thread_state,
+                "context": state.context_snapshot,
+                "persisted": True,
+            }
+            return GroupResult(action="offer_accept_requires_deposit", payload=payload, halt=True)
+
         # Always route acceptances through HIL so the manager dashboard shows the approval buttons.
         return _start_hil_acceptance_flow(
             state,
@@ -1207,10 +1254,24 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, sta
 
     display_total = _determine_offer_total(event_entry, total_amount)
 
+    # Add deposit info to the offer if enabled
+    deposit_info = event_entry.get("deposit_info") or {}
+    deposit_required = deposit_info.get("deposit_required", False)
+    deposit_amount = deposit_info.get("deposit_amount")
+    deposit_due_date = deposit_info.get("deposit_due_date")
+
     lines.extend([
         "",
         "---",
         f"**Total: CHF {display_total:,.2f}**",
+    ])
+
+    if deposit_required and deposit_amount:
+        lines.append(f"**Deposit to reserve: CHF {deposit_amount:,.2f}** (required before confirmation)")
+        if deposit_due_date:
+            lines.append(f"Deposit due by: {deposit_due_date}")
+
+    lines.extend([
         "---",
         "",
     ])
@@ -1471,6 +1532,53 @@ def _auto_accept_if_billing_ready(
 
     gate["awaiting_billing_for_accept"] = False
     gate["last_missing"] = []
+
+    # Check if deposit is required but not paid before auto-accepting
+    deposit_info = event_entry.get("deposit_info") or {}
+    deposit_required = deposit_info.get("deposit_required", False)
+    deposit_paid = deposit_info.get("deposit_paid", False)
+    deposit_amount = deposit_info.get("deposit_amount", 0)
+
+    if deposit_required and not deposit_paid and deposit_amount > 0:
+        # Friendly reminder: deposit must be paid before confirmation
+        deposit_reminder = {
+            "body_markdown": (
+                f"Thank you for providing your billing details! Before I can proceed with your booking, "
+                f"please complete the deposit payment of CHF {deposit_amount:,.2f}. "
+                f"Once the deposit is received, I'll immediately send your confirmation for final approval."
+            ),
+            "step": 4,
+            "topic": "deposit_reminder",
+            "next_step": "Awaiting deposit payment",
+            "thread_state": "Awaiting Client",
+            "requires_approval": False,
+        }
+        state.add_draft_message(deposit_reminder)
+        append_audit_entry(event_entry, previous_step, 4, "offer_accept_blocked_deposit_unpaid_auto")
+        update_event_metadata(
+            event_entry,
+            current_step=4,
+            thread_state="Awaiting Client",
+            transition_ready=False,
+        )
+        state.current_step = 4
+        state.set_thread_state("Awaiting Client")
+        set_hil_open(thread_id, False)
+        state.extras["persist"] = True
+
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "deposit_required": deposit_amount,
+            "draft_messages": state.draft_messages,
+            "thread_state": state.thread_state,
+            "context": state.context_snapshot,
+            "persisted": True,
+        }
+        return GroupResult(action="offer_accept_requires_deposit", payload=payload, halt=True)
+
     return _start_hil_acceptance_flow(
         state,
         event_entry,
