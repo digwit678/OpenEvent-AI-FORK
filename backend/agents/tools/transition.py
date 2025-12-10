@@ -6,6 +6,20 @@ from pydantic import BaseModel, Field
 
 from backend.workflow_email import process_msg as workflow_process_msg
 
+TOOL_SCHEMA: Dict[str, Dict[str, Any]] = {
+    "tool_transition_sync": {
+        "type": "object",
+        "properties": {
+            "event_id": {"type": "string"},
+            "client_email": {"type": "string"},
+            "message": {"type": "string"},
+            "msg_id": {"type": ["string", "null"]},
+        },
+        "required": ["event_id", "client_email", "message"],
+        "additionalProperties": False,
+    }
+}
+
 
 class TransitionInput(BaseModel):
     event_id: str = Field(..., description="Event identifier for the transition step.")
@@ -37,4 +51,3 @@ def tool_transition_sync(params: TransitionInput) -> TransitionOutput:
     payload = {k: v for k, v in result.items() if k != "draft_messages"}
     payload["draft_messages"] = result.get("draft_messages") or []
     return TransitionOutput(action=action, payload=payload)
-

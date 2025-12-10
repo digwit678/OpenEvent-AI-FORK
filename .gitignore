@@ -47,3 +47,4 @@ tmp/
 **/.DS_Store
 tmp-debug/
 tmp-flows/
+.env.example

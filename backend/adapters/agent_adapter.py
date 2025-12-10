@@ -12,6 +12,7 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.domain import IntentLabel
+from backend.utils.openai_key import load_openai_api_key
 
 try:  # pragma: no cover - optional dependency resolved at runtime
     from openai import OpenAI  # type: ignore
@@ -267,9 +268,7 @@ class OpenAIAgentAdapter(AgentAdapter):
     def __init__(self) -> None:
         if OpenAI is None:
             raise RuntimeError("openai package is required when AGENT_MODE=openai")
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError("OPENAI_API_KEY must be set when AGENT_MODE=openai")
+        api_key = load_openai_api_key()
         self._client = OpenAI(api_key=api_key)
         model = os.getenv("OPENAI_AGENT_MODEL", "o3-mini")
         self._intent_model = os.getenv("OPENAI_INTENT_MODEL", model)

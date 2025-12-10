@@ -1,14 +1,14 @@
 import json
-import os
 from datetime import datetime
 from typing import Optional
 from openai import OpenAI
 from models import EventInformation, ConversationState
 from dotenv import load_dotenv
+from backend.utils.openai_key import load_openai_api_key
 
 load_dotenv(override=False)
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=load_openai_api_key())
 
 # In-memory storage for demo
 active_conversations: dict[str, ConversationState] = {}

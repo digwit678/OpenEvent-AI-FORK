@@ -21,6 +21,7 @@ from backend.workflows.groups.event_confirmation.trigger import process as proce
 from backend.workflows.io import database as db_io
 from backend.workflows.io.database import update_event_metadata
 from backend.workflows.io import tasks as task_io
+from backend.workflows.io.integration.config import is_hil_all_replies_enabled
 from backend.workflows.llm import adapter as llm_adapter
 from backend.workflows.planner import maybe_run_smart_shortcuts
 from backend.workflows.nlu import (
@@ -309,9 +310,41 @@ def _enqueue_hil_tasks(state: WorkflowState, event_entry: Dict[str, Any]) -> Non
             step_num = int(step_id)
         except (TypeError, ValueError):
             continue
-        if step_num not in {2, 3, 4}:
+        if step_num not in {2, 3, 4, 5}:
             continue
+        # Drop older pending requests for the same step to avoid duplicate reviews.
+        stale_requests = [entry for entry in pending_records if entry.get("step") == step_num]
+        if stale_requests:
+            for stale in stale_requests:
+                task_id = stale.get("task_id")
+                if task_id:
+                    try:
+                        update_task_status(state.db, task_id, TaskStatus.DONE)
+                    except Exception:
+                        pass
+                try:
+                    pending_records.remove(stale)
+                except ValueError:
+                    pass
+            state.extras["persist"] = True
+        if step_num == 5:
+            earlier_steps = [entry for entry in pending_records if (entry.get("step") or 0) < 5]
+            for stale in earlier_steps:
+                task_id = stale.get("task_id")
+                if task_id:
+                    try:
+                        update_task_status(state.db, task_id, TaskStatus.DONE)
+                    except Exception:
+                        pass
+                try:
+                    pending_records.remove(stale)
+                except ValueError:
+                    pass
+            if earlier_steps:
+                state.extras["persist"] = True
         if step_num == 4:
+            task_type = TaskType.OFFER_MESSAGE
+        elif step_num == 5:
             task_type = TaskType.OFFER_MESSAGE
         elif step_num == 3:
             task_type = TaskType.ROOM_AVAILABILITY_MESSAGE
@@ -365,7 +398,26 @@ def _hil_action_type_for_step(step_id: Optional[int]) -> Optional[str]:
         return "room_options_enqueued"
     if step_id == 4:
         return "offer_enqueued"
+    if step_id == 5:
+        return "negotiation_enqueued"
     return None
+
+
+def _compose_hil_decision_reply(decision: str, manager_notes: Optional[str] = None) -> str:
+    normalized = (decision or "").lower()
+    approved = normalized == "approve"
+    decision_line = "Manager decision: Approved" if approved else "Manager decision: Declined"
+    note_text = (manager_notes or "").strip()
+    next_line = (
+        "Next step: Let's continue with site visit bookings. Do you have any preferred dates or times?"
+        if approved
+        else "Next step: I'll revise the offer with this feedback and share an updated proposal."
+    )
+    sections = [decision_line]
+    if note_text:
+        sections.append(f"Manager note: {note_text}")
+    sections.append(next_line)
+    return "\n\n".join(section for section in sections if section)
 
 
 def approve_task_and_send(
@@ -373,15 +425,92 @@ def approve_task_and_send(
     db_path: Path = DB_PATH,
     *,
     manager_notes: Optional[str] = None,
+    edited_message: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """[OpenEvent Action] Approve a pending HIL task and emit the send_reply payload used in tests."""
+    """[OpenEvent Action] Approve a pending HIL task and emit the send_reply payload used in tests.
+
+    Args:
+        task_id: The HIL task ID to approve
+        db_path: Path to the database file
+        manager_notes: Optional notes from the manager (appended to message)
+        edited_message: Optional edited message text (replaces original draft when provided)
+    """
 
     path = Path(db_path)
     lock_path = _resolve_lock_path(path)
     db = db_io.load_db(path, lock_path=lock_path)
     update_task_status(db, task_id, TaskStatus.APPROVED)
 
-    target_event: Optional[Dict[str, Any]] = None
+    # First, check if this is an AI Reply Approval task (these are NOT in pending_hil_requests)
+    task_record = None
+    for task in db.get("tasks", []):
+        if task.get("task_id") == task_id:
+            task_record = task
+            break
+
+    # Handle AI Reply Approval tasks separately
+    if task_record and task_record.get("type") == TaskType.AI_REPLY_APPROVAL.value:
+        payload = task_record.get("payload") or {}
+        event_id = payload.get("event_id")
+        thread_id = payload.get("thread_id")
+        draft_body = payload.get("draft_body", "")
+        step_id = payload.get("step_id")
+
+        # Use edited message if provided, otherwise use original draft
+        body_text = edited_message.strip() if edited_message else draft_body
+
+        # Append manager notes if provided
+        note_text = (manager_notes or "").strip()
+        if note_text and body_text:
+            body_text = f"{body_text.rstrip()}\n\nManager note:\n{note_text}"
+
+        # Find the event for context (optional)
+        target_event = None
+        for event in db.get("events", []):
+            if event.get("event_id") == event_id:
+                target_event = event
+                break
+
+        # Update hil_history on the event if found
+        if target_event:
+            target_event.setdefault("hil_history", []).append(
+                {
+                    "task_id": task_id,
+                    "approved_at": datetime.utcnow().isoformat() + "Z",
+                    "notes": manager_notes,
+                    "step": step_id,
+                    "decision": "approved",
+                    "task_type": "ai_reply_approval",
+                    "edited": bool(edited_message),
+                }
+            )
+            set_hil_open(thread_id, False)
+
+        db_io.save_db(db, path, lock_path=lock_path)
+
+        draft = {
+            "body": body_text,
+            "body_markdown": body_text,
+            "headers": [],
+            "edited_by_manager": bool(edited_message),
+        }
+        assistant_draft = {"headers": [], "body": body_text, "body_markdown": body_text}
+
+        return {
+            "action": "send_reply",
+            "event_id": event_id,
+            "thread_state": target_event.get("thread_state") if target_event else None,
+            "draft": draft,
+            "res": {
+                "assistant_draft": assistant_draft,
+                "assistant_draft_text": body_text,
+            },
+            "actions": [{"type": "send_reply"}],
+            "thread_id": thread_id,
+        }
+
+    # Original logic for step-specific HIL tasks (stored in pending_hil_requests)
+    target_event = None
     target_request: Optional[Dict[str, Any]] = None
     for event in db.get("events", []):
         pending = event.get("pending_hil_requests") or []
@@ -406,17 +535,241 @@ def approve_task_and_send(
             "approved_at": datetime.utcnow().isoformat() + "Z",
             "notes": manager_notes,
             "step": target_request.get("step"),
+            "decision": "approved",
         }
     )
+    set_hil_open(thread_id, bool(target_event.get("pending_hil_requests") or []))
 
     step_num = target_request.get("step")
     if isinstance(step_num, int):
         try:
-            workflow_step = WorkflowStep(f"step_{step_num}")
+            current_step_raw = target_event.get("current_step")
+            try:
+                current_step_int = int(current_step_raw) if current_step_raw is not None else None
+            except (TypeError, ValueError):
+                current_step_int = None
+            effective_step = max(step_num, current_step_int) if current_step_int else step_num
+            workflow_step = WorkflowStep(f"step_{effective_step}")
             write_stage(target_event, current_step=workflow_step)
-            update_event_metadata(target_event, current_step=step_num)
+            update_event_metadata(target_event, current_step=effective_step)
         except ValueError:
             pass
+
+    # If this approval is for a negotiation (Step 5), apply the decision so the workflow progresses.
+    if step_num == 5:
+        pending_decision = target_event.get("negotiation_pending_decision")
+        if pending_decision:
+            from backend.workflows.common.types import IncomingMessage, WorkflowState
+            from backend.workflows.groups import negotiation_close as negotiation_group
+            from backend.workflows.groups.transition_checkpoint import process as process_transition
+
+            hil_message = IncomingMessage.from_dict(
+                {
+                    "msg_id": f"hil-approve-{task_id}",
+                    "from_email": target_event.get("event_data", {}).get("Email"),
+                    "subject": "HIL approval",
+                    "body": manager_notes or "Approved",
+                    "ts": datetime.utcnow().isoformat() + "Z",
+                }
+            )
+            hil_state = WorkflowState(message=hil_message, db_path=path, db=db)
+            hil_state.client_id = (target_event.get("event_data", {}).get("Email") or "").lower()
+            hil_state.event_entry = target_event
+            hil_state.current_step = 5
+            hil_state.user_info = {"hil_approve_step": 5, "hil_decision": "approve"}
+            hil_state.thread_state = target_event.get("thread_state")
+
+            decision_result = negotiation_group._apply_hil_negotiation_decision(hil_state, target_event, "approve")  # type: ignore[attr-defined]
+            if not decision_result.halt and (target_event.get("current_step") == 6):
+                process_transition(hil_state)
+
+            if hil_state.extras.get("persist"):
+                db_io.save_db(db, path, lock_path=lock_path)
+
+    db_io.save_db(db, path, lock_path=lock_path)
+
+    draft = target_request.get("draft") or {}
+    body_text = draft.get("body_markdown") or draft.get("body") or ""
+    headers = draft.get("headers") or []
+
+    # If manager provided an edited message, use it instead of the original draft
+    # This is used for AI Reply Approval when manager edits the AI-generated text
+    if edited_message is not None:
+        body_text = edited_message.strip()
+        draft = dict(draft)
+        draft["body_markdown"] = body_text
+        draft["body"] = body_text
+        draft["edited_by_manager"] = True
+
+    assistant_draft = {"headers": headers, "body": body_text, "body_markdown": body_text}
+
+    note_text = (manager_notes or "").strip()
+    if step_num == 5:
+        new_body = _compose_hil_decision_reply("approve", note_text)
+        assistant_draft["body"] = new_body
+        assistant_draft["body_markdown"] = new_body
+        draft = dict(draft)
+        draft["body_markdown"] = new_body
+        draft["body"] = new_body
+        body_text = new_body
+    elif note_text:
+        appended = f"{body_text.rstrip()}\n\nManager note:\n{note_text}" if body_text.strip() else f"Manager note:\n{note_text}"
+        body_text = appended
+        assistant_draft["body"] = appended
+        assistant_draft["body_markdown"] = appended
+        draft = dict(draft)
+        draft["body_markdown"] = appended
+        draft["body"] = appended
+
+    return {
+        "action": "send_reply",
+        "event_id": target_event.get("event_id"),
+        "thread_state": target_event.get("thread_state"),
+        "draft": draft,
+        "res": {
+            "assistant_draft": assistant_draft,
+            "assistant_draft_text": body_text,
+        },
+        "actions": [{"type": "send_reply"}],
+        "thread_id": thread_id,
+    }
+
+
+def reject_task_and_send(
+    task_id: str,
+    db_path: Path = DB_PATH,
+    *,
+    manager_notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    """[OpenEvent Action] Reject a pending HIL task and emit a client-facing payload."""
+
+    path = Path(db_path)
+    lock_path = _resolve_lock_path(path)
+    db = db_io.load_db(path, lock_path=lock_path)
+    update_task_status(db, task_id, TaskStatus.REJECTED, manager_notes)
+
+    # First, check if this is an AI Reply Approval task (these are NOT in pending_hil_requests)
+    task_record = None
+    for task in db.get("tasks", []):
+        if task.get("task_id") == task_id:
+            task_record = task
+            break
+
+    # Handle AI Reply Approval rejections separately
+    if task_record and task_record.get("type") == TaskType.AI_REPLY_APPROVAL.value:
+        payload = task_record.get("payload") or {}
+        event_id = payload.get("event_id")
+        thread_id = payload.get("thread_id")
+        step_id = payload.get("step_id")
+
+        # Find the event for context (optional)
+        target_event = None
+        for event in db.get("events", []):
+            if event.get("event_id") == event_id:
+                target_event = event
+                break
+
+        # Update hil_history on the event if found
+        if target_event:
+            target_event.setdefault("hil_history", []).append(
+                {
+                    "task_id": task_id,
+                    "rejected_at": datetime.utcnow().isoformat() + "Z",
+                    "notes": manager_notes,
+                    "step": step_id,
+                    "decision": "rejected",
+                    "task_type": "ai_reply_approval",
+                }
+            )
+            set_hil_open(thread_id, False)
+
+        db_io.save_db(db, path, lock_path=lock_path)
+
+        # Rejected AI reply = no message sent to client
+        return {
+            "action": "discarded",
+            "event_id": event_id,
+            "thread_state": target_event.get("thread_state") if target_event else None,
+            "draft": None,
+            "res": {
+                "assistant_draft": None,
+                "assistant_draft_text": "",
+            },
+            "actions": [],
+            "thread_id": thread_id,
+            "manager_notes": manager_notes,
+        }
+
+    # Original logic for step-specific HIL tasks (stored in pending_hil_requests)
+    target_event = None
+    target_request: Optional[Dict[str, Any]] = None
+    for event in db.get("events", []):
+        pending = event.get("pending_hil_requests") or []
+        for request in pending:
+            if request.get("task_id") == task_id:
+                target_event = event
+                target_request = request
+                pending.remove(request)
+                break
+        if target_event:
+            break
+
+    if not target_event or not target_request:
+        raise ValueError(f"Task {task_id} not found in pending approvals.")
+
+    thread_id = target_request.get("thread_id") or target_event.get("thread_id")
+
+    target_event.setdefault("hil_history", []).append(
+        {
+            "task_id": task_id,
+            "rejected_at": datetime.utcnow().isoformat() + "Z",
+            "notes": manager_notes,
+            "step": target_request.get("step"),
+            "decision": "rejected",
+        }
+    )
+    set_hil_open(thread_id, bool(target_event.get("pending_hil_requests") or []))
+
+    step_num = target_request.get("step")
+    if isinstance(step_num, int):
+        try:
+            current_step_raw = target_event.get("current_step")
+            try:
+                current_step_int = int(current_step_raw) if current_step_raw is not None else None
+            except (TypeError, ValueError):
+                current_step_int = None
+            effective_step = max(step_num, current_step_int) if current_step_int else step_num
+            workflow_step = WorkflowStep(f"step_{effective_step}")
+            write_stage(target_event, current_step=workflow_step)
+            update_event_metadata(target_event, current_step=effective_step)
+        except ValueError:
+            pass
+
+    if step_num == 5:
+        pending_decision = target_event.get("negotiation_pending_decision")
+        if pending_decision:
+            from backend.workflows.common.types import IncomingMessage, WorkflowState
+            from backend.workflows.groups import negotiation_close as negotiation_group
+
+            hil_message = IncomingMessage.from_dict(
+                {
+                    "msg_id": f"hil-reject-{task_id}",
+                    "from_email": target_event.get("event_data", {}).get("Email"),
+                    "subject": "HIL rejection",
+                    "body": manager_notes or "Declined",
+                    "ts": datetime.utcnow().isoformat() + "Z",
+                }
+            )
+            hil_state = WorkflowState(message=hil_message, db_path=path, db=db)
+            hil_state.client_id = (target_event.get("event_data", {}).get("Email") or "").lower()
+            hil_state.event_entry = target_event
+            hil_state.current_step = 5
+            hil_state.user_info = {"hil_approve_step": 5, "hil_decision": "reject"}
+            hil_state.thread_state = target_event.get("thread_state")
+
+            negotiation_group._apply_hil_negotiation_decision(hil_state, target_event, "reject")  # type: ignore[attr-defined]
+            if hil_state.extras.get("persist"):
+                db_io.save_db(db, path, lock_path=lock_path)
 
     db_io.save_db(db, path, lock_path=lock_path)
 
@@ -426,7 +779,15 @@ def approve_task_and_send(
     assistant_draft = {"headers": headers, "body": body_text, "body_markdown": body_text}
 
     note_text = (manager_notes or "").strip()
-    if note_text:
+    if step_num == 5:
+        new_body = _compose_hil_decision_reply("reject", note_text)
+        assistant_draft["body"] = new_body
+        assistant_draft["body_markdown"] = new_body
+        draft = dict(draft)
+        draft["body_markdown"] = new_body
+        draft["body"] = new_body
+        body_text = new_body
+    elif note_text:
         appended = f"{body_text.rstrip()}\n\nManager note:\n{note_text}" if body_text.strip() else f"Manager note:\n{note_text}"
         body_text = appended
         assistant_draft["body"] = appended
@@ -677,6 +1038,10 @@ def task_cli_loop(db_path: Path = DB_PATH) -> None:
         print("4) Mark task done")
         print("5) Exit")
         choice = input("Select option: ").strip()
+
+
+
+
         if choice == "1":
             db = load_db(db_path)
             pending = list_pending_tasks(db)
@@ -723,13 +1088,19 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
     res_meta = payload.setdefault("res", {})
     actions_out = payload.setdefault("actions", [])
     requires_approval_flags: List[bool] = []
+    # Check FIRST if HIL approval is required for ALL LLM replies (toggle)
+    # This must be checked BEFORE _enqueue_hil_tasks to avoid creating duplicate tasks
+    hil_all_replies_on = is_hil_all_replies_enabled()
     if state.draft_messages:
         payload["draft_messages"] = state.draft_messages
+        # ALWAYS create step-specific HIL tasks (offer confirmation, special requests, etc.)
+        # These are the original workflow HIL tasks - they work regardless of the AI reply toggle
         if event_entry:
             _enqueue_hil_tasks(state, event_entry)
         requires_approval_flags = [draft.get("requires_approval", True) for draft in state.draft_messages]
     else:
         payload.setdefault("draft_messages", [])
+
     if state.draft_messages:
         latest_draft = next(
             (draft for draft in reversed(state.draft_messages) if draft.get("requires_approval")),
@@ -737,8 +1108,17 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
         )
         draft_body = latest_draft.get("body_markdown") or latest_draft.get("body") or ""
         draft_headers = list(latest_draft.get("headers") or [])
-        res_meta["assistant_draft"] = {"headers": draft_headers, "body": draft_body}
-        res_meta["assistant_draft_text"] = draft_body
+
+        # When HIL toggle is ON: DON'T include message in response (it goes to approval queue only)
+        # When HIL toggle is OFF: Include message in response for immediate display
+        if hil_all_replies_on:
+            # Message pending approval - don't send to client chat yet
+            res_meta["assistant_draft"] = None
+            res_meta["assistant_draft_text"] = ""
+            res_meta["pending_hil_approval"] = True  # Flag for frontend
+        else:
+            res_meta["assistant_draft"] = {"headers": draft_headers, "body": draft_body}
+            res_meta["assistant_draft_text"] = draft_body
     else:
         res_meta.setdefault("assistant_draft", None)
         res_meta.setdefault("assistant_draft_text", "")
@@ -748,9 +1128,70 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
     trace_payload = payload.setdefault("trace", {})
     trace_payload["subloops"] = list(state.subloops_trace)
     if state.draft_messages:
-        if any(not flag for flag in requires_approval_flags):
+        # Check if HIL approval is required for ALL LLM replies (toggle)
+        if hil_all_replies_on:
+            # When toggle ON: ALL AI-generated replies go to separate "AI Reply Approval" queue
+            # This allows managers to review/edit EVERY outbound message before it reaches clients
+            latest_draft = state.draft_messages[-1]
+            draft_body = latest_draft.get("body_markdown") or latest_draft.get("body") or ""
+            draft_step = latest_draft.get("step", state.current_step)
+            thread_id = _thread_identifier(state)
+
+            # Check if there's already a PENDING ai_reply_approval task for this thread
+            # This prevents duplicate tasks from being created
+            existing_pending_task = None
+            for task in state.db.get("tasks", []):
+                if (task.get("type") == TaskType.AI_REPLY_APPROVAL.value
+                    and task.get("status") == TaskStatus.PENDING.value
+                    and task.get("payload", {}).get("thread_id") == thread_id):
+                    existing_pending_task = task
+                    break
+
+            if existing_pending_task:
+                # Update existing task with new draft instead of creating duplicate
+                existing_pending_task["payload"]["draft_body"] = draft_body
+                existing_pending_task["payload"]["step_id"] = draft_step
+                task_id = existing_pending_task.get("task_id")
+            else:
+                # Create task for AI reply approval
+                client_id = state.client_id or (state.message.from_email or "unknown@example.com").lower()
+                task_payload = {
+                    "step_id": draft_step,
+                    "draft_body": draft_body,
+                    "thread_id": thread_id,
+                    "event_id": event_entry.get("event_id") if event_entry else None,
+                    "editable": True,  # Manager can edit before approving
+                    "event_summary": {
+                        "client_name": event_entry.get("client_name", "Client") if event_entry else "Client",
+                        "email": event_entry.get("client_id") if event_entry else None,
+                        "company": (event_entry.get("event_data") or {}).get("Organization") if event_entry else None,
+                        "chosen_date": event_entry.get("chosen_date") if event_entry else None,
+                        "locked_room": event_entry.get("locked_room") if event_entry else None,
+                    },
+                }
+                task_id = enqueue_task(
+                    state.db,
+                    TaskType.AI_REPLY_APPROVAL,
+                    client_id,
+                    event_entry.get("event_id") if event_entry else None,
+                    task_payload,
+                )
+
+            hil_ai_payload = {
+                "task_id": task_id,
+                "event_id": event_entry.get("event_id") if event_entry else None,
+                "client_name": event_entry.get("client_name", "Client") if event_entry else "Client",
+                "client_email": event_entry.get("client_id") if event_entry else None,
+                "draft_message": draft_body,
+                "workflow_step": draft_step,
+                "editable": True,  # Manager can edit before approving
+            }
+            actions_out.append({"type": "hil_ai_reply_approval", "payload": hil_ai_payload})
+        elif any(not flag for flag in requires_approval_flags):
+            # Toggle OFF + no approval needed: send directly (current behavior)
             actions_out.append({"type": "send_reply"})
         elif event_entry:
+            # Toggle OFF + approval needed: route to step-specific HIL (current behavior)
             hil_type = _hil_action_type_for_step(state.draft_messages[-1].get("step"))
             if hil_type:
                 hil_payload = {

@@ -13,6 +13,7 @@ except ImportError:  # pragma: no cover - OpenAI optional in local/dev runs
     OpenAI = None  # type: ignore[assignment]
 
 from backend.workflows.common.types import WorkflowState
+from backend.utils.openai_key import load_openai_api_key
 
 _QUESTION_WORDS = (
     "which",
@@ -28,6 +29,14 @@ _QUESTION_WORDS = (
     "any chance",
     "could you",
     "would you",
+)
+
+_ACTION_PATTERNS = (
+    r"\bsend\s+(me\s+)?(the\s+|a\s+)?",
+    r"\bprovide\s+(me\s+with\s+)?",
+    r"\bgive\s+(me|us)\b",
+    r"\bemail\s+(me|us)\b",
+    r"\bforward\s+(me|us)\b",
 )
 
 _PATTERNS = (
@@ -119,11 +128,16 @@ _CACHE_MAX = 256
 _CACHE: Dict[str, Dict[str, Any]] = {}
 
 _LLM_MODEL = os.getenv("OPENAI_GENERAL_QNA_MODEL", "gpt-4o-mini")
-_LLM_ENABLED = bool(os.getenv("OPENAI_API_KEY"))
+_LLM_ENABLED = bool(load_openai_api_key(required=False))
 
 
 def reset_general_qna_cache() -> None:
     _CACHE.clear()
+
+
+def _is_action_request(msg_text: str) -> bool:
+    lowered = (msg_text or "").lower()
+    return any(re.search(pattern, lowered) for pattern in _ACTION_PATTERNS)
 
 
 def heuristic_flags(msg_text: str) -> Dict[str, Any]:
@@ -134,13 +148,17 @@ def heuristic_flags(msg_text: str) -> Dict[str, Any]:
     matched_patterns = [pattern for pattern in _PATTERNS if pattern in lowered]
     imperative_hint = any(phrase in lowered for phrase in _IMPERATIVE_HINTS)
     borderline = any(term in lowered for term in _BORDERLINE_HINTS)
-    heuristic_general = has_qmark or starts_interrogative or bool(matched_patterns) or imperative_hint or borderline
+    action_request = _is_action_request(lowered)
+    heuristic_general = (
+        has_qmark or starts_interrogative or bool(matched_patterns) or imperative_hint or borderline
+    ) and not action_request
     return {
         "has_qmark": has_qmark,
         "starts_interrogative": starts_interrogative,
         "matched_patterns": matched_patterns,
         "imperative_hint": imperative_hint,
         "borderline": borderline,
+        "action_request": action_request,
         "heuristic_general": heuristic_general,
     }
 
@@ -314,7 +332,8 @@ def llm_classify(msg_text: str) -> Dict[str, Any]:
         },
     ]
 
-    client = OpenAI()
+    api_key = load_openai_api_key()
+    client = OpenAI(api_key=api_key)
     response = client.chat.completions.create(
         model=_LLM_MODEL,
         temperature=0,
@@ -356,6 +375,22 @@ def detect_general_room_query(msg_text: str, state: WorkflowState) -> Dict[str, 
 
     heuristics = heuristic_flags(text)
     parsed = parse_constraints(text)
+
+    if heuristics.get("action_request"):
+        detection = {
+            "is_general": False,
+            "heuristics": heuristics,
+            "parsed": parsed,
+            "constraints": parsed,
+            "llm_called": False,
+            "llm_result": {"label": "not_general", "uncertain": True, "constraints": {}},
+            "cached": False,
+        }
+        if len(_CACHE) >= _CACHE_MAX:
+            _evict_cache_entry()
+        _CACHE[cache_key] = {"ts": now, "result": detection}
+        return detection
+
     call_llm = should_call_llm(heuristics, parsed, text, state)
 
     llm_called = False

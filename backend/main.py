@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
@@ -26,8 +26,15 @@ from backend.adapters.client_gui_adapter import ClientGUIAdapter
 from backend.workflows.common.payloads import PayloadValidationError, validate_confirm_date_payload
 from backend.workflows.groups.date_confirmation import compose_date_confirmation_reply
 from backend.workflows.common.prompts import append_footer
+from backend.workflows.common.pricing import derive_room_rate, normalise_rate
 from backend.workflows.groups.room_availability import run_availability_workflow
 from backend.utils import json_io
+from backend.utils.test_data_providers import (
+    get_all_catering_menus,
+    get_catering_menu_details,
+    get_qna_items,
+    get_rooms_for_display,
+)
 
 os.environ.setdefault("AGENT_MODE", os.environ.get("AGENT_MODE_DEFAULT", "openai"))
 
@@ -37,10 +44,11 @@ from backend.workflow_email import (
     load_db as wf_load_db,
     save_db as wf_save_db,
     list_pending_tasks as wf_list_pending_tasks,
-    update_task_status as wf_update_task_status,
     approve_task_and_send as wf_approve_task_and_send,
+    reject_task_and_send as wf_reject_task_and_send,
     cleanup_tasks as wf_cleanup_tasks,
 )
+from backend.workflows.io.integration.config import is_hil_all_replies_enabled
 from backend.api.debug import (
     debug_get_trace,
     debug_get_timeline,
@@ -57,10 +65,13 @@ DEBUG_TRACE_ENABLED = is_trace_enabled()
 
 GUI_ADAPTER = ClientGUIAdapter()
 
-# CORS for frontend
+# CORS for frontend - configurable origins for security
+# Default allows localhost:3000 for local development
+# Set ALLOWED_ORIGINS env var for production (comma-separated list)
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -153,6 +164,26 @@ def _format_draft_text(draft: Dict[str, Any]) -> str:
 
 
 def _extract_workflow_reply(wf_res: Dict[str, Any]) -> tuple[str, List[Dict[str, Any]]]:
+    wf_action = wf_res.get("action")
+    if wf_action in {
+        "offer_accept_pending_hil",
+        "negotiation_accept_pending_hil",
+        "negotiation_hil_waiting",
+        "offer_waiting_hil",
+    }:
+        waiting_text = (
+            "Thanks for confirming - I've sent the full offer to our manager for approval. "
+            "I'll let you know as soon as it's reviewed."
+        )
+        return waiting_text, wf_res.get("actions") or []
+
+    # Check if HIL approval for ALL LLM replies is enabled - don't show message until approved
+    res_meta = wf_res.get("res") or {}
+    if res_meta.get("pending_hil_approval"):
+        # Message is pending manager approval - return empty string (no chat message)
+        # The frontend will show the task in the approval queue instead
+        return "", wf_res.get("actions") or []
+
     drafts = wf_res.get("draft_messages") or []
     if drafts:
         draft = drafts[-1]
@@ -231,10 +262,42 @@ class SendMessageRequest(BaseModel):
 
 class TaskDecisionRequest(BaseModel):
     notes: Optional[str] = None
+    edited_message: Optional[str] = None  # For AI Reply Approval: manager can edit draft before sending
 
 
 class TaskCleanupRequest(BaseModel):
     keep_thread_id: Optional[str] = None
+
+
+class ClientResetRequest(BaseModel):
+    email: str
+
+
+class GlobalDepositConfig(BaseModel):
+    """
+    Global deposit configuration applied to all offers by default.
+
+    INTEGRATION NOTE FOR FRONTEND INTEGRATORS:
+    ==========================================
+    This config is stored in the workflow database under "config.global_deposit".
+    When creating offers, the workflow will use these settings unless overridden
+    by room-specific deposit settings (future feature).
+
+    The data format matches the real OpenEvent frontend's deposit structure:
+    - deposit_enabled: boolean - Whether to require deposit
+    - deposit_type: "percentage" | "fixed" - How to calculate deposit
+    - deposit_percentage: number (1-100) - Percentage of offer total
+    - deposit_fixed_amount: number - Fixed CHF amount
+    - deposit_deadline_days: number - Days until payment due
+
+    For room-specific deposits (future integration), see:
+    - POST /api/config/room-deposit/{room_id} (inactive, prepared for integration)
+    """
+    deposit_enabled: bool = False
+    deposit_type: str = "percentage"  # "percentage" or "fixed"
+    deposit_percentage: int = 30
+    deposit_fixed_amount: float = 0.0
+    deposit_deadline_days: int = 10
 
 
 class ConfirmDateRequest(BaseModel):
@@ -450,6 +513,8 @@ async def start_conversation(request: StartConversationRequest):
         print(f"[WF] start action={wf_action} client={request.client_email} event_id={wf_res.get('event_id')} task_id={wf_res.get('task_id')}")
     except Exception as e:
         print(f"[WF][ERROR] {e}")
+    if not wf_res:
+        raise HTTPException(status_code=500, detail="Workflow processing failed")
     if wf_action == "manual_review_enqueued":
         response_text = (
             "Thanks for your message. We routed it for manual review and will get back to you shortly."
@@ -529,7 +594,11 @@ async def start_conversation(request: StartConversationRequest):
     conversation_state.conversation_history.append({"role": "user", "content": request.email_body or ""})
 
     assistant_reply, action_items = _extract_workflow_reply(wf_res)
-    if not assistant_reply:
+    # Only use fallback message if reply is empty AND HIL approval is NOT pending
+    # When HIL approval is pending, we want NO message in the chat
+    res_meta = wf_res.get("res") or {}
+    hil_pending = res_meta.get("pending_hil_approval", False)
+    if not assistant_reply and not hil_pending:
         assistant_reply = "Thanks for your message. I'll follow up shortly with availability details."
 
     conversation_state.event_id = wf_res.get("event_id") or event_id
@@ -635,17 +704,24 @@ async def send_message(request: SendMessageRequest):
         }
 
     assistant_reply, action_items = _extract_workflow_reply(wf_res)
-    if not assistant_reply:
-        assistant_reply = "Thanks for the update. I’ll keep you posted as I gather the details."
+    # Only use fallback message if reply is empty AND HIL approval is NOT pending
+    # When HIL approval is pending, we want NO message in the chat
+    res_meta = wf_res.get("res") or {}
+    hil_pending = res_meta.get("pending_hil_approval", False)
+    if not assistant_reply and not hil_pending:
+        assistant_reply = "Thanks for the update. I'll keep you posted as I gather the details."
 
-    step3_payload = pop_step3_payload(request.session_id)
-    if step3_payload:
-        body_pref = step3_payload.get("body_markdown") or step3_payload.get("body")
-        if body_pref:
-            assistant_reply = body_pref
-        actions_override = step3_payload.get("actions") or []
-        if actions_override:
-            action_items = actions_override
+    # Only apply step3_payload override if HIL is NOT pending
+    # When HIL is pending, the message is in the approval queue and should not appear in chat
+    if not hil_pending:
+        step3_payload = pop_step3_payload(request.session_id)
+        if step3_payload:
+            body_pref = step3_payload.get("body_markdown") or step3_payload.get("body")
+            if body_pref:
+                assistant_reply = body_pref
+            actions_override = step3_payload.get("actions") or []
+            if actions_override:
+                action_items = actions_override
 
     conversation_state.event_id = wf_res.get("event_id") or conversation_state.event_id
     conversation_state.event_info = _update_event_info_from_db(
@@ -656,6 +732,30 @@ async def send_message(request: SendMessageRequest):
 
     pending_actions = {"type": "workflow_actions", "actions": action_items} if action_items else None
 
+    # Include deposit_info from the event for frontend payment button
+    # IMPORTANT: Only send deposit_info at Step 4+ (after offer is generated with pricing)
+    deposit_info = None
+    if conversation_state.event_id:
+        try:
+            db = wf_load_db()
+            for event in db.get("events") or []:
+                if event.get("event_id") == conversation_state.event_id:
+                    current_step = event.get("current_step", 1)
+                    # Only include deposit info at Step 4+ (after room selection and offer generation)
+                    if current_step >= 4:
+                        raw_deposit = event.get("deposit_info")
+                        if raw_deposit and raw_deposit.get("deposit_required"):
+                            deposit_info = {
+                                "deposit_required": raw_deposit.get("deposit_required", False),
+                                "deposit_amount": raw_deposit.get("deposit_amount"),
+                                "deposit_due_date": raw_deposit.get("deposit_due_date"),
+                                "deposit_paid": raw_deposit.get("deposit_paid", False),
+                                "event_id": conversation_state.event_id,
+                            }
+                    break
+        except Exception:
+            pass
+
     return {
         "session_id": request.session_id,
         "workflow_type": conversation_state.workflow_type,
@@ -663,6 +763,7 @@ async def send_message(request: SendMessageRequest):
         "is_complete": conversation_state.is_complete,
         "event_info": conversation_state.event_info.dict(),
         "pending_actions": pending_actions,
+        "deposit_info": deposit_info,
     }
 
 
@@ -674,32 +775,140 @@ async def get_pending_tasks():
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to load tasks: {exc}") from exc
     tasks = wf_list_pending_tasks(db)
+    events_by_id = {event.get("event_id"): event for event in db.get("events") or [] if event.get("event_id")}
     payload = []
+    offer_tasks_indices: Dict[tuple[str, str], int] = {}
     for task in tasks:
         payload_data = task.get("payload") or {}
-        payload.append(
-            {
-                "task_id": task.get("task_id"),
-                "type": task.get("type"),
-                "client_id": task.get("client_id"),
-                "event_id": task.get("event_id"),
-                "created_at": task.get("created_at"),
-                "notes": task.get("notes"),
-                "payload": {
-                    "snippet": payload_data.get("snippet"),
-                    "suggested_dates": payload_data.get("suggested_dates"),
-                    "thread_id": payload_data.get("thread_id"),
-                },
+        event_entry = events_by_id.get(task.get("event_id"))
+        event_data = (event_entry or {}).get("event_data") or {}
+        draft_body = payload_data.get("draft_body") or payload_data.get("draft_msg")
+        if not draft_body and event_entry:
+            for request in event_entry.get("pending_hil_requests") or []:
+                if request.get("task_id") == task.get("task_id"):
+                    draft_body = (request.get("draft") or {}).get("body") or draft_body
+                    break
+
+        event_summary = None
+        if event_entry:
+            def _line_items(entry: Dict[str, Any]) -> list[str]:
+                items: list[str] = []
+                pricing_inputs = entry.get("pricing_inputs") or {}
+                room_label = entry.get("locked_room_id") or (entry.get("room_pending_decision") or {}).get("selected_room")
+                base_rate = normalise_rate(pricing_inputs.get("base_rate"))
+                if base_rate is None:
+                    base_rate = derive_room_rate(entry)
+                if base_rate is not None:
+                    items.append(f"{room_label or 'Room'} · CHF {base_rate:,.2f}")
+
+                for product in entry.get("products") or []:
+                    name = product.get("name") or "Unnamed item"
+                    try:
+                        qty = float(product.get("quantity") or 0)
+                    except (TypeError, ValueError):
+                        qty = 0
+                    try:
+                        unit_price = float(product.get("unit_price") or 0.0)
+                    except (TypeError, ValueError):
+                        unit_price = 0.0
+                    unit = product.get("unit")
+                    total = qty * unit_price if qty and unit_price else unit_price
+                    label = f"{qty:g}× {name}" if qty else name
+                    price_text = f"CHF {total:,.2f}"
+                    if unit == "per_person" and qty:
+                        price_text += f" (CHF {unit_price:,.2f} per person)"
+                    elif unit == "per_event":
+                        price_text += " (per event)"
+                    items.append(f"{label} · {price_text}")
+                return items
+
+            event_summary = {
+                "client_name": event_data.get("Name"),
+                "company": event_data.get("Company"),
+                "billing_address": event_data.get("Billing Address"),
+                "email": event_data.get("Email"),
+                "chosen_date": event_entry.get("chosen_date"),
+                "locked_room": event_entry.get("locked_room_id"),
+                "line_items": _line_items(event_entry),
+                "current_step": event_entry.get("current_step", 1),
             }
-        )
+            try:
+                from backend.workflows.groups.negotiation_close import _determine_offer_total
+
+                total_amount = _determine_offer_total(event_entry)
+            except Exception:
+                total_amount = None
+            if total_amount not in (None, 0):
+                event_summary["offer_total"] = total_amount
+
+            # Include deposit info for client-side payment button
+            deposit_info = event_entry.get("deposit_info")
+            if deposit_info:
+                event_summary["deposit_info"] = {
+                    "deposit_required": deposit_info.get("deposit_required", False),
+                    "deposit_amount": deposit_info.get("deposit_amount"),
+                    "deposit_vat_included": deposit_info.get("deposit_vat_included"),
+                    "deposit_due_date": deposit_info.get("deposit_due_date"),
+                    "deposit_paid": deposit_info.get("deposit_paid", False),
+                    "deposit_paid_at": deposit_info.get("deposit_paid_at"),
+                }
+
+        record = {
+            "task_id": task.get("task_id"),
+            "type": task.get("type"),
+            "client_id": task.get("client_id"),
+            "event_id": task.get("event_id"),
+            "created_at": task.get("created_at"),
+            "notes": task.get("notes"),
+            "payload": {
+                "snippet": payload_data.get("snippet"),
+                "draft_body": draft_body,
+                "suggested_dates": payload_data.get("suggested_dates"),
+                "thread_id": payload_data.get("thread_id"),
+                "step_id": payload_data.get("step_id") or payload_data.get("step"),
+                "event_summary": event_summary,
+            },
+        }
+        payload.append(record)
+        if task.get("type") == "offer_message" and payload_data.get("thread_id"):
+            key = (task.get("event_id"), payload_data.get("thread_id"))
+            offer_tasks_indices[key] = len(payload) - 1
+
+    # Deduplicate per (event, thread) by priority so only one task shows in the manager panel.
+    priority = {
+        "offer_message": 0,
+        "room_availability_message": 1,
+        "date_confirmation_message": 2,
+        "ask_for_date": 3,
+        "manual_review": 4,
+    }
+    dedup: Dict[tuple[str, str], Dict[str, Any]] = {}
+    for record in payload:
+        thread_id = (record.get("payload") or {}).get("thread_id")
+        event_id = record.get("event_id")
+        key = (event_id, thread_id)
+        rank = priority.get(record.get("type"), 99)
+        current = dedup.get(key)
+        if current is None or priority.get(current.get("type"), 99) > rank:
+            dedup[key] = record
+    payload = list(dedup.values())
+
     return {"tasks": payload}
 
 
 @app.post("/api/tasks/{task_id}/approve")
 async def approve_task(task_id: str, request: TaskDecisionRequest):
-    """OpenEvent Action (light-blue): mark a task as approved from the GUI."""
+    """OpenEvent Action (light-blue): mark a task as approved from the GUI.
+
+    For AI Reply Approval tasks, the manager can optionally edit the draft message
+    before sending by providing `edited_message` in the request body.
+    """
     try:
-        result = wf_approve_task_and_send(task_id, manager_notes=request.notes)
+        result = wf_approve_task_and_send(
+            task_id,
+            manager_notes=request.notes,
+            edited_message=request.edited_message,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
@@ -720,15 +929,21 @@ async def approve_task(task_id: str, request: TaskDecisionRequest):
 async def reject_task(task_id: str, request: TaskDecisionRequest):
     """OpenEvent Action (light-blue): mark a task as rejected from the GUI."""
     try:
-        db = wf_load_db()
-        wf_update_task_status(db, task_id, "rejected", request.notes)
-        wf_save_db(db)
+        result = wf_reject_task_and_send(task_id, manager_notes=request.notes)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to reject task: {exc}") from exc
     print(f"[WF] task rejected id={task_id}")
-    return {"task_id": task_id, "task_status": "rejected", "review_state": "rejected"}
+    assistant_text = result.get("res", {}).get("assistant_draft_text")
+    return {
+        "task_id": task_id,
+        "task_status": "rejected",
+        "assistant_reply": assistant_text,
+        "thread_id": result.get("thread_id"),
+        "event_id": result.get("event_id"),
+        "review_state": "rejected",
+    }
 
 
 @app.post("/api/tasks/cleanup")
@@ -742,6 +957,109 @@ async def cleanup_tasks(request: TaskCleanupRequest):
         raise HTTPException(status_code=500, detail=f"Failed to cleanup tasks: {exc}") from exc
     print(f"[WF] tasks cleanup removed={removed}")
     return {"removed": removed}
+
+
+@app.post("/api/client/reset")
+async def reset_client_data(request: ClientResetRequest):
+    """[Testing Only] Reset all data for a client by email address.
+
+    Deletes:
+    - Client entry from 'clients' dict
+    - All events where client_id matches the email
+    - All tasks associated with those events
+
+    SECURITY: This endpoint is disabled by default.
+    Set ENABLE_DANGEROUS_ENDPOINTS=true to enable (never in production!).
+    """
+    # Production guard - disabled unless explicitly enabled
+    if os.getenv("ENABLE_DANGEROUS_ENDPOINTS", "false").lower() != "true":
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is disabled. Set ENABLE_DANGEROUS_ENDPOINTS=true to enable (development only)."
+        )
+
+    email = request.email.lower().strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    try:
+        db = wf_load_db()
+        deleted_events = 0
+        deleted_tasks = 0
+
+        # Delete client entry
+        clients = db.get("clients", {})
+        if isinstance(clients, dict):
+            client_deleted = email in clients
+            if client_deleted:
+                del clients[email]
+        else:
+            client_deleted = False
+
+        # Delete all events for this client (check both client_id and event_data.Email)
+        events = db.get("events", {})
+        if isinstance(events, dict):
+            event_ids_to_delete = []
+            for eid, event in events.items():
+                if not isinstance(event, dict):
+                    continue
+                client_id_match = (event.get("client_id") or "").lower() == email
+                event_data = event.get("event_data", {}) or {}
+                email_match = (event_data.get("Email") or "").lower() == email
+                if client_id_match or email_match:
+                    event_ids_to_delete.append(eid)
+            for eid in event_ids_to_delete:
+                del events[eid]
+                deleted_events += 1
+        elif isinstance(events, list):
+            # Handle legacy list format
+            original_len = len(events)
+            matched_event_ids = []
+            def should_keep(e):
+                if not isinstance(e, dict):
+                    return True
+                client_id_match = (e.get("client_id") or "").lower() == email
+                event_data = e.get("event_data", {}) or {}
+                email_match = (event_data.get("Email") or "").lower() == email
+                if client_id_match or email_match:
+                    matched_event_ids.append(e.get("event_id", "unknown"))
+                    return False
+                return True
+            db["events"] = [e for e in events if should_keep(e)]
+            deleted_events = original_len - len(db["events"])
+            if matched_event_ids:
+                print(f"[WF] reset matched events: {matched_event_ids}")
+
+        # Delete all tasks for this client
+        tasks = db.get("tasks", {})
+        if isinstance(tasks, dict):
+            task_ids_to_delete = [
+                tid for tid, task in tasks.items()
+                if isinstance(task, dict) and (task.get("client_id") or "").lower() == email
+            ]
+            for tid in task_ids_to_delete:
+                del tasks[tid]
+                deleted_tasks += 1
+        elif isinstance(tasks, list):
+            # Handle legacy list format
+            original_len = len(tasks)
+            db["tasks"] = [
+                t for t in tasks
+                if not isinstance(t, dict) or (t.get("client_id") or "").lower() != email
+            ]
+            deleted_tasks = original_len - len(db["tasks"])
+
+        wf_save_db(db)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to reset client data: {exc}") from exc
+
+    print(f"[WF] client reset email={email} events={deleted_events} tasks={deleted_tasks}")
+    return {
+        "email": email,
+        "client_deleted": client_deleted,
+        "events_deleted": deleted_events,
+        "tasks_deleted": deleted_tasks,
+    }
 
 
 if DEBUG_TRACE_ENABLED:
@@ -920,10 +1238,530 @@ async def accept_booking(session_id: str):
     }
 
 
+# Test data endpoints for development pages
+@app.get("/api/test-data/rooms")
+async def get_rooms_data(date: Optional[str] = None, capacity: Optional[str] = None):
+    """Serve room availability data for test pages."""
+    rooms = get_rooms_for_display(date, capacity)
+    return rooms
+
+
+@app.get("/api/test-data/catering")
+async def get_catering_catalog(
+    month: Optional[str] = None,
+    vegetarian: Optional[str] = None,
+    vegan: Optional[str] = None,
+    courses: Optional[str] = None,
+    wine_pairing: Optional[str] = None,
+):
+    """Serve catering menus for catalog page with dynamic filtering."""
+    filters = {
+        "month": month,
+        "vegetarian": vegetarian == "true" if vegetarian else None,
+        "vegan": vegan == "true" if vegan else None,
+        "courses": int(courses) if courses and courses.isdigit() else None,
+        "wine_pairing": wine_pairing == "true" if wine_pairing else None,
+    }
+    # Remove None values
+    filters = {k: v for k, v in filters.items() if v is not None}
+    menus = get_all_catering_menus(filters=filters)
+    return menus
+
+
+@app.get("/api/test-data/catering/{menu_slug}")
+async def get_catering_data(menu_slug: str, room: Optional[str] = None, date: Optional[str] = None):
+    """Serve specific catering menu data for test pages."""
+    menu = get_catering_menu_details(menu_slug)
+    if not menu:
+        raise HTTPException(status_code=404, detail="Menu not found")
+
+    menu["context"] = {
+        "room": room,
+        "date": date,
+    }
+    return menu
+
+
+@app.get("/api/qna")
+async def universal_qna(request: Request):
+    """Universal Q&A endpoint - accepts any parameters, uses existing Q&A engine."""
+    from backend.workflows.qna.engine import build_structured_qna_result
+    from backend.workflows.common.types import WorkflowState, IncomingMessage as Message
+
+    # Get all query params
+    params = dict(request.query_params)
+    category = params.get("category", "general")
+
+    # Build q_values from query params for Q&A engine
+    q_values = {}
+
+    # Date/month parameters
+    if params.get("date"):
+        q_values["date"] = params["date"]
+    if params.get("month"):
+        q_values["date_pattern"] = params["month"]
+
+    # Capacity parameters
+    if params.get("capacity"):
+        try:
+            q_values["n_exact"] = int(params["capacity"])
+        except ValueError:
+            pass
+
+    # Room parameters
+    if params.get("room"):
+        q_values["room"] = params["room"]
+
+    # Product attributes
+    product_attributes = []
+    if params.get("vegetarian") == "true":
+        product_attributes.append("vegetarian")
+    if params.get("vegan") == "true":
+        product_attributes.append("vegan")
+    if params.get("wine_pairing") == "true":
+        product_attributes.append("wine pairing")
+    if params.get("courses"):
+        product_attributes.append(f"{params['courses']}-course")
+    if product_attributes:
+        q_values["product_attributes"] = product_attributes
+
+    # Build extraction structure
+    qna_extraction = {
+        "qna_subtype": category,
+        "q_values": q_values,
+        "msg_type": "event",
+        "qna_intent": "select_dependent"
+    }
+
+    # Create minimal state for Q&A engine
+    try:
+        db = wf_load_db()
+    except Exception:
+        db = {}
+
+    state = WorkflowState(
+        client_id="qna-page",
+        message=Message(
+            msg_id="qna", 
+            subject="", 
+            body="", 
+            from_name=None,
+            from_email=None,
+            ts=None
+        ),
+        db_path=Path(WF_DB_PATH),
+        db=db,
+        user_info={},
+        event_entry={},
+        intent=None,
+        confidence=1.0
+    )
+    state.extras["qna_extraction"] = qna_extraction
+
+    # Use existing Q&A engine
+    try:
+        result = build_structured_qna_result(state, qna_extraction)
+        
+        # Fetch legacy items to support FAQ page
+        legacy_data = get_qna_items(category, filters=q_values)
+
+        return {
+            "query": params,
+            "result_type": category,
+            "filters_applied": q_values,
+            "data": result.action_payload if result and result.handled else {},
+            "items": legacy_data.get("items", []),
+            "categories": legacy_data.get("categories", []),
+            "menus": legacy_data.get("menus", []),
+            "body_markdown": result.body_markdown if result and result.handled else "No results found",
+            "handled": result.handled if result else False,
+            "success": True
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "query": params,
+            "result_type": category,
+            "filters_applied": q_values,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "success": False
+        }
+
+
+@app.get("/api/test-data/qna")
+async def get_qna_data(
+    category: Optional[str] = None,
+    month: Optional[str] = None,
+    vegetarian: Optional[str] = None,
+    vegan: Optional[str] = None,
+    courses: Optional[str] = None,
+    wine_pairing: Optional[str] = None,
+    date: Optional[str] = None,
+    capacity: Optional[str] = None,
+):
+    """Legacy endpoint - kept for backwards compatibility during migration."""
+    filters = {
+        "month": month,
+        "vegetarian": vegetarian == "true" if vegetarian else None,
+        "vegan": vegan == "true" if vegan else None,
+        "courses": int(courses) if courses and courses.isdigit() else None,
+        "wine_pairing": wine_pairing == "true" if wine_pairing else None,
+        "date": date,
+        "capacity": int(capacity) if capacity and capacity.isdigit() else None,
+    }
+    # Remove None values
+    filters = {k: v for k, v in filters.items() if v is not None}
+    return get_qna_items(category, filters=filters)
+
+
+# ---------------------------------------------------------------------------
+# Snapshot endpoints for persistent info page links
+# ---------------------------------------------------------------------------
+
+from backend.utils.page_snapshots import (
+    get_snapshot,
+    get_snapshot_data,
+    list_snapshots,
+    create_snapshot,
+)
+
+
+@app.get("/api/snapshots/{snapshot_id}")
+async def get_snapshot_endpoint(snapshot_id: str):
+    """
+    Retrieve a stored snapshot by ID.
+
+    Snapshots contain page data (rooms, products, etc.) that was captured
+    at a specific point in time, allowing clients to revisit older links.
+    """
+    snapshot = get_snapshot(snapshot_id)
+    if not snapshot:
+        return {"error": "Snapshot not found or expired", "snapshot_id": snapshot_id}
+    return snapshot
+
+
+@app.get("/api/snapshots/{snapshot_id}/data")
+async def get_snapshot_data_endpoint(snapshot_id: str):
+    """
+    Retrieve just the data payload from a snapshot.
+
+    Use this endpoint when you only need the data, not the metadata.
+    """
+    data = get_snapshot_data(snapshot_id)
+    if data is None:
+        return {"error": "Snapshot not found or expired", "snapshot_id": snapshot_id}
+    return {"snapshot_id": snapshot_id, "data": data}
+
+
+@app.get("/api/snapshots")
+async def list_snapshots_endpoint(
+    type: Optional[str] = None,
+    event_id: Optional[str] = None,
+    limit: int = 50,
+):
+    """
+    List available snapshots, optionally filtered by type or event_id.
+
+    Returns metadata only (not full data) for efficiency.
+    """
+    return {
+        "snapshots": list_snapshots(snapshot_type=type, event_id=event_id, limit=limit)
+    }
+
+
 @app.get("/api/workflow/health")
 async def workflow_health():
     """Minimal health check for workflow integration."""
     return {"db_path": str(WF_DB_PATH), "ok": True}
+
+
+@app.get("/api/workflow/hil-status")
+async def get_hil_status():
+    """Get the HIL toggle status for AI reply approval.
+
+    Returns whether the OE_HIL_ALL_LLM_REPLIES toggle is enabled.
+    When enabled, all AI replies require manager approval before
+    being sent to the client.
+    """
+    return {
+        "hil_all_replies_enabled": is_hil_all_replies_enabled(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Global Deposit Configuration Endpoints
+# ---------------------------------------------------------------------------
+# These endpoints allow the manager to configure global deposit settings
+# that apply to all offers by default.
+#
+# INTEGRATION NOTE FOR FRONTEND INTEGRATORS:
+# ==========================================
+# The global deposit config is stored in the workflow database under
+# "config.global_deposit". When the integrated frontend is ready:
+# 1. The workflow will read this config when generating offers
+# 2. Room-specific deposits can override the global setting (see inactive
+#    endpoints below)
+# 3. The data format matches the real frontend's deposit structure
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/config/global-deposit")
+async def get_global_deposit_config():
+    """
+    Get the current global deposit configuration.
+
+    Returns default values if not yet configured.
+    """
+    try:
+        db = wf_load_db()
+        config = db.get("config", {}).get("global_deposit", {})
+        return {
+            "deposit_enabled": config.get("deposit_enabled", False),
+            "deposit_type": config.get("deposit_type", "percentage"),
+            "deposit_percentage": config.get("deposit_percentage", 30),
+            "deposit_fixed_amount": config.get("deposit_fixed_amount", 0.0),
+            "deposit_deadline_days": config.get("deposit_deadline_days", 10),
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load deposit config: {exc}"
+        ) from exc
+
+
+@app.post("/api/config/global-deposit")
+async def set_global_deposit_config(config: GlobalDepositConfig):
+    """
+    Set the global deposit configuration.
+
+    This setting applies to all offers unless overridden by room-specific
+    deposit settings (future feature).
+    """
+    try:
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+        db["config"]["global_deposit"] = {
+            "deposit_enabled": config.deposit_enabled,
+            "deposit_type": config.deposit_type,
+            "deposit_percentage": config.deposit_percentage,
+            "deposit_fixed_amount": config.deposit_fixed_amount,
+            "deposit_deadline_days": config.deposit_deadline_days,
+            "updated_at": _now_iso(),
+        }
+        wf_save_db(db)
+        print(f"[Config] Global deposit updated: enabled={config.deposit_enabled} type={config.deposit_type}")
+        return {"status": "ok", "config": db["config"]["global_deposit"]}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save deposit config: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Room-Specific Deposit Endpoints (INACTIVE - For Future Integration)
+# ---------------------------------------------------------------------------
+# INTEGRATION NOTE FOR FRONTEND INTEGRATORS:
+# ==========================================
+# These endpoints are prepared for future integration with the main OpenEvent
+# frontend. They allow setting deposit requirements per room, which override
+# the global deposit setting.
+#
+# To activate:
+# 1. Uncomment the endpoints below
+# 2. Add the corresponding UI in the Rooms Setup page
+# 3. Update the offer generation logic to check room-specific deposits first
+#
+# Data structure (stored in db.config.room_deposits[room_id]):
+# {
+#   "deposit_required": boolean,
+#   "deposit_percent": number (1-100),
+#   "updated_at": ISO timestamp
+# }
+# ---------------------------------------------------------------------------
+
+# @app.get("/api/config/room-deposit/{room_id}")
+# async def get_room_deposit_config(room_id: str):
+#     """
+#     Get deposit configuration for a specific room.
+#
+#     INACTIVE - Uncomment when integrating with main frontend.
+#     """
+#     try:
+#         db = wf_load_db()
+#         room_deposits = db.get("config", {}).get("room_deposits", {})
+#         config = room_deposits.get(room_id, {})
+#         return {
+#             "room_id": room_id,
+#             "deposit_required": config.get("deposit_required", False),
+#             "deposit_percent": config.get("deposit_percent", None),
+#             "updated_at": config.get("updated_at"),
+#         }
+#     except Exception as exc:
+#         raise HTTPException(
+#             status_code=500, detail=f"Failed to load room deposit config: {exc}"
+#         ) from exc
+#
+#
+# @app.post("/api/config/room-deposit/{room_id}")
+# async def set_room_deposit_config(room_id: str, deposit_required: bool, deposit_percent: Optional[int] = None):
+#     """
+#     Set deposit configuration for a specific room.
+#
+#     INACTIVE - Uncomment when integrating with main frontend.
+#
+#     This overrides the global deposit setting for offers using this room.
+#     """
+#     try:
+#         db = wf_load_db()
+#         if "config" not in db:
+#             db["config"] = {}
+#         if "room_deposits" not in db["config"]:
+#             db["config"]["room_deposits"] = {}
+#         db["config"]["room_deposits"][room_id] = {
+#             "deposit_required": deposit_required,
+#             "deposit_percent": deposit_percent,
+#             "updated_at": _now_iso(),
+#         }
+#         wf_save_db(db)
+#         print(f"[Config] Room deposit updated: room={room_id} required={deposit_required} percent={deposit_percent}")
+#         return {"status": "ok", "room_id": room_id, "config": db["config"]["room_deposits"][room_id]}
+#     except Exception as exc:
+#         raise HTTPException(
+#             status_code=500, detail=f"Failed to save room deposit config: {exc}"
+#         ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Deposit Payment Endpoints
+# ---------------------------------------------------------------------------
+# These endpoints handle the mock deposit payment flow for testing.
+# In production, this would integrate with a payment gateway.
+#
+# See OPEN_DECISIONS.md DECISION-003 for production payment verification options.
+# ---------------------------------------------------------------------------
+
+
+class DepositPaymentRequest(BaseModel):
+    """Request to mark a deposit as paid."""
+    event_id: str
+
+
+@app.post("/api/event/deposit/pay")
+async def pay_deposit(request: DepositPaymentRequest):
+    """
+    Mark the deposit as paid for an event.
+
+    This is a mock endpoint for testing. In production, this would be
+    triggered by a payment gateway webhook after successful payment.
+
+    Requirements:
+    - Event must exist
+    - Event must be at Step 4 (offer step)
+    - Deposit must be required (configured by manager)
+    - Deposit must not already be paid
+
+    See OPEN_DECISIONS.md DECISION-001 for handling deposit changes after payment.
+    """
+    try:
+        db = wf_load_db()
+        events = db.get("events") or []
+        event_entry = None
+        event_index = None
+        for idx, event in enumerate(events):
+            if event.get("event_id") == request.event_id:
+                event_entry = event
+                event_index = idx
+                break
+
+        if not event_entry:
+            raise HTTPException(status_code=404, detail="Event not found")
+
+        current_step = event_entry.get("current_step", 1)
+        if current_step not in (4, 5):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Deposit can only be paid at Step 4 (offer) or Step 5 (negotiation). Current step: {current_step}"
+            )
+
+        deposit_info = event_entry.get("deposit_info")
+        if not deposit_info or not deposit_info.get("deposit_required"):
+            raise HTTPException(
+                status_code=400,
+                detail="No deposit is required for this event"
+            )
+
+        if deposit_info.get("deposit_paid"):
+            return {
+                "status": "already_paid",
+                "event_id": request.event_id,
+                "deposit_paid_at": deposit_info.get("deposit_paid_at"),
+            }
+
+        # Mark deposit as paid
+        deposit_info["deposit_paid"] = True
+        deposit_info["deposit_paid_at"] = _now_iso()
+        event_entry["deposit_info"] = deposit_info
+
+        wf_save_db(db)
+        print(f"[Deposit] Event {request.event_id}: Deposit marked as paid")
+
+        return {
+            "status": "ok",
+            "event_id": request.event_id,
+            "deposit_amount": deposit_info.get("deposit_amount"),
+            "deposit_paid_at": deposit_info.get("deposit_paid_at"),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to process deposit payment: {exc}"
+        ) from exc
+
+
+@app.get("/api/event/{event_id}/deposit")
+async def get_deposit_status(event_id: str):
+    """
+    Get the deposit status for an event.
+
+    Returns deposit info including:
+    - Whether deposit is required
+    - Deposit amount and due date
+    - Whether deposit has been paid
+    """
+    try:
+        db = wf_load_db()
+        events = db.get("events") or {}
+        event_entry = events.get(event_id)
+
+        if not event_entry:
+            raise HTTPException(status_code=404, detail="Event not found")
+
+        deposit_info = event_entry.get("deposit_info")
+        current_step = event_entry.get("current_step", 1)
+
+        if not deposit_info:
+            return {
+                "event_id": event_id,
+                "deposit_required": False,
+                "current_step": current_step,
+            }
+
+        return {
+            "event_id": event_id,
+            "current_step": current_step,
+            **deposit_info,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get deposit status: {exc}"
+        ) from exc
+
 
 @app.post("/api/reject-booking/{session_id}")
 async def reject_booking(session_id: str):
