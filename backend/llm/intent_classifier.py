@@ -7,24 +7,21 @@ from backend.domain.vocabulary import IntentLabel
 from backend.workflows.llm.adapter import classify_intent as agent_classify_intent
 from backend.workflows.common.confidence import has_workflow_signal, is_gibberish
 
-_RESUME_PHRASES = {
-    "yes",
-    "yes please",
-    "yes thanks",
-    "yes, please",
-    "yes we can",
-    "ok",
-    "okay",
-    "sure",
-    "sounds good",
-    "let's do it",
-    "proceed",
-    "continue",
-    "please continue",
-    "go ahead",
-    "sounds good to me",
-    "please proceed",
-}
+# Import consolidated patterns from keyword_buckets (single source of truth)
+from backend.workflows.nlu.keyword_buckets import (
+    ACTION_REQUEST_PATTERNS,
+    AVAILABILITY_TOKENS,
+    RESUME_PHRASES,
+    # Regex-based patterns for flexible matching
+    OPTION_KEYWORDS,
+    CAPACITY_KEYWORDS,
+    ALTERNATIVE_KEYWORDS,
+    ENHANCED_CONFIRMATION_KEYWORDS,
+    AVAILABILITY_KEYWORDS,
+)
+
+# Use imports with local aliases for backward compatibility
+_RESUME_PHRASES = RESUME_PHRASES
 
 _ROOM_NAMES = ("room a", "room b", "room c", "punkt.null", "punkt null")
 
@@ -48,16 +45,8 @@ _MONTH_TOKENS = (
     "december",
 )
 
-_AVAILABILITY_TOKENS = (
-    "availability",
-    "available",
-    "slot",
-    "slots",
-    "free on",
-    "open on",
-    "still open",
-    "still free",
-)
+# Use imported AVAILABILITY_TOKENS from keyword_buckets
+_AVAILABILITY_TOKENS = AVAILABILITY_TOKENS
 
 _OFFER_ACTION_TOKENS = (
     "confirm the offer",
@@ -160,6 +149,71 @@ _QNA_KEYWORDS: Dict[str, Sequence[str]] = {
         "loading dock",
         "access",
     ),
+    # =========================================================================
+    # NEW: Room Search Intents (from industry best practices)
+    # =========================================================================
+    "check_availability": (
+        "is it available",
+        "are you available",
+        "is it free",
+        "is it booked",
+        "can we book",
+        "open for booking",
+        "status of",
+    ),
+    "request_option": (
+        "can i hold",
+        "can we hold",
+        "can we option",
+        "tentative booking",
+        "provisional booking",
+        "soft hold",
+        "first option",
+        "put on hold",
+        "put it on hold",
+        "hold the space",
+    ),
+    "check_capacity": (
+        "capacity",
+        "how many people",
+        "how many guests",
+        "does it fit",
+        "will it fit",
+        "enough space",
+        "standing capacity",
+        "seated capacity",
+        "theater style",
+        "theatre style",
+        "max capacity",
+        "maximum capacity",
+    ),
+    "check_alternatives": (
+        "waitlist",
+        "waiting list",
+        "other dates",
+        "alternative dates",
+        "different dates",
+        "next available",
+        "nearest available",
+        "backup option",
+        "next opening",
+        "what else",
+        "any other rooms",
+        "if not available",
+    ),
+    "confirm_booking": (
+        "green light",
+        "lock it in",
+        "secure the date",
+        "binding booking",
+        "firm commitment",
+        "ready to book",
+        "ready to sign",
+        "sign us up",
+        "sign me up",
+        "that's a deal",
+        "it's a deal",
+    ),
 }
 
 _QUESTION_PREFIXES = (
@@ -177,13 +231,8 @@ _QUESTION_PREFIXES = (
     "how",
 )
 
-_ACTION_PATTERNS = (
-    r"\bsend\s+(me\s+)?(the\s+|a\s+)?",
-    r"\bprovide\s+(me\s+with\s+)?",
-    r"\bgive\s+(me|us)\b",
-    r"\bemail\s+(me|us)\b",
-    r"\bforward\s+(me|us)\b",
-)
+# Use imported ACTION_REQUEST_PATTERNS from keyword_buckets
+_ACTION_PATTERNS = ACTION_REQUEST_PATTERNS
 
 
 def _normalise_text(message: str) -> str:
@@ -194,17 +243,43 @@ def _matches_any(text: str, tokens: Iterable[str]) -> bool:
     return any(token in text for token in tokens)
 
 
+def _matches_any_regex(text: str, patterns: List[str]) -> bool:
+    """Match text against regex patterns (more flexible than substring matching)."""
+    return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
+
+
 def _detect_room_mentions(text: str) -> bool:
     return any(room in text for room in _ROOM_NAMES)
+
+
+# Mapping of Q&A types to regex patterns (for flexible matching)
+_QNA_REGEX_PATTERNS: Dict[str, List[str]] = {
+    "request_option": OPTION_KEYWORDS.get("en", []),
+    "check_capacity": CAPACITY_KEYWORDS.get("en", []),
+    "check_alternatives": ALTERNATIVE_KEYWORDS.get("en", []),
+    "confirm_booking": ENHANCED_CONFIRMATION_KEYWORDS.get("en", []),
+    "check_availability": AVAILABILITY_KEYWORDS.get("en", []),
+}
 
 
 def _detect_qna_types(text: str) -> List[str]:
     if is_action_request(text):
         return []
     matches: List[str] = []
+
+    # First check regex patterns (more flexible, handles variations)
+    for qna_type, patterns in _QNA_REGEX_PATTERNS.items():
+        if patterns and _matches_any_regex(text, patterns):
+            matches.append(qna_type)
+
+    # Then check simple substring keywords (for existing types)
     for qna_type, keywords in _QNA_KEYWORDS.items():
+        # Skip types already checked via regex
+        if qna_type in _QNA_REGEX_PATTERNS:
+            continue
         if _matches_any(text, keywords):
             matches.append(qna_type)
+
     return matches
 
 
@@ -288,6 +363,13 @@ def _step_anchor_from_qna(qna_types: Sequence[str]) -> Optional[str]:
     if not qna_types:
         return None
     for qna_type in qna_types:
+        # NEW: Room search intents route to Room Availability
+        if qna_type in {"check_availability", "check_capacity", "check_alternatives"}:
+            return "Room Availability"
+        # NEW: Option/confirmation route to Offer Review (stronger signal)
+        if qna_type in {"request_option", "confirm_booking"}:
+            return "Offer Review"
+        # Existing mappings (unchanged)
         if qna_type in {"free_dates"}:
             return "Date Confirmation"
         if qna_type in {"rooms_by_feature", "room_features"}:

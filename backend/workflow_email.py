@@ -885,6 +885,45 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     _debug_state("init", state, extra={"entity": "client"})
     last_result = intake.process(state)
     _debug_state("post_intake", state, extra={"intent": state.intent.value if state.intent else None})
+
+    # [DUPLICATE MESSAGE DETECTION] Check if client sent the exact same message twice in a row
+    # This prevents confusing duplicate responses when client accidentally resends
+    if state.event_entry:
+        last_client_msg = state.event_entry.get("last_client_message", "")
+        normalized_current = combined_text.strip().lower()
+        normalized_last = (last_client_msg or "").strip().lower()
+
+        # Only check for duplicates if we have a previous message and messages are identical
+        if normalized_last and normalized_current == normalized_last:
+            # Don't flag as duplicate if this is a detour return or offer update flow
+            is_detour = state.event_entry.get("caller_step") is not None
+            current_step = state.event_entry.get("current_step", 1)
+
+            if not is_detour and current_step >= 2:
+                # Return friendly "same message" response instead of processing
+                duplicate_response = GroupResult(
+                    halt=True,
+                    draft={
+                        "body_markdown": (
+                            "I notice this is the same message as before. "
+                            "Is there something specific you'd like to add or clarify? "
+                            "I'm happy to help with any questions or changes."
+                        ),
+                        "hil_required": False,
+                    },
+                )
+                trace_marker(
+                    state.thread_id,
+                    "DUPLICATE_MESSAGE_DETECTED",
+                    detail="Client sent identical message twice in a row",
+                    owner_step=f"Step{current_step}",
+                )
+                return _flush_and_finalize(duplicate_response, state, path, lock_path)
+
+        # Store current message for next comparison (only if not a duplicate)
+        state.event_entry["last_client_message"] = combined_text.strip()
+        state.extras["persist"] = True
+
     _persist_if_needed(state, path, lock_path)
     if last_result.halt:
         _debug_state("halt_post_intake", state)

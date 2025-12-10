@@ -15,6 +15,9 @@ except ImportError:  # pragma: no cover - OpenAI optional in local/dev runs
 from backend.workflows.common.types import WorkflowState
 from backend.utils.openai_key import load_openai_api_key
 
+# Import consolidated pattern from keyword_buckets (single source of truth)
+from backend.workflows.nlu.keyword_buckets import ACTION_REQUEST_PATTERNS
+
 _QUESTION_WORDS = (
     "which",
     "what",
@@ -31,13 +34,8 @@ _QUESTION_WORDS = (
     "would you",
 )
 
-_ACTION_PATTERNS = (
-    r"\bsend\s+(me\s+)?(the\s+|a\s+)?",
-    r"\bprovide\s+(me\s+with\s+)?",
-    r"\bgive\s+(me|us)\b",
-    r"\bemail\s+(me|us)\b",
-    r"\bforward\s+(me|us)\b",
-)
+# Use imported patterns (removes duplicate definition)
+_ACTION_PATTERNS = ACTION_REQUEST_PATTERNS
 
 _PATTERNS = (
     "available",

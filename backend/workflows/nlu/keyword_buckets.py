@@ -748,3 +748,183 @@ def get_all_revision_markers(language: str = "mixed") -> List[str]:
     if language in ("de", "mixed"):
         patterns.extend(REVISION_MARKERS_DE)
     return patterns
+
+
+# =============================================================================
+# SHARED DETECTION PATTERNS (Consolidated from multiple modules)
+# =============================================================================
+
+# Action request patterns - prevents "send me X" from triggering Q&A
+# Consolidated from intent_classifier.py and general_qna_classifier.py
+ACTION_REQUEST_PATTERNS = (
+    r"\bsend\s+(me\s+)?(the\s+|a\s+)?",
+    r"\bprovide\s+(me\s+with\s+)?",
+    r"\bgive\s+(me|us)\b",
+    r"\bemail\s+(me|us)\b",
+    r"\bforward\s+(me|us)\b",
+)
+
+# Availability tokens - fast string matching for common availability queries
+AVAILABILITY_TOKENS = (
+    "availability",
+    "available",
+    "slot",
+    "slots",
+    "free on",
+    "open on",
+    "still open",
+    "still free",
+)
+
+# Resume/confirmation phrases - exact match set for quick confirmations
+RESUME_PHRASES = {
+    "yes",
+    "yes please",
+    "yes thanks",
+    "yes, please",
+    "yes we can",
+    "ok",
+    "okay",
+    "sure",
+    "sounds good",
+    "let's do it",
+    "proceed",
+    "continue",
+    "please continue",
+    "go ahead",
+    "sounds good to me",
+    "please proceed",
+}
+
+
+# =============================================================================
+# ROOM SEARCH INTENTS (Industry best practices)
+# Provides granular detection for room booking scenarios beyond generic Q&A
+# =============================================================================
+
+class RoomSearchIntent(Enum):
+    """Specific room search intents for precise routing."""
+    CHECK_AVAILABILITY = "check_availability"
+    REQUEST_OPTION = "request_option"
+    CHECK_CAPACITY = "check_capacity"
+    CHECK_ALTERNATIVES = "check_alternatives"
+    CONFIRM_BOOKING = "confirm_booking"
+    UNKNOWN = "unknown"
+
+
+# Option/hold request patterns - distinguishes "hold it" from "is it free?"
+OPTION_KEYWORDS = {
+    "en": [
+        r"\b(can|could)\s+(i|we)\s+(option|hold|reserve)\b",
+        r"\bput\s+(it|me|us\s+)?on\s+(hold|option)\b",  # "put it on hold" OR "put on hold"
+        r"\bmake\s+an\s+option\b",
+        r"\btentative\s+(booking|reservation)\b",
+        r"\bprovisional\s+(booking|reservation)\b",
+        r"\bsoft\s+hold\b",
+        r"\bsubject\s+to\s+release\b",
+        r"\bfirst\s+option\b",
+        r"\bhold\s+the\s+space\b",
+    ],
+    "de": [
+        r"\b(können|könnten)\s+(sie|wir)\s+(optionieren|reservieren)\b",
+        r"\beine\s+option\s+(machen|setzen|eintragen)\b",
+        r"\bprovisorisch\s+(buchen|reservieren)\b",
+        r"\b(datum|raum|termin)\s+(blocken|festhalten)\b",
+        r"\boption\s+auf\b",
+    ],
+}
+
+# Capacity check patterns - direct capacity queries
+CAPACITY_KEYWORDS = {
+    "en": [
+        r"\b(capacity|cap)\b",
+        r"\bhow\s+many\s+(people|guests|pax)\b",
+        r"\b(does|will)\s+it\s+fit\b",
+        r"\bfits?\s+\d+\s*(people|guests|pax)?\b",
+        r"\b(enough|sufficient)\s+(space|room)\b",
+        r"\bstanding\s+capacity\b",
+        r"\btheat(er|re)\s+style\s+for\s+\d+\b",
+        r"\bmax(imum)?\s+(capacity|guests|people)\b",
+        r"\bseated\s+capacity\b",
+    ],
+    "de": [
+        r"\b(kapazität|platzangebot)\b",
+        r"\bwie\s+viele\s+(personen|gäste|leute)\b",
+        r"\b(passt|passen)\s+(das|es|wir)\b",
+        r"\b(genug|ausreichend)\s+platz\b",
+        r"\bplatz\s+für\s+\d+\b",
+        r"\bmax(imale)?\s+(anzahl|kapazität)\b",
+        r"\bbestuhlt\b",
+        r"\bstehend\b",
+    ],
+}
+
+# Alternative/waitlist patterns - handles "what else?" and fallback requests
+ALTERNATIVE_KEYWORDS = {
+    "en": [
+        r"\b(waitlist|waiting\s+list)\b",
+        r"\b(other|alternative|different)\s+(dates?|days?|times?|options?)\b",
+        r"\b(next|nearest)\s+available\b",
+        r"\bwhat\s+else\s+do\s+you\s+have\b",
+        r"\bany\s+other\s+rooms?\b",
+        r"\bnext\s+opening\b",
+        r"\bbackup\s+option\b",
+        r"\bif\s+not\b",
+        r"\bin\s+case\s+it'?s?\s+(full|booked)\b",
+    ],
+    "de": [
+        r"\b(warteliste)\b",
+        r"\b(andere|alternative)\s+(daten|termine|tage|optionen)\b",
+        r"\b(nächste|nächster)\s+freie[rn]?\b",
+        r"\bwas\s+haben\s+sie\s+sonst\b",
+        r"\bausweich(termin|datum|raum)\b",
+        r"\bfalls\s+(nicht|voll|belegt)\b",
+    ],
+}
+
+# Enhanced confirmation - stronger signals than generic "yes"
+ENHANCED_CONFIRMATION_KEYWORDS = {
+    "en": [
+        r"\blooks\s+(correct|right|good|perfect)\b",
+        r"\b(i|we)\s+approve\b",
+        r"\bgreen\s+light\b",
+        r"\bsign\s+(me|us)\s+up\b",
+        r"\b(it's|that's)\s+a\s+deal\b",
+        r"\bready\s+to\s+(book|sign|pay)\b",
+        r"\bsend\s+(the\s+)?(contract|invoice)\b",
+        r"\block\s+it\s+in\b",
+        r"\bsecure\s+the\s+date\b",
+        r"\bbinding\s+booking\b",
+        r"\bfirm\s+commitment\b",
+    ],
+    "de": [
+        r"\bsieht\s+(gut|richtig|korrekt)\s+aus\b",
+        r"\b(ich|wir)\s+bestätigen\b",
+        r"\bgrünes\s+licht\b",
+        r"\b(wir|ich)\s+bin\s+dabei\b",
+        r"\babgemacht\b",
+        r"\bbereit\s+zu(m)?\s+(buchen|unterschreiben|zahlen)\b",
+        r"\bbitte\s+(vertrag|rechnung)\s+senden\b",
+        r"\bfest\s+buchen\b",
+        r"\bdatum\s+sichern\b",
+    ],
+}
+
+# Availability check patterns - refined from room_search_keywords.py
+AVAILABILITY_KEYWORDS = {
+    "en": [
+        r"\b(is|are)\s+(it|they|the\s+room|the\s+space)\s+(available|free|open|vacant)\b",
+        r"\b(do|can)\s+you\s+(have|offer)\s+availability\b",
+        r"\b(is|are)\s+(it|they)\s+booked\b",
+        r"\bstatus\s+of\b",
+        r"\bcan\s+we\s+book\b",
+        r"\bopen\s+for\s+booking\b",
+    ],
+    "de": [
+        r"\b(ist|sind)\s+(es|sie|der\s+raum)\s+(frei|verfügbar|noch\s+zu\s+haben)\b",
+        r"\b(haben|hätten)\s+sie\s+(noch\s+)?(platz|kapazität)\b",
+        r"\b(ist|sind)\s+(es|sie)\s+belegt\b",
+        r"\bwie\s+sieht\s+es\s+aus\s+mit\b",
+        r"\bkann\s+man\s+(noch\s+)?buchen\b",
+    ],
+}
