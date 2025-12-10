@@ -21,11 +21,13 @@ The system is composed of two main applications:
 
 ```mermaid
 graph TD
-    A[Client Frontend (Next.js)] <-->|REST API| B[Backend API (FastAPI)]
-    B <--> C[Workflow Engine (Python)]
-    C <--> D[LLM Adapter (OpenAI)]
-    C <--> E[Data Store (JSON / Supabase)]
-    C <--> F[Calendar & Inventory]
+    A[Client Frontend (Next.js)] -->|REST API| B[Backend API (FastAPI)]
+    B -->|Responses| A
+    B --> C[Workflow Engine (Python)]
+    C --> B
+    C --> D[LLM Adapter (OpenAI)]
+    C --> E[Data Store (JSON / Supabase)]
+    C --> F[Calendar & Inventory]
 ```
 
 ### 1. Frontend (`atelier-ai-frontend/`)
@@ -110,7 +112,8 @@ The system avoids "always-on" LLM calls by using a tiered detection architecture
 │   ├── main.py             # App entry point
 │   ├── workflow_email.py   # Core State Machine Orchestrator
 │   └── workflows/          # Business Logic
-│       ├── groups/         # Step implementations (intake, offer, etc.)
+│       ├── groups/         # Ste
+p implementations (intake, offer, etc.)
 │       ├── nlu/            # Detectors & Classifiers (Regex + LLM)
 │       └── io/             # Database & Task Management
 ├── docs/                   # Detailed documentation & rules
@@ -182,3 +185,5 @@ For deeper dives into specific subsystems:
 - **[Workflow Rules](docs/workflow_rules.md)**: The "Constitution" of the booking logic.
 - **[Team Guide](docs/TEAM_GUIDE.md)**: Best practices and troubleshooting.
 - **[Integration Guide](docs/INTEGRATION_PREPARATION_GUIDE.md)**: How to deploy and connect to real infrastructure.
+- **[Dev Changelog](DEV_CHANGELOG.md)**: Day-by-day summary of new features, fixes, and experiments.
+- **[Open Decisions](docs/internal/OPEN_DECISIONS.md)**: Documented architecture choices and the reasoning behind them.
