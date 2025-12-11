@@ -55,6 +55,7 @@ from backend.api.debug import (
     debug_generate_report,
     resolve_timeline_path,
     render_arrow_log,
+    debug_llm_diagnosis,
 )
 from backend.debug.settings import is_trace_enabled
 from backend.debug.trace import BUS
@@ -90,12 +91,55 @@ def _is_port_in_use(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
+def _is_frontend_healthy(port: int, timeout: float = 2.0) -> bool:
+    """Check if frontend returns a healthy response (not 500 error)."""
+    import urllib.request
+    import urllib.error
+    try:
+        req = urllib.request.Request(f"http://localhost:{port}/", method="HEAD")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status < 500
+    except urllib.error.HTTPError as e:
+        return e.code < 500  # 404 is OK (might be a different route), 500 is not
+    except Exception:
+        return False
+
+
+def _kill_unhealthy_frontend() -> None:
+    """Kill any existing frontend processes and clear cache."""
+    import shutil
+    print("[Frontend] Killing unhealthy frontend and clearing cache...")
+    # Kill next dev processes
+    subprocess.run(["pkill", "-f", "next dev"], capture_output=True)
+    time.sleep(0.5)
+    # Clear the .next cache which often causes 500 errors
+    next_cache = FRONTEND_DIR / ".next"
+    if next_cache.exists():
+        try:
+            shutil.rmtree(next_cache)
+            print("[Frontend] Cleared .next cache")
+        except Exception as e:
+            print(f"[Frontend][WARN] Could not clear .next cache: {e}")
+    time.sleep(0.5)
+
+
 def _launch_frontend() -> Optional[subprocess.Popen]:
     if os.getenv("AUTO_LAUNCH_FRONTEND", "1") != "1":
         return None
     if _is_port_in_use(FRONTEND_PORT):
-        print(f"[Frontend] Port {FRONTEND_PORT} already in use – assuming frontend is running.")
-        return None
+        # Port is in use - check if it's actually healthy
+        if _is_frontend_healthy(FRONTEND_PORT):
+            print(f"[Frontend] Port {FRONTEND_PORT} already in use – frontend is healthy.")
+            return None
+        else:
+            print(f"[Frontend][WARN] Port {FRONTEND_PORT} in use but returning errors!")
+            if os.getenv("AUTO_FIX_FRONTEND", "1") == "1":
+                _kill_unhealthy_frontend()
+                # Now port should be free, continue to launch
+            else:
+                print(f"[Frontend][WARN] Set AUTO_FIX_FRONTEND=1 to auto-fix, or run:")
+                print(f"[Frontend][WARN]   pkill -f 'next dev' && rm -rf atelier-ai-frontend/.next")
+                return None
     if not FRONTEND_DIR.exists():
         print(f"[Frontend][WARN] Directory {FRONTEND_DIR} not found; skipping auto-launch.")
         return None
@@ -1127,6 +1171,18 @@ if DEBUG_TRACE_ENABLED:
             headers["X-Debug-Report-Path"] = saved_path
         return PlainTextResponse(content=body, headers=headers)
 
+    @app.get("/api/debug/threads/{thread_id}/llm-diagnosis")
+    async def get_debug_llm_diagnosis(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
+    ):
+        return debug_llm_diagnosis(
+            thread_id,
+            granularity=granularity,
+            kinds=_parse_kind_filter(kinds),
+        )
+
 else:
 
     @app.get("/api/debug/threads/{thread_id}")
@@ -1165,6 +1221,14 @@ else:
         granularity: str = Query("logic"),
         kinds: Optional[str] = Query(None),
         persist: bool = Query(False),
+    ):
+        raise HTTPException(status_code=404, detail="Debug tracing disabled")
+
+    @app.get("/api/debug/threads/{thread_id}/llm-diagnosis")
+    async def get_debug_llm_diagnosis_disabled(
+        thread_id: str,
+        granularity: str = Query("logic"),
+        kinds: Optional[str] = Query(None),
     ):
         raise HTTPException(status_code=404, detail="Debug tracing disabled")
 

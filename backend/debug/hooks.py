@@ -899,6 +899,143 @@ def current_subloop(thread_id: str) -> Optional[str]:
     return get_subloop_context(thread_id)
 
 
+def trace_classification(
+    thread_id: str,
+    owner_step: str,
+    classification_type: str,
+    raw_input: str,
+    result: str,
+    *,
+    matched_patterns: Optional[List[str]] = None,
+    confidence: Optional[float] = None,
+    alternatives: Optional[List[str]] = None,
+    granularity: str = "logic",
+) -> None:
+    """Trace intent/entity classification for debugging detection issues."""
+    data = {
+        "classification_type": classification_type,
+        "raw_input": raw_input,
+        "result": result,
+    }
+    if matched_patterns:
+        data["matched_patterns"] = matched_patterns
+    if confidence is not None:
+        data["confidence"] = confidence
+    if alternatives:
+        data["alternatives"] = alternatives
+
+    emit(
+        thread_id,
+        "CLASSIFICATION",
+        step=owner_step,
+        owner_step=owner_step,
+        subject=classification_type,
+        status="classified",
+        granularity=granularity,
+        entity_label="Classification",
+        actor="Agent",
+        event_name="Classified",
+        details_label=result,
+        data=data,
+    )
+
+
+def trace_date_lifecycle(
+    thread_id: str,
+    owner_step: str,
+    event: str,
+    *,
+    raw_input: Optional[str] = None,
+    parsed_value: Optional[str] = None,
+    storage_value: Optional[str] = None,
+    display_value: Optional[str] = None,
+    parser_used: Optional[str] = None,
+    timezone: Optional[str] = None,
+    granularity: str = "logic",
+) -> None:
+    """Trace date value transformations for debugging date mismatch issues."""
+    data: Dict[str, Any] = {"event": event}
+    if raw_input:
+        data["raw_input"] = raw_input
+    if parsed_value:
+        data["parsed_value"] = parsed_value
+    if storage_value:
+        data["storage_value"] = storage_value
+    if display_value:
+        data["display_value"] = display_value
+    if parser_used:
+        data["parser_used"] = parser_used
+    if timezone:
+        data["timezone"] = timezone
+
+    # Detect mismatch
+    mismatch = False
+    if parsed_value and storage_value and parsed_value != storage_value:
+        mismatch = True
+        data["mismatch"] = True
+
+    emit(
+        thread_id,
+        "DATE_LIFECYCLE",
+        step=owner_step,
+        owner_step=owner_step,
+        subject=event,
+        status="mismatch" if mismatch else "captured",
+        granularity=granularity,
+        entity_label="Date",
+        actor="System",
+        event_name=event,
+        details_label=parsed_value or storage_value or raw_input or event,
+        data=data,
+    )
+
+
+def trace_hil_task(
+    thread_id: str,
+    owner_step: str,
+    task_type: str,
+    action: str,
+    *,
+    step_required: Optional[int] = None,
+    current_step: Optional[int] = None,
+    payload_keys: Optional[List[str]] = None,
+    granularity: str = "logic",
+) -> None:
+    """Trace HIL task creation and approval for debugging HIL issues."""
+    data: Dict[str, Any] = {
+        "task_type": task_type,
+        "action": action,
+    }
+    if step_required is not None:
+        data["step_required"] = step_required
+    if current_step is not None:
+        data["current_step"] = current_step
+    if payload_keys:
+        data["payload_keys"] = payload_keys
+
+    # Detect step gate violation
+    violation = False
+    if step_required and current_step and current_step < step_required:
+        violation = True
+        data["violation"] = True
+        data["violation_reason"] = f"{task_type} requires Step {step_required}+, created at Step {current_step}"
+
+    emit(
+        thread_id,
+        "HIL_TASK",
+        step=owner_step,
+        owner_step=owner_step,
+        subject=task_type,
+        status="violation" if violation else action,
+        granularity=granularity,
+        entity_label="HIL",
+        actor="HIL",
+        event_name=action,
+        details_label=task_type,
+        data=data,
+    )
+
+
 __all__ = [
     "trace_step",
     "trace_gate",
@@ -916,6 +1053,9 @@ __all__ = [
     "set_subloop",
     "clear_subloop",
     "current_subloop",
+    "trace_classification",
+    "trace_date_lifecycle",
+    "trace_hil_task",
 ]
 
 

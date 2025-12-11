@@ -1,7 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { detectProblems, Problem } from './ProblemBanner';
+import StepFilter, { useStepFilter } from './StepFilter';
+
+function extractStepNumber(step: string): number | null {
+  const match = step.match(/step[_\s]?(\d+)/i);
+  return match ? parseInt(match[1], 10) : null;
+}
 
 interface ErrorsViewProps {
   threadId: string | null;
@@ -40,6 +46,42 @@ export default function ErrorsView({ threadId, pollMs = 2000 }: ErrorsViewProps)
   const [error, setError] = useState<string | null>(null);
   const [diagnosisCopied, setDiagnosisCopied] = useState(false);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
+  const { selectedStep } = useStepFilter();
+
+  // Filter gate failures by selected step
+  const filteredGateFailures = useMemo(() => {
+    if (selectedStep === null) return gateFailures;
+    return gateFailures.filter((gate) => {
+      const stepNum = extractStepNumber(gate.step);
+      return stepNum === selectedStep;
+    });
+  }, [gateFailures, selectedStep]);
+
+  // Filter detours by selected step
+  const filteredDetours = useMemo(() => {
+    if (selectedStep === null) return detours;
+    return detours.filter((detour) => {
+      const fromNum = extractStepNumber(detour.from_step);
+      const toNum = extractStepNumber(detour.to_step);
+      return fromNum === selectedStep || toNum === selectedStep;
+    });
+  }, [detours, selectedStep]);
+
+  // Get available steps
+  const availableSteps = useMemo(() => {
+    const steps = new Set<number>();
+    gateFailures.forEach((gate) => {
+      const stepNum = extractStepNumber(gate.step);
+      if (stepNum !== null) steps.add(stepNum);
+    });
+    detours.forEach((detour) => {
+      const fromNum = extractStepNumber(detour.from_step);
+      const toNum = extractStepNumber(detour.to_step);
+      if (fromNum !== null) steps.add(fromNum);
+      if (toNum !== null) steps.add(toNum);
+    });
+    return Array.from(steps).sort((a, b) => a - b);
+  }, [gateFailures, detours]);
 
   useEffect(() => {
     if (!threadId) {
@@ -166,6 +208,8 @@ export default function ErrorsView({ threadId, pollMs = 2000 }: ErrorsViewProps)
 
   return (
     <div className="space-y-6">
+      <StepFilter availableSteps={availableSteps} />
+
       {/* LLM Diagnosis Copy */}
       <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
         <div className="flex items-center justify-between">
@@ -229,14 +273,24 @@ export default function ErrorsView({ threadId, pollMs = 2000 }: ErrorsViewProps)
 
       {/* Recent Gate Failures */}
       <div>
-        <h2 className="text-lg font-semibold mb-3">Recent Gate Failures</h2>
-        {gateFailures.length === 0 ? (
+        <h2 className="text-lg font-semibold mb-3">
+          Recent Gate Failures
+          {selectedStep !== null && (
+            <span className="text-sm font-normal text-slate-400 ml-2">
+              ({filteredGateFailures.length} of {gateFailures.length})
+            </span>
+          )}
+        </h2>
+        {filteredGateFailures.length === 0 ? (
           <div className="text-slate-400 text-sm">No gate failures recorded</div>
         ) : (
           <div className="space-y-2">
-            {gateFailures.map((gate, idx) => (
+            {filteredGateFailures.map((gate, idx) => {
+              const stepNum = extractStepNumber(gate.step);
+              return (
               <div
                 key={idx}
+                id={stepNum !== null ? `step-${stepNum}` : undefined}
                 className="bg-red-500/5 border border-red-500/20 rounded-lg px-4 py-3 flex items-center gap-4"
               >
                 <span className="text-xs text-slate-500 font-mono">
@@ -252,21 +306,32 @@ export default function ErrorsView({ threadId, pollMs = 2000 }: ErrorsViewProps)
                   </span>
                 )}
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
       </div>
 
       {/* Recent Detours */}
       <div>
-        <h2 className="text-lg font-semibold mb-3">Recent Detours</h2>
-        {detours.length === 0 ? (
+        <h2 className="text-lg font-semibold mb-3">
+          Recent Detours
+          {selectedStep !== null && (
+            <span className="text-sm font-normal text-slate-400 ml-2">
+              ({filteredDetours.length} of {detours.length})
+            </span>
+          )}
+        </h2>
+        {filteredDetours.length === 0 ? (
           <div className="text-slate-400 text-sm">No detours recorded</div>
         ) : (
           <div className="space-y-2">
-            {detours.map((detour, idx) => (
+            {filteredDetours.map((detour, idx) => {
+              const fromNum = extractStepNumber(detour.from_step);
+              return (
               <div
                 key={idx}
+                id={fromNum !== null ? `step-${fromNum}` : undefined}
                 className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg px-4 py-3 flex items-center gap-4"
               >
                 <span className="text-xs text-slate-500 font-mono">
@@ -279,7 +344,8 @@ export default function ErrorsView({ threadId, pollMs = 2000 }: ErrorsViewProps)
                   {detour.reason}
                 </span>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
       </div>
