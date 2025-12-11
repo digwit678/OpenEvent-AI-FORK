@@ -3,7 +3,7 @@ import { SUBLOOP_COLORS, SUBLOOP_LABELS, SubloopKey } from './constants';
 
 const ENTRIES = Object.keys(SUBLOOP_COLORS) as SubloopKey[];
 
-export default function SubloopLegend(): JSX.Element | null {
+export default function SubloopLegend(): React.ReactElement | null {
   if (!ENTRIES.length) {
     return null;
   }

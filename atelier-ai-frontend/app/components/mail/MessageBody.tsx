@@ -20,10 +20,10 @@ function normaliseMarkdown(text: string): string {
   return output;
 }
 
-function parseLineWithLinks(line: string, lineIndex: number): JSX.Element {
+function parseLineWithLinks(line: string, lineIndex: number): React.ReactElement {
   // Match anchor tags: <a href="..." target="_blank" rel="noopener noreferrer">...</a>
   const anchorRegex = /<a\s+href="([^"]+)"[^>]*>(.*?)<\/a>/g;
-  const parts: (string | JSX.Element)[] = [];
+  const parts: (string | React.ReactElement)[] = [];
   let lastIndex = 0;
   let match;
   let keyCounter = 0;
@@ -65,7 +65,7 @@ function parseLineWithLinks(line: string, lineIndex: number): JSX.Element {
   return <>{parts}</>;
 }
 
-export default function MessageBody({ msg }: MessageBodyProps): JSX.Element {
+export default function MessageBody({ msg }: MessageBodyProps): React.ReactElement {
   const raw =
     msg.body_markdown ??
     msg.body_md ??

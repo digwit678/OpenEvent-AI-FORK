@@ -6,7 +6,7 @@ import type { TraceColumnDef } from '../trace/ColumnDefs';
 
 interface StepGroupProps {
   section: TraceSection & {
-    rowElements: JSX.Element[];
+    rowElements: React.ReactElement[];
     dimmed?: boolean;
   };
   columns: TraceColumnDef[];
@@ -15,7 +15,7 @@ interface StepGroupProps {
   scrollLeft: number;
 }
 
-function renderGateBadge(progress: GateProgress | undefined): JSX.Element | null {
+function renderGateBadge(progress: GateProgress | undefined): React.ReactElement | null {
   if (!progress) {
     return null;
   }
@@ -30,7 +30,7 @@ function renderGateBadge(progress: GateProgress | undefined): JSX.Element | null
   );
 }
 
-function renderGateBreakdown(progress: GateProgress | undefined): JSX.Element | null {
+function renderGateBreakdown(progress: GateProgress | undefined): React.ReactElement | null {
   if (!progress) {
     return null;
   }
@@ -51,7 +51,7 @@ export default function StepGroup({
   columnTemplate,
   stickyOffsets,
   scrollLeft,
-}: StepGroupProps): JSX.Element {
+}: StepGroupProps): React.ReactElement {
   const { title, gateProgress, infoChips, rowElements, dimmed, key } = section;
   const sectionClass = dimmed ? 'trace-section trace-section--future' : 'trace-section';
   const headerRowStyle = {
@@ -80,7 +80,7 @@ export default function StepGroup({
       <div className="trace-section__grid">
         <div className="trace-table__header-row" style={headerRowStyle}>
           {columns.map((column, index) => {
-            const style = {
+            const style: React.CSSProperties = {
               width: column.width,
               minWidth: column.width,
               textAlign: column.align || 'left',

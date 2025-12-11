@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Send, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
@@ -246,7 +246,7 @@ function renderMessageContent(content: string): React.ReactNode {
   );
 }
 
-export default function EmailThreadUI() {
+function EmailThreadUIContent() {
   const isMountedRef = useRef(true);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -1407,5 +1407,17 @@ export default function EmailThreadUI() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function EmailThreadUI() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-[#bcdfff] via-[#dff0ff] to-[#f7fbff] p-4 flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    }>
+      <EmailThreadUIContent />
+    </Suspense>
   );
 }

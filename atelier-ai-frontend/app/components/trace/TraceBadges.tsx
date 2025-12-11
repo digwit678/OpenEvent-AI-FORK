@@ -1,8 +1,8 @@
 'use client';
 
-type TraceBadgeTone = 'ok' | 'pending' | 'warn' | 'info' | 'success' | 'muted';
+export type TraceBadgeTone = 'ok' | 'pending' | 'warn' | 'info' | 'success' | 'muted';
 
-interface TraceBadgeProps {
+export interface TraceBadgeProps {
   id: string;
   label: string;
   value: string;

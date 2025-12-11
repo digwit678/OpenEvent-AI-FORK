@@ -35,7 +35,7 @@ function formatValue(value: unknown): string {
   }
 }
 
-export default function PromptPreview({ label, payload, raw }: PromptPreviewProps): JSX.Element {
+export default function PromptPreview({ label, payload, raw }: PromptPreviewProps): React.ReactElement {
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('prompt');
   const [copyState, setCopyState] = useState<CopyState>('idle');

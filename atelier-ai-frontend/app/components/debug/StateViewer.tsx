@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 
 interface StateViewerProps {
   state: Record<string, unknown>;
@@ -39,7 +39,7 @@ interface StateTreeProps {
   path: string;
 }
 
-function StateTree({ data, path }: StateTreeProps): JSX.Element {
+function StateTree({ data, path }: StateTreeProps): React.ReactElement {
   if (Array.isArray(data)) {
     if (data.length === 0) {
       return <span className="state-tree__value state-tree__value--empty">[]</span>;

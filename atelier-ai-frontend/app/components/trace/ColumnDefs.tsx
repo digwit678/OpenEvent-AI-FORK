@@ -239,7 +239,7 @@ export const TRACE_COLUMNS: TraceColumnDef[] = [
         {row.subloop && row.subloopLabel ? (
           <span
             className="trace-entity__subloop"
-            style={{ backgroundColor: row.subloopColor }}
+            style={{ backgroundColor: row.subloopColor ?? undefined }}
             title={row.subloopLabel}
           >
             {row.subloopLabel}

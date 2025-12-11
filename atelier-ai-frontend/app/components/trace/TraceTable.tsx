@@ -10,7 +10,7 @@ import { TraceRowData, TraceSection } from './TraceTypes';
 import { useStickyScroll } from './useStickyScroll';
 import StepGroup from '../debug/StepGroup';
 
-type RenderedSection = TraceSection & { rowElements: JSX.Element[]; dimmed?: boolean };
+type RenderedSection = TraceSection & { rowElements: React.ReactElement[]; dimmed?: boolean };
 
 interface TraceTableProps {
   sections: TraceSection[];
