@@ -38,11 +38,18 @@ export interface RawTraceEvent {
     required?: number;
     missing?: string[];
     result?: string;
+    label?: string;
   } | null;
   io?: {
     direction?: string;
     op?: string;
     result?: string;
+  } | null;
+  db?: {
+    mode?: string;
+    op?: string;
+    result?: string;
+    duration_ms?: number;
   } | null;
   wait_state?: string | null;
   prompt_preview?: string | null;
@@ -148,6 +155,7 @@ export interface StepSignalsInput {
     date?: { confirmed?: boolean; value?: string | null };
     room_status?: string | null;
     room_status_display?: string | null;
+    room_selected?: boolean | null;
     hash_status?: string | null;
     requirements_match?: boolean;
     requirements_match_tooltip?: string | null;

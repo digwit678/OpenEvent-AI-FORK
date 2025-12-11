@@ -1,6 +1,7 @@
 
 'use client'
 
+import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
@@ -29,7 +30,7 @@ interface SnapshotContext {
   displayDate: string | null
 }
 
-export default function RoomsPage() {
+function RoomsPageContent() {
   const searchParams = useSearchParams()
   const snapshotId = searchParams.get('snapshot_id')
   const date = searchParams.get('date')
@@ -342,5 +343,17 @@ export default function RoomsPage() {
         <p>Return to your booking conversation to select a room</p>
       </div>
     </div>
+  )
+}
+
+export default function RoomsPage() {
+  return (
+    <Suspense fallback={
+      <div className="container mx-auto p-8">
+        <div className="text-center">Loading room information...</div>
+      </div>
+    }>
+      <RoomsPageContent />
+    </Suspense>
   )
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Script from 'next/script';
-import { ChatKitProvider, ChatKit } from '@openai/chatkit-react';
+import { useChatKit, ChatKit } from '@openai/chatkit-react';
 
 const BACKEND_BASE = (process.env.NEXT_PUBLIC_BACKEND_BASE || 'http://localhost:8000').replace(/\/$/, '');
 const CHATKIT_DOMAIN_KEY = process.env.NEXT_PUBLIC_CHATKIT_DOMAIN_KEY || 'local-development';
@@ -135,7 +135,7 @@ export default function AgentChatPage() {
     return () => observer.disconnect();
   }, []);
 
-  const providerConfig = useMemo(
+  const chatKitOptions = useMemo(
     () => ({
       backend: {
         type: 'custom' as const,
@@ -182,50 +182,50 @@ export default function AgentChatPage() {
     [],
   );
 
+  const { control } = useChatKit(chatKitOptions as any);
+
   return (
     <>
       <Script src="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js" async />
-      <ChatKitProvider config={providerConfig}>
-        <main className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center p-4">
-          <div className="w-full max-w-4xl bg-white shadow-xl rounded-3xl overflow-hidden border border-slate-200">
-            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
-              <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-semibold text-slate-800">OpenEvent Agent Chat</h1>
-                <span className="text-xs font-medium px-2 py-1 rounded-full bg-slate-200 text-slate-700">
-                  Tone: {VERBALIZER_TONE === 'plain' ? 'Plain' : 'Empathetic'}
-                </span>
-              </div>
-              <p className="text-sm text-slate-500 mt-1">
-                Talk directly to the workflow-backed assistant. Messages route through our FastAPI backend and reuse Workflow v3 logic.
-              </p>
+      <main className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center p-4">
+        <div className="w-full max-w-4xl bg-white shadow-xl rounded-3xl overflow-hidden border border-slate-200">
+          <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+            <div className="flex items-center justify-between">
+              <h1 className="text-2xl font-semibold text-slate-800">OpenEvent Agent Chat</h1>
+              <span className="text-xs font-medium px-2 py-1 rounded-full bg-slate-200 text-slate-700">
+                Tone: {VERBALIZER_TONE === 'plain' ? 'Plain' : 'Empathetic'}
+              </span>
             </div>
-            <div className="h-[640px] flex flex-col">
-              <div ref={shellRef} className="flex-1 overflow-hidden">
-                <ChatKit />
-              </div>
-              <div className="px-6 py-4 border-t border-slate-200 bg-white">
-                <QuickActionBar
-                  visible={showActions}
-                  onAction={(toolId) => {
-                    triggerClientTool(toolId);
-                  }}
-                />
-                {resumePrompt && (
-                  <div className="mt-3">
-                    <button
-                      type="button"
-                      onClick={() => fillComposerAndSend('yes')}
-                      className="rounded-full border border-slate-400 text-slate-700 px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-500"
-                    >
-                      Proceed with {resumePrompt}
-                    </button>
-                  </div>
-                )}
-              </div>
+            <p className="text-sm text-slate-500 mt-1">
+              Talk directly to the workflow-backed assistant. Messages route through our FastAPI backend and reuse Workflow v3 logic.
+            </p>
+          </div>
+          <div className="h-[640px] flex flex-col">
+            <div ref={shellRef} className="flex-1 overflow-hidden">
+              <ChatKit control={control} />
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 bg-white">
+              <QuickActionBar
+                visible={showActions}
+                onAction={(toolId) => {
+                  triggerClientTool(toolId);
+                }}
+              />
+              {resumePrompt && (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => fillComposerAndSend('yes')}
+                    className="rounded-full border border-slate-400 text-slate-700 px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-500"
+                  >
+                    Proceed with {resumePrompt}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
-        </main>
-      </ChatKitProvider>
+        </div>
+      </main>
     </>
   );
 }

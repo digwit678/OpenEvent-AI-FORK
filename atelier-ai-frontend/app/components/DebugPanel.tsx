@@ -19,7 +19,7 @@ import {
   STEP_TITLES,
 } from './debug/utils';
 import TraceTable from './trace/TraceTable';
-import TraceBadges from './trace/TraceBadges';
+import TraceBadges, { TraceBadgeProps } from './trace/TraceBadges';
 import {
   buildTraceRows,
   collectStepSnapshots,
@@ -52,8 +52,10 @@ interface TraceSummary {
   requirements_match?: boolean;
   requirements_match_tooltip?: string | null;
   offer_status_display?: string | null;
+  room_status_display?: string | null;
   room_selected?: boolean;
   tracked_info?: Record<string, unknown> | null;
+  hil_open?: boolean;
 }
 
 interface TraceResponse {
@@ -158,7 +160,7 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
   const [refreshCounter, setRefreshCounter] = useState(0);
 
   const tableScrollerRef = useRef<HTMLDivElement | null>(null);
-  const bufferRef = useRef<ReturnType<typeof createBufferFlusher<RawTraceEvent[]>> | null>(null);
+  const bufferRef = useRef<ReturnType<typeof createBufferFlusher<RawTraceEvent>> | null>(null);
   const timeTravelFrameRef = useRef<number | null>(null);
   const scrollMemoryRef = useRef<{ top: number; rowCount: number }>({ top: 0, rowCount: 0 });
   const scrollListenerRef = useRef<((event: Event) => void) | null>(null);
@@ -182,7 +184,7 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
   }, [granularity]);
 
   useEffect(() => {
-    bufferRef.current = createBufferFlusher<RawTraceEvent[]>({ onFlush: (items) => setRawEvents(items) });
+    bufferRef.current = createBufferFlusher<RawTraceEvent>({ onFlush: (items) => setRawEvents(items) });
     return () => bufferRef.current?.dispose();
   }, []);
 
@@ -301,12 +303,13 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
         setStateSnapshot(payload.state || {});
         setSignals(payload.confirmed);
         setSummary(payload.summary);
-        if (payload.time_travel?.as_of_ts !== undefined) {
+        const asOfTs = payload.time_travel?.as_of_ts;
+        if (typeof asOfTs === 'number') {
           setTimeTravelMeta((prev) => {
             if (prev) {
-              return { ...prev, ts: payload.time_travel!.as_of_ts };
+              return { ...prev, ts: asOfTs };
             }
-            return { ts: payload.time_travel.as_of_ts };
+            return { ts: asOfTs };
           });
         }
         setTimeTravelLoading(false);
@@ -349,7 +352,7 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
   }, [rawEvents, summary?.current_step_major]);
 
   const hilOpen = Boolean((summary && summary.hil_open) ?? stateSnapshot.hil_open ?? false);
-  const waitStateRaw = summary?.wait_state ?? signals?.wait_state ?? stateSnapshot.thread_state ?? '—';
+  const waitStateRaw = String(summary?.wait_state ?? signals?.wait_state ?? stateSnapshot.thread_state ?? '—');
   const waitStateLabel = waitStateRaw === 'Waiting on HIL' && !hilOpen ? 'Awaiting Client' : (waitStateRaw || '—');
   const currentStepMajor = summary?.current_step_major ?? null;
   const timeTravelActive = timeTravelTs !== null;
@@ -663,7 +666,7 @@ export default function DebugPanel({ threadId, pollMs = 1500, initialManagerView
     window.open(`/api/debug/threads/${encodeURIComponent(threadId)}/timeline/text?${params.toString()}`, '_blank');
   }, [threadId, granularity]);
 
-  const badgeData = useMemo(() => {
+  const badgeData = useMemo((): TraceBadgeProps[] => {
     const dateConfirmed = Boolean(signals?.date?.confirmed);
     const dateValue = signals?.date?.value;
     const dateLabel = dateConfirmed

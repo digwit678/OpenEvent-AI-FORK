@@ -1,5 +1,6 @@
 'use client'
 
+import { Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
@@ -34,7 +35,7 @@ interface SnapshotContext {
   title: string | null
 }
 
-export default function QnAPage() {
+function QnAPageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const snapshotId = searchParams.get('snapshot_id')
@@ -344,5 +345,17 @@ export default function QnAPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function QnAPage() {
+  return (
+    <Suspense fallback={
+      <div className="container mx-auto p-8">
+        <div className="text-center">Loading information...</div>
+      </div>
+    }>
+      <QnAPageContent />
+    </Suspense>
   )
 }
