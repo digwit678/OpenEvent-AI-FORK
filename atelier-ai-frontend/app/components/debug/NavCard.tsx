@@ -11,43 +11,52 @@ interface NavCardProps {
   threadId?: string | null;
 }
 
+// Simple inline styles for icons to prevent sizing issues
+const iconStyle = { width: '24px', height: '24px', flexShrink: 0 };
+
 export default function NavCard({ href, title, description, icon, badge, threadId }: NavCardProps) {
-  // Append thread param if available
   const fullHref = threadId ? `${href}?thread=${encodeURIComponent(threadId)}` : href;
 
   return (
     <Link
       href={fullHref}
-      className="block p-4 bg-slate-800/50 border border-slate-700 rounded-xl hover:bg-slate-800 hover:border-slate-600 transition-all group"
+      className="group block p-5 bg-slate-800 border border-slate-700 rounded-xl hover:bg-slate-750 hover:border-slate-600 transition-all"
+      style={{
+        backgroundColor: '#1e293b',
+        borderColor: '#334155',
+        padding: '20px',
+        borderRadius: '12px',
+        textDecoration: 'none',
+        display: 'block'
+      }}
     >
-      <div className="flex items-start gap-3">
-        <span className="text-2xl">{icon}</span>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-slate-100 group-hover:text-white transition-colors">
+      <div className="flex items-start gap-4" style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+        <span style={{ fontSize: '28px', lineHeight: 1 }}>{icon}</span>
+        <div className="flex-1 min-w-0" style={{ flex: 1, minWidth: 0 }}>
+          <div className="flex items-center gap-2" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h3 style={{ color: '#f1f5f9', fontSize: '18px', fontWeight: '600', margin: 0 }}>
               {title}
             </h3>
             {badge && (
               <span
-                className={`text-xs px-2 py-0.5 rounded-full ${
-                  badge.tone === 'ok'
-                    ? 'bg-green-500/20 text-green-400'
-                    : badge.tone === 'warn'
-                    ? 'bg-yellow-500/20 text-yellow-400'
-                    : badge.tone === 'error'
-                    ? 'bg-red-500/20 text-red-400'
-                    : 'bg-blue-500/20 text-blue-400'
-                }`}
+                style={{
+                  fontSize: '11px',
+                  padding: '3px 10px',
+                  borderRadius: '9999px',
+                  backgroundColor: badge.tone === 'error' ? 'rgba(239,68,68,0.2)' : badge.tone === 'warn' ? 'rgba(245,158,11,0.2)' : 'rgba(34,197,94,0.2)',
+                  color: badge.tone === 'error' ? '#f87171' : badge.tone === 'warn' ? '#fbbf24' : '#4ade80',
+                  fontWeight: '500',
+                }}
               >
                 {badge.text}
               </span>
             )}
           </div>
-          <p className="text-sm text-slate-400 mt-1">{description}</p>
+          <p style={{ color: '#94a3b8', fontSize: '15px', marginTop: '8px', lineHeight: '1.5', margin: '8px 0 0 0' }}>
+            {description}
+          </p>
         </div>
-        <span className="text-slate-500 group-hover:text-slate-400 transition-colors">
-          &rarr;
-        </span>
+        <span style={{ color: '#64748b', fontSize: '18px' }}>&rarr;</span>
       </div>
     </Link>
   );

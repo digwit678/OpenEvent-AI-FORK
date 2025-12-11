@@ -2,6 +2,47 @@
 
 ## 2025-12-11
 
+### Enhancement: Debugger UI Typography & Visual Polish
+
+**Task: Make debugger GUI more professional, readable, and modern**
+
+Comprehensive visual overhaul of the debugger dashboard with better typography, spacing, and modern styling.
+
+**Typography Changes:**
+- Added Inter font from Google Fonts for modern, clean appearance
+- Increased font sizes: titles 30→36px, body 14→15-16px, labels 10→13px
+- Better font weights and letter-spacing for improved readability
+
+**Layout Improvements:**
+- Increased padding throughout (24→32px containers)
+- More gap between elements (12→16-24px)
+- Larger rounded corners (8→12-16px)
+- Better visual hierarchy with proper spacing between sections
+
+**Components Updated:**
+- `layout.tsx` - Added Inter font from Google Fonts
+- `globals.css` - Set Inter as default, added debug-page scrollbar styles
+- `page.tsx` (landing) - Larger text, better spacing
+- `NavCard.tsx` - Bigger icons (28px), larger titles (18px)
+- `StatusBadges.tsx` - Larger badges with more padding
+- `QuickDiagnosis.tsx` - Better visual hierarchy, larger buttons
+- `ThreadSelector.tsx` - Cleaner input fields, proper sizing
+- `StepFilter.tsx` - Better button sizing and spacing
+- `DebugHeader.tsx` - Larger titles, better icon sizing
+- `DetectionView.tsx` - Much better spacing, readable legend
+- All subpage files - Consistent styling with inline fallbacks
+
+**Technical:** All components use inline style fallbacks to ensure proper rendering even if Tailwind CSS fails to load (prevents SVG sizing issues seen in earlier version).
+
+**Files Modified:**
+- `atelier-ai-frontend/app/layout.tsx`
+- `atelier-ai-frontend/app/globals.css`
+- `atelier-ai-frontend/app/debug/page.tsx`
+- `atelier-ai-frontend/app/debug/detection/page.tsx`
+- `atelier-ai-frontend/app/components/debug/*.tsx` (8 component files)
+
+---
+
 ### Feature: Duplicate Message Detection (UX)
 
 **Task: Prevent confusing duplicate responses when client accidentally resends the same message**
