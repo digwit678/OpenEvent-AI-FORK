@@ -5,6 +5,7 @@ import ThreadSelector, { useThreadId } from '../components/debug/ThreadSelector'
 import NavCard from '../components/debug/NavCard';
 import StatusBadges from '../components/debug/StatusBadges';
 import ProblemBanner, { detectProblems, Problem } from '../components/debug/ProblemBanner';
+import QuickDiagnosis from '../components/debug/QuickDiagnosis';
 
 interface TraceSummary {
   current_step_major?: number;
@@ -47,7 +48,6 @@ function DebugLandingContent() {
   const [error, setError] = useState<string | null>(null);
   const [dismissedProblems, setDismissedProblems] = useState<Set<string>>(new Set());
 
-  // Fetch trace data
   useEffect(() => {
     if (!threadId) {
       setState({});
@@ -89,22 +89,19 @@ function DebugLandingContent() {
     };
   }, [threadId]);
 
-  // Compute status badges
   const statusBadges = useMemo(() => {
     const stepNum = summary?.current_step_major;
     const stepName = stepNum ? STEP_NAMES[stepNum] || `Step ${stepNum}` : 'Unknown';
 
     return [
       {
-        label: 'Current Step',
+        label: 'Step',
         value: stepNum ? `${stepNum}. ${stepName}` : 'Waiting...',
         tone: stepNum ? 'ok' : 'pending',
       },
       {
         label: 'Date',
-        value: signals?.date?.confirmed
-          ? `Confirmed ${signals.date.value ? `(${signals.date.value})` : ''}`
-          : 'Pending',
+        value: signals?.date?.confirmed ? `${signals.date.value || 'Confirmed'}` : 'Pending',
         tone: signals?.date?.confirmed ? 'ok' : 'pending',
       },
       {
@@ -141,7 +138,6 @@ function DebugLandingContent() {
     ] as const;
   }, [signals, summary]);
 
-  // Detect problems
   const problems = useMemo(() => {
     const detected = detectProblems(state);
     return detected.filter((p) => !dismissedProblems.has(p.id));
@@ -152,14 +148,31 @@ function DebugLandingContent() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div
+      className="min-h-screen bg-slate-900 text-slate-100 p-8 debug-page"
+      style={{
+        backgroundColor: '#0f172a',
+        color: '#f1f5f9',
+        padding: '32px',
+        minHeight: '100vh',
+        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif"
+      }}
+    >
+      <div className="max-w-6xl mx-auto space-y-8" style={{ maxWidth: '72rem', margin: '0 auto' }}>
         {/* Header */}
         <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">OpenEvent Debugger</h1>
-            <p className="text-sm text-slate-400 mt-1">
-              Workflow debugging dashboard - select a view below to dive deeper
+            <h1
+              className="text-4xl font-bold"
+              style={{ fontSize: '36px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.025em' }}
+            >
+              OpenEvent Debugger
+            </h1>
+            <p
+              className="text-base text-slate-400 mt-2"
+              style={{ fontSize: '16px', color: '#94a3b8', marginTop: '8px' }}
+            >
+              Workflow analysis &amp; debugging dashboard
             </p>
           </div>
           <ThreadSelector />
@@ -167,7 +180,10 @@ function DebugLandingContent() {
 
         {/* Error state */}
         {error && (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg">
+          <div
+            className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg"
+            style={{ backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '12px 16px', borderRadius: '8px' }}
+          >
             {error}
           </div>
         )}
@@ -186,65 +202,90 @@ function DebugLandingContent() {
 
         {/* No thread connected */}
         {!threadId && (
-          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-8 text-center">
-            <p className="text-slate-400">
+          <div
+            className="bg-slate-800/50 border border-slate-700 rounded-xl p-8 text-center"
+            style={{ backgroundColor: 'rgba(30,41,59,0.5)', border: '1px solid #334155', borderRadius: '12px', padding: '32px', textAlign: 'center' }}
+          >
+            <p className="text-slate-400" style={{ color: '#94a3b8' }}>
               No thread connected. Start a chat session or enter a thread ID above.
             </p>
           </div>
         )}
 
+        {/* Quick Diagnosis */}
+        {threadId && (
+          <QuickDiagnosis
+            threadId={threadId}
+            currentStep={summary?.current_step_major}
+          />
+        )}
+
         {/* Navigation Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <NavCard
-            href="/debug/detection"
-            title="Detection"
-            icon="🔍"
-            description="View intent classification, entity extraction, and pattern matching results"
-            threadId={threadId}
-            badge={problems.some((p) => p.type === 'classification_conflict') ? { text: 'Issue', tone: 'warn' } : undefined}
-          />
-          <NavCard
-            href="/debug/agents"
-            title="Agents &amp; Prompts"
-            icon="🤖"
-            description="See LLM prompts, responses, and agent behavior throughout the workflow"
-            threadId={threadId}
-          />
-          <NavCard
-            href="/debug/errors"
-            title="Errors &amp; Alerts"
-            icon="⚠️"
-            description="Auto-detected problems, hash mismatches, detour loops, and LLM diagnosis"
-            threadId={threadId}
-            badge={problems.length > 0 ? { text: `${problems.length} issue${problems.length > 1 ? 's' : ''}`, tone: 'error' } : undefined}
-          />
-          <NavCard
-            href="/debug/timeline"
-            title="Timeline"
-            icon="⏱️"
-            description="Full event timeline with step tracking, gates, and state snapshots"
-            threadId={threadId}
-          />
-          <NavCard
-            href="/debug/dates"
-            title="Date Audit"
-            icon="📅"
-            description="Track date values through every transformation and parsing step"
-            threadId={threadId}
-            badge={problems.some((p) => p.type === 'date_inconsistency') ? { text: 'Mismatch', tone: 'error' } : undefined}
-          />
-          <NavCard
-            href="/debug/hil"
-            title="HIL Tasks"
-            icon="👤"
-            description="Human-in-the-loop task status, approvals, and step gating"
-            threadId={threadId}
-            badge={problems.some((p) => p.type === 'hil_violation') ? { text: 'Violation', tone: 'warn' } : undefined}
-          />
+        <div>
+          <h2
+            className="text-xl font-semibold text-slate-200 mb-5"
+            style={{ fontSize: '20px', fontWeight: '600', color: '#e2e8f0', marginBottom: '20px' }}
+          >
+            Debug Views
+          </h2>
+          <div
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
+            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}
+          >
+            <NavCard
+              href="/debug/detection"
+              title="Detection"
+              icon="🔍"
+              description="Intent classification, entity extraction, and pattern matching"
+              threadId={threadId}
+              badge={problems.some((p) => p.type === 'classification_conflict') ? { text: 'Issue', tone: 'warn' } : undefined}
+            />
+            <NavCard
+              href="/debug/agents"
+              title="Agents"
+              icon="🤖"
+              description="LLM prompts, responses, extractions, and DB operations"
+              threadId={threadId}
+            />
+            <NavCard
+              href="/debug/errors"
+              title="Errors"
+              icon="⚠️"
+              description="Auto-detected problems, hash mismatches, and LLM diagnosis"
+              threadId={threadId}
+              badge={problems.length > 0 ? { text: `${problems.length}`, tone: 'error' } : undefined}
+            />
+            <NavCard
+              href="/debug/timeline"
+              title="Timeline"
+              icon="⏱️"
+              description="Full event timeline with step tracking and state snapshots"
+              threadId={threadId}
+            />
+            <NavCard
+              href="/debug/dates"
+              title="Dates"
+              icon="📅"
+              description="Date values through every transformation and parsing step"
+              threadId={threadId}
+              badge={problems.some((p) => p.type === 'date_inconsistency') ? { text: 'Mismatch', tone: 'error' } : undefined}
+            />
+            <NavCard
+              href="/debug/hil"
+              title="HIL"
+              icon="👤"
+              description="Human-in-the-loop tasks, approvals, and step gating"
+              threadId={threadId}
+              badge={problems.some((p) => p.type === 'hil_violation') ? { text: 'Alert', tone: 'warn' } : undefined}
+            />
+          </div>
         </div>
 
         {/* Quick Actions */}
-        <div className="flex flex-wrap gap-3 pt-4 border-t border-slate-800">
+        <div
+          className="flex flex-wrap gap-3 pt-4 border-t border-slate-800"
+          style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', paddingTop: '16px', borderTop: '1px solid #1e293b' }}
+        >
           <a
             href={threadId ? `/api/debug/threads/${encodeURIComponent(threadId)}/llm-diagnosis` : '#'}
             target="_blank"
@@ -254,6 +295,15 @@ function DebugLandingContent() {
                 ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
                 : 'bg-slate-800 text-slate-500 cursor-not-allowed'
             }`}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              backgroundColor: threadId ? 'rgba(168,85,247,0.2)' : '#1e293b',
+              color: threadId ? '#c084fc' : '#64748b',
+              textDecoration: 'none',
+            }}
           >
             Copy LLM Diagnosis
           </a>
@@ -261,11 +311,15 @@ function DebugLandingContent() {
             href={threadId ? `/api/debug/threads/${encodeURIComponent(threadId)}/timeline/download` : '#'}
             target="_blank"
             rel="noopener noreferrer"
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              threadId
-                ? 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-            }`}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              backgroundColor: threadId ? '#334155' : '#1e293b',
+              color: threadId ? '#cbd5e1' : '#64748b',
+              textDecoration: 'none',
+            }}
           >
             Download JSON
           </a>
@@ -273,19 +327,26 @@ function DebugLandingContent() {
             href={threadId ? `/api/debug/threads/${encodeURIComponent(threadId)}/timeline/text` : '#'}
             target="_blank"
             rel="noopener noreferrer"
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              threadId
-                ? 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-            }`}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              backgroundColor: threadId ? '#334155' : '#1e293b',
+              color: threadId ? '#cbd5e1' : '#64748b',
+              textDecoration: 'none',
+            }}
           >
             Download Text
           </a>
         </div>
 
         {/* Footer */}
-        <footer className="text-center text-xs text-slate-500 pt-4">
-          OpenEvent Debugger v2.0 - Landing Page Architecture
+        <footer
+          className="text-center text-xs text-slate-500 pt-4"
+          style={{ textAlign: 'center', fontSize: '12px', color: '#64748b', paddingTop: '16px' }}
+        >
+          OpenEvent Debugger v2.0
         </footer>
       </div>
     </div>
@@ -295,8 +356,11 @@ function DebugLandingContent() {
 export default function DebugLandingPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-slate-900 text-slate-100 p-6 flex items-center justify-center">
-        <div className="text-slate-400">Loading debugger...</div>
+      <div
+        className="min-h-screen bg-slate-900 text-slate-100 p-6 flex items-center justify-center"
+        style={{ backgroundColor: '#0f172a', color: '#f1f5f9', padding: '24px', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      >
+        <div style={{ color: '#94a3b8' }}>Loading debugger...</div>
       </div>
     }>
       <DebugLandingContent />
