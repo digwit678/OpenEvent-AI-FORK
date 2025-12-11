@@ -542,6 +542,131 @@ def generate_report(
     return body, saved_path
 
 
+def compose_llm_diagnosis(payload: Dict[str, Any]) -> str:
+    """Compose a concise, LLM-optimized diagnosis for AI-assisted debugging."""
+    thread_id = payload.get("thread_id", "unknown-thread")
+    summary = payload.get("summary") or {}
+    state = payload.get("state") or {}
+    confirmed = payload.get("confirmed") or {}
+    events = payload.get("trace") or []
+
+    lines: List[str] = []
+    lines.append("# OpenEvent Debug Diagnosis")
+    lines.append(f"Thread: {thread_id} | Step: {summary.get('current_step_major', '?')} | State: {summary.get('wait_state', 'Unknown')}")
+    lines.append("")
+
+    # Quick Status
+    lines.append("## Quick Status")
+    date_info = confirmed.get("date", {})
+    date_status = "\u2713 Confirmed" if date_info.get("confirmed") else "\u2717 Pending"
+    date_val = date_info.get("value") or ""
+    lines.append(f"- Date: {date_status}" + (f" ({date_val})" if date_val else ""))
+
+    room_status = confirmed.get("room_status") or "Unselected"
+    room_icon = "\u2713" if room_status.lower() in ("available", "locked") else "\u2717"
+    lines.append(f"- Room: {room_icon} {room_status}")
+
+    req_match = confirmed.get("requirements_match")
+    hash_icon = "\u2713" if req_match else "\u2717"
+    hash_status = "Match" if req_match else "MISMATCH" if req_match is False else "N/A"
+    lines.append(f"- Hash: {hash_icon} {hash_status}")
+
+    offer_status = confirmed.get("offer_status_display") or confirmed.get("offer_status") or "Not started"
+    offer_icon = "\u2713" if "confirmed" in offer_status.lower() else "\u2717"
+    lines.append(f"- Offer: {offer_icon} {offer_status}")
+    lines.append("")
+
+    # Problem Indicators
+    problems: List[str] = []
+    req_hash = state.get("requirements_hash") or state.get("req_hash")
+    eval_hash = state.get("room_eval_hash") or state.get("eval_hash")
+    if req_hash and eval_hash and req_hash != eval_hash:
+        problems.append(f"[HASH] requirements_hash != room_eval_hash (room needs re-evaluation)")
+
+    # Detect detour loops
+    detour_pairs: Dict[str, int] = {}
+    gate_failures: List[str] = []
+    for event in events:
+        kind = event.get("kind", "")
+        if kind == "DETOUR":
+            detour = event.get("detour", {})
+            pair = f"{detour.get('from_step', '?')}->{detour.get('to_step', '?')}"
+            detour_pairs[pair] = detour_pairs.get(pair, 0) + 1
+        if kind == "GATE_FAIL":
+            gate = event.get("gate", {})
+            step = event.get("step", "?")
+            label = gate.get("label", "unknown")
+            missing = gate.get("missing", [])
+            gate_failures.append(f"{step}: {label} (missing: {', '.join(missing)})")
+
+    for pair, count in detour_pairs.items():
+        if count > 2:
+            problems.append(f"[DETOUR] Loop detected: {pair} ({count} times)")
+
+    if gate_failures:
+        problems.append(f"[GATE] {len(gate_failures)} gate failure(s)")
+
+    lines.append("## Recent Problem Indicators")
+    if problems:
+        for i, problem in enumerate(problems[:5], 1):
+            lines.append(f"{i}. {problem}")
+    else:
+        lines.append("No problems detected.")
+    lines.append("")
+
+    # Last 5 events
+    lines.append("## Last 5 Events")
+    recent_events = events[-5:] if len(events) > 5 else events
+    for event in reversed(recent_events):
+        ts = event.get("ts", 0)
+        ts_label = _format_timestamp(ts).split("T")[1][:8] if ts else "--:--:--"
+        step = event.get("step", "?")
+        kind = event.get("kind", "?")
+        subject = event.get("subject", "")
+        gate = event.get("gate", {})
+        loop = " \u21BA" if event.get("loop") else ""
+
+        if kind.startswith("GATE"):
+            ratio = f"({gate.get('met', '?')}/{gate.get('required', '?')})"
+            lines.append(f"[{ts_label}] {step} {kind}: {subject} {ratio}{loop}")
+        elif kind == "DETOUR":
+            detour = event.get("detour", {})
+            lines.append(f"[{ts_label}] {step} DETOUR -> {detour.get('to_step', '?')}: {detour.get('reason', '')[:50]}")
+        else:
+            lines.append(f"[{ts_label}] {step} {kind}{loop}")
+    lines.append("")
+
+    # Key state values
+    lines.append("## State Snapshot (key fields)")
+    key_fields = [
+        "chosen_date", "date_confirmed", "locked_room_id",
+        "requirements_hash", "room_eval_hash", "current_step", "thread_state", "hil_open"
+    ]
+    for field in key_fields:
+        value = state.get(field)
+        if value is not None:
+            display = str(value)
+            if len(display) > 40:
+                display = display[:37] + "..."
+            comment = ""
+            if field == "room_eval_hash" and req_hash and eval_hash and req_hash != eval_hash:
+                comment = "  # MISMATCH"
+            lines.append(f"{field}: {json.dumps(value) if isinstance(value, (dict, list)) else repr(value)}{comment}")
+
+    return "\n".join(lines)
+
+
+def generate_llm_diagnosis(
+    thread_id: str,
+    *,
+    granularity: str = "logic",
+    kinds: Optional[Sequence[str]] = None,
+) -> str:
+    """Generate LLM-optimized diagnosis for a thread."""
+    payload = collect_trace_payload(thread_id, granularity=granularity, kinds=kinds)
+    return compose_llm_diagnosis(payload)
+
+
 __all__ = [
     "filter_trace_events",
     "confirmed_map",
@@ -549,4 +674,6 @@ __all__ = [
     "compose_debug_report",
     "persist_debug_report",
     "generate_report",
+    "compose_llm_diagnosis",
+    "generate_llm_diagnosis",
 ]

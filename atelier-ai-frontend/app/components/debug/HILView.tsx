@@ -1,6 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import StepFilter, { useStepFilter } from './StepFilter';
+
+function extractStepNumber(step: string): number | null {
+  const match = step.match(/step[_\s]?(\d+)/i);
+  return match ? parseInt(match[1], 10) : null;
+}
 
 interface HILTask {
   ts: number;
@@ -40,6 +46,26 @@ export default function HILView({ threadId, pollMs = 2000 }: HILViewProps) {
   const [hilOpen, setHilOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { selectedStep } = useStepFilter();
+
+  // Filter tasks by selected step
+  const filteredTasks = useMemo(() => {
+    if (selectedStep === null) return tasks;
+    return tasks.filter((task) => {
+      const stepNum = extractStepNumber(task.step);
+      return stepNum === selectedStep;
+    });
+  }, [tasks, selectedStep]);
+
+  // Get available steps
+  const availableSteps = useMemo(() => {
+    const steps = new Set<number>();
+    tasks.forEach((task) => {
+      const stepNum = extractStepNumber(task.step);
+      if (stepNum !== null) steps.add(stepNum);
+    });
+    return Array.from(steps).sort((a, b) => a - b);
+  }, [tasks]);
 
   useEffect(() => {
     if (!threadId) {
@@ -101,10 +127,12 @@ export default function HILView({ threadId, pollMs = 2000 }: HILViewProps) {
     );
   }
 
-  const violations = tasks.filter((t) => t.violation);
+  const violations = filteredTasks.filter((t) => t.violation);
 
   return (
     <div className="space-y-6">
+      <StepFilter availableSteps={availableSteps} />
+
       {/* Current HIL Status */}
       <div className={`p-4 rounded-lg border ${
         hilOpen
@@ -155,14 +183,24 @@ export default function HILView({ threadId, pollMs = 2000 }: HILViewProps) {
 
       {/* Task History */}
       <div>
-        <h2 className="text-lg font-semibold mb-3">HIL Task History</h2>
-        {tasks.length === 0 ? (
+        <h2 className="text-lg font-semibold mb-3">
+          HIL Task History
+          {selectedStep !== null && (
+            <span className="text-sm font-normal text-slate-400 ml-2">
+              ({filteredTasks.length} of {tasks.length})
+            </span>
+          )}
+        </h2>
+        {filteredTasks.length === 0 ? (
           <div className="text-slate-400 text-sm">No HIL tasks recorded yet.</div>
         ) : (
           <div className="space-y-2">
-            {tasks.map((task, idx) => (
+            {filteredTasks.map((task, idx) => {
+              const stepNum = extractStepNumber(task.step);
+              return (
               <div
                 key={idx}
+                id={stepNum !== null ? `step-${stepNum}` : undefined}
                 className={`border rounded-lg px-4 py-3 ${
                   task.violation
                     ? 'bg-red-500/5 border-red-500/20'
@@ -222,7 +260,8 @@ export default function HILView({ threadId, pollMs = 2000 }: HILViewProps) {
                   </div>
                 )}
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
       </div>

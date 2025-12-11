@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from backend.debug.reporting import collect_trace_payload, filter_trace_events, generate_report
+from backend.debug.reporting import collect_trace_payload, filter_trace_events, generate_report, generate_llm_diagnosis as _generate_llm_diagnosis
 from backend.debug.trace import BUS
 from backend.debug import timeline
 from fastapi.responses import PlainTextResponse
@@ -155,10 +155,28 @@ def _stringify(value: Any) -> str:
     return text
 
 
+def debug_llm_diagnosis(
+    thread_id: str,
+    *,
+    granularity: str = "logic",
+    kinds: Optional[List[str]] = None,
+) -> PlainTextResponse:
+    """Generate LLM-optimized diagnosis text for a thread."""
+    body = _generate_llm_diagnosis(thread_id, granularity=granularity, kinds=kinds)
+    safe_id = thread_id.replace("/", "_").replace("\\", "_")
+    filename = f"openevent_diagnosis_{safe_id}.md"
+    return PlainTextResponse(
+        content=body,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        media_type="text/markdown",
+    )
+
+
 __all__ = [
     "debug_get_trace",
     "debug_get_timeline",
     "resolve_timeline_path",
     "render_arrow_log",
     "debug_generate_report",
+    "debug_llm_diagnosis",
 ]

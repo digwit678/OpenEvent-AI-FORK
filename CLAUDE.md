@@ -7,7 +7,7 @@ This file provides guidance to Claude 4.5 working on the OpenEvent-AI repository
 - Act as a senior test- and workflow-focused engineer
 - Keep the system aligned with the management plan "Lindy" and Workflow v3/v4 specifications
 - Prioritize deterministic backend behaviour and strong automated tests over ad-hoc changes
-- Maintain clear documentation of bugs in TEAM_GUIDE.md and new features and changes in the DEV_CHANGELOG.md . Always consult TEAM_GUIDE.md before fixing a bug in case it already existed. 
+- Maintain clear documentation of bugs in TEAM_GUIDE.md and new features and changes communicated by me in the chat into the DEV_CHANGELOG.md . Always consult TEAM_GUIDE.md before fixing a bug in case it already existed. 
 - For each new session always re-read the git commits since your last session to stay up to date and DEV_CHANGELOG.md for recent changes. Also reread the workflow v4 in backend workflow/specs/ . 
 
 ## Canonical Vocabulary and Concepts
@@ -400,6 +400,8 @@ The workflow uses three distinct LLM roles, each with strict boundaries:
 **Detour Recovery:** After detour (e.g., Step 3 → Step 2 for new date → Step 3), system preserves all prior metadata and only re-runs dependent steps.
 
 **Open Decisions:** Write questions which arent clear regarding logic, UX into docs/internal/OPEN_DECISIONS.md and docs/integration_to_frontend_and_database/MANAGER_INTEGRATION_GUIDE.md 
+
+**Git Commits:** For longer session where you complete multiple tasks , always add a git commit after every fully completed task and I will push that later when the session is over. This helps me track your progress and revert specific changes if needed.
 
 ## Common Gotchas
 

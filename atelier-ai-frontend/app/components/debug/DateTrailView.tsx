@@ -1,6 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import StepFilter, { useStepFilter } from './StepFilter';
+
+function extractStepNumber(step: string): number | null {
+  const match = step.match(/step[_\s]?(\d+)/i);
+  return match ? parseInt(match[1], 10) : null;
+}
 
 interface DateEvent {
   ts: number;
@@ -34,6 +40,26 @@ export default function DateTrailView({ threadId, pollMs = 2000 }: DateTrailView
   const [currentDate, setCurrentDate] = useState<string | null>(null);
   const [dateConfirmed, setDateConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { selectedStep } = useStepFilter();
+
+  // Filter events by selected step
+  const filteredEvents = useMemo(() => {
+    if (selectedStep === null) return events;
+    return events.filter((event) => {
+      const stepNum = extractStepNumber(event.step);
+      return stepNum === selectedStep;
+    });
+  }, [events, selectedStep]);
+
+  // Get available steps
+  const availableSteps = useMemo(() => {
+    const steps = new Set<number>();
+    events.forEach((event) => {
+      const stepNum = extractStepNumber(event.step);
+      if (stepNum !== null) steps.add(stepNum);
+    });
+    return Array.from(steps).sort((a, b) => a - b);
+  }, [events]);
 
   useEffect(() => {
     if (!threadId) {
@@ -96,6 +122,8 @@ export default function DateTrailView({ threadId, pollMs = 2000 }: DateTrailView
 
   return (
     <div className="space-y-6">
+      <StepFilter availableSteps={availableSteps} />
+
       {/* Current Date Status */}
       <div className={`p-4 rounded-lg border ${
         dateConfirmed
@@ -121,8 +149,15 @@ export default function DateTrailView({ threadId, pollMs = 2000 }: DateTrailView
 
       {/* Date Trail Timeline */}
       <div>
-        <h2 className="text-lg font-semibold mb-3">Date Transformation Trail</h2>
-        {events.length === 0 ? (
+        <h2 className="text-lg font-semibold mb-3">
+          Date Transformation Trail
+          {selectedStep !== null && (
+            <span className="text-sm font-normal text-slate-400 ml-2">
+              ({filteredEvents.length} of {events.length})
+            </span>
+          )}
+        </h2>
+        {filteredEvents.length === 0 ? (
           <div className="text-slate-400 text-sm">No date events recorded yet.</div>
         ) : (
           <div className="relative">
@@ -130,8 +165,10 @@ export default function DateTrailView({ threadId, pollMs = 2000 }: DateTrailView
             <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-slate-700" />
 
             <div className="space-y-4">
-              {events.map((event, idx) => (
-                <div key={idx} className="relative pl-10">
+              {filteredEvents.map((event, idx) => {
+                const stepNum = extractStepNumber(event.step);
+                return (
+                <div key={idx} id={stepNum !== null ? `step-${stepNum}` : undefined} className="relative pl-10">
                   {/* Timeline dot */}
                   <div className={`absolute left-2.5 w-3 h-3 rounded-full ${
                     event.mismatch
@@ -213,7 +250,8 @@ export default function DateTrailView({ threadId, pollMs = 2000 }: DateTrailView
                     </div>
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           </div>
         )}
