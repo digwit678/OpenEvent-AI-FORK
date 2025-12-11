@@ -19,16 +19,7 @@ The system ingests client inquiries (currently simulated via chat), maintains a 
 
 The system is composed of two main applications:
 
-```mermaid
-graph TD
-    A["Client Frontend (Next.js)"] -->|REST API| B["Backend API (FastAPI)"]
-    B -->|Responses| A
-    B --> C["Workflow Engine (Python)"]
-    C --> B
-    C --> D["LLM Adapter (OpenAI)"]
-    C --> E["Data Store (JSON / Supabase)"]
-    C --> F["Calendar & Inventory"]
-```
+![System Context](docs/assets/diagrams/system_context.png)
 
 ### 1. Frontend (`atelier-ai-frontend/`)
 A **Next.js 15** application that serves as the user interface for:
@@ -232,6 +223,7 @@ curl http://localhost:8000/api/config/hil-status
 ## 📚 Documentation
 For deeper dives into specific subsystems:
 - **[Workflow Rules](docs/workflow_rules.md)**: The "Constitution" of the booking logic.
+- **[Architecture Diagrams](docs/ARCHITECTURE_DIAGRAMS.md)**: Visual guide to the system architecture, workflow stages, and detection logic.
 - **[Team Guide](docs/TEAM_GUIDE.md)**: Best practices and troubleshooting.
 - **[Integration Guide](docs/integration_to_frontend_and_database/INTEGRATION_PREPARATION_GUIDE.md)**: How to deploy and connect to real infrastructure.
 - **[Dev Changelog](DEV_CHANGELOG.md)**: Day-by-day summary of new features, fixes, and experiments.
