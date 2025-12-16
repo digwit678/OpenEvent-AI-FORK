@@ -18,6 +18,9 @@ from backend.utils.openai_key import load_openai_api_key
 # Import consolidated pattern from keyword_buckets (single source of truth)
 from backend.workflows.nlu.keyword_buckets import ACTION_REQUEST_PATTERNS
 
+# Import Q&A type detection for secondary types
+from backend.llm.intent_classifier import _detect_qna_types
+
 _QUESTION_WORDS = (
     "which",
     "what",
@@ -402,6 +405,10 @@ def detect_general_room_query(msg_text: str, state: WorkflowState) -> Dict[str, 
     )
 
     combined_constraints = _merge_constraints(parsed, llm_result.get("constraints") or {})
+
+    # Detect secondary Q&A types (catering_for, products_for, etc.)
+    secondary_types = _detect_qna_types(text)
+
     detection = {
         "is_general": is_general,
         "heuristics": heuristics,
@@ -410,6 +417,7 @@ def detect_general_room_query(msg_text: str, state: WorkflowState) -> Dict[str, 
         "llm_called": llm_called,
         "llm_result": llm_result,
         "cached": False,
+        "secondary": secondary_types if secondary_types else None,
     }
     if len(_CACHE) >= _CACHE_MAX:
         _evict_cache_entry()

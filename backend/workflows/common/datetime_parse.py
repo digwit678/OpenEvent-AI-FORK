@@ -71,6 +71,13 @@ _DATE_TEXTUAL_DMY = re.compile(
 _DATE_TEXTUAL_MDY = re.compile(
     r"\b(?P<month>[A-Za-z]{3,9})\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(?P<year>\d{2,4}))?\b"
 )
+# Date range pattern: "June 11–12, 2026" or "11–12 June 2026"
+_DATE_RANGE_MDY = re.compile(
+    r"\b(?P<month>[A-Za-z]{3,9})\s+(?P<day1>\d{1,2})(?:st|nd|rd|th)?(?:\s*[-–—]\s*(?P<day2>\d{1,2})(?:st|nd|rd|th)?)?\s*,?\s*(?P<year>\d{4})\b"
+)
+_DATE_RANGE_DMY = re.compile(
+    r"\b(?P<day1>\d{1,2})(?:st|nd|rd|th)?(?:\s*[-–—]\s*(?P<day2>\d{1,2})(?:st|nd|rd|th)?)?\s+(?P<month>[A-Za-z]{3,9})\s*,?\s*(?P<year>\d{4})\b"
+)
 
 _TIME_RANGE = re.compile(
     r"(?P<s_hour>\d{1,2})(?::(?P<s_min>\d{2}))?\s*(?P<s_suffix>am|pm|a\.m\.|p\.m\.|uhr|h)?"
@@ -122,6 +129,28 @@ def parse_all_dates(
         for match in pattern.finditer(text):
             candidate = _parse_numeric(match.groupdict())
             _record(match.start(), candidate)
+
+    # Date range patterns first (e.g., "June 11–12, 2026") - these have explicit year
+    for pattern in (_DATE_RANGE_MDY, _DATE_RANGE_DMY):
+        for match in pattern.finditer(text):
+            parts = match.groupdict()
+            month_token = parts["month"].lower()
+            month = _MONTHS.get(month_token)
+            if not month:
+                continue
+            try:
+                year = int(parts["year"])
+                day1 = int(parts["day1"])
+                candidate1 = date(year, month, day1)
+                _record(match.start(), candidate1)
+                # Also capture second day if present (e.g., 12 in "June 11–12")
+                day2_str = parts.get("day2")
+                if day2_str:
+                    day2 = int(day2_str)
+                    candidate2 = date(year, month, day2)
+                    _record(match.start() + 1, candidate2)  # offset slightly for ordering
+            except ValueError:
+                continue
 
     for pattern in (_DATE_TEXTUAL_DMY, _DATE_TEXTUAL_MDY):
         for match in pattern.finditer(text):

@@ -99,6 +99,9 @@ _QNA_KEYWORDS: Dict[str, Sequence[str]] = {
         "catering",
         "menu",
         "menus",
+        "package",
+        "packages",
+        "package options",
         "coffee break",
         "coffee",
         "snacks",
@@ -281,6 +284,42 @@ def _detect_qna_types(text: str) -> List[str]:
             matches.append(qna_type)
 
     return matches
+
+
+# Mapping Q&A types to their primary workflow step
+QNA_TYPE_TO_STEP = {
+    "free_dates": 2,
+    "check_availability": 2,
+    "rooms_by_feature": 3,
+    "room_features": 3,
+    "check_capacity": 3,
+    "check_alternatives": 3,
+    "catering_for": 4,
+    "products_for": 4,
+    "request_option": 4,
+    "site_visit_overview": 7,
+    "parking_policy": 0,  # General info, no specific step
+    "confirm_booking": 7,
+}
+
+
+def spans_multiple_steps(qna_types: List[str]) -> bool:
+    """
+    Check if Q&A types in secondary span different workflow steps.
+
+    Used to detect multi-variable Q&A that needs special handling
+    (e.g., asking about dates AND packages in one message).
+    """
+    steps = {QNA_TYPE_TO_STEP.get(t, 0) for t in qna_types}
+    # Remove step 0 (general info) and check if multiple steps remain
+    meaningful_steps = steps - {0}
+    return len(meaningful_steps) > 1
+
+
+def get_qna_steps(qna_types: List[str]) -> List[int]:
+    """Return sorted list of workflow steps covered by the Q&A types."""
+    steps = {QNA_TYPE_TO_STEP.get(t, 0) for t in qna_types}
+    return sorted(steps - {0})
 
 
 def _has_date_anchor(text: str) -> bool:

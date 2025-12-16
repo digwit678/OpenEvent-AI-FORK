@@ -31,7 +31,7 @@ from backend.workflows.common.datetime_parse import (
 )
 from backend.workflows.common.prompts import append_footer, format_sections_with_headers
 from backend.workflows.common.catalog import list_free_dates
-from backend.workflows.common.capture import capture_user_fields, promote_fields
+from backend.workflows.common.capture import capture_user_fields, capture_workflow_requirements, promote_fields
 from backend.workflows.common.sorting import rank_rooms
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.gatekeeper import refresh_gatekeeper
@@ -61,6 +61,7 @@ from backend.workflows.change_propagation import (
 )
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
+from backend.workflows.qna.router import route_general_qna
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.common.confidence import check_nonsense_gate
 from backend.workflows.groups.intake.condition.checks import suggest_dates
@@ -70,6 +71,7 @@ from backend.workflows.io.dates import next5
 from backend.workflows.io.database import (
     append_audit_entry,
     link_event_to_client,
+    load_db,
     load_rooms,
     tag_message,
     update_event_metadata,
@@ -777,6 +779,10 @@ def process(state: WorkflowState) -> GroupResult:
         return _apply_step2_hil_decision(state, event_entry, decision)
 
     message_text = _message_text(state)
+
+    # Capture requirements from workflow context (statements only, not questions)
+    if message_text and state.user_info:
+        capture_workflow_requirements(state, message_text, state.user_info)
 
     # -------------------------------------------------------------------------
     # NONSENSE GATE: Check for off-topic/nonsense using existing confidence
@@ -1601,6 +1607,49 @@ def _present_candidate_dates(
         event_entry["candidate_dates"] = [action["date"] for action in actions_payload]
     history = _update_proposal_history(event_entry, event_entry.get("candidate_dates") or formatted_dates[:5])
     state.add_draft_message(draft_message)
+
+    # Check for secondary Q&A types (catering_for, products_for, etc.) and append router content
+    classification = state.extras.get("_general_qna_classification") or {}
+    secondary_types = list(classification.get("secondary") or [])
+    router_types = {"catering_for", "products_for", "rooms_by_feature", "room_features", "free_dates", "parking_policy", "site_visit_overview"}
+    router_applicable = bool(set(secondary_types) & router_types)
+
+    if router_applicable:
+        message = state.message
+        msg_payload = {
+            "subject": (message.subject if message else "") or "",
+            "body": (message.body if message else "") or "",
+            "thread_id": state.thread_id,
+        }
+        router_result = route_general_qna(
+            msg_payload,
+            event_entry,
+            event_entry,
+            None,  # db not needed for catering/products router responses
+            classification,
+        )
+        router_blocks = router_result.get("post_step") or router_result.get("pre_step") or []
+        if router_blocks:
+            router_body = router_blocks[0].get("body", "")
+            if router_body:
+                # Add info link for catering Q&A
+                qna_link_suffix = ""
+                if "catering_for" in secondary_types:
+                    query_params = {"room": event_entry.get("preferred_room") or "general"}
+                    snapshot_data = {"catering_options": router_body, "event_id": event_entry.get("event_id")}
+                    snapshot_id = create_snapshot(
+                        snapshot_type="catering",
+                        data=snapshot_data,
+                        event_id=event_entry.get("event_id"),
+                        params=query_params,
+                    )
+                    qna_link = generate_qna_link("Catering", query_params=query_params, snapshot_id=snapshot_id)
+                    qna_link_suffix = f"\n\nFull menu details: {qna_link}"
+                # Append router Q&A content to the draft message body
+                original_body = draft_message.get("body", "")
+                draft_message["body"] = f"{original_body}\n\n---\n\n{router_body}{qna_link_suffix}"
+                draft_message["body_markdown"] = draft_message["body"]
+                draft_message["router_qna_appended"] = True
 
     update_event_metadata(
         event_entry,
@@ -3349,6 +3398,7 @@ def _present_general_room_qna(
         ]
 
         body_markdown = (structured.body_markdown or _fallback_structured_body(structured.action_payload)).strip()
+
         footer_body = append_footer(
             body_markdown,
             step=2,
@@ -3375,6 +3425,48 @@ def _present_general_room_qna(
             draft_message["actions"] = actions
         if range_results:
             draft_message["range_results"] = range_results
+
+        # Check for secondary Q&A types (catering_for, products_for, etc.) and append router content
+        secondary_types = list(classification.get("secondary") or [])
+        router_types = {"catering_for", "products_for", "rooms_by_feature", "room_features", "free_dates", "parking_policy", "site_visit_overview"}
+        router_applicable = bool(set(secondary_types) & router_types)
+
+        if router_applicable:
+            message = state.message
+            msg_payload = {
+                "subject": (message.subject if message else "") or "",
+                "body": (message.body if message else "") or "",
+                "thread_id": state.thread_id,
+            }
+            router_result = route_general_qna(
+                msg_payload,
+                event_entry,
+                event_entry,
+                None,  # db not needed for catering/products router responses
+                classification,
+            )
+            router_blocks = router_result.get("post_step") or router_result.get("pre_step") or []
+            if router_blocks:
+                router_body = router_blocks[0].get("body", "")
+                if router_body:
+                    # Add info link for catering Q&A
+                    qna_link_suffix = ""
+                    if "catering_for" in secondary_types:
+                        query_params = {"room": event_entry.get("preferred_room") or "general"}
+                        snapshot_data = {"catering_options": router_body, "event_id": event_entry.get("event_id")}
+                        snapshot_id = create_snapshot(
+                            snapshot_type="catering",
+                            data=snapshot_data,
+                            event_id=event_entry.get("event_id"),
+                            params=query_params,
+                        )
+                        qna_link = generate_qna_link("Catering", query_params=query_params, snapshot_id=snapshot_id)
+                        qna_link_suffix = f"\n\nFull menu details: {qna_link}"
+                    # Append router Q&A content to the draft message body
+                    original_body = draft_message.get("body", "")
+                    draft_message["body"] = f"{original_body}\n\n---\n\n{router_body}{qna_link_suffix}"
+                    draft_message["body_markdown"] = f"{draft_message.get('body_markdown', '')}\n\n---\n\n{router_body}{qna_link_suffix}"
+                    draft_message["router_qna_appended"] = True
 
         state.add_draft_message(draft_message)
         update_event_metadata(
@@ -3420,6 +3512,99 @@ def _present_general_room_qna(
     state.extras["structured_qna_fallback"] = True
     structured_payload = structured.action_payload if structured else {}
     structured_debug = structured.debug if structured else {"reason": "missing_structured_context"}
+
+    # Use router for Q&A types it handles (catering_for, products_for, etc.)
+    # This ensures proper formatting through the existing verbalizer infrastructure
+    secondary_types = list(classification.get("secondary") or [])
+    router_types = {"catering_for", "products_for", "rooms_by_feature", "room_features", "free_dates", "parking_policy", "site_visit_overview"}
+    router_applicable = bool(set(secondary_types) & router_types)
+
+    if router_applicable:
+        message = state.message
+        msg_payload = {
+            "subject": (message.subject if message else "") or "",
+            "body": (message.body if message else "") or "",
+            "thread_id": state.thread_id,
+        }
+        router_result = route_general_qna(
+            msg_payload,
+            event_entry,
+            event_entry,
+            None,  # db not needed for catering/products router responses
+            classification,
+        )
+        router_blocks = router_result.get("post_step") or router_result.get("pre_step") or []
+        if router_blocks:
+            router_body = router_blocks[0].get("body", "")
+            router_topic = router_blocks[0].get("topic", "general_qna")
+
+            # Add info link for catering Q&A
+            if "catering_for" in secondary_types:
+                query_params = {"room": event_entry.get("preferred_room") or "general"}
+                snapshot_data = {"catering_options": router_body, "event_id": event_entry.get("event_id")}
+                snapshot_id = create_snapshot(
+                    snapshot_type="catering",
+                    data=snapshot_data,
+                    event_id=event_entry.get("event_id"),
+                    params=query_params,
+                )
+                qna_link = generate_qna_link("Catering", query_params=query_params, snapshot_id=snapshot_id)
+                router_body = f"{router_body}\n\nFull menu details: {qna_link}"
+
+            footer_body = append_footer(
+                router_body,
+                step=2,
+                next_step=3,
+                thread_state="Awaiting Client",
+            )
+
+            draft_message = {
+                "body": footer_body,
+                "body_markdown": router_body,
+                "step": 2,
+                "next_step": 3,
+                "thread_state": "Awaiting Client",
+                "topic": router_topic,
+                "candidate_dates": range_candidate_dates,
+                "actions": range_actions,
+                "subloop": subloop_label,
+                "headers": ["Availability overview"],
+            }
+            if range_results:
+                draft_message["range_results"] = range_results
+
+            state.add_draft_message(draft_message)
+            update_event_metadata(
+                event_entry,
+                thread_state="Awaiting Client",
+                current_step=2,
+                candidate_dates=range_candidate_dates,
+            )
+            state.set_thread_state("Awaiting Client")
+            state.record_subloop(subloop_label)
+            state.extras["persist"] = True
+
+            payload = {
+                "client_id": state.client_id,
+                "event_id": event_entry.get("event_id"),
+                "intent": state.intent.value if state.intent else None,
+                "confidence": round(state.confidence or 0.0, 3),
+                "candidate_dates": range_candidate_dates,
+                "draft_messages": state.draft_messages,
+                "thread_state": state.thread_state,
+                "context": state.context_snapshot,
+                "persisted": True,
+                "general_qna": True,
+                "structured_qna": True,  # Mark as handled via router
+                "router_qna": True,
+                "qna_select_result": structured_payload,
+                "structured_qna_debug": structured_debug,
+                "actions": range_actions,
+                "range_results": range_results,
+            }
+            if extraction:
+                payload["qna_extraction"] = extraction
+            return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
 
     payload = {
         "client_id": state.client_id,

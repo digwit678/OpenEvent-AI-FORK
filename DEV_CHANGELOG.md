@@ -1,5 +1,171 @@
 # Development Changelog
 
+## 2025-12-15
+
+### Fix: Router Q&A Info Link Integration
+
+**Task: Add info link to catering Q&A when appended to workflow response**
+
+**Fix 1: Secondary Q&A Type Detection**
+- Added `_detect_qna_types()` import to `general_qna_classifier.py`
+- Modified `detect_general_room_query()` to include `secondary` types (e.g., `catering_for`) in classification result
+- This allows downstream code to know which Q&A types are present in the message
+
+**Fix 2: Router Q&A Integration in Date Options Flow**
+- Added router Q&A integration in `_present_candidate_dates()` (date_options_proposed path)
+- When message contains secondary Q&A types (catering_for, products_for, etc.), router content is appended
+- Fixed `load_db()` error by passing `None` instead (router doesn't need db for catering/products)
+
+**Fix 3: Info Link Generation for Catering Q&A**
+- Added `create_snapshot()` and `generate_qna_link()` calls when appending catering Q&A
+- Creates a snapshot with catering data and generates pseudolink for "Full menu details"
+- Link format: `<a href="http://localhost:3000/info/qna?snapshot_id=...">View Catering information</a>`
+
+**Files Modified:**
+- `backend/workflows/nlu/general_qna_classifier.py` - Added secondary types to classification
+- `backend/workflows/groups/date_confirmation/trigger/process.py` - Router Q&A integration with info links
+
+---
+
+### Fix: Backend Startup & Infrastructure Issues
+
+**Task: Fix multiple issues preventing backend from starting reliably**
+
+**Fix 1: Python Bytecode Cache Causing Startup Failures**
+- Added `_clear_python_cache()` function to automatically clear `__pycache__` directories on startup
+- Prevents stale bytecode from causing `unexpected keyword argument` errors when dataclasses are modified
+- Documented in TEAM_GUIDE.md with quick fix instructions
+
+**Fix 2: Date Range Parsing (2025 → 2026)**
+- Added `_DATE_RANGE_MDY` and `_DATE_RANGE_DMY` patterns in `backend/workflows/common/datetime_parse.py`
+- Correctly parses "June 11–12, 2026" format where year follows second day
+- Previously parsed as 2025 because the year regex couldn't capture year after day range
+
+**Fix 3: Q&A Detection for "package options"**
+- Added "package", "packages", "package options" to `catering_for` patterns in `backend/llm/intent_classifier.py`
+- Questions about packages/package options now trigger Q&A detection
+
+**Fix 4: Enable Development Endpoints by Default**
+- Changed `ENABLE_DANGEROUS_ENDPOINTS` default to `true` for development
+- Reset client functionality now works without manual env var
+
+**Fix 5: Catering/Package Q&A Returning Fallback Message**
+- Root cause: Structured Q&A engine doesn't handle `catering_for` Q&A type
+- When structured engine can't handle a Q&A type, now falls back to `route_general_qna()` for types it CAN handle
+- Router-handled types: `catering_for`, `products_for`, `rooms_by_feature`, `room_features`, `free_dates`, `parking_policy`, `site_visit_overview`
+- This ensures catering Q&A goes through the proper verbalizer infrastructure instead of returning empty fallback
+- Fixed `_catering_response()` to filter by category when user asks about "package", "menu", or "catering"
+- Now shows actual catering packages instead of add-ons when user asks "What package options do you recommend?"
+
+**Fix 6: ACTION_REQUEST_PATTERNS Too Broad**
+- Pattern `\bprovide\s+(me\s+with\s+)?` was matching questions like "do you provide X"
+- Fixed to require "me" or "us" after "provide": `\bprovide\s+(me|us)\s+(with\s+)?`
+- "Do you provide coffee breaks?" now correctly detected as `catering_for` Q&A
+
+**Files Modified:**
+- `backend/main.py` - Cache clearing on startup, dangerous endpoints default
+- `backend/workflows/common/datetime_parse.py` - Date range patterns
+- `backend/llm/intent_classifier.py` - Package Q&A patterns
+- `backend/workflows/groups/date_confirmation/trigger/process.py` - Router Q&A integration
+- `backend/workflows/qna/router.py` - Category filtering for packages
+- `backend/workflows/nlu/keyword_buckets.py` - Fixed ACTION_REQUEST_PATTERNS
+- `docs/TEAM_GUIDE.md` - Documented bytecode cache bug and prevention
+
+**Tests Added:**
+- `backend/tests/smoke/test_backend_startup.py` - 14 smoke tests for imports and basic workflow
+
+---
+
+### Feature: Multi-Variable Q&A Handling - Part 2: Verbalizer & Preference Extraction
+
+**Task: Address 3 gaps in Q&A implementation - verbalizer integration, qna_requirements usage, mid-workflow preference capture**
+
+Completed fixes for robust Q&A handling with proper fact verification and context-aware preference persistence.
+
+**Fix 1: Verbalizer Integration (Feed the Sandwich)**
+- Added `_build_verbalize_context()` in `backend/workflows/common/general_qna.py`
+- Updated `render_general_qna_reply()` to pass `topic` and `verbalize_context` to `append_footer()`
+- Enables the existing verbalizer "sandwich" pattern to verify facts are preserved in LLM output
+
+**Fix 2: qna_requirements Preservation (Use LLM-Extracted Data)**
+- Updated `_normalize_qna_extraction()` to preserve `qna_requirements` instead of dropping it
+- Added generic accessor `get_qna_requirements()` in router.py
+- Updated extraction functions to prefer LLM-extracted data over regex fallbacks
+- Generic pattern: dict access works for any field (attendees, dietary, features, layout, etc.)
+
+**Fix 3: Mid-Workflow Preference Capture (Sentence-Level Parsing)**
+- Added `split_statement_vs_question()` in `backend/workflows/common/capture.py`
+- Added `capture_workflow_requirements()` for context-aware persistence
+- **Key Rule:** Statement sentences → PERSIST; Question sentences → DON'T persist (Q&A only)
+- Integrated into date_confirmation and room_availability processors
+
+**Files Modified:**
+- `backend/workflows/qna/extraction.py` - Include qna_requirements in normalized output
+- `backend/workflows/qna/router.py` - Generic accessor, updated extraction functions
+- `backend/workflows/common/general_qna.py` - Verbalize context building
+- `backend/workflows/common/capture.py` - Sentence parsing, workflow requirement capture
+- `backend/workflows/groups/date_confirmation/trigger/process.py` - Integration
+- `backend/workflows/groups/room_availability/trigger/process.py` - Integration
+
+**Tests Added:**
+- `backend/tests/detection/test_qna_requirements_and_capture.py` - 24 tests covering:
+  - qna_requirements preservation in extraction
+  - Sentence-level parsing (split_statement_vs_question)
+  - capture_workflow_requirements integration
+  - Integration scenarios (statement+question, pure Q&A, etc.)
+
+---
+
+### Feature: Multi-Variable Q&A Handling (Task 1 of 2)
+
+**Task: Handle conjuncted Q&A questions that span multiple workflow steps**
+
+Added support for multi-variable Q&A detection and response composition. When a client asks about multiple topics in one message (e.g., "What dates are available and what packages do you offer?"), the system now properly handles all parts instead of only answering the first.
+
+**Three Conjunction Cases Supported:**
+- **Case A (Independent):** Different selects → separate answer sections
+  - Example: "What rooms are free in January and what menus are available in October?"
+- **Case B (AND Combined):** Same select, compatible conditions → single combined answer
+  - Example: "What rooms are available in December and which include vegetarian options?"
+- **Case C (OR Union):** Same select, conflicting conditions → ranked results (both first)
+  - Example: "What rooms have background music and what rooms have a kitchen?"
+
+**Key Design Decisions:**
+- Q&A requirements mentioned are NOT persisted (only used for that specific query)
+- Hybrid responses: workflow part first, then Q&A part
+- Zero additional LLM cost (extends existing extraction schema)
+
+**Files Created:**
+- `backend/workflows/qna/conjunction.py` - Q&A conjunction analysis (Case A/B/C)
+- `backend/workflows/common/qna_composer.py` - Multi-variable response composition
+- `tests/specs/ux/test_multi_variable_qna.py` - 22 test cases
+
+**Files Modified:**
+- `backend/llm/intent_classifier.py` - Added `spans_multiple_steps()`, `get_qna_steps()`, `QNA_TYPE_TO_STEP`
+- `backend/workflows/qna/extraction.py` - Extended schema for temporary Q&A requirements
+- `backend/workflows/qna/router.py` - Added `route_multi_variable_qna()` for conjunction-aware routing
+
+**Tests Added:** 24 tests covering all conjunction cases and integration scenarios
+
+### Fix: Per-Segment Condition Extraction
+
+**Issue:** Conjuncted Q&A with different months per part (e.g., "What menus in January and what rooms in February?") was extracting the same month for all parts.
+
+**Fix:** Updated `conjunction.py` to:
+1. Split text into segments based on conjunctions ("and what", "and which", etc.) and sentence boundaries
+2. Match each Q&A type to its relevant segment using keyword matching
+3. Extract conditions per-segment instead of globally
+4. Track used segments to handle duplicate Q&A types (e.g., "rooms in Jan and rooms in Feb")
+
+**Files Modified:**
+- `backend/workflows/qna/conjunction.py` - Added `_split_into_segments()`, updated `_find_matching_segment()` with segment tracking
+
+**New Tests Added:**
+- `test_different_months_per_segment` - Verifies menus→January, rooms→February
+- `test_same_select_different_months_is_union` - Verifies Case C (or_union) detection
+
+---
+
 ## 2025-12-11
 
 ### Enhancement: Debugger UI Typography & Visual Polish

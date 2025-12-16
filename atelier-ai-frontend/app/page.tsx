@@ -6,6 +6,7 @@ import { Send, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
+import remarkGfm from 'remark-gfm';
 import DebugPanel from './components/DebugPanel';
 import DepositSettings from './components/DepositSettings';
 
@@ -183,11 +184,30 @@ function shouldDisplayEventField(key: string, value: string): boolean {
   return true;
 }
 
+function highlightImportantValues(text: string): string {
+  // Highlight room names (Room A, Room B, etc.)
+  let result = text.replace(/\b(Room\s+[A-Z])\b/gi, '**$1**');
+  // Highlight dates (DD.MM.YYYY or similar patterns)
+  result = result.replace(/\b(\d{1,2}\.\d{1,2}\.\d{4})\b/g, '**$1**');
+  // Highlight day names with dates (Thu 04 Jun 2026, etc.)
+  result = result.replace(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/gi, '**$1 $2 $3 $4**');
+  // Highlight CHF amounts
+  result = result.replace(/\b(CHF\s*[\d,.']+)\b/gi, '**$1**');
+  // Highlight participant counts
+  result = result.replace(/\b(\d+)\s+(guests?|participants?|people|persons?)\b/gi, '**$1 $2**');
+  return result;
+}
+
 function renderMessageContent(content: string): React.ReactNode {
-  // Use ReactMarkdown to render markdown (bold, italic, links, lists, etc.)
+  // Pre-process content to highlight important values
+  const highlightedContent = highlightImportantValues(content);
+
+  // Use ReactMarkdown to render markdown (bold, italic, links, lists, tables, etc.)
+  // remarkGfm enables GitHub-flavored markdown (tables, strikethrough, etc.)
   // rehypeRaw enables rendering of raw HTML tags (like <a> from backend)
   return (
     <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
       rehypePlugins={[rehypeRaw]}
       components={{
         // Custom link rendering for security and styling
@@ -201,9 +221,9 @@ function renderMessageContent(content: string): React.ReactNode {
             {children}
           </a>
         ),
-        // Style bold text
+        // Style bold text (used for highlighting important values)
         strong: ({ children }) => (
-          <strong className="font-semibold">{children}</strong>
+          <strong className="font-semibold text-blue-700">{children}</strong>
         ),
         // Style italic text
         em: ({ children }) => (
@@ -239,9 +259,36 @@ function renderMessageContent(content: string): React.ReactNode {
         hr: () => (
           <hr className="my-3 border-gray-300" />
         ),
+        // Table components for markdown tables
+        table: ({ children }) => (
+          <div className="overflow-x-auto my-3">
+            <table className="min-w-full border-collapse border border-gray-300 text-sm">
+              {children}
+            </table>
+          </div>
+        ),
+        thead: ({ children }) => (
+          <thead className="bg-blue-50">{children}</thead>
+        ),
+        tbody: ({ children }) => (
+          <tbody className="divide-y divide-gray-200">{children}</tbody>
+        ),
+        tr: ({ children }) => (
+          <tr className="hover:bg-gray-50">{children}</tr>
+        ),
+        th: ({ children }) => (
+          <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 bg-blue-100">
+            {children}
+          </th>
+        ),
+        td: ({ children }) => (
+          <td className="border border-gray-300 px-3 py-2 text-gray-800">
+            {children}
+          </td>
+        ),
       }}
     >
-      {content}
+      {highlightedContent}
     </ReactMarkdown>
   );
 }
@@ -519,7 +566,9 @@ function EmailThreadUIContent() {
       } catch (err) {
         if (!cancelled) {
           setBackendHealthy(false);
-          setBackendError(`Cannot reach backend at ${API_BASE}`);
+          setBackendError(
+            `Cannot reach backend at ${API_BASE}. Quick fix (macOS/Linux): lsof -nP -tiTCP:8000 -sTCP:LISTEN | xargs kill -9`
+          );
         }
       }
     };
@@ -614,7 +663,7 @@ function EmailThreadUIContent() {
       updateMessageAt(assistantId, (msg) => ({
         ...msg,
         streaming: false,
-        content: 'Error connecting to server. Make sure backend is running on port 8000.',
+        content: `Error connecting to backend at ${BACKEND_BASE}. If you just restarted, port 8000 may still be held by an old process. Quick fix (macOS/Linux): lsof -nP -tiTCP:8000 -sTCP:LISTEN | xargs kill -9`,
       }));
     } finally {
       setDraftInput('');
@@ -1290,7 +1339,7 @@ function EmailThreadUIContent() {
                             {depositInfo.deposit_paid ? ' ✅ Paid' : ' ⏳ Pending'}
                           </div>
                           {!depositInfo.deposit_paid && depositInfo.deposit_due_date && (
-                            <div>Due: {depositInfo.deposit_due_date}</div>
+                            <div>Due: {depositInfo.deposit_due_date}<br /></div>
                           )}
                           {!depositInfo.deposit_paid && task.event_id && (
                             <button

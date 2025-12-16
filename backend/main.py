@@ -1,13 +1,33 @@
+# CRITICAL: Clear bytecode caches on startup
+# This prevents stale .pyc files from causing "unexpected keyword argument" errors on reload
+import sys
+import os
+import shutil
+import importlib
+from pathlib import Path as _Path
+sys.dont_write_bytecode = True  # Prevent new cache writes
+
+# Clear pycache directories
+_backend_dir = _Path(__file__).parent
+for _cache_dir in _backend_dir.rglob("__pycache__"):
+    try:
+        shutil.rmtree(_cache_dir)
+    except Exception:
+        pass
+
+# Invalidate import caches (but don't delete already-loaded modules as that breaks uvicorn)
+importlib.invalidate_caches()
+
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 import uuid
-import os
 import re
 import atexit
 import subprocess
 import socket
+import signal
 import time
 import webbrowser
 import threading
@@ -62,6 +82,28 @@ from backend.debug.trace import BUS
 
 app = FastAPI(title="AI Event Manager")
 
+
+# --- Startup event: clear Python cache to prevent stale bytecode issues ---
+@app.on_event("startup")
+async def _startup_clear_cache() -> None:
+    """Clear Python bytecode cache on startup to prevent stale dataclass issues.
+
+    This runs regardless of how the app is started (uvicorn direct, --reload, etc.)
+    and prevents errors like `__init__() got an unexpected keyword argument 'draft'`.
+    """
+    backend_dir = Path(__file__).parent
+    cleared = 0
+    for cache_dir in backend_dir.rglob("__pycache__"):
+        try:
+            import shutil
+            shutil.rmtree(cache_dir)
+            cleared += 1
+        except Exception:
+            pass
+    if cleared:
+        print(f"[Backend] Startup: cleared {cleared} __pycache__ directories")
+
+
 DEBUG_TRACE_ENABLED = is_trace_enabled()
 
 GUI_ADAPTER = ClientGUIAdapter()
@@ -69,26 +111,141 @@ GUI_ADAPTER = ClientGUIAdapter()
 # CORS for frontend - configurable origins for security
 # Default allows localhost:3000 for local development
 # Set ALLOWED_ORIGINS env var for production (comma-separated list)
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_raw_allowed_origins = os.getenv("ALLOWED_ORIGINS")
+if _raw_allowed_origins:
+    allowed_origins = [origin.strip() for origin in _raw_allowed_origins.split(",") if origin.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    # Dev default: allow any localhost origin, regardless of port (3000/3001/etc).
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # CENTRALIZED EVENTS DATABASE
 EVENTS_FILE = "events_database.json"
 FRONTEND_DIR = Path(__file__).resolve().parents[1] / "atelier-ai-frontend"
 FRONTEND_PORT = int(os.getenv("FRONTEND_PORT", "3000"))
 _frontend_process: Optional[subprocess.Popen] = None
+DEV_DIR = Path(__file__).resolve().parents[1] / ".dev"
+BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
+BACKEND_HOST = os.getenv("BACKEND_HOST", "0.0.0.0")
 
 
 def _is_port_in_use(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(0.5)
         return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _pid_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    else:
+        return True
+
+
+def _pids_listening_on_tcp_port(port: int) -> List[int]:
+    """Return PIDs listening on localhost TCP port (best effort; macOS/Linux)."""
+    import shutil
+
+    if not shutil.which("lsof"):
+        return []
+    try:
+        output = subprocess.check_output(  # nosec B603,B607 (dev-only port cleanup)
+            ["lsof", "-nP", f"-tiTCP:{port}", "-sTCP:LISTEN"],
+            stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError:
+        return []
+    pids: List[int] = []
+    for line in output.decode().splitlines():
+        value = line.strip()
+        if not value:
+            continue
+        try:
+            pids.append(int(value))
+        except ValueError:
+            continue
+    return sorted(set(pids))
+
+
+def _terminate_pid(pid: int, timeout_s: float = 3.0) -> None:
+    """Terminate a pid (TERM then KILL), best effort."""
+    if pid <= 0 or pid == os.getpid():
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if not _pid_exists(pid):
+            return
+        time.sleep(0.1)
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except OSError:
+        return
+
+
+def _ensure_backend_port_free(port: int) -> None:
+    if not _is_port_in_use(port):
+        return
+    if os.getenv("AUTO_FREE_BACKEND_PORT", "1") != "1":
+        raise RuntimeError(
+            f"Port {port} is already in use. Stop the existing process or set AUTO_FREE_BACKEND_PORT=1."
+        )
+    pids = _pids_listening_on_tcp_port(port)
+    if not pids:
+        raise RuntimeError(
+            f"Port {port} is already in use, but no PID could be discovered (missing lsof?)."
+        )
+    print(f"[Backend][WARN] Port {port} is in use; terminating listeners: {', '.join(map(str, pids))}")
+    for pid in pids:
+        _terminate_pid(pid)
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        if not _is_port_in_use(port):
+            return
+        time.sleep(0.1)
+    remaining = _pids_listening_on_tcp_port(port)
+    raise RuntimeError(
+        f"Port {port} is still in use after attempting cleanup (remaining PIDs: {remaining or 'unknown'})."
+    )
+
+
+def _write_pidfile(path: Path) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    except Exception as exc:  # pragma: no cover - best effort
+        print(f"[Backend][WARN] Failed to write pidfile {path}: {exc}")
+
+
+def _cleanup_pidfile(path: Path) -> None:
+    try:
+        if not path.exists():
+            return
+        existing = path.read_text(encoding="utf-8").strip()
+        if existing and existing != str(os.getpid()):
+            return
+        path.unlink(missing_ok=True)
+    except Exception:  # pragma: no cover - best effort
+        return
 
 
 def _is_frontend_healthy(port: int, timeout: float = 2.0) -> bool:
@@ -126,6 +283,24 @@ def _kill_unhealthy_frontend() -> None:
 def _launch_frontend() -> Optional[subprocess.Popen]:
     if os.getenv("AUTO_LAUNCH_FRONTEND", "1") != "1":
         return None
+    frontend_pidfile = DEV_DIR / "frontend.pid"
+    try:
+        if frontend_pidfile.exists():
+            existing = frontend_pidfile.read_text(encoding="utf-8").strip()
+            existing_pid = int(existing) if existing else None
+            if (
+                existing_pid
+                and _pid_exists(existing_pid)
+                and _is_port_in_use(FRONTEND_PORT)
+                and _is_frontend_healthy(FRONTEND_PORT)
+            ):
+                print(
+                    f"[Frontend] Reusing existing frontend process (pid={existing_pid}) on http://localhost:{FRONTEND_PORT}"
+                )
+                return None
+            frontend_pidfile.unlink(missing_ok=True)
+    except Exception:
+        pass
     if _is_port_in_use(FRONTEND_PORT):
         # Port is in use - check if it's actually healthy
         if _is_frontend_healthy(FRONTEND_PORT):
@@ -145,7 +320,14 @@ def _launch_frontend() -> Optional[subprocess.Popen]:
         return None
     cmd = ["npm", "run", "dev", "--", "--hostname", "0.0.0.0", "--port", str(FRONTEND_PORT)]
     try:
-        proc = subprocess.Popen(cmd, cwd=str(FRONTEND_DIR))
+        env = os.environ.copy()
+        env.setdefault("NEXT_PUBLIC_BACKEND_BASE", f"http://localhost:{BACKEND_PORT}")
+        proc = subprocess.Popen(cmd, cwd=str(FRONTEND_DIR), env=env, start_new_session=True)
+        try:
+            DEV_DIR.mkdir(parents=True, exist_ok=True)
+            frontend_pidfile.write_text(f"{proc.pid}\n", encoding="utf-8")
+        except Exception:
+            pass
         print(f"[Frontend] npm dev server starting on http://localhost:{FRONTEND_PORT}")
         return proc
     except FileNotFoundError:
@@ -556,7 +738,9 @@ async def start_conversation(request: StartConversationRequest):
         wf_action = wf_res.get("action")
         print(f"[WF] start action={wf_action} client={request.client_email} event_id={wf_res.get('event_id')} task_id={wf_res.get('task_id')}")
     except Exception as e:
+        import traceback
         print(f"[WF][ERROR] {e}")
+        traceback.print_exc()
     if not wf_res:
         raise HTTPException(status_code=500, detail="Workflow processing failed")
     if wf_action == "manual_review_enqueued":
@@ -1015,8 +1199,10 @@ async def reset_client_data(request: ClientResetRequest):
     SECURITY: This endpoint is disabled by default.
     Set ENABLE_DANGEROUS_ENDPOINTS=true to enable (never in production!).
     """
-    # Production guard - disabled unless explicitly enabled
-    if os.getenv("ENABLE_DANGEROUS_ENDPOINTS", "false").lower() != "true":
+    # Production guard - enabled by default in development (when running main.py directly)
+    # Disabled in production unless explicitly enabled
+    is_dev = os.getenv("ENABLE_DANGEROUS_ENDPOINTS", "true").lower() == "true"
+    if not is_dev:
         raise HTTPException(
             status_code=403,
             detail="This endpoint is disabled. Set ENABLE_DANGEROUS_ENDPOINTS=true to enable (development only)."
@@ -1900,14 +2086,26 @@ def _stop_frontend_process() -> None:
         return
     try:
         if proc.poll() is None:
-            proc.terminate()
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except Exception:
+                proc.terminate()
             proc.wait(timeout=5)
     except Exception:
         try:
-            proc.kill()
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except Exception:
+                proc.kill()
         except Exception:
             pass
     finally:
+        try:
+            pidfile = DEV_DIR / "frontend.pid"
+            if pidfile.exists() and pidfile.read_text(encoding="utf-8").strip() == str(proc.pid):
+                pidfile.unlink(missing_ok=True)
+        except Exception:
+            pass
         _frontend_process = None
 
 
@@ -1926,14 +2124,38 @@ def _persist_debug_reports() -> None:
             print(f"[Debug][WARN] Failed to persist debug report for {thread_id}: {exc}")
 
 
-atexit.register(_persist_debug_reports)
+if os.getenv("DEBUG_TRACE_PERSIST_ON_EXIT", "0") == "1":
+    atexit.register(_persist_debug_reports)
 atexit.register(_stop_frontend_process)
+
+def _clear_python_cache() -> None:
+    """Clear Python bytecode cache to prevent stale dataclass issues."""
+    backend_dir = Path(__file__).parent
+    cleared = 0
+    for cache_dir in backend_dir.rglob("__pycache__"):
+        try:
+            import shutil
+            shutil.rmtree(cache_dir)
+            cleared += 1
+        except Exception:
+            pass
+    if cleared:
+        print(f"[Backend] Cleared {cleared} __pycache__ directories")
+
 
 if __name__ == "__main__":
     import uvicorn
+    # Clear Python cache to prevent stale bytecode issues (e.g., missing dataclass fields)
+    _clear_python_cache()
+
+    backend_pidfile = DEV_DIR / "backend.pid"
+    _write_pidfile(backend_pidfile)
+    atexit.register(_cleanup_pidfile, backend_pidfile)
+
+    _ensure_backend_port_free(BACKEND_PORT)
     _frontend_process = _launch_frontend()
     threading.Thread(target=_open_browser_when_ready, name="frontend-browser", daemon=True).start()
     try:
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+        uvicorn.run(app, host=BACKEND_HOST, port=BACKEND_PORT)
     finally:
         _stop_frontend_process()

@@ -756,9 +756,11 @@ def get_all_revision_markers(language: str = "mixed") -> List[str]:
 
 # Action request patterns - prevents "send me X" from triggering Q&A
 # Consolidated from intent_classifier.py and general_qna_classifier.py
+# NOTE: Patterns must require explicit recipient (me/us) to avoid matching questions
+# e.g., "do you provide X" is a question, not an action request
 ACTION_REQUEST_PATTERNS = (
     r"\bsend\s+(me\s+)?(the\s+|a\s+)?",
-    r"\bprovide\s+(me\s+with\s+)?",
+    r"\bprovide\s+(me|us)\s+(with\s+)?",  # Fixed: requires "me" or "us" after "provide"
     r"\bgive\s+(me|us)\b",
     r"\bemail\s+(me|us)\b",
     r"\bforward\s+(me|us)\b",

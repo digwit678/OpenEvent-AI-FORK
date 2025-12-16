@@ -1,5 +1,5 @@
 
-'use client';
+    'use client';
 
 interface StatusBadge {
   label: string;

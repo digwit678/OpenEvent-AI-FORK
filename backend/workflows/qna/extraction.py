@@ -76,13 +76,44 @@ QNA_EXTRACTION_SCHEMA: Dict[str, Any] = {
                 "notes": {"type": ["string", "null"]},
             },
         },
+        # Temporary requirements for THIS Q&A only (NOT persisted to event record)
+        "qna_requirements": {
+            "type": ["object", "null"],
+            "description": "Requirements mentioned IN THIS Q&A ONLY - used to answer this question, not stored permanently",
+            "additionalProperties": False,
+            "properties": {
+                "attendees": {
+                    "type": ["integer", "null"],
+                    "description": "Number of attendees/visitors/guests/people mentioned in Q&A",
+                },
+                "dietary": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string"},
+                    "description": "Dietary requirements like vegetarian, vegan, halal, kosher",
+                },
+                "features": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string"},
+                    "description": "Room/venue features like projector, kitchen, music",
+                },
+                "layout": {
+                    "type": ["string", "null"],
+                    "description": "Seating arrangement like u-shape, classroom, boardroom",
+                },
+            },
+        },
     },
 }
 
 SYSTEM_PROMPT = (
     "You extract structured Q&A intents for OpenEvent. "
     "Classify the message into read-only Q&A intents. "
-    "Always emit JSON matching the provided schema."
+    "Always emit JSON matching the provided schema. "
+    "If the Q&A message mentions specific requirements (number of attendees/visitors/guests/people, "
+    "dietary needs like vegetarian/vegan, or room features like projector/kitchen/music), "
+    "extract them into qna_requirements. Use semantic understanding - 'visitors', 'guests', "
+    "'attendees', 'people' all refer to attendee count. "
+    "These requirements are used ONLY for answering this question, not stored permanently."
 )
 
 
@@ -199,6 +230,7 @@ def _fallback_extraction(payload: Dict[str, Any]) -> Dict[str, Any]:
         "qna_intent": "select_static",
         "qna_subtype": "non_event_info",
         "q_values": {key: None for key in Q_VALUE_KEYS},
+        "qna_requirements": None,
     }
 
 
@@ -207,6 +239,11 @@ def _normalize_qna_extraction(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         raw = {}
     q_values = raw.get("q_values") if isinstance(raw.get("q_values"), dict) else {}
     normalized_values: Dict[str, Any] = {key: q_values.get(key) for key in Q_VALUE_KEYS}
+
+    # Preserve qna_requirements (temporary, NOT persisted to event record)
+    # Used only for answering this specific Q&A
+    qna_requirements = raw.get("qna_requirements") if isinstance(raw.get("qna_requirements"), dict) else None
+
     return {
         "msg_type": _safe_enum(raw.get("msg_type"), {"event", "non_event"}, default="event"),
         "qna_intent": _safe_enum(
@@ -216,6 +253,7 @@ def _normalize_qna_extraction(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         ),
         "qna_subtype": str(raw.get("qna_subtype") or "non_event_info"),
         "q_values": normalized_values,
+        "qna_requirements": qna_requirements,
     }
 
 
