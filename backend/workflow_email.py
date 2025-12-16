@@ -902,16 +902,20 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
             if not is_detour and current_step >= 2:
                 # Return friendly "same message" response instead of processing
                 duplicate_response = GroupResult(
+                    action="duplicate_message",
                     halt=True,
-                    draft={
-                        "body_markdown": (
-                            "I notice this is the same message as before. "
-                            "Is there something specific you'd like to add or clarify? "
-                            "I'm happy to help with any questions or changes."
-                        ),
-                        "hil_required": False,
+                    payload={
+                        "draft": {
+                            "body_markdown": (
+                                "I notice this is the same message as before. "
+                                "Is there something specific you'd like to add or clarify? "
+                                "I'm happy to help with any questions or changes."
+                            ),
+                            "hil_required": False,
+                        },
                     },
                 )
+                from backend.debug.hooks import trace_marker  # pylint: disable=import-outside-toplevel
                 trace_marker(
                     state.thread_id,
                     "DUPLICATE_MESSAGE_DETECTED",

@@ -14,6 +14,7 @@ from backend.workflows.common.menu_options import (
     normalize_menu_for_display,
     select_menu_options,
 )
+from backend.workflows.common.capture import capture_workflow_requirements
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.sorting import rank_rooms, RankedRoom
 from backend.workflows.common.room_rules import find_better_room_dates
@@ -135,6 +136,10 @@ def process(state: WorkflowState) -> GroupResult:
     # ("actually we're 50 now") and route them back to dependent nodes while hashes stay valid.
     message_text = _message_text(state)
     user_info = state.user_info or {}
+
+    # Capture requirements from workflow context (statements only, not questions)
+    if message_text and state.user_info:
+        capture_workflow_requirements(state, message_text, state.user_info)
 
     # -------------------------------------------------------------------------
     # NONSENSE GATE: Check for off-topic/nonsense using existing confidence

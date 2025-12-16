@@ -373,6 +373,123 @@ Changed `draft_message["requires_approval"] = True` to `draft_message["requires_
 
 **Reproduction:** Start new event → provide dates in February → confirm "2026-02-07" → check if Step 3 shows correct date.
 
+### Python Bytecode Cache Causing Startup Failures (Fixed)
+**Symptoms:** First API request after restarting the backend fails with `__init__() got an unexpected keyword argument 'draft'` (500 Internal Server Error). Subsequent requests succeed. Frontend shows "Error connecting to backend" even though the backend is running.
+
+**Root Cause:** Stale Python bytecode cache (`.pyc` files) contained old versions of dataclasses (e.g., `TraceEvent` without the `draft` field). When the code was updated to pass `draft=draft` to `TraceEvent()`, the cached bytecode still had the old class definition without that field.
+
+**Fix Applied:**
+1. Clear all Python bytecode caches before starting: `find backend -type d -name "__pycache__" -exec rm -rf {} +`
+2. Use `PYTHONDONTWRITEBYTECODE=1` when starting the backend to prevent cache creation
+3. The startup script now clears caches automatically
+
+**Prevention:**
+- Always run with `PYTHONDONTWRITEBYTECODE=1` during development
+- After pulling new code or modifying dataclasses, run: `find backend -name "*.pyc" -delete && find backend -type d -name "__pycache__" -exec rm -rf {} +`
+- If you see `unexpected keyword argument` errors on first request, clear caches and restart
+
+**Quick Fix:**
+```bash
+# Clear caches and restart
+find backend -type d -name "__pycache__" -exec rm -rf {} +
+lsof -nP -tiTCP:8000 -sTCP:LISTEN | xargs kill -9
+PYTHONDONTWRITEBYTECODE=1 python3 backend/main.py
+```
+
+### load_db() Signature Mismatch (Fixed)
+**Symptoms:** `load_db() missing 1 required positional argument: 'path'` when making API calls. Backend starts but requests fail with 500 Internal Server Error.
+
+**Root Cause:** There are two `load_db` functions in the codebase:
+1. `backend/workflow_email.py:load_db(path: Path = DB_PATH)` — has default path
+2. `backend/workflows/io/database.py:load_db(path: Path, lock_path: Optional[Path] = None)` — requires path argument
+
+Code in `backend/workflows/groups/date_confirmation/trigger/process.py` imported from `database.py` but called `load_db()` without arguments.
+
+**Fix Applied:**
+For router Q&A integration, the `db` parameter is optional (`None` is acceptable) since `route_general_qna()` doesn't need the database for catering/products responses. Changed `db_snapshot = load_db()` to pass `None` directly.
+
+**Prevention:**
+- When using `load_db`, check which version you're importing
+- If you don't need the database, pass `None` to functions that accept `Optional[Dict]`
+- Prefer `WF_DB_PATH` from `workflow_email.py` if you need the default path
+
+### Catering Q&A Not Appearing with Multi-Day Requests (Fixed - 2025-12-16)
+**Symptoms:** Client asks "What package options do you recommend?" alongside a multi-day date request (e.g., "June 11–12, 2026"). The workflow correctly proposes dates and the structured room availability table, but the catering Q&A content disappeared from the final response—even though it was being appended earlier in the code flow.
+
+**Investigation Log (systematic debugging):**
+1. ✗ Checked if router Q&A integration was missing from `general_rooms_qna` path — Found integration present at lines 3429-3469
+2. ✗ Checked if `secondary_types` was empty — Found it correctly had `['catering_for']`
+3. ✗ Checked if `route_general_qna()` returned empty — Found it correctly returned catering packages
+4. ✗ Checked if body wasn't being appended — Found body WAS being appended (body_len=920)
+5. ✓ **Found root cause:** After `add_draft_message()`, the body_len was 872, but in `main.py` it was 913 with DIFFERENT content. The draft was being **OVERWRITTEN** downstream.
+
+**Root Cause:** The `enrich_general_qna_step2()` function in `backend/workflows/common/general_qna.py` (lines 1187-1189) was unconditionally overwriting `draft["body_markdown"]` and `draft["body"]` when rebuilding the structured room table. This function is called at line 931 in `process.py` AFTER the router Q&A integration code appended catering content, causing that content to be lost.
+
+**Files Involved:**
+- `backend/workflows/groups/date_confirmation/trigger/process.py` — Router Q&A integration at lines 3429-3469
+- `backend/workflows/common/general_qna.py` — `enrich_general_qna_step2()` overwrite at lines 1187-1198
+
+**Fix Applied:**
+Modified `enrich_general_qna_step2()` in `general_qna.py` to preserve router Q&A content:
+```python
+# Preserve router Q&A content (catering, products, etc.) that was appended earlier
+if draft.get("router_qna_appended"):
+    old_body_markdown = draft.get("body_markdown", "")
+    # Extract the router Q&A section (everything after "---\n\nINFO:")
+    if "\n\n---\n\nINFO:" in old_body_markdown:
+        router_section = old_body_markdown.split("\n\n---\n\nINFO:", 1)[1]
+        body_markdown = f"{body_markdown}\n\n---\n\nINFO:{router_section}"
+```
+
+**Test Verification:**
+- Multi-day request with catering question now correctly shows:
+  - Structured room availability table (from verbalizer)
+  - Catering packages list
+  - Info link with snapshot_id: `<a href="http://localhost:3000/info/qna?snapshot_id=...">View Catering information</a>`
+- Example test: "Training Workshop – 2-Day Booking Request in June" with "June 11–12, 2026" and "what package options you recommend?"
+
+**Regression Guard:** If catering content disappears from multi-variable Q&A responses, check if:
+1. `router_qna_appended` flag is set on the draft
+2. `enrich_general_qna_step2()` or similar functions preserve that flag's content
+
+### GroupResult Missing `draft` Field (Fixed - 2025-12-16)
+**Symptoms:** 500 Internal Server Error with `__init__() got an unexpected keyword argument 'draft'` when processing messages.
+
+**Root Cause:** In `backend/workflow_email.py` line 904-914, the duplicate message detection code was calling `GroupResult(draft={...})` but the `GroupResult` dataclass (defined in `backend/workflows/common/types.py:281`) doesn't have a `draft` field - only `action`, `payload`, and `halt`.
+
+**Fix Applied:** Changed the code to pass `draft` inside `payload` instead of as a separate argument:
+```python
+duplicate_response = GroupResult(
+    action="duplicate_message",
+    halt=True,
+    payload={
+        "draft": {...}  # Now inside payload, not a separate argument
+    },
+)
+```
+
+Also added missing import for `trace_marker`:
+```python
+from backend.debug.hooks import trace_marker  # pylint: disable=import-outside-toplevel
+```
+
+**Regression Guard:** If you add new fields to `GroupResult`, update all callers. Check `GroupResult.__dataclass_fields__` for available fields.
+
+### Python Bytecode Cache Persistence (Ongoing)
+**Symptoms:** After editing dataclass definitions, `__init__() got an unexpected keyword argument` errors persist even after clearing `__pycache__` directories.
+
+**Root Cause:** Python's module cache (`sys.modules`) keeps old class definitions in memory even after bytecode cache is cleared. When uvicorn reloads, modules that were imported before the reload retain stale definitions.
+
+**Mitigation Applied:**
+- Added cache clearing at the top of `backend/main.py` (runs before any imports)
+- Set `sys.dont_write_bytecode = True` to prevent new cache creation
+- Call `importlib.invalidate_caches()` to invalidate import caches
+
+**Prevention:**
+- Always run with `PYTHONDONTWRITEBYTECODE=1`
+- When editing dataclasses, restart the server completely (not just reload)
+- Clear caches before starting: `find backend -type d -name "__pycache__" -exec rm -rf {} +`
+
 ---
 
 ## Test Suite Status

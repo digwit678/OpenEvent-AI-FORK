@@ -28,6 +28,8 @@ uvicorn backend.main:app --reload --port 8000
 ```
 Expected log: `INFO:     Application startup complete.`
 
+Alternative (single command): `python3 backend/main.py` (auto-launches the frontend and will try to free port `8000` on startup if a stale process is still listening).
+
 ### Terminal B — Frontend (Client + Event Manager UI)
 ```bash
 # from repo root

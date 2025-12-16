@@ -67,15 +67,14 @@ python3 backend/main.py
 
 During startup the backend will:
 
-1. Ensure `OPENAI_API_KEY`, `AGENT_MODE=openai`, and `VERBALIZER_TONE=empathetic` are set.
-2. Free port 8000 if another process is using it.
-3. Start (or reuse) the Next.js dev server on the first free port from 3000/3001/3002 and
-   set `NEXT_PUBLIC_BACKEND_BASE=http://localhost:8000` automatically.
-4. Shut the frontend down when the backend process exits.
+1. Free port 8000 if another process is using it (dev convenience; disable via `AUTO_FREE_BACKEND_PORT=0`).
+2. Start (or reuse) the Next.js dev server on `FRONTEND_PORT` (default `3000`) and set `NEXT_PUBLIC_BACKEND_BASE=http://localhost:8000`.
+3. Shut the frontend down when the backend process exits.
 
-Logs include the chosen frontend port and whether autostart was required. A
-pidfile is written to `.dev/frontend.pid` so repeated backend launches avoid
-spawning duplicate frontend processes.
+Pidfiles are written to `.dev/backend.pid` and `.dev/frontend.pid` so repeated backend launches can avoid spawning
+duplicate frontend processes and can detect stale listeners after an unclean stop (e.g., IDE stop button).
+
+If shutdown feels slow, disable auto-persisting debug trace reports on exit by leaving `DEBUG_TRACE_PERSIST_ON_EXIT` unset (default). Set `DEBUG_TRACE_PERSIST_ON_EXIT=1` only when you specifically want reports written on shutdown.
 
 ## 5. Capability Q&A & Resume Flow
 

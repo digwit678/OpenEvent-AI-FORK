@@ -94,6 +94,52 @@ DEFAULT_NEXT_STEP_LINE = "- Confirm your preferred date (and any other must-have
 DEFAULT_ROOM_NEXT_STEP_LINE = "- Confirm the room you like (and any final requirements) so I can move ahead with the offer preparation."
 
 
+def _build_verbalize_context(
+    db_summary: Dict[str, Any],
+    event_entry: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Build verbalize_context from Q&A db_summary for verbalizer fact verification.
+
+    Extracts dates, room names, amounts, and product names that MUST be preserved
+    during verbalization (the verbalizer "sandwich" will verify these facts).
+    """
+    context: Dict[str, Any] = {}
+
+    # Extract room names
+    rooms = db_summary.get("rooms") or []
+    if rooms:
+        room_names = [r.get("name") or r.get("room_name") for r in rooms if r.get("name") or r.get("room_name")]
+        if room_names:
+            context["rooms"] = room_names
+
+    # Extract dates
+    dates = db_summary.get("dates") or []
+    if dates:
+        date_values = []
+        for d in dates:
+            date_str = d.get("date") or d.get("date_iso")
+            if date_str:
+                date_values.append(date_str)
+        if date_values:
+            context["dates"] = date_values
+
+    # Extract product names
+    products = db_summary.get("products") or []
+    if products:
+        product_names = [p.get("name") or p.get("product_name") for p in products if p.get("name") or p.get("product_name")]
+        if product_names:
+            context["products"] = product_names
+
+    # Extract amounts from event requirements
+    requirements = event_entry.get("requirements") or {}
+    participants = requirements.get("number_of_participants")
+    if participants:
+        context["amounts"] = {"participants": participants}
+
+    return context
+
+
 def _normalise_iso_date(value: Optional[str]) -> Optional[str]:
     if not value:
         return None
@@ -1138,6 +1184,19 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
     body_lines.extend(["", "NEXT STEP:", next_step_line])
     body_markdown = "\n".join(body_lines).strip()
 
+    # Preserve router Q&A content (catering, products, etc.) that was appended earlier
+    if draft.get("router_qna_appended"):
+        old_body_markdown = draft.get("body_markdown", "")
+        # Extract the router Q&A section (everything after "---\n\nINFO:")
+        if "\n\n---\n\nINFO:" in old_body_markdown:
+            router_section = old_body_markdown.split("\n\n---\n\nINFO:", 1)[1]
+            body_markdown = f"{body_markdown}\n\n---\n\nINFO:{router_section}"
+        elif "\n\n---\n\n" in old_body_markdown and "catering packages" in old_body_markdown.lower():
+            # Fallback: try to find catering content after separator
+            parts = old_body_markdown.rsplit("\n\n---\n\n", 1)
+            if len(parts) == 2 and "catering packages" in parts[1].lower():
+                body_markdown = f"{body_markdown}\n\n---\n\n{parts[1]}"
+
     footer_text = "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client"
     draft["body_markdown"] = body_markdown
     draft["body"] = f"{body_markdown}\n\n---\n{footer_text}"
@@ -1202,11 +1261,17 @@ def render_general_qna_reply(state: WorkflowState, classification: Dict[str, Any
     body_markdown = (structured_result.body_markdown or _fallback_structured_body(structured_result.action_payload)).strip()
 
     if structured_result.handled and body_markdown:
+        # Build verbalize_context from db_summary for fact verification
+        db_summary = structured_result.action_payload.get("db_summary", {})
+        verbalize_context = _build_verbalize_context(db_summary, event_entry_after)
+
         footer_body = append_footer(
             body_markdown,
             step=current_step,
             next_step=current_step,
             thread_state=thread_state,
+            topic="structured_qna",
+            verbalize_context=verbalize_context,
         )
         draft_message = {
             "body": footer_body,

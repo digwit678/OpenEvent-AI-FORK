@@ -15,6 +15,30 @@ from backend.workflows.common.catalog import (
 from backend.workflows.qna.templates import build_info_block, build_next_step_line
 from backend.debug.hooks import trace_qa_enter, trace_qa_exit
 
+# Generic accessor for LLM-extracted Q&A requirements
+def get_qna_requirements(extraction: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Get ALL temporary requirements extracted by LLM for this Q&A.
+    Generic accessor - works for any field (attendees, dietary, features, layout, etc.)
+
+    These requirements are for answering THIS Q&A only, NOT persisted to event record.
+    """
+    if not extraction:
+        return {}
+    qna_req = extraction.get("qna_requirements")
+    return qna_req if isinstance(qna_req, dict) else {}
+
+
+def _get_cached_extraction(event_entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Get the cached Q&A extraction from event entry."""
+    if not event_entry:
+        return None
+    qna_cache = event_entry.get("qna_cache")
+    if isinstance(qna_cache, dict):
+        return qna_cache.get("extraction")
+    return None
+
+
 _ROOM_NAMES = ("Room A", "Room B", "Room C", "Punkt.Null")
 _FEATURE_KEYWORDS = {
     "hdmi": "HDMI",
@@ -80,7 +104,26 @@ def _current_step(event_entry: Optional[Dict[str, Any]]) -> int:
     return 2
 
 
-def _extract_attendees(text: str, fallback: Optional[Any]) -> Optional[int]:
+def _extract_attendees(
+    text: str,
+    fallback: Optional[Any],
+    extraction: Optional[Dict[str, Any]] = None,
+) -> Optional[int]:
+    """
+    Extract attendee count. Priority:
+    1. LLM-extracted qna_requirements.attendees (semantic understanding)
+    2. Regex pattern match in text
+    3. Fallback value
+    """
+    # Prefer LLM extraction (handles "visitors", "guests", "people" semantically)
+    qna_req = get_qna_requirements(extraction)
+    if qna_req.get("attendees") is not None:
+        try:
+            return int(qna_req["attendees"])
+        except (TypeError, ValueError):
+            pass
+
+    # Fall back to regex
     match = _ATTENDEE_PATTERN.search(text)
     if match:
         try:
@@ -95,7 +138,23 @@ def _extract_attendees(text: str, fallback: Optional[Any]) -> Optional[int]:
         return None
 
 
-def _extract_layout(text: str, fallback: Optional[str]) -> Optional[str]:
+def _extract_layout(
+    text: str,
+    fallback: Optional[str],
+    extraction: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """
+    Extract layout. Priority:
+    1. LLM-extracted qna_requirements.layout
+    2. Keyword match in text
+    3. Fallback value
+    """
+    # Prefer LLM extraction
+    qna_req = get_qna_requirements(extraction)
+    if qna_req.get("layout"):
+        return str(qna_req["layout"])
+
+    # Fall back to keyword matching
     lowered = text.lower()
     for token, layout in _LAYOUT_KEYWORDS.items():
         if token in lowered:
@@ -103,12 +162,29 @@ def _extract_layout(text: str, fallback: Optional[str]) -> Optional[str]:
     return fallback
 
 
-def _extract_feature_tokens(text: str) -> List[str]:
-    lowered = text.lower()
+def _extract_feature_tokens(
+    text: str,
+    extraction: Optional[Dict[str, Any]] = None,
+) -> List[str]:
+    """
+    Extract feature tokens. Priority:
+    1. LLM-extracted qna_requirements.features (merged with regex)
+    2. Keyword match in text
+    """
     features: List[str] = []
+
+    # Get LLM-extracted features
+    qna_req = get_qna_requirements(extraction)
+    llm_features = qna_req.get("features") or []
+    if isinstance(llm_features, list):
+        features.extend(str(f) for f in llm_features)
+
+    # Also do keyword matching for features LLM might have missed
+    lowered = text.lower()
     for token, canonical in _FEATURE_KEYWORDS.items():
         if token in lowered and canonical not in features:
             features.append(canonical)
+
     return features
 
 
@@ -234,9 +310,10 @@ def _rooms_by_feature_response(
     event_entry: Optional[Dict[str, Any]],
     attendees: Optional[int],
     layout: Optional[str],
+    extraction: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
     requested_room = _extract_requested_room(text)
-    feature_tokens = _extract_feature_tokens(text)
+    feature_tokens = _extract_feature_tokens(text, extraction)
     features_to_check = feature_tokens or ["Natural daylight"]
     info_lines: List[str] = []
 
@@ -315,8 +392,11 @@ def _catering_response(
     room = _event_room(event_entry)
     date_token = _event_date_iso(event_entry)
     categories: Optional[List[str]] = None
-    if "drink" in text.lower() or "beverage" in text.lower():
+    lowered = text.lower()
+    if "drink" in lowered or "beverage" in lowered:
         categories = ["beverages"]
+    elif "package" in lowered or "menu" in lowered or "catering" in lowered:
+        categories = ["package"]
     options = list_catering(room_id=room, date_token=date_token, categories=categories)
     info: List[str] = []
     for entry in options[:4]:
@@ -337,6 +417,8 @@ def _catering_response(
             info.append("Catering menus are available once we confirm the room/date combination.")
     if categories == ["beverages"]:
         preface = "Here are beverage pairings we can set up for you:"
+    elif categories == ["package"]:
+        preface = "Here are our catering packages:"
     elif room and date_token:
         preface = f"Here are catering ideas that work well in {room} on your requested date:"
     elif room:
@@ -467,10 +549,11 @@ def route_general_qna(
 
     text = _message_text(msg)
     active_entry = event_entry_after or event_entry_before
+    extraction = _get_cached_extraction(active_entry)
     requirements = _event_requirements(active_entry)
     fallback_attendees = requirements.get("number_of_participants")
-    attendees = _extract_attendees(text, fallback_attendees)
-    layout = _extract_layout(text, requirements.get("seating_layout"))
+    attendees = _extract_attendees(text, fallback_attendees, extraction)
+    layout = _extract_layout(text, requirements.get("seating_layout"), extraction)
 
     current_step = _current_step(active_entry)
     anchor_name = classification.get("step_anchor")
@@ -495,7 +578,7 @@ def route_general_qna(
             topic = "general_information"
             target_step_idx = resume_step_idx
         elif qna_type == "rooms_by_feature":
-            info_lines = _rooms_by_feature_response(text, active_entry, attendees, layout)
+            info_lines = _rooms_by_feature_response(text, active_entry, attendees, layout, extraction)
             topic = "rooms_by_feature"
             target_step_idx = _qna_target_step(qna_type) or resume_step_idx
         elif qna_type == "room_features":
@@ -574,4 +657,243 @@ def _thread_id(msg: Dict[str, Any], event_entry: Optional[Dict[str, Any]]) -> Op
     return None
 
 
-__all__ = ["route_general_qna"]
+def route_multi_variable_qna(
+    msg: Dict[str, Any],
+    event_entry_before: Optional[Dict[str, Any]],
+    event_entry_after: Optional[Dict[str, Any]],
+    db: Optional[Dict[str, Any]],
+    classification: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """
+    Route multi-variable Q&A with conjunction analysis.
+
+    Uses the conjunction analyzer to determine the relationship between Q&A parts:
+    - independent: Different selects → separate answer sections
+    - and_combined: Same select, compatible conditions → single combined answer
+    - or_union: Same select, conflicting conditions → ranked results
+
+    Returns None if no multi-variable Q&A detected, otherwise returns composed result.
+    """
+    from backend.llm.intent_classifier import spans_multiple_steps
+    from backend.workflows.qna.conjunction import analyze_conjunction
+
+    secondary: List[str] = list(classification.get("secondary") or [])
+
+    # Only use multi-variable routing if there are multiple Q&A types
+    if len(secondary) < 2:
+        return None
+
+    text = _message_text(msg)
+
+    # Analyze the conjunction relationship
+    conjunction = analyze_conjunction(secondary, text)
+
+    # If independent (different selects), we can use the existing behavior
+    # but mark it as multi-variable for debugging
+    if conjunction.relationship == "independent":
+        result = route_general_qna(msg, event_entry_before, event_entry_after, db, classification)
+        result["multi_variable"] = True
+        result["conjunction_relationship"] = "independent"
+        result["qna_parts_count"] = len(conjunction.parts)
+        return result
+
+    # For and_combined or or_union, we need specialized handling
+    active_entry = event_entry_after or event_entry_before
+    requirements = _event_requirements(active_entry)
+
+    if conjunction.relationship == "and_combined":
+        # Combine conditions and query once
+        combined_result = _route_combined_qna(
+            conjunction, text, active_entry, requirements, db, classification
+        )
+        combined_result["multi_variable"] = True
+        combined_result["conjunction_relationship"] = "and_combined"
+        return combined_result
+
+    elif conjunction.relationship == "or_union":
+        # Query with ranking
+        ranked_result = _route_ranked_union_qna(
+            conjunction, text, active_entry, requirements, db, classification
+        )
+        ranked_result["multi_variable"] = True
+        ranked_result["conjunction_relationship"] = "or_union"
+        return ranked_result
+
+    return None
+
+
+def _route_combined_qna(
+    conjunction: Any,
+    text: str,
+    active_entry: Optional[Dict[str, Any]],
+    requirements: Dict[str, Any],
+    db: Optional[Dict[str, Any]],
+    classification: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Route Q&A with combined AND conditions.
+    """
+    from backend.workflows.qna.conjunction import get_combined_conditions
+
+    parts = conjunction.parts
+    if not parts:
+        return {"pre_step": [], "post_step": [], "status": "error"}
+
+    select_type = parts[0].select
+    combined_conditions = get_combined_conditions(parts)
+    extraction = _get_cached_extraction(active_entry)
+
+    # Build info lines based on select type with combined conditions
+    fallback_attendees = requirements.get("number_of_participants")
+    attendees = combined_conditions.get("capacity") or _extract_attendees(text, fallback_attendees, extraction)
+    layout = _extract_layout(text, requirements.get("seating_layout"), extraction)
+
+    current_step = _current_step(active_entry)
+
+    if select_type == "rooms":
+        info_lines = _rooms_by_feature_response(text, active_entry, attendees, layout, extraction)
+        topic = "rooms_combined"
+    elif select_type == "menus":
+        info_lines = _catering_response(text, active_entry)
+        topic = "menus_combined"
+    elif select_type == "dates":
+        info_lines = _dates_response(text, active_entry, db)
+        topic = "dates_combined"
+    else:
+        info_lines = _general_response(active_entry)
+        topic = "general_combined"
+
+    # Build header describing combined query
+    header_parts = []
+    if combined_conditions.get("month"):
+        header_parts.append(f"in {combined_conditions['month'].title()}")
+    if combined_conditions.get("features"):
+        header_parts.append(f"with {', '.join(combined_conditions['features'])}")
+    header_suffix = " ".join(header_parts) if header_parts else ""
+    header = f"{select_type.title()} {header_suffix}".strip()
+
+    info_block = build_info_block(info_lines)
+    anchor_name = classification.get("step_anchor")
+    missing = _missing_fields(current_step, active_entry)
+    next_step_block = build_next_step_line(anchor_name or current_step, missing)
+    body = "\n\n".join([f"**{header}:**", info_block, next_step_block])
+
+    block_payload = {
+        "body": body,
+        "topic": topic,
+        "step": current_step,
+        "requires_approval": False,
+        "combined_conditions": combined_conditions,
+    }
+
+    return {
+        "pre_step": [],
+        "post_step": [block_payload],
+        "resume_step": anchor_name or current_step,
+        "missing_fields": missing,
+        "status": (active_entry or {}).get("status"),
+        "thread_state": (active_entry or {}).get("thread_state"),
+    }
+
+
+def _route_ranked_union_qna(
+    conjunction: Any,
+    text: str,
+    active_entry: Optional[Dict[str, Any]],
+    requirements: Dict[str, Any],
+    db: Optional[Dict[str, Any]],
+    classification: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Route Q&A with OR conditions (ranked union).
+    Shows items matching ALL conditions first.
+    """
+    from backend.workflows.qna.conjunction import get_union_conditions
+
+    parts = conjunction.parts
+    if not parts:
+        return {"pre_step": [], "post_step": [], "status": "error"}
+
+    select_type = parts[0].select
+    union_conditions = get_union_conditions(parts)
+
+    current_step = _current_step(active_entry)
+
+    # Collect all features from all conditions
+    all_features = set()
+    for cond in union_conditions:
+        all_features.update(cond.get("features", []))
+
+    if select_type == "rooms":
+        # Get rooms matching any of the features
+        info_lines = _rooms_by_multiple_features_response(list(all_features), active_entry)
+        topic = "rooms_ranked"
+    else:
+        info_lines = _general_response(active_entry)
+        topic = "general_ranked"
+
+    header = f"{select_type.title()} by Features"
+
+    info_block = build_info_block(info_lines)
+    anchor_name = classification.get("step_anchor")
+    missing = _missing_fields(current_step, active_entry)
+    next_step_block = build_next_step_line(anchor_name or current_step, missing)
+    body = "\n\n".join([f"**{header}:**", info_block, "Items matching most features shown first.", next_step_block])
+
+    block_payload = {
+        "body": body,
+        "topic": topic,
+        "step": current_step,
+        "requires_approval": False,
+        "union_conditions": union_conditions,
+    }
+
+    return {
+        "pre_step": [],
+        "post_step": [block_payload],
+        "resume_step": anchor_name or current_step,
+        "missing_fields": missing,
+        "status": (active_entry or {}).get("status"),
+        "thread_state": (active_entry or {}).get("thread_state"),
+    }
+
+
+def _rooms_by_multiple_features_response(
+    features: List[str],
+    active_entry: Optional[Dict[str, Any]],
+) -> List[str]:
+    """
+    Get rooms matching multiple features with ranking.
+    Rooms matching more features appear first.
+    """
+    if not features:
+        return ["No specific features requested."]
+
+    # Get all rooms with their features
+    all_rooms = list_rooms_by_feature(None)  # Get all rooms
+
+    # Score each room by how many requested features it has
+    scored_rooms: List[Tuple[str, int, List[str]]] = []
+    for room in all_rooms:
+        room_features = set(f.lower() for f in (room.get("features") or []))
+        matched = [f for f in features if f.lower() in room_features]
+        if matched:
+            scored_rooms.append((room.get("name", "Room"), len(matched), matched))
+
+    if not scored_rooms:
+        return [f"No rooms found with requested features: {', '.join(features)}"]
+
+    # Sort by score descending
+    scored_rooms.sort(key=lambda x: x[1], reverse=True)
+
+    lines = []
+    for name, score, matched in scored_rooms:
+        if score == len(features):
+            lines.append(f"• {name} - matches all ({', '.join(matched)})")
+        else:
+            lines.append(f"• {name} - matches {score}/{len(features)} ({', '.join(matched)})")
+
+    return lines
+
+
+__all__ = ["route_general_qna", "route_multi_variable_qna"]

@@ -8,6 +8,7 @@ This file provides guidance to Claude 4.5 working on the OpenEvent-AI repository
 - Keep the system aligned with the management plan "Lindy" and Workflow v3/v4 specifications
 - Prioritize deterministic backend behaviour and strong automated tests over ad-hoc changes
 - Maintain clear documentation of bugs in TEAM_GUIDE.md and new features and changes communicated by me in the chat into the DEV_CHANGELOG.md . Always consult TEAM_GUIDE.md before fixing a bug in case it already existed. 
+- For new ideas collected in the chat (often too big to implement in the same task, happy accidents/ideas that happened while fixing another problem) write them to new_features.md in root so we can discuss them later.
 - For each new session always re-read the git commits since your last session to stay up to date and DEV_CHANGELOG.md for recent changes. Also reread the workflow v4 in backend workflow/specs/ . 
 
 ## Canonical Vocabulary and Concepts
