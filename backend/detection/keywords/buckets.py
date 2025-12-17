@@ -1,37 +1,67 @@
 """
-DEPRECATED: This module has been moved to backend/detection/keywords/buckets.py
+MODULE: backend/detection/keywords/buckets.py
+PURPOSE: Single source of truth for ALL keyword patterns used in detection.
 
-Please update your imports:
-    OLD: from backend.workflows.nlu.keyword_buckets import ...
-    NEW: from backend.detection.keywords.buckets import ...
+This is THE authoritative location for all keyword patterns. All detection
+modules import from here. DO NOT define keyword patterns elsewhere.
 
-This file will be removed in a future version.
+DEPENDS ON:
+    - (none - this is the foundation)
 
----
+USED BY:
+    - backend/detection/intent/classifier.py
+    - backend/detection/intent/confidence.py
+    - backend/detection/response/acceptance.py
+    - backend/detection/response/decline.py
+    - backend/detection/response/confirmation.py
+    - backend/detection/change/detour.py
+    - backend/detection/qna/general_qna.py
+    - backend/detection/special/nonsense.py
+    - backend/workflows/steps/step2_date_confirmation/
+    - backend/workflows/steps/step3_room_availability/
+    - backend/workflows/steps/step4_offer/
+    - backend/workflows/steps/step5_negotiation/
 
-Keyword Buckets for Detour/Change Detection (EN/DE)
+KEYWORD CATEGORIES:
 
-This module contains all regex patterns for detecting change intent, revision signals,
-and target-specific patterns. Patterns are organized by language and function.
+    Change Detection (EN/DE):
+        CHANGE_VERBS_EN, CHANGE_VERBS_DE       # "change", "modify", "update"
+        REVISION_MARKERS_EN, REVISION_MARKERS_DE # "actually", "instead"
+        TARGET_PATTERNS                         # Room names, date patterns
 
-Based on UX analysis for comprehensive coverage of venue booking change scenarios.
+    Response Detection (EN/DE):
+        CONFIRMATION_SIGNALS_EN, CONFIRMATION_SIGNALS_DE
+        DECLINE_SIGNALS_EN, DECLINE_SIGNALS_DE
+        ACCEPTANCE_PATTERNS, DECLINE_PATTERNS, COUNTER_PATTERNS
 
-Usage:
-    from backend.detection.keywords.buckets import (
-        CHANGE_VERBS_EN, CHANGE_VERBS_DE,
-        REVISION_MARKERS_EN, REVISION_MARKERS_DE,
-        TARGET_PATTERNS, PURE_QA_SIGNALS,
-        has_revision_signal, has_bound_target, compute_change_intent_score
-    )
+    Q&A Detection:
+        PURE_QA_SIGNALS_EN, PURE_QA_SIGNALS_DE
+        ACTION_REQUEST_PATTERNS
+        OPTION_KEYWORDS, CAPACITY_KEYWORDS, ALTERNATIVE_KEYWORDS
+
+ENUMS:
+    - MessageIntent      # DETOUR_DATE, DETOUR_ROOM, CONFIRMATION, etc.
+    - DetourMode         # LONG, FAST, EXPLICIT
+    - RoomSearchIntent   # CHECK_AVAILABILITY, REQUEST_OPTION, etc.
+
+HELPER FUNCTIONS:
+    - has_revision_signal(text) -> (bool, matches, score)
+    - has_bound_target(text, state) -> (bool, target_type, matches)
+    - is_pure_qa(text) -> bool
+    - is_confirmation(text) -> bool
+    - is_decline(text) -> bool
+    - compute_change_intent_score(text, state) -> ChangeIntentResult
+    - detect_language(text) -> str
+
+RELATED TESTS:
+    - backend/tests/detection/test_semantic_matchers.py
+    - backend/tests/detection/test_detour_detection.py
+
+MIGRATION NOTE:
+    This file was moved from backend/workflows/nlu/keyword_buckets.py
+    Old import: from backend.workflows.nlu.keyword_buckets import ...
+    New import: from backend.detection.keywords.buckets import ...
 """
-
-import warnings
-warnings.warn(
-    "backend.workflows.nlu.keyword_buckets is deprecated. "
-    "Use backend.detection.keywords.buckets instead.",
-    DeprecationWarning,
-    stacklevel=2
-)
 
 from __future__ import annotations
 

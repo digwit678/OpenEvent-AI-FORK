@@ -1,11 +1,34 @@
 """
-DEPRECATED: This module has been migrated to backend/detection/special/room_conflict.py
+MODULE: backend/detection/special/room_conflict.py
+PURPOSE: Room conflict detection and resolution for the booking workflow.
 
-Please update your imports:
-    OLD: from backend.workflows.common.conflict import ...
-    NEW: from backend.detection.special.room_conflict import ...
+DEPENDS ON:
+    - backend/workflows/io/database.py  # Database operations
 
-This file will be removed in a future release.
+USED BY:
+    - backend/workflows/groups/room_availability/trigger/process.py
+    - backend/workflows/groups/event_confirmation/db_pers/post_offer.py
+    - backend/tests/flow/test_room_conflict.py
+
+EXPORTS:
+    - ConflictType                              # Enum: NONE, SOFT, HARD
+    - detect_room_conflict(db, event_id, room_id, event_date) -> Dict or None
+    - detect_conflict_type(db, event_id, room_id, event_date, action) -> (ConflictType, Dict)
+    - get_available_rooms_on_date(db, event_id, event_date, exclude_statuses) -> List[str]
+    - handle_soft_conflict(db, event_id, conflict_info) -> Dict
+    - handle_hard_conflict(db, event_id, conflict_info, client_reason) -> Dict
+    - handle_loser_event(db, loser_event_id) -> Dict
+    - resolve_conflict(db, task_id, winner_event_id, notes) -> (str, str)
+    - notify_conflict_resolution(db, task_id, winner_event_id, notes) -> (Dict, Dict)
+    - compose_conflict_warning_message(room_name, event_date) -> str
+    - compose_soft_conflict_warning(room_name, event_date) -> str
+    - compose_hard_conflict_block(room_name, event_date) -> str
+    - compose_winner_message(room_name, event_date, had_conflict) -> str
+    - compose_conflict_hil_task(db, current_event, conflict_info, insist_reason) -> Dict
+
+RELATED TESTS:
+    - backend/tests/flow/test_room_conflict.py
+
 ---
 
 Room conflict detection and resolution for the booking workflow.
@@ -603,3 +626,25 @@ def notify_conflict_resolution(
     }
 
     return winner_result, loser_result
+
+
+__all__ = [
+    # Enums
+    "ConflictType",
+    # Core detection
+    "detect_room_conflict",
+    "detect_conflict_type",
+    "get_available_rooms_on_date",
+    # Conflict handling
+    "handle_soft_conflict",
+    "handle_hard_conflict",
+    "handle_loser_event",
+    "resolve_conflict",
+    "notify_conflict_resolution",
+    # Message composition
+    "compose_conflict_warning_message",
+    "compose_soft_conflict_warning",
+    "compose_hard_conflict_block",
+    "compose_winner_message",
+    "compose_conflict_hil_task",
+]

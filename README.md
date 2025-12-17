@@ -1,7 +1,8 @@
 # OpenEvent-AI: The Autonomous Venue Booking Engine
 
 OpenEvent-AI is a sophisticated, full-stack system designed to automate the end-to-end venue booking flow for "The Atelier". It combines the flexibility of Large Language Models (LLMs) with the reliability of deterministic state machines to handle inquiries, negotiate offers, and confirm bookings with "Human-In-The-Loop" (HIL) oversight.
-
+development: https://github.com/shami-ah/OpenEvent-AI/tree/main
+backend deployment: https://github.com/shami-ah/OpenEvent-AI/tree/integration/hostinger-backend
 ## 🚀 Overview
 
 The system ingests client inquiries (currently simulated via chat), maintains a deterministic event record, and coordinates every step of the booking process. Unlike simple chatbots, OpenEvent-AI is built on a **workflow engine** that tracks the lifecycle of an event from a "Lead" to a "Confirmed" booking.

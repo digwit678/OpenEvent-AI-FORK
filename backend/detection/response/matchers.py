@@ -1,21 +1,41 @@
 """
-DEPRECATED: This module has been migrated to backend/detection/response/matchers.py
+MODULE: backend/detection/response/matchers.py
+PURPOSE: Semantic pattern matching for client response classification.
 
-Please update your imports:
-    OLD: from backend.workflows.nlu.semantic_matchers import ...
-    NEW: from backend.detection.response.matchers import ...
+DEPENDS ON:
+    - backend/detection/keywords/buckets.py  # Keyword patterns for EN/DE
+    - backend/services/rooms.py              # Room catalog for dynamic patterns
 
-This file will be removed in a future release.
-"""
+USED BY:
+    - backend/workflows/groups/negotiation_close.py  # Response classification
+    - backend/workflows/groups/offer/trigger/process.py  # Acceptance detection
+    - backend/tests/detection/test_semantic_matchers.py
+    - backend/tests/detection/test_detour_detection.py
 
-from __future__ import annotations
+EXPORTS:
+    - matches_acceptance_pattern(text) -> (bool, float, str)
+    - matches_decline_pattern(text) -> (bool, float, str)
+    - matches_counter_pattern(text) -> (bool, float, str)
+    - matches_change_pattern(text) -> (bool, float, str)
+    - matches_change_pattern_enhanced(text, event_state) -> (bool, float, str, ChangeIntentResult)
+    - is_pure_qa_message(text) -> bool
+    - looks_hypothetical(text) -> bool
+    - is_room_selection(text) -> bool
+    - ACCEPTANCE_PATTERNS, DECLINE_PATTERNS, COUNTER_PATTERNS, CHANGE_PATTERNS
 
-"""
+RELATED TESTS:
+    - backend/tests/detection/test_semantic_matchers.py
+    - backend/tests/detection/test_detour_detection.py
+
+---
+
 Semantic pattern matching for client responses.
 Uses regex patterns + fuzzy matching instead of exact keyword lists.
 
 Enhanced with comprehensive EN/DE keyword buckets for detour detection.
 """
+
+from __future__ import annotations
 
 import re
 from functools import lru_cache
@@ -24,7 +44,6 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from backend.services.rooms import load_room_catalog
 
 # Import comprehensive keyword buckets for enhanced detection
-# MIGRATED: from backend.workflows.nlu.keyword_buckets -> backend.detection.keywords.buckets
 from backend.detection.keywords.buckets import (
     CHANGE_VERBS_EN,
     CHANGE_VERBS_DE,
@@ -319,4 +338,6 @@ __all__ = [
     "DetourMode",
     "MessageIntent",
     "compute_change_intent_score",
+    # Internal helpers exposed for testing
+    "_room_patterns_from_catalog",
 ]

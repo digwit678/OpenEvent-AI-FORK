@@ -17,7 +17,8 @@ except ImportError:  # pragma: no cover
 from backend.domain import EventStatus, TaskStatus, TaskType
 from backend.workflows.io.database import last_event_for_email
 from backend.workflows.io.tasks import enqueue_task as _enqueue_task
-from backend.workflows.common.conflict import (
+# MIGRATED: from backend.workflows.common.conflict -> backend.detection.special.room_conflict
+from backend.detection.special.room_conflict import (
     ConflictType,
     detect_conflict_type,
     handle_hard_conflict,

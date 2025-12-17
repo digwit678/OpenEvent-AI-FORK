@@ -1,11 +1,28 @@
 """
-DEPRECATED: This module has been migrated to backend/detection/qna/general_qna.py
+MODULE: backend/detection/qna/general_qna.py
+PURPOSE: Detect general room availability queries vs specific booking requests.
 
-Please update your imports:
-    OLD: from backend.workflows.nlu.general_qna_classifier import ...
-    NEW: from backend.detection.qna.general_qna import ...
+DEPENDS ON:
+    - backend/detection/keywords/buckets.py  # ACTION_REQUEST_PATTERNS
+    - backend/workflows/common/types.py      # WorkflowState
+    - backend/utils/openai_key.py            # API key loading
 
-This file will be removed in a future release.
+USED BY:
+    - backend/workflows/nlu/__init__.py      # Re-exports detect_general_room_query
+    - backend/workflows/qna/extraction.py    # quick_general_qna_scan
+    - backend/workflows/groups/*/trigger/process.py  # Q&A routing
+
+EXPORTS:
+    - detect_general_room_query(msg_text, state) -> Dict
+    - empty_general_qna_detection() -> Dict
+    - heuristic_flags(msg_text) -> Dict
+    - parse_constraints(msg_text) -> Dict
+    - quick_general_qna_scan(msg_text) -> Dict
+    - should_call_llm(heuristics, parsed, message_text, state) -> bool
+    - reset_general_qna_cache() -> None
+
+RELATED TESTS:
+    - backend/tests/detection/test_qna_detection.py
 """
 
 from __future__ import annotations
@@ -26,7 +43,6 @@ from backend.workflows.common.types import WorkflowState
 from backend.utils.openai_key import load_openai_api_key
 
 # Import consolidated pattern from keyword_buckets (single source of truth)
-# MIGRATED: from backend.workflows.nlu.keyword_buckets -> backend.detection.keywords.buckets
 from backend.detection.keywords.buckets import ACTION_REQUEST_PATTERNS
 
 # Note: _detect_qna_types is imported lazily inside detect_general_room_query()
@@ -316,7 +332,7 @@ def llm_classify(msg_text: str) -> Dict[str, Any]:
         },
         {
             "role": "user",
-            "content": "Evenings in March, 40–50 pax, what’s available?",
+            "content": "Evenings in March, 40–50 pax, what's available?",
         },
         {
             "role": "assistant",
@@ -326,7 +342,7 @@ def llm_classify(msg_text: str) -> Dict[str, Any]:
         },
         {
             "role": "user",
-            "content": "We’re thinking 15 March.",
+            "content": "We're thinking 15 March.",
         },
         {
             "role": "assistant",
@@ -418,8 +434,8 @@ def detect_general_room_query(msg_text: str, state: WorkflowState) -> Dict[str, 
     combined_constraints = _merge_constraints(parsed, llm_result.get("constraints") or {})
 
     # Detect secondary Q&A types (catering_for, products_for, etc.)
-    # Lazy import to avoid circular import with backend.llm.intent_classifier
-    from backend.llm.intent_classifier import _detect_qna_types  # pylint: disable=import-outside-toplevel
+    # Lazy import to avoid circular import with backend.detection.intent.classifier
+    from backend.detection.intent.classifier import _detect_qna_types  # pylint: disable=import-outside-toplevel
     secondary_types = _detect_qna_types(text)
 
     detection = {

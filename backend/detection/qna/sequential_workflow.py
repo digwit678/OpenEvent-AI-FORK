@@ -1,34 +1,35 @@
 """
-DEPRECATED: This module has been moved to backend/detection/qna/sequential_workflow.py
-
-Please update your imports:
-    OLD: from backend.workflows.nlu.sequential_workflow import ...
-    NEW: from backend.detection.qna.sequential_workflow import ...
-
----
-
-Sequential Workflow Detection
-
-Detects when a client message combines:
-1. An action/confirmation for the current workflow step
-2. A question/request about the immediate next step
+MODULE: backend/detection/qna/sequential_workflow.py
+PURPOSE: Detect when a client combines current step action + next step inquiry.
 
 This is NOT a shortcut or Q&A - it's natural workflow continuation.
-When detected, the workflow should proceed normally without triggering Q&A handling.
+When a client confirms the current step AND asks about the next step,
+they're simply anticipating the natural flow.
+
+DEPENDS ON:
+    - (none - self-contained regex patterns)
+
+USED BY:
+    - backend/workflows/steps/step2_date_confirmation/
+    - backend/workflows/steps/step3_room_availability/
+    - backend/workflows/steps/step4_offer/
+
+EXPORTS:
+    - detect_sequential_workflow_request(message, current_step) -> Dict
 
 Examples:
-- Step 2→3: "Confirm May 8 and show me available rooms"
-- Step 3→4: "Room A looks good, what catering options do you have?"
-- Step 4→5/7: "Accept the offer, when can we do a site visit?"
-"""
+    - Step 2→3: "Confirm May 8 and show me available rooms"
+    - Step 3→4: "Room A looks good, what catering options do you have?"
+    - Step 4→5/7: "Accept the offer, when can we do a site visit?"
 
-import warnings
-warnings.warn(
-    "backend.workflows.nlu.sequential_workflow is deprecated. "
-    "Use backend.detection.qna.sequential_workflow instead.",
-    DeprecationWarning,
-    stacklevel=2
-)
+RELATED TESTS:
+    - backend/tests/detection/test_sequential_workflow.py
+
+MIGRATION NOTE:
+    This file was moved from backend/workflows/nlu/sequential_workflow.py
+    Old import: from backend.workflows.nlu.sequential_workflow import ...
+    New import: from backend.detection.qna.sequential_workflow import ...
+"""
 
 from __future__ import annotations
 
