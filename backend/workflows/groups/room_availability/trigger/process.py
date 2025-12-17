@@ -9,6 +9,9 @@ from backend.workflows.steps.step3_room_availability.trigger.process import (
     evaluate_room_statuses,
     handle_select_room_action,
     render_rooms_response,
+    _flatten_statuses,
+    ROOM_OUTCOME_AVAILABLE,
+    ROOM_OUTCOME_OPTION,
 )
 
 __all__ = [
@@ -16,4 +19,7 @@ __all__ = [
     "evaluate_room_statuses",
     "handle_select_room_action",
     "render_rooms_response",
+    "_flatten_statuses",
+    "ROOM_OUTCOME_AVAILABLE",
+    "ROOM_OUTCOME_OPTION",
 ]
