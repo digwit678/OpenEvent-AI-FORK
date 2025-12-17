@@ -1369,6 +1369,32 @@ if DEBUG_TRACE_ENABLED:
             kinds=_parse_kind_filter(kinds),
         )
 
+    @app.get("/api/debug/live")
+    async def list_live_logs():
+        """List all active thread IDs with live logs."""
+        from backend.debug import live_log  # pylint: disable=import-outside-toplevel
+
+        threads = live_log.list_active_logs()
+        return {
+            "active_threads": threads,
+            "log_dir": str(live_log.ROOT),
+            "watch_command": f"tail -f {live_log.ROOT}/<thread_id>.log",
+        }
+
+    @app.get("/api/debug/threads/{thread_id}/live")
+    async def get_live_log(thread_id: str):
+        """Get the live log content for a thread."""
+        from backend.debug import live_log  # pylint: disable=import-outside-toplevel
+
+        path = live_log.get_log_path(thread_id)
+        if not path:
+            raise HTTPException(status_code=404, detail="Live log not found for this thread")
+        try:
+            content = path.read_text(encoding="utf-8")
+            return PlainTextResponse(content=content)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
 else:
 
     @app.get("/api/debug/threads/{thread_id}")
