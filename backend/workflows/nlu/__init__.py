@@ -8,6 +8,7 @@ from .general_qna_classifier import (
 )
 from .parse_billing import parse_billing_address
 from .preferences import extract_preferences
+from .sequential_workflow import detect_sequential_workflow_request
 
 # Shared detection patterns (consolidated from multiple modules)
 from .keyword_buckets import (
@@ -29,6 +30,7 @@ __all__ = [
     "reset_general_qna_cache",
     "parse_billing_address",
     "extract_preferences",
+    "detect_sequential_workflow_request",
     # Shared detection patterns
     "RoomSearchIntent",
     "ACTION_REQUEST_PATTERNS",

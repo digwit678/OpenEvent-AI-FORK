@@ -143,6 +143,81 @@ Never skip `_enqueue_hil_tasks()` when the AI reply toggle is ON. Both task crea
 
 ---
 
+## Fallback Diagnostic System
+
+**Last Updated:** 2025-12-17
+
+When the system cannot use the LLM (API key missing, exception, empty results), it falls back to deterministic responses. These fallback messages now include diagnostic information to help understand WHY the fallback was triggered.
+
+### Environment Variable
+
+```bash
+# Show fallback diagnostics (default: true for dev/staging)
+export OE_FALLBACK_DIAGNOSTICS=true
+
+# Hide diagnostics in production
+export OE_FALLBACK_DIAGNOSTICS=false
+```
+
+### Fallback Sources
+
+| Source | File | Trigger Scenarios |
+|--------|------|-------------------|
+| `qna_verbalizer` | `backend/workflows/qna/verbalizer.py` | LLM disabled, LLM exception, empty DB results |
+| `qna_extraction` | `backend/workflows/qna/extraction.py` | LLM disabled, LLM exception, JSON decode error |
+| `structured_qna_body` | `backend/workflows/common/general_qna.py` | No rooms/dates/products from DB query |
+| `intent_adapter` | `backend/workflows/llm/adapter.py` | Provider unavailable, stub failed |
+
+### Diagnostic Output Format
+
+When `OE_FALLBACK_DIAGNOSTICS=true`, fallback messages include:
+
+```
+---
+[FALLBACK MESSAGE]
+Source: qna_verbalizer
+Trigger: llm_disabled
+Failed checks: no_data_from_db_query
+Context: rooms_count=0, dates_count=0, products_count=0, intent=select_static
+Error: <original exception message if applicable>
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/workflows/common/fallback_reason.py` | Centralized `FallbackReason` dataclass and helpers |
+| `backend/workflows/qna/verbalizer.py` | Q&A verbalization fallback |
+| `backend/workflows/qna/extraction.py` | Q&A extraction fallback |
+| `backend/workflows/common/general_qna.py` | Structured Q&A body fallback |
+| `backend/workflows/llm/adapter.py` | Intent classification fallback |
+
+### Common Triggers
+
+| Trigger | Meaning |
+|---------|---------|
+| `llm_disabled` | OpenAI API key not available or OpenAI library not installed |
+| `llm_exception` | LLM call threw an exception (network, rate limit, etc.) |
+| `empty_results` | Q&A query returned no rooms/dates/products |
+| `json_decode_error` | LLM returned invalid JSON |
+| `provider_unavailable` | LLM provider not initialized |
+
+### Debugging Fallback Messages
+
+When you see a fallback message:
+
+1. **Check the source** — Which module triggered it?
+2. **Check the trigger** — Why did it fall back?
+3. **Check the context** — What data was (or wasn't) available?
+4. **Check the error** — If an exception, what was the message?
+
+This information helps distinguish between:
+- Configuration issues (LLM disabled)
+- Runtime issues (LLM exceptions)
+- Data issues (empty results from DB)
+
+---
+
 ## Agent Tools Layer (AGENT_MODE=openai)
 
 When `AGENT_MODE=openai` is set, the system uses OpenAI function-calling for tool execution instead of the deterministic workflow. Tools are bounded per step to enforce the same workflow constraints as the deterministic path.
@@ -489,6 +564,43 @@ from backend.debug.hooks import trace_marker  # pylint: disable=import-outside-t
 - Always run with `PYTHONDONTWRITEBYTECODE=1`
 - When editing dataclasses, restart the server completely (not just reload)
 - Clear caches before starting: `find backend -type d -name "__pycache__" -exec rm -rf {} +`
+
+### Sequential Workflow vs General Q&A Misclassification (Fixed - 2025-12-17)
+**Symptoms:** When a client confirms the current workflow step AND asks about the next step in the same message (e.g., "Please confirm May 8 and show me available rooms"), the system incorrectly classified this as "general Q&A" instead of recognizing it as natural workflow continuation.
+
+**Root Cause:** The `detect_general_room_query()` function set `is_general=True` when it detected room-related questions, without considering that asking about the immediate next step while completing the current step is natural workflow progression. This caused:
+1. Messages like "Confirm May 8 and show rooms" to trigger Q&A handling instead of normal step progression
+2. The workflow to display informational Q&A responses instead of advancing from date confirmation to room availability
+
+**The Distinction:**
+- **Natural workflow continuation (NOT Q&A):** Confirming step N and asking about step N+1
+  - Example at Step 2: "Confirm May 8 and show available rooms" → Confirm date, proceed to Step 3
+  - Example at Step 3: "Room A looks good, what catering options?" → Confirm room, proceed to Step 4
+  - Example at Step 4: "Accept the offer, when can we do a site visit?" → Accept offer, proceed to Step 7
+- **General Q&A:** Asking about a step without being at the prerequisite step
+  - Example at Step 2 (no date yet): "What rooms do you have?" → Q&A about Step 3 content
+  - Example at Step 2: "Tell me about your catering" → Q&A about Step 4 content (out of order)
+
+**Fixes Applied:**
+1. Created `detect_sequential_workflow_request()` function in `backend/workflows/nlu/sequential_workflow.py` that detects when a message contains both:
+   - An action/confirmation for the current step (patterns for steps 2, 3, 4)
+   - A question/request about the immediate next step (steps 3, 4, 5, 7)【F:backend/workflows/nlu/sequential_workflow.py†L115-L170】
+
+2. Integrated sequential detection in Step 2 (Date Confirmation) to suppress `is_general` when the client is confirming a date AND asking about rooms.【F:backend/workflows/groups/date_confirmation/trigger/process.py†L920-L940】
+
+3. Integrated sequential detection in Step 3 (Room Availability) to suppress `is_general` when the client is selecting a room AND asking about catering/offers.【F:backend/workflows/groups/room_availability/trigger/process.py†L300-L320】
+
+4. Integrated sequential detection in Step 4 (Offer) to suppress `is_general` when the client is accepting an offer AND asking about next steps (site visit, deposit, etc.).【F:backend/workflows/groups/offer/trigger/process.py†L333-L353】
+
+**Testing:** Added comprehensive test suite at `backend/tests/detection/test_sequential_workflow.py` with 64 test cases covering:
+- Step 2→3 sequential patterns (date + room)
+- Step 3→4 sequential patterns (room + catering)
+- Step 4→5/7 sequential patterns (offer + next steps)
+- Edge cases and negative tests to ensure pure Q&A is not suppressed
+
+5. **Classification Persistence Fix:** When Step 2 auto-runs Step 3 after date confirmation, Step 3 was re-classifying the same message and potentially overwriting the sequential workflow detection from Step 2. Fixed by having Step 3 check for and reuse a cached classification that has `workflow_lookahead` set.【F:backend/workflows/groups/room_availability/trigger/process.py†L178-L185】
+
+**Regression Guard:** When a client message combines current step action + next step inquiry, the workflow should proceed naturally to the next step. The trace log should show `SEQUENTIAL_WORKFLOW` marker, and `is_general` should be `False`. If Q&A handling triggers for such messages, check that `detect_sequential_workflow_request()` is being called and that the patterns match the message.
 
 ---
 

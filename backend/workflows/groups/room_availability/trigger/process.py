@@ -42,7 +42,7 @@ from backend.utils.pseudolinks import generate_room_details_link, generate_qna_l
 from backend.utils.page_snapshots import create_snapshot
 from backend.workflow_verbalizer_test_hooks import render_rooms
 from backend.workflows.groups.room_availability.db_pers import load_rooms_config
-from backend.workflows.nlu import detect_general_room_query
+from backend.workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
 from backend.rooms import rank as rank_rooms_profiles
 
 from ..condition.decide import room_status_on_date
@@ -175,9 +175,14 @@ def process(state: WorkflowState) -> GroupResult:
         )
     # -------------------------------------------------------------------------
 
-    # Q&A classification
-    classification = detect_general_room_query(message_text, state)
-    state.extras["_general_qna_classification"] = classification
+    # Q&A classification - reuse from Step 2 if workflow_lookahead was detected
+    # (prevents re-classification of sequential workflow requests as general Q&A)
+    cached_classification = state.extras.get("_general_qna_classification")
+    if cached_classification and cached_classification.get("workflow_lookahead"):
+        classification = cached_classification
+    else:
+        classification = detect_general_room_query(message_text, state)
+        state.extras["_general_qna_classification"] = classification
     state.extras["general_qna_detected"] = bool(classification.get("is_general"))
     classification.setdefault("primary", "general_qna")
     if not classification.get("secondary"):
@@ -295,6 +300,29 @@ def process(state: WorkflowState) -> GroupResult:
     # No change detected: check if Q&A should be handled
     user_requested_room = state.user_info.get("room") if state.user_info.get("_room_choice_detected") else None
     locked_room_id = event_entry.get("locked_room_id")
+
+    # -------------------------------------------------------------------------
+    # SEQUENTIAL WORKFLOW DETECTION
+    # If the client confirms room AND asks about catering/offer, that's NOT
+    # general Q&A - it's natural workflow continuation.
+    # Example: "Room A looks good, what catering options do you have?"
+    # -------------------------------------------------------------------------
+    sequential_check = detect_sequential_workflow_request(message_text, current_step=3)
+    if sequential_check.get("is_sequential"):
+        # Client is selecting room AND asking about next step - natural flow
+        classification["is_general"] = False
+        classification["workflow_lookahead"] = sequential_check.get("asks_next_step")
+        state.extras["general_qna_detected"] = False
+        state.extras["workflow_lookahead"] = sequential_check.get("asks_next_step")
+        state.extras["_general_qna_classification"] = classification
+        if thread_id:
+            trace_marker(
+                thread_id,
+                "SEQUENTIAL_WORKFLOW",
+                detail=f"step3_to_step{sequential_check.get('asks_next_step')}",
+                data=sequential_check,
+            )
+
     deferred_general_qna = False
     general_qna_applicable = classification.get("is_general") and not bool(locked_room_id)
     if general_qna_applicable and user_requested_room:

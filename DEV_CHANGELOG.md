@@ -1,5 +1,95 @@
 # Development Changelog
 
+## 2025-12-17
+
+### Feature: Centralized Fallback Diagnostics
+
+**Problem:** Fallback messages like "It appears there is no specific information available" were frustrating because they:
+1. Didn't indicate they ARE fallback messages
+2. Didn't explain WHY the fallback was triggered
+3. Didn't help debug what went wrong
+
+**Solution:** Created a centralized fallback diagnostic system that marks all fallback messages with structured information about:
+- Source (which module triggered the fallback)
+- Trigger reason (llm_disabled, llm_exception, empty_results, etc.)
+- Failed conditions
+- Context (room/date/product counts, query parameters)
+- Original error message if applicable
+
+**Files Created:**
+- `backend/workflows/common/fallback_reason.py` — Centralized `FallbackReason` dataclass and helper functions
+
+**Files Modified:**
+- `backend/workflows/qna/verbalizer.py` — Added fallback diagnostics to `_fallback_answer()`
+- `backend/workflows/qna/extraction.py` — Added `_fallback_reason` and `_fallback_error` fields
+- `backend/workflows/common/general_qna.py` — Added diagnostics to `_fallback_structured_body()`
+- `backend/workflows/llm/adapter.py` — Added diagnostics to `_fallback_analysis()`
+
+**Environment Variable:**
+```bash
+# Show fallback diagnostics (default: true for dev/staging)
+OE_FALLBACK_DIAGNOSTICS=true
+
+# Hide diagnostics in production
+OE_FALLBACK_DIAGNOSTICS=false
+```
+
+**Example Output:**
+```
+*Intent*: select_static · *Subtype*: non_event_info
+
+---
+[FALLBACK MESSAGE]
+Source: qna_verbalizer
+Trigger: llm_disabled
+Context: rooms_count=0, dates_count=0, products_count=0, intent=select_static
+```
+
+---
+
+### Fix: Sequential Workflow vs General Q&A Detection
+
+**Problem:** When a client confirms the current workflow step AND asks about the next step (e.g., "Please confirm May 8 and show me available rooms"), the system incorrectly classified this as "general Q&A" instead of natural workflow continuation.
+
+**Solution:** Added `detect_sequential_workflow_request()` function that identifies when a message contains both:
+- An action/confirmation for the current step (e.g., confirm date, select room, accept offer)
+- A question/request about the immediate next step (e.g., show rooms, what catering?, site visit?)
+
+When both are detected, `is_general` is set to `False` and the workflow proceeds naturally.
+
+**Files Added:**
+- `backend/workflows/nlu/sequential_workflow.py` - New module with sequential workflow detection logic
+- `backend/tests/detection/test_sequential_workflow.py` - 64 test cases for sequential detection
+
+**Files Modified:**
+- `backend/workflows/nlu/__init__.py` - Export `detect_sequential_workflow_request`
+- `backend/workflows/groups/date_confirmation/trigger/process.py` - Integrated Step 2→3 detection
+- `backend/workflows/groups/room_availability/trigger/process.py` - Integrated Step 3→4 detection, added classification caching
+- `backend/workflows/groups/offer/trigger/process.py` - Integrated Step 4→5/7 detection
+- `docs/TEAM_GUIDE.md` - Added bug documentation under "Known Issues & Fixes"
+
+**Follow-up Fix: Classification Persistence Between Steps**
+
+When Step 2 auto-runs Step 3 after date confirmation, Step 3 was re-classifying the same message, potentially overwriting the sequential workflow detection from Step 2. Fixed by having Step 3 check for and reuse a cached classification that has `workflow_lookahead` set.
+
+```python
+# In room_availability/trigger/process.py
+cached_classification = state.extras.get("_general_qna_classification")
+if cached_classification and cached_classification.get("workflow_lookahead"):
+    classification = cached_classification  # Reuse Step 2's detection
+else:
+    classification = detect_general_room_query(message_text, state)
+```
+
+**Step Progression Patterns:**
+| Current Step | Action Example | Next Step | Lookahead Example |
+|--------------|----------------|-----------|-------------------|
+| 2 (Date) | "confirm May 8" | 3 (Room) | "show me available rooms" |
+| 3 (Room) | "Room A looks good" | 4 (Offer) | "what catering options?" |
+| 4 (Offer) | "accept the offer" | 5/7 | "when can we do a site visit?" |
+
+---
+
 ## 2025-12-15
 
 ### Fix: Router Q&A Info Link Integration

@@ -9,6 +9,11 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from backend.debug.hooks import trace_general_qa_status
 from backend.workflows.common.capacity import fits_capacity, layout_capacity
 from backend.workflows.common.catalog import list_catering, list_room_features
+from backend.workflows.common.fallback_reason import (
+    SHOW_FALLBACK_DIAGNOSTICS,
+    empty_results_reason,
+    format_fallback_diagnostic,
+)
 from backend.workflows.common.menu_options import build_menu_payload, format_menu_line
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.types import GroupResult, WorkflowState
@@ -1405,7 +1410,28 @@ def _fallback_structured_body(action_payload: Dict[str, Any]) -> str:
         for entry in notes[:3]:
             lines.append(f"- {entry}")
 
-    return "\n".join(lines).strip()
+    body = "\n".join(lines).strip()
+
+    # Add fallback diagnostic if no data was found
+    rooms_count = len(rooms)
+    dates_count = len(dates)
+    products_count = len(products)
+
+    if SHOW_FALLBACK_DIAGNOSTICS and rooms_count == 0 and dates_count == 0 and products_count == 0:
+        reason = empty_results_reason(
+            source="structured_qna_body",
+            rooms_count=rooms_count,
+            dates_count=dates_count,
+            products_count=products_count,
+        )
+        # Add context about what query produced empty results
+        effective = action_payload.get("effective") or {}
+        reason.context["query_date"] = effective.get("date")
+        reason.context["query_attendees"] = effective.get("attendees")
+        reason.context["query_room"] = effective.get("room")
+        body += format_fallback_diagnostic(reason)
+
+    return body
 
 
 def append_general_qna_to_primary(state: WorkflowState) -> bool:

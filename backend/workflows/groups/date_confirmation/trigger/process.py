@@ -76,7 +76,7 @@ from backend.workflows.io.database import (
     tag_message,
     update_event_metadata,
 )
-from backend.workflows.nlu import detect_general_room_query
+from backend.workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
 from backend.utils.profiler import profile_step
 from backend.services.availability import calendar_free, next_five_venue_dates, validate_window
 from backend.utils.dates import MONTH_INDEX_TO_NAME, from_hints
@@ -915,7 +915,29 @@ def process(state: WorkflowState) -> GroupResult:
         or user_info.get("event_date")
         or _message_signals_confirmation(message_text)
     )
-    if classification.get("is_general") and explicit_confirmation:
+
+    # -------------------------------------------------------------------------
+    # SEQUENTIAL WORKFLOW DETECTION
+    # If the client confirms the current step AND asks about the next step,
+    # that's NOT general Q&A - it's natural workflow continuation.
+    # Example: "Please confirm May 8 and show me available rooms"
+    # -------------------------------------------------------------------------
+    sequential_check = detect_sequential_workflow_request(message_text, current_step=2)
+    if sequential_check.get("is_sequential"):
+        # Client is confirming date AND asking about rooms - this is natural flow
+        classification["is_general"] = False
+        classification["workflow_lookahead"] = sequential_check.get("asks_next_step")
+        state.extras["general_qna_detected"] = False
+        state.extras["workflow_lookahead"] = sequential_check.get("asks_next_step")
+        state.extras["_general_qna_classification"] = classification
+        if thread_id:
+            trace_marker(
+                thread_id,
+                "SEQUENTIAL_WORKFLOW",
+                detail=f"step2_to_step{sequential_check.get('asks_next_step')}",
+                data=sequential_check,
+            )
+    elif classification.get("is_general") and explicit_confirmation:
         classification["is_general"] = False
         state.extras["general_qna_detected"] = False
         state.extras["_general_qna_classification"] = classification
