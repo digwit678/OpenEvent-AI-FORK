@@ -1,6 +1,108 @@
 # Development Changelog
 
+## 2025-12-18
+
+### Refactoring: Phase C - Extract Routes from main.py (Continued)
+
+**Task: Modularize main.py by extracting route handlers into separate files**
+
+Continued the Phase C refactoring by extracting route handlers from `backend/main.py` into domain-specific files in `backend/api/routes/`.
+
+**Progress:**
+- **main.py reduced from 2188 → 1573 lines** (28% reduction, 615 lines removed)
+
+**Route Files Created:**
+
+| File | Routes | Lines |
+|------|--------|-------|
+| `tasks.py` | `/api/tasks/*` (pending, approve, reject, cleanup) | ~230 |
+| `events.py` | `/api/events/*`, `/api/event/*/deposit` | ~180 |
+| `config.py` | `/api/config/global-deposit` | ~175 |
+| `clients.py` | `/api/client/reset` | ~135 |
+
+**Structure:**
+```
+backend/api/routes/
+├── __init__.py     # Exports all routers
+├── tasks.py        # HIL task management
+├── events.py       # Event CRUD + deposits
+├── config.py       # Global deposit config
+└── clients.py      # Client reset (testing)
+```
+
+**Still Remaining in main.py (~1573 lines):**
+- Message routes (`/api/send-message`, `/api/start-conversation`, etc.)
+- Debug routes (conditionally loaded)
+- Test data routes (`/api/test-data/*`, `/api/qna`, `/api/snapshots/*`)
+- Workflow routes (`/api/workflow/*`)
+- Helper functions (port management, frontend launch, etc.)
+- App setup and lifecycle
+
+**Tests:** 146 passed
+
+**Commits:**
+- `73cb07f` refactor(api): extract routes from main.py into modular route files
+- `20f7901` refactor(api): extract debug, snapshots, test_data, workflow routes
+
+### Refactoring: Phase C - Extract More Routes from main.py
+
+**Task: Continue route extraction to further modularize main.py**
+
+Extracted 4 more route modules from `backend/main.py`:
+
+**Progress:**
+- **main.py reduced from 1573 → 1170 lines** (26% further reduction)
+- **Total reduction: 2188 → 1170 lines** (47% reduction, 1018 lines removed)
+
+**Additional Route Files Created:**
+
+| File | Routes | Lines |
+|------|--------|-------|
+| `debug.py` | `/api/debug/*` (trace, timeline, report, live logs) | ~190 |
+| `snapshots.py` | `/api/snapshots/*` (get, list, data) | ~60 |
+| `test_data.py` | `/api/test-data/*`, `/api/qna` | ~160 |
+| `workflow.py` | `/api/workflow/*` (health, hil-status) | ~35 |
+
+**Complete Route Structure:**
+```
+backend/api/routes/
+├── __init__.py     # Exports all routers
+├── tasks.py        # HIL task management
+├── events.py       # Event CRUD + deposits
+├── config.py       # Global deposit config
+├── clients.py      # Client reset (testing)
+├── debug.py        # Debug and tracing
+├── snapshots.py    # Snapshot storage
+├── test_data.py    # Test data and Q&A
+└── workflow.py     # Workflow status
+```
+
+**Still Remaining in main.py (~1170 lines):**
+- Message routes (`/api/send-message`, `/api/start-conversation`)
+- Conversation routes (`/api/conversation/*`, `/api/accept-booking`, `/api/reject-booking`)
+- Helper functions (port management, frontend launch)
+- App setup and lifecycle
+
+**Tests:** 146 passed
+
+---
+
 ## 2025-12-17
+
+### Fix: Stale negotiation_pending_decision blocking room selection flow
+
+**Bug**: After room selection ("Room B"), system incorrectly showed "sent to manager for approval" instead of generating offer.
+
+**Root cause**: When requirements changed or detours happened (step 5 → step 3), the `negotiation_pending_decision` was not cleared. Step 4 then saw this stale state and returned `offer_waiting_hil` instead of generating a new offer.
+
+**Files fixed**:
+- `backend/workflows/steps/step1_intake/trigger/step1_handler.py:1152-1153` - Clear pending decision when requirements change
+- `backend/workflows/steps/step4_offer/trigger/step4_handler.py:604-606` - Clear pending decision when routing to step 2/3
+- `backend/workflows/steps/step5_negotiation/trigger/step5_handler.py:162-164` - Clear pending decision when structural change detours to step 2/3
+
+**Tests**: 146 passed
+
+---
 
 ### Refactoring: AI Agent Optimization - Phase D (Error Handling)
 
