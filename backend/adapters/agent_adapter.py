@@ -141,12 +141,24 @@ class StubAgentAdapter(AgentAdapter):
             if len(times) > 1:
                 entities["end_time"] = times[1]
 
-        participants_match = re.search(
-            r"(?:~|approx(?:\.|imately)?|about|around)?\s*(\d{1,4})\s*(?:\+)?\s*(?:ppl|people|guests|participants)\b",
-            lower_body,
-        )
-        if participants_match:
-            entities["participants"] = int(participants_match.group(1))
+        # Participants: support multiple formats and languages
+        participants_patterns = [
+            # English: "60 people/guests/participants/attendees/persons"
+            r"(?:~|approx(?:\.|imately)?|about|around|ca\.?)?\s*(\d{1,4})\s*(?:\+)?\s*(?:ppl|people|guests|participants|attendees|persons|visitors)\b",
+            # English: "party/group of 60"
+            r"(?:party|group|team)\s+of\s+(\d{1,4})",
+            # English: "Attendees: 60" / "Expected: 60" / "Attendance: 60"
+            r"(?:attendees|expected|attendance|capacity|headcount)[:\s]+(\d{1,4})\b",
+            # German: "60 Personen/Gäste/Teilnehmer/Leute"
+            r"(?:~|ca\.?|etwa|ungefähr|rund)?\s*(\d{1,4})\s*(?:personen|gäste|teilnehmer|leute|besucher)\b",
+            # French: "60 personnes/invités/participants"
+            r"(?:~|environ|à peu près)?\s*(\d{1,4})\s*(?:personnes|invités|participants|convives)\b",
+        ]
+        for pattern in participants_patterns:
+            participants_match = re.search(pattern, lower_body, re.IGNORECASE)
+            if participants_match:
+                entities["participants"] = int(participants_match.group(1))
+                break
 
         room_match = re.search(r"\b(room\s*[a-z0-9]+|punkt\.?null)\b", body, re.IGNORECASE)
         if room_match:
@@ -196,12 +208,44 @@ class StubAgentAdapter(AgentAdapter):
         return entities
 
     def _extract_times(self, text: str) -> List[str]:
-        matches = re.findall(r"\b(\d{1,2}:\d{2})\b", text)
         results: List[str] = []
-        for match in matches:
-            hours, minutes = map(int, match.split(":"))
+
+        # Pattern 1: "6:30 PM" / "9:00 AM" (12h with minutes and AM/PM) - check first!
+        for match in re.finditer(r"\b(\d{1,2})[:.](\d{2})\s*(pm|am)\b", text, re.IGNORECASE):
+            hours, minutes = int(match.group(1)), int(match.group(2))
+            suffix = match.group(3).lower()
+            if suffix == "pm" and hours < 12:
+                hours += 12
+            elif suffix == "am" and hours == 12:
+                hours = 0
             if 0 <= hours <= 23 and 0 <= minutes <= 59:
                 results.append(f"{hours:02d}:{minutes:02d}")
+
+        # Pattern 2: HH:MM or HH.MM with optional Uhr/h suffix (24h format)
+        # Skip if followed by AM/PM (already handled above)
+        for match in re.finditer(r"\b(\d{1,2})[:.](\d{2})(?:\s*(?:uhr|h))?(?!\s*(?:am|pm))\b", text, re.IGNORECASE):
+            hours, minutes = int(match.group(1)), int(match.group(2))
+            if 0 <= hours <= 23 and 0 <= minutes <= 59:
+                time_str = f"{hours:02d}:{minutes:02d}"
+                if time_str not in results:
+                    results.append(time_str)
+
+        # Pattern 3: "6pm" / "6 pm" / "18h" / "18 Uhr" (without minutes)
+        # Must have valid hour (not 00)
+        for match in re.finditer(r"\b(\d{1,2})\s*(pm|am|h|uhr)\b", text, re.IGNORECASE):
+            hours = int(match.group(1))
+            if hours == 0:  # Skip "00 Uhr" type false matches
+                continue
+            suffix = match.group(2).lower()
+            if suffix == "pm" and hours < 12:
+                hours += 12
+            elif suffix == "am" and hours == 12:
+                hours = 0
+            if 0 <= hours <= 23:
+                time_str = f"{hours:02d}:00"
+                if time_str not in results:
+                    results.append(time_str)
+
         return results
 
     def _extract_date(self, text: str) -> Optional[str]:
