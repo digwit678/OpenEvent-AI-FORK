@@ -2,6 +2,40 @@
 
 ## 2025-12-17
 
+### Feature: International Format Support for Entity Extraction
+
+**Problem:** Shortcut workflow detection failed for international date, time, and participant formats. Users writing "May 8, 2026" (US format), "30 pax" (hospitality), or "18h30" (French) weren't getting their entities extracted.
+
+**Solution:** Expanded regex patterns in `StubAgentAdapter` to support worldwide conventions based on web research of hospitality industry standards and international notation.
+
+**Participants — Added formats:**
+| Language | Terms |
+|----------|-------|
+| Hospitality | pax, covers, heads |
+| German | Personen, Gäste, Teilnehmer, Leute, Besucher |
+| French | personnes, invités, convives |
+| Italian | persone, ospiti, partecipanti, invitati |
+| Spanish | personas, invitados, asistentes, huéspedes |
+| Labels | "Attendees: X", "Expected: X", "headcount: X" |
+| Phrases | "party of X", "group of X", "team of X" |
+
+**Dates — Added formats:**
+- US format: "May 8, 2026", "December 25, 2025" (Month DD, YYYY)
+
+**Times — Added formats:**
+- 12-hour: "6:30 PM", "9am"
+- German: "18 Uhr", "18h"
+- French: "18h30", "14h45"
+
+**Files Modified:**
+- `backend/adapters/agent_adapter.py` — `_extract_entities()`, `_extract_times()`, `_extract_date()`
+
+**Commits:**
+- `e356fca` feat(intake): add international format support for entity extraction
+- `31ed17c` feat(intake): expand international format support based on web research
+
+---
+
 ### Feature: Centralized Fallback Diagnostics
 
 **Problem:** Fallback messages like "It appears there is no specific information available" were frustrating because they:
