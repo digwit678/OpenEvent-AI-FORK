@@ -205,28 +205,36 @@ class StubAgentAdapter(AgentAdapter):
         return results
 
     def _extract_date(self, text: str) -> Optional[str]:
+        # Pattern types: (1) EU numeric, (2) ISO, (3) DD Month YYYY, (4) Month DD, YYYY
         patterns = [
-            r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b",
-            r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b",
-            r"\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+(\d{4})\b",
+            (r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b", "eu"),           # DD.MM.YYYY
+            (r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", "iso"),            # YYYY-MM-DD
+            (r"\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+(\d{4})\b", "dmy"),  # DD Month YYYY
+            (r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})\b", "mdy"),  # Month DD, YYYY (US format)
         ]
-        for pattern in patterns:
+        for pattern, ptype in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 groups = match.groups()
-                if len(groups) == 3 and groups[0].isdigit():
-                    day, month, year = map(int, groups)
-                elif len(groups) == 3 and groups[1].isdigit():
-                    year, month, day = map(int, groups)
-                else:
-                    day = int(groups[0])
-                    month = self.MONTHS.get(groups[1][:3].lower())
-                    year = int(groups[2])
                 try:
+                    if ptype == "eu":
+                        day, month, year = int(groups[0]), int(groups[1]), int(groups[2])
+                    elif ptype == "iso":
+                        year, month, day = int(groups[0]), int(groups[1]), int(groups[2])
+                    elif ptype == "dmy":
+                        day = int(groups[0])
+                        month = self.MONTHS.get(groups[1][:3].lower())
+                        year = int(groups[2])
+                    elif ptype == "mdy":
+                        month = self.MONTHS.get(groups[0][:3].lower())
+                        day = int(groups[1])
+                        year = int(groups[2])
+                    else:
+                        continue
                     parsed = date(year, month, day)
-                except ValueError:
+                    return parsed.isoformat()
+                except (ValueError, TypeError):
                     continue
-                return parsed.isoformat()
         return None
 
 
