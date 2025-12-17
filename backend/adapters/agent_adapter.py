@@ -145,14 +145,20 @@ class StubAgentAdapter(AgentAdapter):
         participants_patterns = [
             # English: "60 people/guests/participants/attendees/persons"
             r"(?:~|approx(?:\.|imately)?|about|around|ca\.?)?\s*(\d{1,4})\s*(?:\+)?\s*(?:ppl|people|guests|participants|attendees|persons|visitors)\b",
+            # Hospitality industry: "30 pax" / "50 covers" / "30 heads"
+            r"(?:~|approx(?:\.|imately)?|about|around|ca\.?)?\s*(\d{1,4})\s*(?:pax|covers|heads)\b",
             # English: "party/group of 60"
             r"(?:party|group|team)\s+of\s+(\d{1,4})",
             # English: "Attendees: 60" / "Expected: 60" / "Attendance: 60"
             r"(?:attendees|expected|attendance|capacity|headcount)[:\s]+(\d{1,4})\b",
             # German: "60 Personen/Gäste/Teilnehmer/Leute"
             r"(?:~|ca\.?|etwa|ungefähr|rund)?\s*(\d{1,4})\s*(?:personen|gäste|teilnehmer|leute|besucher)\b",
-            # French: "60 personnes/invités/participants"
-            r"(?:~|environ|à peu près)?\s*(\d{1,4})\s*(?:personnes|invités|participants|convives)\b",
+            # French: "60 personnes/invités/participants/convives"
+            r"(?:~|environ|à peu près)?\s*(\d{1,4})\s*(?:personnes|invités|convives)\b",
+            # Italian: "60 persone/ospiti/partecipanti"
+            r"(?:~|circa|approssimativamente)?\s*(\d{1,4})\s*(?:persone|ospiti|partecipanti|invitati)\b",
+            # Spanish: "60 personas/invitados/asistentes"
+            r"(?:~|aproximadamente|alrededor de)?\s*(\d{1,4})\s*(?:personas|invitados|asistentes|huéspedes)\b",
         ]
         for pattern in participants_patterns:
             participants_match = re.search(pattern, lower_body, re.IGNORECASE)
@@ -230,7 +236,15 @@ class StubAgentAdapter(AgentAdapter):
                 if time_str not in results:
                     results.append(time_str)
 
-        # Pattern 3: "6pm" / "6 pm" / "18h" / "18 Uhr" (without minutes)
+        # Pattern 3: French format "18h30" / "14h45" (hours + h + minutes)
+        for match in re.finditer(r"\b(\d{1,2})h(\d{2})\b", text, re.IGNORECASE):
+            hours, minutes = int(match.group(1)), int(match.group(2))
+            if 0 <= hours <= 23 and 0 <= minutes <= 59:
+                time_str = f"{hours:02d}:{minutes:02d}"
+                if time_str not in results:
+                    results.append(time_str)
+
+        # Pattern 4: "6pm" / "6 pm" / "18h" / "18 Uhr" (without minutes)
         # Must have valid hour (not 00)
         for match in re.finditer(r"\b(\d{1,2})\s*(pm|am|h|uhr)\b", text, re.IGNORECASE):
             hours = int(match.group(1))
