@@ -45,7 +45,7 @@ from ..condition.checks import is_event_request
 import re
 from ..llm.analysis import classify_intent, extract_user_information
 from backend.workflows.nlu.preferences import extract_preferences
-from backend.workflows.groups.room_availability import handle_select_room_action
+from backend.workflows.steps.step3_room_availability import handle_select_room_action
 from ..billing_flow import handle_billing_capture
 from backend.workflows.common.datetime_parse import parse_first_date, parse_time_range
 from backend.services.products import list_product_records, merge_product_requests, normalise_product_payload
