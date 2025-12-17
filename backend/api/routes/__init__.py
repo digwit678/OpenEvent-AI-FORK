@@ -7,17 +7,36 @@ CONTAINS:
     - events.py      Event operations (/api/event/*, /api/events/*)
     - config.py      Configuration (/api/config/*)
     - clients.py     Client operations (/api/client/*)
+    - debug.py       Debug and tracing (/api/debug/*)
+    - snapshots.py   Snapshot storage (/api/snapshots/*)
+    - test_data.py   Test data and Q&A (/api/test-data/*, /api/qna)
+    - workflow.py    Workflow status (/api/workflow/*)
 
 PLANNED (not yet extracted):
-    - messages.py    Message handling (/api/send-message, threads)
+    - messages.py    Message handling (/api/send-message, /api/start-conversation)
+    - conversation.py  Conversation management (/api/conversation/*)
 
 MIGRATION STATUS:
     Phase C of refactoring - in progress.
+    main.py reduced from 2188 → ~1100 lines.
 """
 
 from .tasks import router as tasks_router
 from .events import router as events_router
 from .config import router as config_router
 from .clients import router as clients_router
+from .debug import router as debug_router
+from .snapshots import router as snapshots_router
+from .test_data import router as test_data_router
+from .workflow import router as workflow_router
 
-__all__ = ["tasks_router", "events_router", "config_router", "clients_router"]
+__all__ = [
+    "tasks_router",
+    "events_router",
+    "config_router",
+    "clients_router",
+    "debug_router",
+    "snapshots_router",
+    "test_data_router",
+    "workflow_router",
+]
