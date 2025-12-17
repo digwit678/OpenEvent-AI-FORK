@@ -68,16 +68,49 @@ DEBUG_TRACE=1  # Enable (default)
 DEBUG_TRACE=0  # Disable
 ```
 
+### Live Log Files (Recommended for AI Agents)
+
+**The fastest way to see what's happening in a conversation** is to tail the live log file:
+
+```bash
+# Watch a specific thread in real-time
+tail -f tmp-debug/live/{thread_id}.log
+
+# List all active threads with live logs
+curl http://localhost:8000/api/debug/live
+
+# Get live log content via API
+curl http://localhost:8000/api/debug/threads/{thread_id}/live
+```
+
+Live logs are:
+- **Human-readable** — Simple timestamp + event format
+- **Real-time** — Written as events happen
+- **Auto-cleaned** — Deleted when thread closes
+
+Example live log output:
+```
+[14:23:01] >> ENTER Step1_Intake
+[14:23:01] Step1_Intake | LLM IN (classify_intent): Subject: Private Dinner...
+[14:23:02] Step1_Intake | LLM OUT (classify_intent): {"intent": "event_request"...
+[14:23:02] Step1_Intake | GATE PASS: email_present (1/2)
+[14:23:02] Step1_Intake | CAPTURED: participants=30
+[14:23:02] Step1_Intake | STATE: date=2026-02-14, date_confirmed=True
+[14:23:02] << EXIT Step1_Intake
+```
+
 ### Debug API Endpoints
 
 When debugging issues, access conversation traces via these endpoints:
 
 | Endpoint | Purpose |
 |----------|---------|
+| `/api/debug/live` | **List active threads with live logs** |
+| `/api/debug/threads/{thread_id}/live` | **Get live log content** |
 | `/api/debug/threads/{thread_id}` | Full trace with state, signals, timeline |
 | `/api/debug/threads/{thread_id}/timeline` | Timeline events only |
 | `/api/debug/threads/{thread_id}/report` | Human-readable debug report |
-| `/api/debug/threads/{thread_id}/llm-diagnosis` | **LLM-optimized diagnosis** (use this for AI debugging) |
+| `/api/debug/threads/{thread_id}/llm-diagnosis` | LLM-optimized diagnosis |
 | `/api/debug/threads/{thread_id}/timeline/download` | Download JSON export |
 | `/api/debug/threads/{thread_id}/timeline/text` | Download text export |
 
@@ -121,10 +154,11 @@ The tracer captures these event types:
 
 | File | Purpose |
 |------|---------|
+| `backend/debug/live_log.py` | **Human-readable live logs** (recommended for AI agents) |
 | `backend/debug/trace.py` | Core trace event bus and emit functions |
 | `backend/debug/hooks.py` | Trace decorators and helpers |
 | `backend/debug/reporting.py` | Report generation and LLM diagnosis |
-| `backend/debug/timeline.py` | Timeline persistence |
+| `backend/debug/timeline.py` | Timeline persistence (JSONL format) |
 | `backend/debug/state_store.py` | State snapshot store |
 
 ## Behaviour Around Bugs and Features
