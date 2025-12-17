@@ -25,7 +25,7 @@ from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.workflows.common.pricing import build_deposit_info, derive_room_rate, normalise_rate
-from backend.workflows.nlu import detect_general_room_query
+from backend.workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
 from backend.debug.hooks import trace_db_write, trace_detour, trace_gate, trace_state, trace_step, trace_marker, trace_general_qa_status, set_subloop
 from backend.debug.trace import set_hil_open
 from backend.utils.profiler import profile_step
@@ -328,6 +328,29 @@ def process(state: WorkflowState) -> GroupResult:
 
     # No change detected: check if Q&A should be handled
     has_offer_update = _has_offer_update(user_info)
+
+    # -------------------------------------------------------------------------
+    # SEQUENTIAL WORKFLOW DETECTION
+    # If the client accepts the offer AND asks about next steps (site visit, deposit),
+    # that's NOT general Q&A - it's natural workflow continuation.
+    # Example: "Accept the offer, when can we do a site visit?"
+    # -------------------------------------------------------------------------
+    sequential_check = detect_sequential_workflow_request(message_text, current_step=4)
+    if sequential_check.get("is_sequential"):
+        # Client is accepting offer AND asking about next step - natural flow
+        classification["is_general"] = False
+        classification["workflow_lookahead"] = sequential_check.get("asks_next_step")
+        state.extras["general_qna_detected"] = False
+        state.extras["workflow_lookahead"] = sequential_check.get("asks_next_step")
+        state.extras["_general_qna_classification"] = classification
+        if thread_id:
+            trace_marker(
+                thread_id,
+                "SEQUENTIAL_WORKFLOW",
+                detail=f"step4_to_step{sequential_check.get('asks_next_step')}",
+                data=sequential_check,
+            )
+
     deferred_general_qna = False
     general_qna_applicable = classification.get("is_general")
     if general_qna_applicable and has_offer_update:
