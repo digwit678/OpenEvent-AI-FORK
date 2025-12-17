@@ -219,6 +219,23 @@ curl http://localhost:8000/api/config/hil-status
 # Returns: {"hil_all_replies_enabled": true/false}
 ```
 
+## 🎛 Admin Features
+
+### Prompt Configuration & Workflow Editor
+A dedicated configuration page is available for non-technical administrators (e.g., Co-Founders, Managers) to safely tune the AI's behavior without touching code.
+
+**Access:**
+Navigate to `http://localhost:3000/admin/prompts`
+
+**Capabilities:**
+*   **Edit Global Persona:** Modify the "System Prompt" to change the AI's tone, empathy level, or core rules.
+*   **Step-Specific Instructions:** Fine-tune the logic and instructions for each of the 7 workflow steps (e.g., "Be more pushy in Step 5").
+*   **Safety & History:**
+    *   **Persistence:** Changes are only live after pressing "Save".
+    *   **Version Control:** Every save creates a timestamped history entry.
+    *   **Instant Revert:** You can browse past versions and revert to any previous state with one click, ensuring you can experiment safely.
+*   **Lovable Compatible:** The interface is built with standard React/Tailwind components, making it easy to integrate into other Lovable-based tools.
+
 ---
 
 ## 📚 Documentation

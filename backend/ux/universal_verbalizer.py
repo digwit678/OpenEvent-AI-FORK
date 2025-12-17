@@ -364,6 +364,77 @@ def _resolve_tone() -> str:
     return "empathetic"
 
 
+import time
+from pathlib import Path
+
+# ... (existing imports)
+
+# ... (MessageContext class)
+
+# ... (Hardcoded PROMPTS)
+
+# =============================================================================
+# Dynamic Prompt Loading
+# =============================================================================
+
+_PROMPT_CACHE: Dict[str, Any] = {
+    "ts": 0,
+    "data": (UNIVERSAL_SYSTEM_PROMPT, STEP_PROMPTS)
+}
+_CACHE_TTL = 30.0  # seconds
+
+def _get_effective_prompts() -> Tuple[str, Dict[int, str]]:
+    """
+    Load effective prompts (DB overrides merged with defaults).
+    Cached for performance.
+    """
+    global _PROMPT_CACHE
+    now = time.time()
+    
+    if now - _PROMPT_CACHE["ts"] < _CACHE_TTL:
+        return _PROMPT_CACHE["data"]
+
+    try:
+        # Avoid circular imports
+        from backend.workflows.io.database import load_db
+        
+        # Load DB (best effort assumption on path)
+        db_path = Path("events_database.json")
+        if not db_path.exists():
+            return UNIVERSAL_SYSTEM_PROMPT, STEP_PROMPTS
+            
+        db = load_db(db_path)
+        config = db.get("config", {}).get("prompts", {})
+        
+        system_prompt = config.get("system_prompt", UNIVERSAL_SYSTEM_PROMPT)
+        
+        # Merge step prompts
+        step_prompts = STEP_PROMPTS.copy()
+        stored_steps = config.get("step_prompts", {})
+        for k, v in stored_steps.items():
+            try:
+                step_prompts[int(k)] = v
+            except ValueError:
+                pass
+                
+        _PROMPT_CACHE = {
+            "ts": now,
+            "data": (system_prompt, step_prompts)
+        }
+        return system_prompt, step_prompts
+        
+    except Exception as exc:
+        logger.warning(f"universal_verbalizer: failed to load prompts config: {exc}")
+        # Return fallback (potentially stale cache or hard defaults)
+        return _PROMPT_CACHE["data"]
+
+
+# =============================================================================
+# Verbalizer Core
+# =============================================================================
+
+# ... (verbalize_message function) ...
+
 def _build_prompt(
     context: MessageContext,
     fallback_text: str,
@@ -371,8 +442,11 @@ def _build_prompt(
 ) -> Dict[str, Any]:
     """Build the LLM prompt for verbalization."""
 
+    # Load dynamic prompts
+    system_template, step_prompts = _get_effective_prompts()
+
     # Build step-specific guidance
-    step_guidance = STEP_PROMPTS.get(context.step, "")
+    step_guidance = step_prompts.get(context.step, "")
     topic_hint = TOPIC_HINTS.get(context.topic, "")
 
     # Build facts summary
@@ -381,7 +455,7 @@ def _build_prompt(
     # Locale instruction
     locale_instruction = "Write in German (Deutsch)." if locale == "de" else "Write in English."
 
-    system_content = f"""{UNIVERSAL_SYSTEM_PROMPT}
+    system_content = f"""{system_template}
 
 {locale_instruction}
 
@@ -406,6 +480,8 @@ Return ONLY the transformed message text. Do not include explanations or metadat
         "system": system_content,
         "user": user_content,
     }
+
+# ... (rest of file)
 
 
 def _format_facts_for_prompt(context: MessageContext) -> str:

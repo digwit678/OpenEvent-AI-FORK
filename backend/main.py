@@ -21,6 +21,7 @@ importlib.invalidate_caches()
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
+from contextlib import asynccontextmanager
 from pydantic import BaseModel
 import uuid
 import re
@@ -46,7 +47,7 @@ from backend.adapters.client_gui_adapter import ClientGUIAdapter
 from backend.workflows.common.payloads import PayloadValidationError, validate_confirm_date_payload
 from backend.workflows.groups.date_confirmation import compose_date_confirmation_reply
 from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.pricing import derive_room_rate, normalise_rate
+# NOTE: pricing imports (derive_room_rate, normalise_rate) moved to backend/api/routes/tasks.py
 from backend.workflows.groups.room_availability import run_availability_workflow
 from backend.utils import json_io
 from backend.utils.test_data_providers import (
@@ -63,10 +64,7 @@ from backend.workflow_email import (
     DB_PATH as WF_DB_PATH,
     load_db as wf_load_db,
     save_db as wf_save_db,
-    list_pending_tasks as wf_list_pending_tasks,
-    approve_task_and_send as wf_approve_task_and_send,
-    reject_task_and_send as wf_reject_task_and_send,
-    cleanup_tasks as wf_cleanup_tasks,
+    # NOTE: Task functions moved to backend/api/routes/tasks.py
 )
 from backend.workflows.io.integration.config import is_hil_all_replies_enabled
 from backend.api.debug import (
@@ -79,18 +77,14 @@ from backend.api.debug import (
 )
 from backend.debug.settings import is_trace_enabled
 from backend.debug.trace import BUS
+from backend.api.routes import tasks_router, events_router, config_router, clients_router
 
-app = FastAPI(title="AI Event Manager")
-
-
-# --- Startup event: clear Python cache to prevent stale bytecode issues ---
-@app.on_event("startup")
-async def _startup_clear_cache() -> None:
-    """Clear Python bytecode cache on startup to prevent stale dataclass issues.
-
-    This runs regardless of how the app is started (uvicorn direct, --reload, etc.)
-    and prevents errors like `__init__() got an unexpected keyword argument 'draft'`.
-    """
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifecycle manager to handle startup and shutdown events."""
+    # --- Startup: clear Python cache to prevent stale bytecode issues ---
+    # This runs regardless of how the app is started (uvicorn direct, --reload, etc.)
+    # and prevents errors like `__init__() got an unexpected keyword argument 'draft'`.
     backend_dir = Path(__file__).parent
     cleared = 0
     for cache_dir in backend_dir.rglob("__pycache__"):
@@ -102,7 +96,17 @@ async def _startup_clear_cache() -> None:
             pass
     if cleared:
         print(f"[Backend] Startup: cleared {cleared} __pycache__ directories")
+    
+    yield
+    # --- Shutdown logic (if any) can go here ---
 
+app = FastAPI(title="AI Event Manager", lifespan=lifespan)
+
+# Include route modules (Phase C refactoring - extracting from main.py)
+app.include_router(tasks_router)
+app.include_router(events_router)
+app.include_router(config_router)
+app.include_router(clients_router)
 
 DEBUG_TRACE_ENABLED = is_trace_enabled()
 
@@ -486,44 +490,9 @@ class SendMessageRequest(BaseModel):
     message: str
 
 
-class TaskDecisionRequest(BaseModel):
-    notes: Optional[str] = None
-    edited_message: Optional[str] = None  # For AI Reply Approval: manager can edit draft before sending
-
-
-class TaskCleanupRequest(BaseModel):
-    keep_thread_id: Optional[str] = None
-
-
-class ClientResetRequest(BaseModel):
-    email: str
-
-
-class GlobalDepositConfig(BaseModel):
-    """
-    Global deposit configuration applied to all offers by default.
-
-    INTEGRATION NOTE FOR FRONTEND INTEGRATORS:
-    ==========================================
-    This config is stored in the workflow database under "config.global_deposit".
-    When creating offers, the workflow will use these settings unless overridden
-    by room-specific deposit settings (future feature).
-
-    The data format matches the real OpenEvent frontend's deposit structure:
-    - deposit_enabled: boolean - Whether to require deposit
-    - deposit_type: "percentage" | "fixed" - How to calculate deposit
-    - deposit_percentage: number (1-100) - Percentage of offer total
-    - deposit_fixed_amount: number - Fixed CHF amount
-    - deposit_deadline_days: number - Days until payment due
-
-    For room-specific deposits (future integration), see:
-    - POST /api/config/room-deposit/{room_id} (inactive, prepared for integration)
-    """
-    deposit_enabled: bool = False
-    deposit_type: str = "percentage"  # "percentage" or "fixed"
-    deposit_percentage: int = 30
-    deposit_fixed_amount: float = 0.0
-    deposit_deadline_days: int = 10
+# NOTE: TaskDecisionRequest and TaskCleanupRequest moved to backend/api/routes/tasks.py
+# NOTE: ClientResetRequest moved to backend/api/routes/clients.py
+# NOTE: GlobalDepositConfig moved to backend/api/routes/config.py
 
 
 class ConfirmDateRequest(BaseModel):
@@ -995,301 +964,8 @@ async def send_message(request: SendMessageRequest):
     }
 
 
-@app.get("/api/tasks/pending")
-async def get_pending_tasks():
-    """OpenEvent Action (light-blue): expose pending manual tasks for GUI approvals."""
-    try:
-        db = wf_load_db()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to load tasks: {exc}") from exc
-    tasks = wf_list_pending_tasks(db)
-    events_by_id = {event.get("event_id"): event for event in db.get("events") or [] if event.get("event_id")}
-    payload = []
-    offer_tasks_indices: Dict[tuple[str, str], int] = {}
-    for task in tasks:
-        payload_data = task.get("payload") or {}
-        event_entry = events_by_id.get(task.get("event_id"))
-        event_data = (event_entry or {}).get("event_data") or {}
-        draft_body = payload_data.get("draft_body") or payload_data.get("draft_msg")
-        if not draft_body and event_entry:
-            for request in event_entry.get("pending_hil_requests") or []:
-                if request.get("task_id") == task.get("task_id"):
-                    draft_body = (request.get("draft") or {}).get("body") or draft_body
-                    break
-
-        event_summary = None
-        if event_entry:
-            def _line_items(entry: Dict[str, Any]) -> list[str]:
-                items: list[str] = []
-                pricing_inputs = entry.get("pricing_inputs") or {}
-                room_label = entry.get("locked_room_id") or (entry.get("room_pending_decision") or {}).get("selected_room")
-                base_rate = normalise_rate(pricing_inputs.get("base_rate"))
-                if base_rate is None:
-                    base_rate = derive_room_rate(entry)
-                if base_rate is not None:
-                    items.append(f"{room_label or 'Room'} · CHF {base_rate:,.2f}")
-
-                for product in entry.get("products") or []:
-                    name = product.get("name") or "Unnamed item"
-                    try:
-                        qty = float(product.get("quantity") or 0)
-                    except (TypeError, ValueError):
-                        qty = 0
-                    try:
-                        unit_price = float(product.get("unit_price") or 0.0)
-                    except (TypeError, ValueError):
-                        unit_price = 0.0
-                    unit = product.get("unit")
-                    total = qty * unit_price if qty and unit_price else unit_price
-                    label = f"{qty:g}× {name}" if qty else name
-                    price_text = f"CHF {total:,.2f}"
-                    if unit == "per_person" and qty:
-                        price_text += f" (CHF {unit_price:,.2f} per person)"
-                    elif unit == "per_event":
-                        price_text += " (per event)"
-                    items.append(f"{label} · {price_text}")
-                return items
-
-            event_summary = {
-                "client_name": event_data.get("Name"),
-                "company": event_data.get("Company"),
-                "billing_address": event_data.get("Billing Address"),
-                "email": event_data.get("Email"),
-                "chosen_date": event_entry.get("chosen_date"),
-                "locked_room": event_entry.get("locked_room_id"),
-                "line_items": _line_items(event_entry),
-                "current_step": event_entry.get("current_step", 1),
-            }
-            try:
-                from backend.workflows.groups.negotiation_close import _determine_offer_total
-
-                total_amount = _determine_offer_total(event_entry)
-            except Exception:
-                total_amount = None
-            if total_amount not in (None, 0):
-                event_summary["offer_total"] = total_amount
-
-            # Include deposit info for client-side payment button
-            deposit_info = event_entry.get("deposit_info")
-            if deposit_info:
-                event_summary["deposit_info"] = {
-                    "deposit_required": deposit_info.get("deposit_required", False),
-                    "deposit_amount": deposit_info.get("deposit_amount"),
-                    "deposit_vat_included": deposit_info.get("deposit_vat_included"),
-                    "deposit_due_date": deposit_info.get("deposit_due_date"),
-                    "deposit_paid": deposit_info.get("deposit_paid", False),
-                    "deposit_paid_at": deposit_info.get("deposit_paid_at"),
-                }
-
-        record = {
-            "task_id": task.get("task_id"),
-            "type": task.get("type"),
-            "client_id": task.get("client_id"),
-            "event_id": task.get("event_id"),
-            "created_at": task.get("created_at"),
-            "notes": task.get("notes"),
-            "payload": {
-                "snippet": payload_data.get("snippet"),
-                "draft_body": draft_body,
-                "suggested_dates": payload_data.get("suggested_dates"),
-                "thread_id": payload_data.get("thread_id"),
-                "step_id": payload_data.get("step_id") or payload_data.get("step"),
-                "event_summary": event_summary,
-            },
-        }
-        payload.append(record)
-        if task.get("type") == "offer_message" and payload_data.get("thread_id"):
-            key = (task.get("event_id"), payload_data.get("thread_id"))
-            offer_tasks_indices[key] = len(payload) - 1
-
-    # Deduplicate per (event, thread) by priority so only one task shows in the manager panel.
-    priority = {
-        "offer_message": 0,
-        "room_availability_message": 1,
-        "date_confirmation_message": 2,
-        "ask_for_date": 3,
-        "manual_review": 4,
-    }
-    dedup: Dict[tuple[str, str], Dict[str, Any]] = {}
-    for record in payload:
-        thread_id = (record.get("payload") or {}).get("thread_id")
-        event_id = record.get("event_id")
-        key = (event_id, thread_id)
-        rank = priority.get(record.get("type"), 99)
-        current = dedup.get(key)
-        if current is None or priority.get(current.get("type"), 99) > rank:
-            dedup[key] = record
-    payload = list(dedup.values())
-
-    return {"tasks": payload}
-
-
-@app.post("/api/tasks/{task_id}/approve")
-async def approve_task(task_id: str, request: TaskDecisionRequest):
-    """OpenEvent Action (light-blue): mark a task as approved from the GUI.
-
-    For AI Reply Approval tasks, the manager can optionally edit the draft message
-    before sending by providing `edited_message` in the request body.
-    """
-    try:
-        result = wf_approve_task_and_send(
-            task_id,
-            manager_notes=request.notes,
-            edited_message=request.edited_message,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to approve task: {exc}") from exc
-    print(f"[WF] task approved id={task_id}")
-    assistant_text = result.get("res", {}).get("assistant_draft_text")
-    return {
-        "task_id": task_id,
-        "task_status": "approved",
-        "assistant_reply": assistant_text,
-        "thread_id": result.get("thread_id"),
-        "event_id": result.get("event_id"),
-        "review_state": "approved",
-    }
-
-
-@app.post("/api/tasks/{task_id}/reject")
-async def reject_task(task_id: str, request: TaskDecisionRequest):
-    """OpenEvent Action (light-blue): mark a task as rejected from the GUI."""
-    try:
-        result = wf_reject_task_and_send(task_id, manager_notes=request.notes)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to reject task: {exc}") from exc
-    print(f"[WF] task rejected id={task_id}")
-    assistant_text = result.get("res", {}).get("assistant_draft_text")
-    return {
-        "task_id": task_id,
-        "task_status": "rejected",
-        "assistant_reply": assistant_text,
-        "thread_id": result.get("thread_id"),
-        "event_id": result.get("event_id"),
-        "review_state": "rejected",
-    }
-
-
-@app.post("/api/tasks/cleanup")
-async def cleanup_tasks(request: TaskCleanupRequest):
-    """Remove resolved HIL tasks to declutter the task list."""
-    try:
-        db = wf_load_db()
-        removed = wf_cleanup_tasks(db, keep_thread_id=request.keep_thread_id)
-        wf_save_db(db)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to cleanup tasks: {exc}") from exc
-    print(f"[WF] tasks cleanup removed={removed}")
-    return {"removed": removed}
-
-
-@app.post("/api/client/reset")
-async def reset_client_data(request: ClientResetRequest):
-    """[Testing Only] Reset all data for a client by email address.
-
-    Deletes:
-    - Client entry from 'clients' dict
-    - All events where client_id matches the email
-    - All tasks associated with those events
-
-    SECURITY: This endpoint is disabled by default.
-    Set ENABLE_DANGEROUS_ENDPOINTS=true to enable (never in production!).
-    """
-    # Production guard - enabled by default in development (when running main.py directly)
-    # Disabled in production unless explicitly enabled
-    is_dev = os.getenv("ENABLE_DANGEROUS_ENDPOINTS", "true").lower() == "true"
-    if not is_dev:
-        raise HTTPException(
-            status_code=403,
-            detail="This endpoint is disabled. Set ENABLE_DANGEROUS_ENDPOINTS=true to enable (development only)."
-        )
-
-    email = request.email.lower().strip()
-    if not email:
-        raise HTTPException(status_code=400, detail="Email is required")
-
-    try:
-        db = wf_load_db()
-        deleted_events = 0
-        deleted_tasks = 0
-
-        # Delete client entry
-        clients = db.get("clients", {})
-        if isinstance(clients, dict):
-            client_deleted = email in clients
-            if client_deleted:
-                del clients[email]
-        else:
-            client_deleted = False
-
-        # Delete all events for this client (check both client_id and event_data.Email)
-        events = db.get("events", {})
-        if isinstance(events, dict):
-            event_ids_to_delete = []
-            for eid, event in events.items():
-                if not isinstance(event, dict):
-                    continue
-                client_id_match = (event.get("client_id") or "").lower() == email
-                event_data = event.get("event_data", {}) or {}
-                email_match = (event_data.get("Email") or "").lower() == email
-                if client_id_match or email_match:
-                    event_ids_to_delete.append(eid)
-            for eid in event_ids_to_delete:
-                del events[eid]
-                deleted_events += 1
-        elif isinstance(events, list):
-            # Handle legacy list format
-            original_len = len(events)
-            matched_event_ids = []
-            def should_keep(e):
-                if not isinstance(e, dict):
-                    return True
-                client_id_match = (e.get("client_id") or "").lower() == email
-                event_data = e.get("event_data", {}) or {}
-                email_match = (event_data.get("Email") or "").lower() == email
-                if client_id_match or email_match:
-                    matched_event_ids.append(e.get("event_id", "unknown"))
-                    return False
-                return True
-            db["events"] = [e for e in events if should_keep(e)]
-            deleted_events = original_len - len(db["events"])
-            if matched_event_ids:
-                print(f"[WF] reset matched events: {matched_event_ids}")
-
-        # Delete all tasks for this client
-        tasks = db.get("tasks", {})
-        if isinstance(tasks, dict):
-            task_ids_to_delete = [
-                tid for tid, task in tasks.items()
-                if isinstance(task, dict) and (task.get("client_id") or "").lower() == email
-            ]
-            for tid in task_ids_to_delete:
-                del tasks[tid]
-                deleted_tasks += 1
-        elif isinstance(tasks, list):
-            # Handle legacy list format
-            original_len = len(tasks)
-            db["tasks"] = [
-                t for t in tasks
-                if not isinstance(t, dict) or (t.get("client_id") or "").lower() != email
-            ]
-            deleted_tasks = original_len - len(db["tasks"])
-
-        wf_save_db(db)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to reset client data: {exc}") from exc
-
-    print(f"[WF] client reset email={email} events={deleted_events} tasks={deleted_tasks}")
-    return {
-        "email": email,
-        "client_deleted": client_deleted,
-        "events_deleted": deleted_events,
-        "tasks_deleted": deleted_tasks,
-    }
+# NOTE: Task routes (/api/tasks/*) moved to backend/api/routes/tasks.py
+# NOTE: Client routes (/api/client/*) moved to backend/api/routes/clients.py
 
 
 if DEBUG_TRACE_ENABLED:
@@ -1765,278 +1441,8 @@ async def get_hil_status():
     }
 
 
-# ---------------------------------------------------------------------------
-# Global Deposit Configuration Endpoints
-# ---------------------------------------------------------------------------
-# These endpoints allow the manager to configure global deposit settings
-# that apply to all offers by default.
-#
-# INTEGRATION NOTE FOR FRONTEND INTEGRATORS:
-# ==========================================
-# The global deposit config is stored in the workflow database under
-# "config.global_deposit". When the integrated frontend is ready:
-# 1. The workflow will read this config when generating offers
-# 2. Room-specific deposits can override the global setting (see inactive
-#    endpoints below)
-# 3. The data format matches the real frontend's deposit structure
-# ---------------------------------------------------------------------------
-
-
-@app.get("/api/config/global-deposit")
-async def get_global_deposit_config():
-    """
-    Get the current global deposit configuration.
-
-    Returns default values if not yet configured.
-    """
-    try:
-        db = wf_load_db()
-        config = db.get("config", {}).get("global_deposit", {})
-        return {
-            "deposit_enabled": config.get("deposit_enabled", False),
-            "deposit_type": config.get("deposit_type", "percentage"),
-            "deposit_percentage": config.get("deposit_percentage", 30),
-            "deposit_fixed_amount": config.get("deposit_fixed_amount", 0.0),
-            "deposit_deadline_days": config.get("deposit_deadline_days", 10),
-        }
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load deposit config: {exc}"
-        ) from exc
-
-
-@app.post("/api/config/global-deposit")
-async def set_global_deposit_config(config: GlobalDepositConfig):
-    """
-    Set the global deposit configuration.
-
-    This setting applies to all offers unless overridden by room-specific
-    deposit settings (future feature).
-    """
-    try:
-        db = wf_load_db()
-        if "config" not in db:
-            db["config"] = {}
-        db["config"]["global_deposit"] = {
-            "deposit_enabled": config.deposit_enabled,
-            "deposit_type": config.deposit_type,
-            "deposit_percentage": config.deposit_percentage,
-            "deposit_fixed_amount": config.deposit_fixed_amount,
-            "deposit_deadline_days": config.deposit_deadline_days,
-            "updated_at": _now_iso(),
-        }
-        wf_save_db(db)
-        print(f"[Config] Global deposit updated: enabled={config.deposit_enabled} type={config.deposit_type}")
-        return {"status": "ok", "config": db["config"]["global_deposit"]}
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save deposit config: {exc}"
-        ) from exc
-
-
-# ---------------------------------------------------------------------------
-# Room-Specific Deposit Endpoints (INACTIVE - For Future Integration)
-# ---------------------------------------------------------------------------
-# INTEGRATION NOTE FOR FRONTEND INTEGRATORS:
-# ==========================================
-# These endpoints are prepared for future integration with the main OpenEvent
-# frontend. They allow setting deposit requirements per room, which override
-# the global deposit setting.
-#
-# To activate:
-# 1. Uncomment the endpoints below
-# 2. Add the corresponding UI in the Rooms Setup page
-# 3. Update the offer generation logic to check room-specific deposits first
-#
-# Data structure (stored in db.config.room_deposits[room_id]):
-# {
-#   "deposit_required": boolean,
-#   "deposit_percent": number (1-100),
-#   "updated_at": ISO timestamp
-# }
-# ---------------------------------------------------------------------------
-
-# @app.get("/api/config/room-deposit/{room_id}")
-# async def get_room_deposit_config(room_id: str):
-#     """
-#     Get deposit configuration for a specific room.
-#
-#     INACTIVE - Uncomment when integrating with main frontend.
-#     """
-#     try:
-#         db = wf_load_db()
-#         room_deposits = db.get("config", {}).get("room_deposits", {})
-#         config = room_deposits.get(room_id, {})
-#         return {
-#             "room_id": room_id,
-#             "deposit_required": config.get("deposit_required", False),
-#             "deposit_percent": config.get("deposit_percent", None),
-#             "updated_at": config.get("updated_at"),
-#         }
-#     except Exception as exc:
-#         raise HTTPException(
-#             status_code=500, detail=f"Failed to load room deposit config: {exc}"
-#         ) from exc
-#
-#
-# @app.post("/api/config/room-deposit/{room_id}")
-# async def set_room_deposit_config(room_id: str, deposit_required: bool, deposit_percent: Optional[int] = None):
-#     """
-#     Set deposit configuration for a specific room.
-#
-#     INACTIVE - Uncomment when integrating with main frontend.
-#
-#     This overrides the global deposit setting for offers using this room.
-#     """
-#     try:
-#         db = wf_load_db()
-#         if "config" not in db:
-#             db["config"] = {}
-#         if "room_deposits" not in db["config"]:
-#             db["config"]["room_deposits"] = {}
-#         db["config"]["room_deposits"][room_id] = {
-#             "deposit_required": deposit_required,
-#             "deposit_percent": deposit_percent,
-#             "updated_at": _now_iso(),
-#         }
-#         wf_save_db(db)
-#         print(f"[Config] Room deposit updated: room={room_id} required={deposit_required} percent={deposit_percent}")
-#         return {"status": "ok", "room_id": room_id, "config": db["config"]["room_deposits"][room_id]}
-#     except Exception as exc:
-#         raise HTTPException(
-#             status_code=500, detail=f"Failed to save room deposit config: {exc}"
-#         ) from exc
-
-
-# ---------------------------------------------------------------------------
-# Deposit Payment Endpoints
-# ---------------------------------------------------------------------------
-# These endpoints handle the mock deposit payment flow for testing.
-# In production, this would integrate with a payment gateway.
-#
-# See docs/internal/OPEN_DECISIONS.md DECISION-003 for production payment verification options.
-# ---------------------------------------------------------------------------
-
-
-class DepositPaymentRequest(BaseModel):
-    """Request to mark a deposit as paid."""
-    event_id: str
-
-
-@app.post("/api/event/deposit/pay")
-async def pay_deposit(request: DepositPaymentRequest):
-    """
-    Mark the deposit as paid for an event.
-
-    This is a mock endpoint for testing. In production, this would be
-    triggered by a payment gateway webhook after successful payment.
-
-    Requirements:
-    - Event must exist
-    - Event must be at Step 4 (offer step)
-    - Deposit must be required (configured by manager)
-    - Deposit must not already be paid
-
-    See docs/internal/OPEN_DECISIONS.md DECISION-001 for handling deposit changes after payment.
-    """
-    try:
-        db = wf_load_db()
-        events = db.get("events") or []
-        event_entry = None
-        event_index = None
-        for idx, event in enumerate(events):
-            if event.get("event_id") == request.event_id:
-                event_entry = event
-                event_index = idx
-                break
-
-        if not event_entry:
-            raise HTTPException(status_code=404, detail="Event not found")
-
-        current_step = event_entry.get("current_step", 1)
-        if current_step not in (4, 5):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Deposit can only be paid at Step 4 (offer) or Step 5 (negotiation). Current step: {current_step}"
-            )
-
-        deposit_info = event_entry.get("deposit_info")
-        if not deposit_info or not deposit_info.get("deposit_required"):
-            raise HTTPException(
-                status_code=400,
-                detail="No deposit is required for this event"
-            )
-
-        if deposit_info.get("deposit_paid"):
-            return {
-                "status": "already_paid",
-                "event_id": request.event_id,
-                "deposit_paid_at": deposit_info.get("deposit_paid_at"),
-            }
-
-        # Mark deposit as paid
-        deposit_info["deposit_paid"] = True
-        deposit_info["deposit_paid_at"] = _now_iso()
-        event_entry["deposit_info"] = deposit_info
-
-        wf_save_db(db)
-        print(f"[Deposit] Event {request.event_id}: Deposit marked as paid")
-
-        return {
-            "status": "ok",
-            "event_id": request.event_id,
-            "deposit_amount": deposit_info.get("deposit_amount"),
-            "deposit_paid_at": deposit_info.get("deposit_paid_at"),
-        }
-
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to process deposit payment: {exc}"
-        ) from exc
-
-
-@app.get("/api/event/{event_id}/deposit")
-async def get_deposit_status(event_id: str):
-    """
-    Get the deposit status for an event.
-
-    Returns deposit info including:
-    - Whether deposit is required
-    - Deposit amount and due date
-    - Whether deposit has been paid
-    """
-    try:
-        db = wf_load_db()
-        events = db.get("events") or {}
-        event_entry = events.get(event_id)
-
-        if not event_entry:
-            raise HTTPException(status_code=404, detail="Event not found")
-
-        deposit_info = event_entry.get("deposit_info")
-        current_step = event_entry.get("current_step", 1)
-
-        if not deposit_info:
-            return {
-                "event_id": event_id,
-                "deposit_required": False,
-                "current_step": current_step,
-            }
-
-        return {
-            "event_id": event_id,
-            "current_step": current_step,
-            **deposit_info,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get deposit status: {exc}"
-        ) from exc
+# NOTE: Config routes (/api/config/*) moved to backend/api/routes/config.py
+# NOTE: Deposit payment endpoints moved to backend/api/routes/events.py
 
 
 @app.post("/api/reject-booking/{session_id}")
@@ -2071,29 +1477,9 @@ async def get_conversation(session_id: str):
         "is_complete": conversation_state.is_complete
     }
 
-@app.get("/api/events")
-async def get_all_events():
-    """
-    Get all saved events from database
-    """
-    database = load_events_database()
-    return {
-        "total_events": len(database["events"]),
-        "events": database["events"]
-    }
 
-@app.get("/api/events/{event_id}")
-async def get_event_by_id(event_id: str):
-    """
-    Get a specific event by ID
-    """
-    database = load_events_database()
-    
-    for event in database["events"]:
-        if event["event_id"] == event_id:
-            return event
-    
-    raise HTTPException(status_code=404, detail="Event not found")
+# NOTE: /api/events routes moved to backend/api/routes/events.py
+
 
 @app.get("/")
 async def root():
