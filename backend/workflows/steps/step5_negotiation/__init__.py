@@ -14,7 +14,7 @@ Submodules:
     trigger/    - Main entry point (process function)
 """
 
-from .trigger.process import process, _handle_accept, _offer_summary_lines
+from .trigger.step5_handler import process, _handle_accept, _offer_summary_lines
 
 __all__ = [
     "process",

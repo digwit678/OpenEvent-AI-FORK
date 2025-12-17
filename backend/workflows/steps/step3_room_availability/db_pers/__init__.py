@@ -1,4 +1,5 @@
-from .advanced import (
+"""DB persistence module for Step 3: Room Availability - Pipeline and utilities."""
+from .room_availability_pipeline import (
     RequestedWindow,
     append_log,
     build_candidate_rooms,

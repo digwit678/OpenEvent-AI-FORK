@@ -1,4 +1,4 @@
 """Main trigger module for Step 6: Transition Checkpoint."""
-from .process import process
+from .step6_handler import process
 
 __all__ = ["process"]
