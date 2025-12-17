@@ -1,4 +1,4 @@
 """Main trigger module for Step 5: Negotiation."""
-from .process import process
+from .step5_handler import process
 
 __all__ = ["process"]
