@@ -9,7 +9,8 @@ from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.room_rules import site_visit_allowed
 from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.common.confidence import check_nonsense_gate
+# MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
+from backend.detection.intent.confidence import check_nonsense_gate
 from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction

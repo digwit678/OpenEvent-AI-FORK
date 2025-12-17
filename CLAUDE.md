@@ -509,6 +509,8 @@ The workflow uses three distinct LLM roles, each with strict boundaries:
 
 **Git Commits:** For longer session where you complete multiple tasks , always add a git commit after every fully completed task and I will push that later when the session is over. This helps me track your progress and revert specific changes if needed.
 
+**Summaries after completed task** Always provide a short summary referencing every point (completeness!) I mentioned in the beginning of this document after you completed a task. This helps me track your progress and understand what you did. If there are still open points cause there was too much to do pls list them
+
 ## Common Gotchas
 
 1. **macOS .pyc Permission Issues:** Run with `python -B` or set `PYTHONDONTWRITEBYTECODE=1`

@@ -12,7 +12,8 @@ from backend.workflows.common.billing import (
     update_billing_details,
 )
 from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.common.confidence import check_nonsense_gate
+# MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
+from backend.detection.intent.confidence import check_nonsense_gate
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
 from backend.workflows.change_propagation import (
@@ -33,7 +34,8 @@ from backend.workflow.state import WorkflowStep, write_stage
 from backend.services.products import find_product, normalise_product_payload
 from backend.services.rooms import load_room_catalog
 from ...negotiation_close import _handle_accept, _offer_summary_lines as _hil_offer_summary_lines
-from backend.workflows.nlu.semantic_matchers import matches_acceptance_pattern
+# MIGRATED: from backend.workflows.nlu.semantic_matchers -> backend.detection.response.matchers
+from backend.detection.response.matchers import matches_acceptance_pattern
 from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
 from backend.utils.pseudolinks import (
     generate_catering_catalog_link,

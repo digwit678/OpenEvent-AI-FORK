@@ -125,6 +125,108 @@ If you have any questions about the payment process, please let me know.
 
 ---
 
+### DECISION-005: Pre-existing Test Failures
+
+**Date Raised:** 2025-12-17
+**Context:** Discovered during Phase B migration (detection module reorganization)
+**Status:** Open
+
+**Question:** Two pre-existing test failures need investigation and fixing.
+
+**Failures:**
+
+1. **test_clarification_message_contains_options** (`backend/tests/detection/test_low_confidence_handling.py:72`)
+   - **Issue:** Test expects "discuss pricing" in clarification message body, but the LLM-generated message is truncated or uses different wording
+   - **Assertion:** `assert "discuss pricing" in body`
+   - **Actual:** Body contains "...are you looking to confirm the booking or would you like t..." (truncated)
+   - **Root cause:** Likely LLM response variation or message length limit
+
+2. **test_room_selection_uses_catalog** (`backend/tests/detection/test_semantic_matchers.py:125`)
+   - **Issue:** Test expects "Panorama Hall" to be recognized as a room from the catalog
+   - **Assertion:** `assert is_room_selection("Panorama Hall looks good")`
+   - **Actual:** Returns `False`
+   - **Root cause:** Room catalog only contains ['Room A', 'Room B', 'Room C', 'Room D', 'Room E', 'Room F'] - "Panorama Hall" is not in the catalog
+
+**Options:**
+1. **Fix test data** - Add "Panorama Hall" to room catalog or update test to use existing room names
+2. **Fix test expectations** - Update assertions to match actual system behavior
+3. **Fix underlying code** - If the behavior is wrong, fix the implementation
+
+**Priority:** Low (not blocking, found during refactoring)
+
+---
+
+### DECISION-006: Phase C Large File Splitting Deferred
+
+**Date Raised:** 2025-12-17
+**Context:** Refactoring plan Phase C - splitting files >1000 lines
+**Status:** Decided (Deferred)
+
+**Question:** Should we split these large files as planned?
+- `date_confirmation/trigger/process.py` (3664 lines)
+- `main.py` (2188 lines)
+- `smart_shortcuts.py` (2196 lines)
+- `general_qna.py` (1490 lines)
+
+**Analysis:**
+After detailed review, these files have:
+1. **Heavy interdependencies** - Private functions call each other extensively
+2. **Shared state** - Global variables like `active_conversations`, `GUI_ADAPTER`
+3. **Conditional logic** - Debug routes registered conditionally based on settings
+4. **No clear boundaries** - Functions are tightly coupled within logical groupings
+
+**Risk Assessment:**
+- High probability of introducing bugs
+- Significant testing effort required
+- Limited immediate benefit vs. risk
+
+**Decision:** **Defer to future iteration**
+
+**Rationale:**
+1. Phase B (detection migration) achieved the primary goal of consolidating detection logic
+2. Phase D (error handling) provides higher value with lower risk
+3. File splitting can be done incrementally later when specific files need modification
+4. The codebase is now navigable with the detection module reorganization
+
+**Alternative Approach:**
+Instead of splitting, future improvements can:
+- Extract constants to dedicated modules when needed
+- Create thin wrappers for testing when needed
+- Split incrementally during feature development
+
+---
+
+### DECISION-007: Phase E & F Folder/File Renaming Deferred
+
+**Date Raised:** 2025-12-17
+**Context:** Refactoring plan Phase E (folder renaming) and Phase F (file renaming)
+**Status:** Decided (Deferred)
+
+**Question:** Should we rename folders and files as planned?
+- Phase E: `groups/` → `steps/`, `common/` → `shared/`
+- Phase F: `process.py` → `step2_orchestrator.py`, etc.
+
+**Impact Analysis:**
+- `backend.workflows.groups` imports: 37 files
+- `backend.workflows.common` imports: 138 files
+- Total import statements to update: 175+
+
+**Decision:** **Defer to future iteration**
+
+**Rationale:**
+1. Phase B already achieved the primary goal (detection logic consolidation)
+2. 175+ import changes carries significant regression risk
+3. Current folder names are functional, even if not ideal
+4. Renaming can be done incrementally when files need other changes
+
+**Future Approach:**
+When renaming becomes necessary:
+1. Create new locations with proper `__init__.py` re-exports
+2. Update imports in batches with full test runs
+3. Keep deprecation shims temporarily for external consumers
+
+---
+
 ## Resolved Decisions
 
 (Move decisions here once resolved, with date and rationale)

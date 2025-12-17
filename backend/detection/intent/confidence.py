@@ -1,16 +1,6 @@
-from __future__ import annotations
-
 """
-DEPRECATED: This module has been migrated to backend/detection/intent/confidence.py
-
-Please update your imports:
-    OLD: from backend.workflows.common.confidence import ...
-    NEW: from backend.detection.intent.confidence import ...
-
-This file will be removed in a future release.
----
-
-Confidence thresholds and utilities for detection confidence gating.
+MODULE: backend/detection/intent/confidence.py
+PURPOSE: Confidence thresholds and utilities for detection confidence gating.
 
 Threshold Hierarchy (from high to low):
 - CONFIDENCE_HIGH (0.85): Auto-proceed with high confidence
@@ -24,8 +14,41 @@ The "silent ignore" mechanism is for messages with ZERO workflow relevance:
 - Messages that fail all workflow pattern detection
 
 IMPORTANT: A message is NOT nonsense if it contains ANY workflow signal,
-even if mixed with gibberish. "hahahaha. ok confirm date" → NOT nonsense.
+even if mixed with gibberish. "hahahaha. ok confirm date" -> NOT nonsense.
+
+DEPENDS ON:
+    - (none - self-contained)
+
+USED BY:
+    - backend/detection/intent/classifier.py
+    - backend/detection/special/nonsense.py
+    - backend/workflows/steps/* (all workflow steps for confidence gating)
+
+EXPORTS:
+    - CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, CONFIDENCE_LOW, CONFIDENCE_NONSENSE
+    - NONSENSE_IGNORE_THRESHOLD, NONSENSE_HIL_THRESHOLD
+    - WORKFLOW_SIGNALS
+    - has_workflow_signal(text) -> bool
+    - is_gibberish(text) -> bool
+    - should_defer_to_human(confidence) -> bool
+    - should_seek_clarification(confidence) -> bool
+    - should_ignore_message(confidence, message_text) -> bool
+    - confidence_level(score) -> str
+    - classify_response_action(confidence, message_text) -> str
+    - check_nonsense_gate(confidence, message_text) -> str
+
+RELATED TESTS:
+    - backend/tests/detection/test_confidence.py
+    - backend/tests/detection/test_low_confidence_handling.py
+    - backend/tests/detection/test_gatekeeping.py
+
+MIGRATION NOTE:
+    This file was moved from backend/workflows/common/confidence.py
+    Old import: from backend.workflows.common.confidence import ...
+    New import: from backend.detection.intent.confidence import ...
 """
+
+from __future__ import annotations
 
 import re
 from typing import Tuple

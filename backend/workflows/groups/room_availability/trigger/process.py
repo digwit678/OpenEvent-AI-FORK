@@ -19,7 +19,8 @@ from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.sorting import rank_rooms, RankedRoom
 from backend.workflows.common.room_rules import find_better_room_dates
 from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.common.confidence import check_nonsense_gate
+# MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
+from backend.detection.intent.confidence import check_nonsense_gate
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
 from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
 from backend.workflows.change_propagation import (
@@ -31,7 +32,8 @@ from backend.workflows.change_propagation import (
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
-from backend.workflows.common.conflict import (
+# MIGRATED: from backend.workflows.common.conflict -> backend.detection.special.room_conflict
+from backend.detection.special.room_conflict import (
     ConflictType,
     detect_conflict_type,
     compose_soft_conflict_warning,

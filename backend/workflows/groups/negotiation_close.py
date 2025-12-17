@@ -16,7 +16,8 @@ from backend.workflows.common.billing import (
 )
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.pricing import derive_room_rate, normalise_rate
-from backend.workflows.common.confidence import (
+# MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
+from backend.detection.intent.confidence import (
     should_defer_to_human,
     should_seek_clarification,
     check_nonsense_gate,
@@ -29,7 +30,8 @@ from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.workflows.io.tasks import enqueue_task, update_task_status
 from backend.workflows.nlu import detect_general_room_query
-from backend.workflows.nlu.semantic_matchers import (
+# MIGRATED: from backend.workflows.nlu.semantic_matchers -> backend.detection.response.matchers
+from backend.detection.response.matchers import (
     is_room_selection,
     matches_acceptance_pattern,
     matches_counter_pattern,

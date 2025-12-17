@@ -1,25 +1,46 @@
 """
-DEPRECATED: This module has been migrated to backend/detection/intent/classifier.py
+MODULE: backend/detection/intent/classifier.py
+PURPOSE: Main intent classification for incoming messages.
 
-Please update your imports:
-    OLD: from backend.llm.intent_classifier import ...
-    NEW: from backend.detection.intent.classifier import ...
+DEPENDS ON:
+    - backend/domain/vocabulary.py           # IntentLabel enum
+    - backend/workflows/llm/adapter.py       # LLM-based classify_intent
+    - backend/detection/intent/confidence.py # has_workflow_signal, is_gibberish
+    - backend/detection/keywords/buckets.py  # ACTION_REQUEST_PATTERNS, etc.
 
-This file will be removed in a future release.
+USED BY:
+    - backend/workflows/groups/*/trigger/process.py  # All step handlers
+    - backend/workflows/qna/router.py                # spans_multiple_steps
+    - backend/workflows/qna/conjunction.py           # QNA_TYPE_TO_STEP
+    - backend/detection/qna/general_qna.py           # _detect_qna_types
+
+EXPORTS:
+    - classify_intent(message, current_step, expect_resume) -> Dict
+    - spans_multiple_steps(qna_types) -> bool
+    - get_qna_steps(qna_types) -> List[int]
+    - is_action_request(text) -> bool
+    - QNA_TYPE_TO_STEP dict
+    - _detect_qna_types(text) -> List[str]  (for internal use)
+    - _looks_like_manager_request(text) -> bool  (for internal use)
+    - _RESUME_PHRASES  (backward compat alias)
+
+RELATED TESTS:
+    - backend/tests/detection/test_qna_detection.py
+    - backend/tests/detection/test_manager_request.py
+    - backend/tests/detection/test_room_search_intents.py
+    - backend/tests/detection/test_acceptance.py
 """
 
 from __future__ import annotations
 
 import re
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from backend.domain.vocabulary import IntentLabel
 from backend.workflows.llm.adapter import classify_intent as agent_classify_intent
-# MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
 from backend.detection.intent.confidence import has_workflow_signal, is_gibberish
 
 # Import consolidated patterns from keyword_buckets (single source of truth)
-# MIGRATED: from backend.workflows.nlu.keyword_buckets -> backend.detection.keywords.buckets
 from backend.detection.keywords.buckets import (
     ACTION_REQUEST_PATTERNS,
     AVAILABILITY_TOKENS,
@@ -565,4 +586,14 @@ def classify_intent(
     return classification
 
 
-__all__ = ["classify_intent"]
+__all__ = [
+    "classify_intent",
+    "spans_multiple_steps",
+    "get_qna_steps",
+    "is_action_request",
+    "QNA_TYPE_TO_STEP",
+    # Internal helpers exposed for tests and related modules
+    "_detect_qna_types",
+    "_looks_like_manager_request",
+    "_RESUME_PHRASES",
+]

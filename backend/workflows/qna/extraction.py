@@ -10,7 +10,8 @@ except Exception:  # pragma: no cover - library may be unavailable in tests
     OpenAI = None  # type: ignore
 
 from backend.workflows.common.types import WorkflowState
-from backend.workflows.nlu.general_qna_classifier import quick_general_qna_scan
+# MIGRATED: from backend.workflows.nlu.general_qna_classifier -> backend.detection.qna.general_qna
+from backend.detection.qna.general_qna import quick_general_qna_scan
 from backend.utils.openai_key import load_openai_api_key
 from backend.workflows.common.fallback_reason import (
     create_fallback_reason,

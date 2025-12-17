@@ -63,7 +63,8 @@ from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.qna.router import route_general_qna
 from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.common.confidence import check_nonsense_gate
+# MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
+from backend.detection.intent.confidence import check_nonsense_gate
 from backend.workflows.groups.intake.condition.checks import suggest_dates
 from backend.workflows.common.relative_dates import resolve_relative_date
 from backend.workflows.groups.room_availability.condition.decide import room_status_on_date
