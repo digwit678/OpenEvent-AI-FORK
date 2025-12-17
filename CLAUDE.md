@@ -56,6 +56,77 @@ This file provides guidance to Claude 4.5 working on the OpenEvent-AI repository
    # and other pytest commands
    ```
 
+## Debugger and Conversation Traces
+
+**The OpenEvent debugger provides real-time tracing of all workflow activity. Use it to understand what happened during any conversation thread.**
+
+### Enabling Debug Traces
+
+Debug tracing is enabled by default. Control via environment variable:
+```bash
+DEBUG_TRACE=1  # Enable (default)
+DEBUG_TRACE=0  # Disable
+```
+
+### Debug API Endpoints
+
+When debugging issues, access conversation traces via these endpoints:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/api/debug/threads/{thread_id}` | Full trace with state, signals, timeline |
+| `/api/debug/threads/{thread_id}/timeline` | Timeline events only |
+| `/api/debug/threads/{thread_id}/report` | Human-readable debug report |
+| `/api/debug/threads/{thread_id}/llm-diagnosis` | **LLM-optimized diagnosis** (use this for AI debugging) |
+| `/api/debug/threads/{thread_id}/timeline/download` | Download JSON export |
+| `/api/debug/threads/{thread_id}/timeline/text` | Download text export |
+
+### LLM Diagnosis Endpoint
+
+**Most important for AI debugging:** The `/api/debug/threads/{thread_id}/llm-diagnosis` endpoint returns a structured, LLM-optimized format including:
+- Quick status (date, room, hash, offer confirmation)
+- Problem indicators (hash mismatches, detour loops, gate failures)
+- Last 5 events with summaries
+- Key state values
+
+Example usage:
+```bash
+curl http://localhost:8000/api/debug/threads/{thread_id}/llm-diagnosis
+```
+
+### Frontend Debugger
+
+Access the visual debugger at `http://localhost:3000/debug` which provides:
+- Thread selection and status overview
+- Detection view (intent classification, entity extraction)
+- Agents view (LLM prompts and responses)
+- Errors view (auto-detected problems)
+- Timeline view (full event timeline)
+- Dates view (date value transformations)
+- HIL view (human-in-the-loop tasks)
+
+### Trace Event Types
+
+The tracer captures these event types:
+- `STEP_ENTER`/`STEP_EXIT` — Step transitions
+- `GATE_PASS`/`GATE_FAIL` — Gate evaluations with inputs
+- `DB_READ`/`DB_WRITE` — Database operations
+- `ENTITY_CAPTURE`/`ENTITY_SUPERSEDED` — Entity lifecycle
+- `DETOUR` — Step detours with reasons
+- `QA_ENTER`/`QA_EXIT`/`GENERAL_QA` — Q&A flow
+- `DRAFT_SEND` — Draft messages
+- `AGENT_PROMPT_IN`/`AGENT_PROMPT_OUT` — LLM prompts and responses
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/debug/trace.py` | Core trace event bus and emit functions |
+| `backend/debug/hooks.py` | Trace decorators and helpers |
+| `backend/debug/reporting.py` | Report generation and LLM diagnosis |
+| `backend/debug/timeline.py` | Timeline persistence |
+| `backend/debug/state_store.py` | State snapshot store |
+
 ## Behaviour Around Bugs and Features
 
 ### Before Fixing a Bug
