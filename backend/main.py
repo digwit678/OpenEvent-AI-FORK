@@ -20,7 +20,7 @@ importlib.invalidate_caches()
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+# NOTE: FileResponse, PlainTextResponse moved to routes/debug.py
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 import uuid
@@ -50,12 +50,7 @@ from backend.workflows.common.prompts import append_footer
 # NOTE: pricing imports (derive_room_rate, normalise_rate) moved to backend/api/routes/tasks.py
 from backend.workflows.groups.room_availability import run_availability_workflow
 from backend.utils import json_io
-from backend.utils.test_data_providers import (
-    get_all_catering_menus,
-    get_catering_menu_details,
-    get_qna_items,
-    get_rooms_for_display,
-)
+# NOTE: test_data_providers imports moved to routes/test_data.py
 
 os.environ.setdefault("AGENT_MODE", os.environ.get("AGENT_MODE_DEFAULT", "openai"))
 
@@ -67,17 +62,20 @@ from backend.workflow_email import (
     # NOTE: Task functions moved to backend/api/routes/tasks.py
 )
 from backend.workflows.io.integration.config import is_hil_all_replies_enabled
-from backend.api.debug import (
-    debug_get_trace,
-    debug_get_timeline,
-    debug_generate_report,
-    resolve_timeline_path,
-    render_arrow_log,
-    debug_llm_diagnosis,
-)
+# NOTE: Most debug imports moved to routes/debug.py
+from backend.api.debug import debug_generate_report  # Still used in _persist_debug_reports
 from backend.debug.settings import is_trace_enabled
 from backend.debug.trace import BUS
-from backend.api.routes import tasks_router, events_router, config_router, clients_router
+from backend.api.routes import (
+    tasks_router,
+    events_router,
+    config_router,
+    clients_router,
+    debug_router,
+    snapshots_router,
+    test_data_router,
+    workflow_router,
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -107,6 +105,10 @@ app.include_router(tasks_router)
 app.include_router(events_router)
 app.include_router(config_router)
 app.include_router(clients_router)
+app.include_router(debug_router)
+app.include_router(snapshots_router)
+app.include_router(test_data_router)
+app.include_router(workflow_router)
 
 DEBUG_TRACE_ENABLED = is_trace_enabled()
 
@@ -361,12 +363,6 @@ def _open_browser_when_ready() -> None:
             return
         time.sleep(0.5)
     print(f"[Frontend][WARN] Frontend not reachable on {target_url} after waiting 60s; skipping auto-open.")
-
-
-def _parse_kind_filter(raw: Optional[str]) -> Optional[List[str]]:
-    if not raw:
-        return None
-    return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 def load_events_database():
@@ -966,159 +962,7 @@ async def send_message(request: SendMessageRequest):
 
 # NOTE: Task routes (/api/tasks/*) moved to backend/api/routes/tasks.py
 # NOTE: Client routes (/api/client/*) moved to backend/api/routes/clients.py
-
-
-if DEBUG_TRACE_ENABLED:
-
-    @app.get("/api/debug/threads/{thread_id}")
-    async def get_debug_thread_trace(
-        thread_id: str,
-        granularity: str = Query("logic"),
-        kinds: Optional[str] = Query(None),
-        as_of_ts: Optional[float] = Query(None),
-    ):
-        return debug_get_trace(
-            thread_id,
-            granularity=granularity,
-            kinds=_parse_kind_filter(kinds),
-            as_of_ts=as_of_ts,
-        )
-
-    @app.get("/api/debug/threads/{thread_id}/timeline")
-    async def get_debug_thread_timeline(
-        thread_id: str,
-        granularity: str = Query("logic"),
-        kinds: Optional[str] = Query(None),
-        as_of_ts: Optional[float] = Query(None),
-    ):
-        return debug_get_timeline(
-            thread_id,
-            granularity=granularity,
-            kinds=_parse_kind_filter(kinds),
-            as_of_ts=as_of_ts,
-        )
-
-    @app.get("/api/debug/threads/{thread_id}/timeline/download")
-    async def download_debug_thread_timeline(thread_id: str):
-        path = resolve_timeline_path(thread_id)
-        if not path:
-            raise HTTPException(status_code=404, detail="Timeline not available")
-        safe_id = thread_id.replace("/", "_").replace("\\", "_")
-        filename = f"openevent_timeline_{safe_id}.jsonl"
-        return FileResponse(path, media_type="application/json", filename=filename)
-
-    @app.get("/api/debug/threads/{thread_id}/timeline/text")
-    async def download_debug_thread_timeline_text(
-        thread_id: str,
-        granularity: str = Query("logic"),
-        kinds: Optional[str] = Query(None),
-    ):
-        return render_arrow_log(thread_id, granularity=granularity, kinds=_parse_kind_filter(kinds))
-
-    @app.get("/api/debug/threads/{thread_id}/report")
-    async def download_debug_thread_report(
-        thread_id: str,
-        granularity: str = Query("logic"),
-        kinds: Optional[str] = Query(None),
-        persist: bool = Query(False),
-    ):
-        body, saved_path = debug_generate_report(
-            thread_id,
-            granularity=granularity,
-            kinds=_parse_kind_filter(kinds),
-            persist=persist,
-        )
-        headers = {}
-        if saved_path:
-            headers["X-Debug-Report-Path"] = saved_path
-        return PlainTextResponse(content=body, headers=headers)
-
-    @app.get("/api/debug/threads/{thread_id}/llm-diagnosis")
-    async def get_debug_llm_diagnosis(
-        thread_id: str,
-        granularity: str = Query("logic"),
-        kinds: Optional[str] = Query(None),
-    ):
-        return debug_llm_diagnosis(
-            thread_id,
-            granularity=granularity,
-            kinds=_parse_kind_filter(kinds),
-        )
-
-    @app.get("/api/debug/live")
-    async def list_live_logs():
-        """List all active thread IDs with live logs."""
-        from backend.debug import live_log  # pylint: disable=import-outside-toplevel
-
-        threads = live_log.list_active_logs()
-        return {
-            "active_threads": threads,
-            "log_dir": str(live_log.ROOT),
-            "watch_command": f"tail -f {live_log.ROOT}/<thread_id>.log",
-        }
-
-    @app.get("/api/debug/threads/{thread_id}/live")
-    async def get_live_log(thread_id: str):
-        """Get the live log content for a thread."""
-        from backend.debug import live_log  # pylint: disable=import-outside-toplevel
-
-        path = live_log.get_log_path(thread_id)
-        if not path:
-            raise HTTPException(status_code=404, detail="Live log not found for this thread")
-        try:
-            content = path.read_text(encoding="utf-8")
-            return PlainTextResponse(content=content)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-else:
-
-    @app.get("/api/debug/threads/{thread_id}")
-    async def get_debug_thread_trace_disabled(
-        thread_id: str,
-        granularity: str = Query("logic"),
-        kinds: Optional[str] = Query(None),
-        as_of_ts: Optional[float] = Query(None),
-    ):
-        raise HTTPException(status_code=404, detail="Debug tracing disabled")
-
-    @app.get("/api/debug/threads/{thread_id}/timeline")
-    async def get_debug_thread_timeline_disabled(
-        thread_id: str,
-        granularity: str = Query("logic"),
-        kinds: Optional[str] = Query(None),
-        as_of_ts: Optional[float] = Query(None),
-    ):
-        raise HTTPException(status_code=404, detail="Debug tracing disabled")
-
-    @app.get("/api/debug/threads/{thread_id}/timeline/download")
-    async def download_debug_thread_timeline_disabled(thread_id: str):
-        raise HTTPException(status_code=404, detail="Debug tracing disabled")
-
-    @app.get("/api/debug/threads/{thread_id}/timeline/text")
-    async def download_debug_thread_timeline_text_disabled(
-        thread_id: str,
-        granularity: str = Query("logic"),
-        kinds: Optional[str] = Query(None),
-    ):
-        raise HTTPException(status_code=404, detail="Debug tracing disabled")
-
-    @app.get("/api/debug/threads/{thread_id}/report")
-    async def download_debug_thread_report_disabled(
-        thread_id: str,
-        granularity: str = Query("logic"),
-        kinds: Optional[str] = Query(None),
-        persist: bool = Query(False),
-    ):
-        raise HTTPException(status_code=404, detail="Debug tracing disabled")
-
-    @app.get("/api/debug/threads/{thread_id}/llm-diagnosis")
-    async def get_debug_llm_diagnosis_disabled(
-        thread_id: str,
-        granularity: str = Query("logic"),
-        kinds: Optional[str] = Query(None),
-    ):
-        raise HTTPException(status_code=404, detail="Debug tracing disabled")
+# NOTE: Debug routes (/api/debug/*) moved to backend/api/routes/debug.py
 
 
 @app.post("/api/conversation/{session_id}/confirm-date")
@@ -1190,257 +1034,10 @@ async def accept_booking(session_id: str):
     }
 
 
-# Test data endpoints for development pages
-@app.get("/api/test-data/rooms")
-async def get_rooms_data(date: Optional[str] = None, capacity: Optional[str] = None):
-    """Serve room availability data for test pages."""
-    rooms = get_rooms_for_display(date, capacity)
-    return rooms
-
-
-@app.get("/api/test-data/catering")
-async def get_catering_catalog(
-    month: Optional[str] = None,
-    vegetarian: Optional[str] = None,
-    vegan: Optional[str] = None,
-    courses: Optional[str] = None,
-    wine_pairing: Optional[str] = None,
-):
-    """Serve catering menus for catalog page with dynamic filtering."""
-    filters = {
-        "month": month,
-        "vegetarian": vegetarian == "true" if vegetarian else None,
-        "vegan": vegan == "true" if vegan else None,
-        "courses": int(courses) if courses and courses.isdigit() else None,
-        "wine_pairing": wine_pairing == "true" if wine_pairing else None,
-    }
-    # Remove None values
-    filters = {k: v for k, v in filters.items() if v is not None}
-    menus = get_all_catering_menus(filters=filters)
-    return menus
-
-
-@app.get("/api/test-data/catering/{menu_slug}")
-async def get_catering_data(menu_slug: str, room: Optional[str] = None, date: Optional[str] = None):
-    """Serve specific catering menu data for test pages."""
-    menu = get_catering_menu_details(menu_slug)
-    if not menu:
-        raise HTTPException(status_code=404, detail="Menu not found")
-
-    menu["context"] = {
-        "room": room,
-        "date": date,
-    }
-    return menu
-
-
-@app.get("/api/qna")
-async def universal_qna(request: Request):
-    """Universal Q&A endpoint - accepts any parameters, uses existing Q&A engine."""
-    from backend.workflows.qna.engine import build_structured_qna_result
-    from backend.workflows.common.types import WorkflowState, IncomingMessage as Message
-
-    # Get all query params
-    params = dict(request.query_params)
-    category = params.get("category", "general")
-
-    # Build q_values from query params for Q&A engine
-    q_values = {}
-
-    # Date/month parameters
-    if params.get("date"):
-        q_values["date"] = params["date"]
-    if params.get("month"):
-        q_values["date_pattern"] = params["month"]
-
-    # Capacity parameters
-    if params.get("capacity"):
-        try:
-            q_values["n_exact"] = int(params["capacity"])
-        except ValueError:
-            pass
-
-    # Room parameters
-    if params.get("room"):
-        q_values["room"] = params["room"]
-
-    # Product attributes
-    product_attributes = []
-    if params.get("vegetarian") == "true":
-        product_attributes.append("vegetarian")
-    if params.get("vegan") == "true":
-        product_attributes.append("vegan")
-    if params.get("wine_pairing") == "true":
-        product_attributes.append("wine pairing")
-    if params.get("courses"):
-        product_attributes.append(f"{params['courses']}-course")
-    if product_attributes:
-        q_values["product_attributes"] = product_attributes
-
-    # Build extraction structure
-    qna_extraction = {
-        "qna_subtype": category,
-        "q_values": q_values,
-        "msg_type": "event",
-        "qna_intent": "select_dependent"
-    }
-
-    # Create minimal state for Q&A engine
-    try:
-        db = wf_load_db()
-    except Exception:
-        db = {}
-
-    state = WorkflowState(
-        client_id="qna-page",
-        message=Message(
-            msg_id="qna", 
-            subject="", 
-            body="", 
-            from_name=None,
-            from_email=None,
-            ts=None
-        ),
-        db_path=Path(WF_DB_PATH),
-        db=db,
-        user_info={},
-        event_entry={},
-        intent=None,
-        confidence=1.0
-    )
-    state.extras["qna_extraction"] = qna_extraction
-
-    # Use existing Q&A engine
-    try:
-        result = build_structured_qna_result(state, qna_extraction)
-        
-        # Fetch legacy items to support FAQ page
-        legacy_data = get_qna_items(category, filters=q_values)
-
-        return {
-            "query": params,
-            "result_type": category,
-            "filters_applied": q_values,
-            "data": result.action_payload if result and result.handled else {},
-            "items": legacy_data.get("items", []),
-            "categories": legacy_data.get("categories", []),
-            "menus": legacy_data.get("menus", []),
-            "body_markdown": result.body_markdown if result and result.handled else "No results found",
-            "handled": result.handled if result else False,
-            "success": True
-        }
-    except Exception as e:
-        import traceback
-        return {
-            "query": params,
-            "result_type": category,
-            "filters_applied": q_values,
-            "error": str(e),
-            "traceback": traceback.format_exc(),
-            "success": False
-        }
-
-
-@app.get("/api/test-data/qna")
-async def get_qna_data(
-    category: Optional[str] = None,
-    month: Optional[str] = None,
-    vegetarian: Optional[str] = None,
-    vegan: Optional[str] = None,
-    courses: Optional[str] = None,
-    wine_pairing: Optional[str] = None,
-    date: Optional[str] = None,
-    capacity: Optional[str] = None,
-):
-    """Legacy endpoint - kept for backwards compatibility during migration."""
-    filters = {
-        "month": month,
-        "vegetarian": vegetarian == "true" if vegetarian else None,
-        "vegan": vegan == "true" if vegan else None,
-        "courses": int(courses) if courses and courses.isdigit() else None,
-        "wine_pairing": wine_pairing == "true" if wine_pairing else None,
-        "date": date,
-        "capacity": int(capacity) if capacity and capacity.isdigit() else None,
-    }
-    # Remove None values
-    filters = {k: v for k, v in filters.items() if v is not None}
-    return get_qna_items(category, filters=filters)
-
-
-# ---------------------------------------------------------------------------
-# Snapshot endpoints for persistent info page links
-# ---------------------------------------------------------------------------
-
-from backend.utils.page_snapshots import (
-    get_snapshot,
-    get_snapshot_data,
-    list_snapshots,
-    create_snapshot,
-)
-
-
-@app.get("/api/snapshots/{snapshot_id}")
-async def get_snapshot_endpoint(snapshot_id: str):
-    """
-    Retrieve a stored snapshot by ID.
-
-    Snapshots contain page data (rooms, products, etc.) that was captured
-    at a specific point in time, allowing clients to revisit older links.
-    """
-    snapshot = get_snapshot(snapshot_id)
-    if not snapshot:
-        return {"error": "Snapshot not found or expired", "snapshot_id": snapshot_id}
-    return snapshot
-
-
-@app.get("/api/snapshots/{snapshot_id}/data")
-async def get_snapshot_data_endpoint(snapshot_id: str):
-    """
-    Retrieve just the data payload from a snapshot.
-
-    Use this endpoint when you only need the data, not the metadata.
-    """
-    data = get_snapshot_data(snapshot_id)
-    if data is None:
-        return {"error": "Snapshot not found or expired", "snapshot_id": snapshot_id}
-    return {"snapshot_id": snapshot_id, "data": data}
-
-
-@app.get("/api/snapshots")
-async def list_snapshots_endpoint(
-    type: Optional[str] = None,
-    event_id: Optional[str] = None,
-    limit: int = 50,
-):
-    """
-    List available snapshots, optionally filtered by type or event_id.
-
-    Returns metadata only (not full data) for efficiency.
-    """
-    return {
-        "snapshots": list_snapshots(snapshot_type=type, event_id=event_id, limit=limit)
-    }
-
-
-@app.get("/api/workflow/health")
-async def workflow_health():
-    """Minimal health check for workflow integration."""
-    return {"db_path": str(WF_DB_PATH), "ok": True}
-
-
-@app.get("/api/workflow/hil-status")
-async def get_hil_status():
-    """Get the HIL toggle status for AI reply approval.
-
-    Returns whether the OE_HIL_ALL_LLM_REPLIES toggle is enabled.
-    When enabled, all AI replies require manager approval before
-    being sent to the client.
-    """
-    return {
-        "hil_all_replies_enabled": is_hil_all_replies_enabled(),
-    }
-
-
+# NOTE: Test data routes (/api/test-data/*) moved to backend/api/routes/test_data.py
+# NOTE: Q&A routes (/api/qna) moved to backend/api/routes/test_data.py
+# NOTE: Snapshot routes (/api/snapshots/*) moved to backend/api/routes/snapshots.py
+# NOTE: Workflow routes (/api/workflow/*) moved to backend/api/routes/workflow.py
 # NOTE: Config routes (/api/config/*) moved to backend/api/routes/config.py
 # NOTE: Deposit payment endpoints moved to backend/api/routes/events.py
 
