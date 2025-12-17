@@ -19,7 +19,19 @@ MIGRATION NOTE:
 """
 
 from backend.workflows.steps import step1_intake
+from backend.workflows.steps import step2_date_confirmation
+from backend.workflows.steps import step3_room_availability
+from backend.workflows.steps import step4_offer
+from backend.workflows.steps import step5_negotiation
+from backend.workflows.steps import step6_transition
+from backend.workflows.steps import step7_confirmation
 
 __all__ = [
     "step1_intake",
+    "step2_date_confirmation",
+    "step3_room_availability",
+    "step4_offer",
+    "step5_negotiation",
+    "step6_transition",
+    "step7_confirmation",
 ]
