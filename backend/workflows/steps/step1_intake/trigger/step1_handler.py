@@ -602,13 +602,35 @@ def _looks_like_offer_acceptance(text: str) -> bool:
     return any(token in normalized for token in accept_tokens)
 
 
+def _resolve_owner_step(step_num: int) -> str:
+    mapping = {
+        1: "Step1_Intake",
+        2: "Step2_Date",
+        3: "Step3_Room",
+        4: "Step4_Offer",
+        5: "Step5_Negotiation",
+        6: "Step6_Transition",
+        7: "Step7_Confirmation",
+    }
+    return mapping.get(step_num, f"Step{step_num}")
+
+
 @trace_step("Step1_Intake")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Entry point for Group A — intake and data capture."""
 
     message_payload = state.message.to_payload()
     thread_id = _thread_id(state)
-    owner_step = "Step1_Intake"
+
+    # Resolve owner step for tracing based on existing conversation state
+    email = (message_payload.get("from_email") or "").lower()
+    linked_event = last_event_for_email(state.db, email) if email else None
+    current_step = linked_event.get("current_step") if linked_event else 1
+    # Fallback if current_step is None/invalid
+    if not isinstance(current_step, int):
+        current_step = 1
+    owner_step = _resolve_owner_step(current_step)
+
     trace_marker(
         thread_id,
         "TRIGGER_Intake",
@@ -667,7 +689,7 @@ def process(state: WorkflowState) -> GroupResult:
         state.intent_detail = "event_intake_shortcut"
         state.extras["shortcut_detected"] = True
         state.record_subloop("shortcut")
-    _trace_user_entities(state, message_payload, user_info)
+    _trace_user_entities(state, message_payload, user_info, owner_step)
 
     client = upsert_client(
         state.db,
@@ -676,7 +698,7 @@ def process(state: WorkflowState) -> GroupResult:
     )
     state.client = client
     state.client_id = (message_payload.get("from_email") or "").lower()
-    linked_event = last_event_for_email(state.db, state.client_id)
+    # linked_event is already fetched above
     body_text_raw = message_payload.get("body") or ""
     body_text = _normalize_quotes(body_text_raw)
     fallback_year = _fallback_year_from_ts(message_payload.get("ts"))
@@ -722,6 +744,11 @@ def process(state: WorkflowState) -> GroupResult:
         user_info["room"] = early_room_choice
         user_info["_room_choice_detected"] = True
         state.extras["room_choice_selected"] = early_room_choice
+        # Bump confidence to prevent Step 3 nonsense gate from triggering HIL
+        confidence = 1.0
+        intent = IntentLabel.EVENT_REQUEST
+        state.intent = intent
+        state.confidence = confidence
 
     # Capture explicit menu selection (e.g., "Room E with Seasonal Garden Trio")
     menu_choice = _detect_menu_choice(body_text)
@@ -1144,6 +1171,8 @@ def process(state: WorkflowState) -> GroupResult:
             update_event_metadata(event_entry, caller_step=previous_step)
             update_event_metadata(event_entry, current_step=target_step)
             append_audit_entry(event_entry, previous_step, target_step, "requirements_updated")
+            # Clear stale negotiation state - old offer no longer valid after requirements change
+            event_entry.pop("negotiation_pending_decision", None)
 
     # Fallback: room change detection (legacy)
     if new_preferred_room and new_preferred_room != event_entry.get("locked_room_id") and change_type is None:
@@ -1239,13 +1268,12 @@ def _looks_like_billing_fragment(text: str) -> bool:
     return digit_groups >= 1
 
 
-def _trace_user_entities(state: WorkflowState, message_payload: Dict[str, Any], user_info: Dict[str, Any]) -> None:
+def _trace_user_entities(state: WorkflowState, message_payload: Dict[str, Any], user_info: Dict[str, Any], owner_step: str) -> None:
     thread_id = _thread_id(state)
     if not thread_id:
         return
 
     email = message_payload.get("from_email")
-    owner_step = "Step1_Intake"
     if email:
         trace_entity(thread_id, owner_step, "email", "message_header", True, {"value": email})
 
