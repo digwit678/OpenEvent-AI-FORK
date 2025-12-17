@@ -33,7 +33,7 @@ from backend.utils.profiler import profile_step
 from backend.workflow.state import WorkflowStep, write_stage
 from backend.services.products import find_product, normalise_product_payload
 from backend.services.rooms import load_room_catalog
-from ...negotiation_close import _handle_accept, _offer_summary_lines as _hil_offer_summary_lines
+from backend.workflows.steps.step5_negotiation import _handle_accept, _offer_summary_lines as _hil_offer_summary_lines
 # MIGRATED: from backend.workflows.nlu.semantic_matchers -> backend.detection.response.matchers
 from backend.detection.response.matchers import matches_acceptance_pattern
 from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
