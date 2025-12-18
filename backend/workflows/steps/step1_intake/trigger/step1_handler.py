@@ -1236,6 +1236,52 @@ def _ensure_event_record(
         trace_db_write(_thread_id(state), "Step1_Intake", "db.events.create", {"event_id": event_entry.get("event_id")})
         return event_entry
 
+    # Check if we should create a NEW event instead of reusing the existing one
+    # This happens when:
+    # 1. The new message has a DIFFERENT event date than the existing event (new inquiry)
+    # 2. The existing event is in a terminal state (Confirmed, site visit scheduled)
+    should_create_new = False
+    new_event_date = event_data.get("Event Date")
+    existing_event_date = last_event.get("chosen_date") or (last_event.get("event_data") or {}).get("Event Date")
+
+    # Different dates = new inquiry, but ONLY if new message actually contains a date
+    # (not "Not specified" default value)
+    new_date_is_actual = new_event_date and new_event_date not in ("Not specified", "not specified", None, "")
+    if new_date_is_actual and existing_event_date and new_event_date != existing_event_date:
+        should_create_new = True
+        trace_db_write(_thread_id(state), "Step1_Intake", "new_event_decision", {
+            "reason": "different_date",
+            "new_date": new_event_date,
+            "existing_date": existing_event_date,
+        })
+
+    # Terminal states - don't reuse
+    existing_status = last_event.get("status", "").lower()
+    if existing_status in ("confirmed", "completed", "cancelled"):
+        should_create_new = True
+        trace_db_write(_thread_id(state), "Step1_Intake", "new_event_decision", {
+            "reason": "terminal_status",
+            "status": existing_status,
+        })
+
+    # Site visit in progress or scheduled - don't reuse for new inquiries
+    # When site_visit_state.status is "proposed" or "scheduled", the event is mid-process
+    visit_state = last_event.get("site_visit_state") or {}
+    if visit_state.get("status") in ("proposed", "scheduled"):
+        should_create_new = True
+        trace_db_write(_thread_id(state), "Step1_Intake", "new_event_decision", {
+            "reason": f"site_visit_{visit_state.get('status')}",
+        })
+
+    if should_create_new:
+        create_event_entry(state.db, event_data)
+        event_entry = state.db["events"][-1]
+        trace_db_write(_thread_id(state), "Step1_Intake", "db.events.create", {
+            "event_id": event_entry.get("event_id"),
+            "reason": "new_inquiry_detected",
+        })
+        return event_entry
+
     idx = find_event_idx_by_id(state.db, last_event["event_id"])
     if idx is None:
         create_event_entry(state.db, event_data)

@@ -501,6 +501,12 @@ async def start_conversation(request: StartConversationRequest):
     res_meta = wf_res.get("res") or {}
     hil_pending = res_meta.get("pending_hil_approval", False)
     if not assistant_reply and not hil_pending:
+        # DIAGNOSTIC: Log what wf_res contained so we can debug recurring fallbacks
+        print(f"[WF][FALLBACK_DIAGNOSTIC] start_conversation returned empty reply")
+        print(f"[WF][FALLBACK_DIAGNOSTIC] wf_res.action={wf_res.get('action')}")
+        print(f"[WF][FALLBACK_DIAGNOSTIC] wf_res.draft_messages count={len(wf_res.get('draft_messages') or [])}")
+        print(f"[WF][FALLBACK_DIAGNOSTIC] wf_res.assistant_message={bool(wf_res.get('assistant_message'))}")
+        print(f"[WF][FALLBACK_DIAGNOSTIC] wf_res.event_id={wf_res.get('event_id')}")
         assistant_reply = "Thanks for your message. I'll follow up shortly with availability details."
 
     conversation_state.event_id = wf_res.get("event_id") or event_id
@@ -554,6 +560,8 @@ async def send_message(request: SendMessageRequest):
         wf_res = wf_process_msg(payload)
     except Exception as exc:
         print(f"[WF][ERROR] send_message workflow failed: {exc}")
+        import traceback
+        traceback.print_exc()
         assistant_reply = "Thanks for the update. I'll follow up shortly with the latest availability."
         conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
         return {

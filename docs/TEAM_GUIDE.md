@@ -417,7 +417,47 @@ Changed `draft_message["requires_approval"] = True` to `draft_message["requires_
 **Regression Guard:** After any detour back to step 2 or 3, `negotiation_pending_decision` should be `null`. Room selections should generate a fresh offer, not show "sent to manager".
 
 ### Initial Event Inquiries Return Generic Fallback Instead of Room Availability (Fixed - 2025-12-18)
+**Status: FIXED** - Root cause identified and fixed.
+
+⚠️ **CRITICAL: Event Reuse Logic Bug** ⚠️
+This bug caused multiple cascading failures when `_ensure_event_record()` created NEW events incorrectly OR reused OLD events incorrectly. Key lessons:
+1. **Never compare dates if new message has no date** - "Not specified" ≠ "08.05.2026" triggers false positives
+2. **Follow-up messages (like "Room E") have NO date** - must skip date comparison
+3. **Site visit routing affects ALL steps** - routing to Step 7 mid-flow causes no draft_messages → fallback
+
 **Symptoms:** Initial event inquiries like "We'd like to organize a networking event for 60 guests on 08.05.2026, 18:00-22:00" returned generic fallback messages like "Thanks for your message. I'll follow up shortly with availability details." instead of proper room availability with specific rooms.
+
+**Root Cause (NEW - 2025-12-18):**
+The system was REUSING existing events for the same email instead of creating new ones. When a client had an existing event with `site_visit_state.status = "proposed"`, new inquiries would:
+1. Match to the old event via `last_event_for_email()`
+2. Trigger site visit routing (detour to Step 7)
+3. Return no draft messages → fallback triggered
+
+**Secondary Bug:** The initial fix triggered false positives for follow-up messages like "Room E":
+- Message has no date → `event_data["Event Date"] = "Not specified"`
+- Comparison: "Not specified" != "08.05.2026" → creates NEW event
+- New event at Step 2 asking for time → wrong response
+
+**Diagnostic Added (messages.py:503-510):**
+```python
+if not assistant_reply and not hil_pending:
+    print(f"[WF][FALLBACK_DIAGNOSTIC] start_conversation returned empty reply")
+    print(f"[WF][FALLBACK_DIAGNOSTIC] wf_res.action={wf_res.get('action')}")
+    ...
+```
+
+**Fix Applied (step1_handler.py `_ensure_event_record()`):**
+Added checks to create a NEW event instead of reusing existing when:
+1. New message has DIFFERENT event date than existing event (**ONLY if new date is actual, not "Not specified"**)
+2. Existing event status is "confirmed", "completed", or "cancelled"
+3. Existing event has `site_visit_state.status` in ("proposed", "scheduled")
+
+**Critical Check Added:**
+```python
+new_date_is_actual = new_event_date not in ("Not specified", "not specified", None, "")
+if new_date_is_actual and existing_event_date and new_event_date != existing_event_date:
+    should_create_new = True
+```
 
 **Root Cause (Three Issues):**
 1. **Q&A engine missing `non_event_info` handler:** When Q&A classification returned `qna_subtype: "non_event_info"`, the `_execute_query()` function in `engine.py` had no handler for this subtype, returning empty `db_summary` (0 rooms, 0 dates, 0 products).

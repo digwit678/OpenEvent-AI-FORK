@@ -2,6 +2,34 @@
 
 ## 2025-12-18
 
+### Fix: New Event Creation When Existing Event in Site Visit State
+
+**Problem:** New event inquiries from the same email were being matched to existing events instead of creating new ones. When an existing event had `site_visit_state.status = "proposed"`, new inquiries would trigger site visit routing and return fallback messages instead of proper room availability.
+
+**Root Cause:** `_ensure_event_record()` in step1_handler.py always reused the most recent event for the same email via `last_event_for_email()`, regardless of whether the existing event was in a terminal/mid-process state.
+
+**Changes Made:**
+- **`backend/workflows/steps/step1_intake/trigger/step1_handler.py`**: Added logic in `_ensure_event_record()` to create a NEW event when:
+  - New message has DIFFERENT event date than existing event (ONLY if date is an actual date, not "Not specified")
+  - Existing event status is "confirmed", "completed", or "cancelled"
+  - Existing event has `site_visit_state.status` in ("proposed", "scheduled")
+
+**Bug Fix (follow-up):** Initial version triggered on `new_event_date != existing_event_date` but `new_event_date` could be "Not specified" for follow-up messages without dates (like "Room E"), causing false positives. Fixed by checking `new_date_is_actual = new_event_date not in ("Not specified", None, "")`.
+
+- **`backend/api/routes/messages.py`**: Added diagnostic logging when fallback message is triggered, showing `wf_res.action`, `draft_messages` count, and `event_id` for debugging.
+
+---
+
+### Fix: Site Visit Routing from Steps 3 and 4
+
+**Problem:** When an event at Step 3 or 4 had `site_visit_state.status = "proposed"`, client messages would go through normal step processing (including date change detection) instead of routing to Step 7 for site visit handling.
+
+**Changes Made:**
+- **`backend/workflows/steps/step3_room_availability/trigger/step3_handler.py`**: Added site visit check early in `process()` - routes to Step 7 when `site_visit_state.status == "proposed"`
+- **`backend/workflows/steps/step4_offer/trigger/step4_handler.py`**: Added same site visit routing check
+
+---
+
 ### Feature: Site Visit Booking Implementation (Phase 1)
 
 **Goal:** Fix site visit date handling so client preferences for visit dates don't trigger event date change detours.
@@ -12,11 +40,18 @@
 3. Triggered a detour to Step 2 (date confirmation)
 4. Showed room availability for April instead of site visit options
 
-**Root Cause:** The system didn't distinguish between site visit date preferences (when `site_visit_state.status == "proposed"`) and event date change requests.
+**Root Cause:** The system didn't distinguish between site visit date preferences (when `site_visit_state.status == "proposed"`) and event date change requests. Additionally, `site_visit_state.status` wasn't being set to "proposed" when the offer was approved and the site visit prompt was shown.
 
 **Changes Made:**
 
-1. **`backend/workflows/steps/step7_confirmation/trigger/step7_handler.py`**:
+1. **`backend/workflow_email.py`**:
+   - When step 5 (negotiation/offer) is approved, now sets `site_visit_state.status = "proposed"` so subsequent client messages are recognized as site visit context
+
+2. **`backend/workflows/steps/step5_negotiation/trigger/step5_handler.py`**:
+   - Added site visit mode check to `_detect_structural_change()` - skip date detection when `site_visit_state.status == "proposed"`
+   - Added routing to Step 7 when site visit is in progress (status == "proposed")
+
+3. **`backend/workflows/steps/step7_confirmation/trigger/step7_handler.py`**:
    - Modified `_detect_structural_change()` to skip date change detection when `site_visit_state.status == "proposed"`
    - Added site visit handling block in `process()` after structural change detection
    - Added `_extract_site_visit_preference()` - parses time (4 pm → 16:00), weekday (Wednesday → 2), month (April → 4)
@@ -53,6 +88,8 @@ System: "Your site visit is confirmed for 15.04.2026 at 16:00. We look forward t
 ```
 
 **Files Changed:**
+- `backend/workflow_email.py` (lines 615-622)
+- `backend/workflows/steps/step5_negotiation/trigger/step5_handler.py` (lines 185-203, 543-558)
 - `backend/workflows/steps/step7_confirmation/trigger/step7_handler.py` (lines 120-135, 201-212, 559-815)
 
 **Tests:** 146 passed

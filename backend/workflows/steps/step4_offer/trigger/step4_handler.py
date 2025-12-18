@@ -89,6 +89,27 @@ def process(state: WorkflowState) -> GroupResult:
         }
         return GroupResult(action="offer_waiting_hil", payload=payload, halt=True)
 
+    # -------------------------------------------------------------------------
+    # SITE VISIT HANDLING: If site_visit_state.status == "proposed", route to Step 7
+    # Client's date mentions are for site visits, not event date changes
+    # -------------------------------------------------------------------------
+    visit_state = event_entry.get("site_visit_state") or {}
+    if visit_state.get("status") == "proposed":
+        # Route to Step 7 for site visit handling
+        update_event_metadata(event_entry, current_step=7)
+        state.current_step = 7
+        state.extras["persist"] = True
+        return GroupResult(
+            action="route_to_site_visit",
+            payload={
+                "client_id": state.client_id,
+                "event_id": event_entry.get("event_id"),
+                "reason": "site_visit_in_progress",
+                "persisted": True,
+            },
+            halt=False,  # Continue to Step 7
+        )
+
     if merge_client_profile(event_entry, state.user_info or {}):
         state.extras["persist"] = True
 
@@ -601,7 +622,11 @@ def _route_to_owner_step(
     target_enum = WorkflowStep(f"step_{target_step}")
     write_stage(event_entry, current_step=target_enum, caller_step=caller_step)
 
-    thread_state = "Awaiting Client" if target_step == 2 else "Waiting on HIL"
+    # Clear stale negotiation state when detouring back - old offer no longer valid
+    if target_step in (2, 3):
+        event_entry.pop("negotiation_pending_decision", None)
+
+    thread_state = "Awaiting Client" if target_step in (2, 3) else "Waiting on HIL"
     update_event_metadata(event_entry, thread_state=thread_state)
     append_audit_entry(event_entry, 4, target_step, f"offer_gate_{reason_code.lower()}")
 

@@ -159,6 +159,9 @@ def process(state: WorkflowState) -> GroupResult:
         update_event_metadata(event_entry, caller_step=5, current_step=target_step)
         append_audit_entry(event_entry, 5, target_step, reason)
         negotiation_state["counter_count"] = 0
+        # Clear stale negotiation state when detouring - old offer no longer valid
+        if target_step in {2, 3}:
+            event_entry.pop("negotiation_pending_decision", None)
         state.caller_step = 5
         state.current_step = target_step
         if target_step in {2, 3}:
@@ -178,6 +181,27 @@ def process(state: WorkflowState) -> GroupResult:
             },
             halt=False,
         )
+
+    # -------------------------------------------------------------------------
+    # SITE VISIT HANDLING: Check if client is responding to site visit proposal
+    # -------------------------------------------------------------------------
+    visit_state = event_entry.get("site_visit_state") or {}
+    if visit_state.get("status") == "proposed":
+        # Route to Step 7 for site visit handling
+        update_event_metadata(event_entry, current_step=7)
+        state.current_step = 7
+        state.extras["persist"] = True
+        return GroupResult(
+            action="route_to_site_visit",
+            payload={
+                "client_id": state.client_id,
+                "event_id": event_entry.get("event_id"),
+                "reason": "site_visit_in_progress",
+                "persisted": True,
+            },
+            halt=False,  # Continue to Step 7
+        )
+    # -------------------------------------------------------------------------
 
     # [Q&A DETECTION] Check for general Q&A AFTER change detection
     qna_classification = detect_general_room_query(message_text, state)
@@ -537,17 +561,22 @@ def _detect_structural_change(
     event_entry: Dict[str, Any],
     message_text: str = "",
 ) -> Optional[tuple[int, str]]:
+    # Skip date change detection when in site visit mode
+    # Dates mentioned are for the site visit, not event date changes
+    visit_state = event_entry.get("site_visit_state") or {}
+    in_site_visit_mode = visit_state.get("status") in {"proposed"}
+
     # First check user_info (from LLM extraction)
     new_iso_date = user_info.get("date")
     new_ddmmyyyy = user_info.get("event_date")
-    if new_iso_date or new_ddmmyyyy:
+    if not in_site_visit_mode and (new_iso_date or new_ddmmyyyy):
         candidate = new_ddmmyyyy or _iso_to_ddmmyyyy(new_iso_date)
         if candidate and candidate != event_entry.get("chosen_date"):
             return 2, "negotiation_changed_date"
 
     # Fallback: parse dates directly from message text (same as Step 2/3/4)
     # This catches cases where user_info wasn't populated with the new date
-    if message_text:
+    if not in_site_visit_mode and message_text:
         chosen_date_raw = event_entry.get("chosen_date")  # e.g., "14.02.2026"
         if chosen_date_raw:
             chosen_parsed = parse_ddmmyyyy(chosen_date_raw)
