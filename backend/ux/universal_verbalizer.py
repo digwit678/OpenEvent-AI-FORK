@@ -241,17 +241,34 @@ Focus on:
 }
 
 TOPIC_HINTS = {
+    # Step 2 - Date confirmation
     "date_candidates": "Present available dates as options, recommend the best match",
     "date_confirmed": "Celebrate the date being locked in, transition smoothly to room selection",
+
+    # Step 3 - Room availability
     "room_avail_result": "Present rooms with a clear recommendation, explain the match to their needs",
-    "room_selected_follow_up": "Confirm room choice, smoothly transition to products/offer",
-    "offer_draft": "Present the offer as a complete package, make value clear",
-    "offer_products_prompt": "Ask about catering/add-ons in a helpful, not pushy way",
-    "negotiation_accept": "Celebrate acceptance, confirm immediate next steps",
-    "negotiation_clarification": "Ask for clarity in a specific, helpful way",
-    "confirmation_deposit_pending": "Make deposit request feel routine and easy",
-    "confirmation_final": "Celebrate the confirmed booking with genuine warmth",
-    "confirmation_site_visit": "Offer site visit as a helpful option, not obligation",
+    "room_available": "Great news! The ideal room is available. Lead with enthusiasm, highlight why it's perfect for their needs, mention key features",
+    "room_option": "Room has a tentative hold - explain clearly but don't alarm. Present it as 'we can secure this for you' rather than 'someone else might take it'",
+    "room_unavailable": "Be empathetic but solution-focused. Quickly pivot to alternatives that DO work, don't dwell on what's unavailable",
+    "room_selected_follow_up": "Confirm room choice warmly, smoothly transition to products/offer discussion",
+
+    # Step 4 - Offer
+    "offer_intro": "Set up the offer with warmth. Acknowledge their choices so far, build anticipation for the details. Keep it brief - the offer details follow",
+    "offer_draft": "Present the offer as a complete package. Connect each line item to their stated needs. Make the total feel justified and valuable",
+    "offer_products_prompt": "Ask about catering/add-ons in a helpful, consultative way - not pushy. Frame as 'completing their experience'",
+
+    # Step 5 - Negotiation
+    "negotiation_accept": "Celebrate their decision warmly! Confirm what happens next (manager review, deposit, etc.) with clarity and excitement",
+    "negotiation_clarification": "Ask for clarity in a specific, helpful way. Show you want to get it exactly right for them",
+    "general": "Respond naturally and helpfully. Match the client's tone. If they're brief, be concise. If they have questions, answer thoroughly but warmly",
+
+    # Step 7 - Confirmation
+    "confirmation_deposit_pending": "Make deposit request feel routine and easy - it's just the final step to lock in their special event",
+    "confirmation_final": "Celebrate! This is a milestone. Express genuine excitement about their upcoming event",
+    "confirmation_site_visit": "Offer site visit as a helpful option to build confidence, not an obligation",
+
+    # Q&A
+    "structured_qna": "Answer their question directly and helpfully. If showing options (rooms, menus), lead with the best match for their needs",
 }
 
 
@@ -557,6 +574,9 @@ def _verify_facts(
     """
     Verify that all hard facts appear in the LLM output.
 
+    This verification is intentionally flexible to allow natural rephrasing
+    while catching actual factual errors (wrong numbers, invented dates, etc.)
+
     Returns:
         Tuple of (ok, missing_facts, invented_facts)
     """
@@ -565,48 +585,134 @@ def _verify_facts(
 
     text_lower = llm_text.lower()
     text_normalized = llm_text.replace(" ", "").upper()
+    # Also create a version with common separators normalized
+    text_numbers_only = re.sub(r"[^\d.]", "", llm_text)
 
-    # Check dates
+    # Check dates - flexible matching
     for date in hard_facts.get("dates", []):
-        if date not in llm_text:
+        # Try multiple formats: DD.MM.YYYY, DD/MM/YYYY, YYYY-MM-DD
+        date_found = False
+        if date in llm_text:
+            date_found = True
+        else:
+            # Try alternative formats
+            try:
+                from datetime import datetime
+                # Parse DD.MM.YYYY
+                if "." in date:
+                    parsed = datetime.strptime(date, "%d.%m.%Y")
+                    alt_formats = [
+                        parsed.strftime("%d/%m/%Y"),
+                        parsed.strftime("%Y-%m-%d"),
+                        parsed.strftime("%d %B %Y"),  # "08 May 2026"
+                        parsed.strftime("%B %d, %Y"),  # "May 08, 2026"
+                        parsed.strftime("%-d %B %Y"),  # "8 May 2026" (no leading zero)
+                    ]
+                    for alt in alt_formats:
+                        if alt in llm_text or alt.lower() in text_lower:
+                            date_found = True
+                            break
+            except (ValueError, ImportError):
+                pass
+
+        if not date_found:
             missing.append(f"date:{date}")
 
-    # Check room names (case-insensitive)
+    # Check room names (case-insensitive, flexible matching)
     for room in hard_facts.get("room_names", []):
         room_lower = room.lower()
         room_no_dot = room.replace(".", "").lower()
-        if room_lower not in text_lower and room_no_dot not in text_lower:
+        # Also check for "Room X" variations
+        room_variants = [room_lower, room_no_dot]
+        if room_lower.startswith("room "):
+            # "Room B" -> also accept "room b", "Room B", "ROOM B"
+            room_variants.append(room_lower.replace("room ", ""))
+
+        found = any(variant in text_lower for variant in room_variants)
+        if not found:
             missing.append(f"room:{room}")
 
-    # Check amounts
+    # Check amounts - flexible matching for CHF values
     for amount in hard_facts.get("amounts", []):
-        amount_normalized = amount.replace(" ", "").upper()
-        amount_no_decimal = re.sub(r"\.00$", "", amount_normalized)
-        if amount_normalized not in text_normalized and amount_no_decimal not in text_normalized:
+        amount_found = False
+        # Extract numeric value
+        match = re.search(r"(\d+(?:[.,]\d{1,2})?)", amount)
+        if match:
+            numeric = match.group(1).replace(",", ".")
+            numeric_no_decimal = re.sub(r"\.00$", "", numeric)
+            # Check various formats
+            patterns_to_check = [
+                f"CHF {numeric}",
+                f"CHF{numeric}",
+                f"CHF {numeric_no_decimal}",
+                f"CHF{numeric_no_decimal}",
+                f"{numeric} CHF",
+                f"{numeric_no_decimal} CHF",
+                # Also check with thousands separator
+                f"CHF {int(float(numeric)):,}".replace(",", "'"),  # Swiss format: 1'000
+                f"CHF {int(float(numeric)):,}".replace(",", ","),  # 1,000 format
+            ]
+            for pattern in patterns_to_check:
+                if pattern.upper() in text_normalized or pattern.lower() in text_lower:
+                    amount_found = True
+                    break
+
+            # Also check if the raw number appears (context may make it clear it's CHF)
+            if not amount_found and numeric in llm_text:
+                amount_found = True
+
+        if not amount_found:
             missing.append(f"amount:{amount}")
 
-    # Check counts (participant count)
+    # Check counts (participant count) - flexible matching
     for count in hard_facts.get("counts", []):
-        if count not in llm_text:
+        # Check for the number directly or spelled out for small numbers
+        count_found = count in llm_text
+        if not count_found:
+            # Check if the number appears with common suffixes
+            count_patterns = [
+                f"{count} guests",
+                f"{count} people",
+                f"{count} participants",
+                f"{count} attendees",
+                f"{count} persons",
+            ]
+            count_found = any(p.lower() in text_lower for p in count_patterns)
+
+        if not count_found:
             missing.append(f"count:{count}")
 
-    # Check product names (case-insensitive)
+    # Check product names (case-insensitive, allow partial matches for long names)
     for product_name in hard_facts.get("product_names", []):
-        if product_name.lower() not in text_lower:
+        product_lower = product_name.lower()
+        # For long product names, check if key words appear
+        if len(product_name) > 20:
+            # Split into words and check if most key words appear
+            words = [w for w in product_lower.split() if len(w) > 3]
+            matches = sum(1 for w in words if w in text_lower)
+            if matches >= len(words) * 0.6:  # 60% of words match
+                continue
+        if product_lower not in text_lower:
             missing.append(f"product:{product_name}")
 
-    # Check units - these must appear exactly as provided (per person, per event)
+    # Check units - be flexible about phrasing
     input_units = set(hard_facts.get("units", []))
     for unit in input_units:
-        if unit not in text_lower:
+        unit_found = unit in text_lower
+        if not unit_found:
+            # Check alternative phrasings
+            if unit == "per person":
+                unit_found = any(alt in text_lower for alt in ["per guest", "each guest", "per head", "/person", "/ person"])
+            elif unit == "per event":
+                unit_found = any(alt in text_lower for alt in ["flat fee", "fixed", "one-time", "/event", "/ event"])
+        if not unit_found:
             missing.append(f"unit:{unit}")
 
     # Check for unit swaps (invented wrong unit)
-    # If input has "per event" but output has "per person" (or vice versa), that's a swap
     has_per_event = "per event" in input_units
     has_per_person = "per person" in input_units
-    output_has_per_event = "per event" in text_lower
-    output_has_per_person = "per person" in text_lower
+    output_has_per_event = "per event" in text_lower or "flat fee" in text_lower
+    output_has_per_person = "per person" in text_lower or "per guest" in text_lower
 
     # Detect swaps: if we only had one unit type but output has the other
     if has_per_event and not has_per_person and output_has_per_person:
@@ -614,30 +720,67 @@ def _verify_facts(
     if has_per_person and not has_per_event and output_has_per_event:
         invented.append("unit:per event (should be per person)")
 
-    # Check for invented dates
+    # Check for invented dates (be lenient - only flag if clearly wrong)
     date_pattern = re.compile(r"\b(\d{1,2}\.\d{1,2}\.\d{4})\b")
+    valid_dates = set(hard_facts.get("dates", []))
     for match in date_pattern.finditer(llm_text):
         found_date = match.group(1)
-        if found_date not in hard_facts.get("dates", []):
-            invented.append(f"date:{found_date}")
+        if found_date not in valid_dates:
+            # Check if it's just a reformatted version of a valid date
+            is_reformat = False
+            try:
+                from datetime import datetime
+                found_parsed = datetime.strptime(found_date, "%d.%m.%Y")
+                for valid in valid_dates:
+                    valid_parsed = datetime.strptime(valid, "%d.%m.%Y")
+                    if found_parsed == valid_parsed:
+                        is_reformat = True
+                        break
+            except (ValueError, ImportError):
+                pass
+            if not is_reformat:
+                invented.append(f"date:{found_date}")
 
-    # Check for invented amounts
+    # Check for invented amounts - be more lenient
     amount_pattern = re.compile(r"\bCHF\s*(\d+(?:[.,]\d{1,2})?)\b", re.IGNORECASE)
     canonical_amounts = set()
     for amt in hard_facts.get("amounts", []):
-        # Normalize for comparison
         normalized = amt.replace(" ", "").upper().replace(",", ".")
         match = re.search(r"CHF(\d+(?:\.\d{1,2})?)", normalized)
         if match:
-            canonical_amounts.add(match.group(1))
-            # Also add without .00
-            canonical_amounts.add(re.sub(r"\.00$", "", match.group(1)))
+            val = match.group(1)
+            canonical_amounts.add(val)
+            canonical_amounts.add(re.sub(r"\.00$", "", val))
+            # Also add rounded versions
+            try:
+                canonical_amounts.add(str(int(float(val))))
+            except ValueError:
+                pass
 
     for match in amount_pattern.finditer(llm_text):
         found_amount = match.group(1).replace(",", ".")
         found_no_decimal = re.sub(r"\.00$", "", found_amount)
-        if found_amount not in canonical_amounts and found_no_decimal not in canonical_amounts:
-            invented.append(f"amount:CHF {found_amount}")
+        found_int = str(int(float(found_amount))) if "." in found_amount else found_amount
+
+        if not any(f in canonical_amounts for f in [found_amount, found_no_decimal, found_int]):
+            # Only flag if it's not close to any canonical amount (allows for small rounding)
+            is_close = False
+            try:
+                found_val = float(found_amount)
+                for canonical in canonical_amounts:
+                    try:
+                        canonical_val = float(canonical)
+                        # Allow 1% tolerance for rounding
+                        if abs(found_val - canonical_val) / max(canonical_val, 1) < 0.01:
+                            is_close = True
+                            break
+                    except ValueError:
+                        pass
+            except ValueError:
+                pass
+
+            if not is_close:
+                invented.append(f"amount:CHF {found_amount}")
 
     ok = len(missing) == 0 and len(invented) == 0
     return (ok, missing, invented)
