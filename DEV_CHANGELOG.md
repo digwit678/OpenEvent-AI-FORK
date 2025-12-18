@@ -85,6 +85,44 @@ backend/api/routes/
 
 **Tests:** 146 passed
 
+### Refactoring: Phase C Complete - Message Routes Extracted
+
+**Task: Extract final routes from main.py to complete modularization**
+
+Extracted message/conversation routes to `backend/api/routes/messages.py`:
+
+**Final Progress:**
+- **main.py: 2188 → 468 lines (79% reduction, 1720 lines removed)**
+
+**Final Route Structure:**
+```
+backend/api/routes/
+├── __init__.py     # Exports all routers
+├── tasks.py        # HIL task management (~230 lines)
+├── events.py       # Event CRUD + deposits (~180 lines)
+├── config.py       # Global deposit config (~175 lines)
+├── clients.py      # Client reset (~135 lines)
+├── debug.py        # Debug and tracing (~190 lines)
+├── snapshots.py    # Snapshot storage (~60 lines)
+├── test_data.py    # Test data and Q&A (~160 lines)
+├── workflow.py     # Workflow status (~35 lines)
+└── messages.py     # Message/conversation handling (~700 lines)
+```
+
+**What remains in main.py (~468 lines):**
+- FastAPI app creation and lifespan
+- CORS middleware configuration
+- Router includes (9 routers)
+- Port management functions
+- Frontend launch functions
+- Process cleanup functions
+- Root endpoint
+
+**Tests:** 146 passed
+
+**Commits:**
+- `23e5903` refactor(api): extract message routes from main.py (Phase C complete)
+
 ---
 
 ## 2025-12-17
