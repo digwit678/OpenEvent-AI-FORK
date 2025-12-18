@@ -2,6 +2,41 @@
 
 ## 2025-12-18
 
+### Feature: Room Availability Feature-Based Comparison
+
+**Goal:** Enhance room availability comparison to show how room features match client preferences, not just capacity.
+
+**Problem:** Room comparisons only mentioned capacity (e.g., "Room A fits your 60 guests"). They didn't explain WHY a room was recommended based on client-requested features like sound systems, cocktail bars, etc.
+
+**Changes Made:**
+
+1. **`backend/workflows/nlu/preferences.py`** - Enhanced feature matching:
+   - Added `_match_against_features()` function for fuzzy matching against room features/services
+   - Modified `_score_rooms_by_products()` to match client wishes against native room features (sound_system, bar_area, etc.) from rooms.json
+   - Now properly populates `room_match_breakdown.matched/missing` for all client wishes
+
+2. **`backend/workflows/steps/step3_room_availability/trigger/step3_handler.py`** - Added client preferences to snapshot:
+   - Snapshot now includes `client_preferences` with wish_products, keywords, and special_requirements
+   - Info page can now show feature comparison per-room cards
+
+3. **`backend/ux/universal_verbalizer.py`** - Enhanced verbalization:
+   - Updated Step 3 prompt to explicitly use `requirements.matched/missing` data
+   - Modified `_format_facts_for_prompt()` to include matched/missing features per room
+   - LLM now receives context like: `Room A: Available, capacity 40, matched: [sound system, coffee service]`
+
+**Expected Result:**
+- Before: "Room A is available for your 60 guests on 08.05.2026."
+- After: "Room A has everything you asked for - the sound system and coffee service are both included. Room E also has the sound system, though the cocktail bar setup would need to be arranged separately."
+
+**Files Changed:**
+- `backend/workflows/nlu/preferences.py` (added _match_against_features, modified _score_rooms_by_products)
+- `backend/workflows/steps/step3_room_availability/trigger/step3_handler.py` (lines 547-563)
+- `backend/ux/universal_verbalizer.py` (lines 177-204, 585-600)
+
+**Tests:** 146 passed
+
+---
+
 ### Fix: Initial Event Inquiries Returning Generic/Wrong Responses
 
 **Problem:** Initial event inquiries with questions (e.g., "Could you confirm availability?") were returning generic fallback messages or hallucinated content like "Room S" (which doesn't exist).

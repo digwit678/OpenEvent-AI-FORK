@@ -180,24 +180,28 @@ Context: The client needs to choose a room for their event. Help them understand
 
 CRITICAL - You must:
 1. START with a clear recommendation ("I'd recommend Room A because...")
-2. EXPLAIN WHY it matches their requirements (capacity, features they asked for)
-3. COMPARE alternatives and note trade-offs ("Room E is larger if you want more space, but...")
-4. MENTION what's included vs. what might need arranging
-5. Make the decision EASY with a clear next step
+2. USE the matched/missing data in each room to personalize your response:
+   - If a room has matched features: "includes the sound system and coffee service you mentioned"
+   - If a room is missing features: "the cocktail bar would need to be arranged separately"
+3. COMPARE alternatives by their matched features, not just capacity
+4. Make the decision EASY with a clear next step
 
-DO NOT just list rooms in a table. REASON about the options.
+The rooms data includes `requirements.matched` and `requirements.missing` arrays - USE THEM to personalize your response.
+
+Example: If Room A has matched=["sound system", "coffee service"], say "Room A has both the sound system and coffee service you requested"
+Example: If Room B has missing=["cocktail bar"], say "Room B would need the cocktail bar arranged separately"
+
+DO NOT just list rooms. REASON about which best matches what the client asked for.
 
 Example transformation:
-BEFORE: "- Room A — Matches: Background Music · Capacity ✓ (max 40)
-- Room E — Matches: Background Music · Capacity ✓ (max 120)"
+BEFORE: "Room A: Available, capacity 40, matched: [sound system, coffee service], missing: []
+Room E: Available, capacity 120, matched: [sound system], missing: [cocktail bar]"
 
-AFTER: "For your dinner of 30 guests on 14.02.2026, I'd recommend **Room A** — it's perfectly sized (max 40) and includes the background music setup you mentioned. It's intimate enough for a family celebration without feeling too large.
+AFTER: "For your networking event on 08.05.2026, I'd recommend **Room A** — it has everything you asked for: the sound system for presentations and coffee service are both included. At 40 capacity, it's perfectly sized for your 30 guests.
 
-If you'd prefer a grander setting, Room E (max 120) also has music capabilities and could work beautifully for a more spacious feel — though it might feel a bit open for 30 guests.
+Room E (capacity 120) also has the sound system, though the cocktail bar setup would need to be arranged separately. It's a larger space if you want more room to move around.
 
-Room F has great acoustics too, though we'd need to set up the music system separately.
-
-I'd go with Room A for the best fit. Shall I hold it for you?" """,
+I'd go with Room A since it covers all your requirements. Shall I hold it for you?" """,
 
     4: """You're presenting an offer/quote to a client.
 
@@ -273,6 +277,57 @@ TOPIC_HINTS = {
 
 
 # =============================================================================
+# Structured Content Detection
+# =============================================================================
+
+def _contains_structured_content(text: str) -> bool:
+    """
+    Detect if text contains structured content that should NOT be verbalized.
+
+    Structured content includes:
+    - Tables (markdown or plain text with aligned columns)
+    - NEXT STEP: or INFO: blocks from QnA responses
+    - Multiple "-" bullet points in sequence (product/option lists)
+
+    These are already formatted by qna/verbalizer.py and must be preserved.
+    """
+    lines = text.strip().split("\n")
+
+    # Check for table indicators
+    # Markdown tables have | characters
+    has_table_pipes = any("|" in line and line.count("|") >= 2 for line in lines)
+    if has_table_pipes:
+        return True
+
+    # Check for aligned column headers (e.g., "Room    Dates    Notes")
+    for line in lines:
+        if line.count("    ") >= 2:  # Multiple tab-like spaces indicating columns
+            # Verify it looks like a header (capitalized words)
+            parts = [p.strip() for p in line.split("    ") if p.strip()]
+            if len(parts) >= 2 and all(p[0].isupper() for p in parts if p):
+                return True
+
+    # Check for NEXT STEP: or INFO: blocks (QnA response markers)
+    text_upper = text.upper()
+    if "NEXT STEP:" in text_upper or "\nINFO:" in text_upper:
+        return True
+
+    # Check for multiple consecutive bullet points (option lists)
+    bullet_count = sum(1 for line in lines if line.strip().startswith("- "))
+    if bullet_count >= 3:
+        # Could be a product list or options list - check if it has structured format
+        # Look for patterns like "- Name — CHF X" or "- Date — Room (Status)"
+        structured_bullets = sum(
+            1 for line in lines
+            if line.strip().startswith("- ") and ("—" in line or "CHF" in line or "(" in line)
+        )
+        if structured_bullets >= 2:
+            return True
+
+    return False
+
+
+# =============================================================================
 # Verbalizer Core
 # =============================================================================
 
@@ -301,6 +356,15 @@ def verbalize_message(
         Verbalized text (LLM if valid, fallback otherwise)
     """
     if not fallback_text or not fallback_text.strip():
+        return fallback_text
+
+    # Skip verbalization for structured QnA responses with tables
+    # These are already processed by qna/verbalizer.py and contain structured data
+    # that must be preserved exactly (tables, NEXT STEP blocks, etc.)
+    if _contains_structured_content(fallback_text):
+        logger.debug(
+            f"universal_verbalizer: skipping structured content for step={context.step}, topic={context.topic}"
+        )
         return fallback_text
 
     tone = _resolve_tone()
@@ -519,13 +583,21 @@ def _format_facts_for_prompt(context: MessageContext) -> str:
     if context.candidate_dates:
         lines.append(f"- Available dates: {', '.join(context.candidate_dates)}")
     if context.rooms:
-        room_summary = []
+        lines.append("- Rooms:")
         for room in context.rooms[:5]:  # Limit to top 5
             name = room.get("name", "Room")
             status = room.get("status", "")
             capacity = room.get("capacity", "")
-            room_summary.append(f"{name} ({status}, cap {capacity})")
-        lines.append(f"- Rooms: {'; '.join(room_summary)}")
+            # Include requirements matched/missing for feature-based comparison
+            requirements = room.get("requirements") or {}
+            matched = requirements.get("matched") or []
+            missing = requirements.get("missing") or []
+            room_line = f"  * {name}: {status}, capacity {capacity}"
+            if matched:
+                room_line += f", matched: [{', '.join(matched)}]"
+            if missing:
+                room_line += f", missing: [{', '.join(missing)}]"
+            lines.append(room_line)
     if context.products:
         product_summary = []
         for p in context.products[:5]:  # Limit to top 5
