@@ -11,14 +11,11 @@ CONTAINS:
     - snapshots.py   Snapshot storage (/api/snapshots/*)
     - test_data.py   Test data and Q&A (/api/test-data/*, /api/qna)
     - workflow.py    Workflow status (/api/workflow/*)
-
-PLANNED (not yet extracted):
-    - messages.py    Message handling (/api/send-message, /api/start-conversation)
-    - conversation.py  Conversation management (/api/conversation/*)
+    - messages.py    Message and conversation handling (/api/send-message, /api/conversation/*)
 
 MIGRATION STATUS:
-    Phase C of refactoring - in progress.
-    main.py reduced from 2188 → ~1100 lines.
+    Phase C of refactoring - complete.
+    main.py reduced from 2188 → ~600 lines.
 """
 
 from .tasks import router as tasks_router
@@ -29,6 +26,7 @@ from .debug import router as debug_router
 from .snapshots import router as snapshots_router
 from .test_data import router as test_data_router
 from .workflow import router as workflow_router
+from .messages import router as messages_router
 
 __all__ = [
     "tasks_router",
@@ -39,4 +37,5 @@ __all__ = [
     "snapshots_router",
     "test_data_router",
     "workflow_router",
+    "messages_router",
 ]
