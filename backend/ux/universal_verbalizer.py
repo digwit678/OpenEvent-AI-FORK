@@ -179,17 +179,18 @@ AFTER: "Great news! I have several Saturday evenings open in February for your d
 Context: The client needs to choose a room for their event. Help them understand which room is the best fit BY REASONING ABOUT THEIR SPECIFIC NEEDS.
 
 CRITICAL - You must:
-1. START with a clear recommendation ("I'd recommend Room A because...")
+1. START with a clear recommendation ("I'd recommend **Room A** because...")
 2. USE the matched/missing data in each room to personalize your response:
-   - If a room has matched features: "includes the sound system and coffee service you mentioned"
-   - If a room is missing features: "the cocktail bar would need to be arranged separately"
+   - If a room has matched features: "includes the **sound system** and **coffee service** you mentioned"
+   - If a room is missing features: "the **cocktail bar** would need to be arranged separately"
 3. COMPARE alternatives by their matched features, not just capacity
 4. Make the decision EASY with a clear next step
+5. **BOLD** all matched features and room names using **markdown** (e.g., **sound system**, **Room A**)
 
 The rooms data includes `requirements.matched` and `requirements.missing` arrays - USE THEM to personalize your response.
 
-Example: If Room A has matched=["sound system", "coffee service"], say "Room A has both the sound system and coffee service you requested"
-Example: If Room B has missing=["cocktail bar"], say "Room B would need the cocktail bar arranged separately"
+Example: If Room A has matched=["sound system", "coffee service"], say "**Room A** has both the **sound system** and **coffee service** you requested"
+Example: If Room B has missing=["cocktail bar"], say "**Room B** would need the **cocktail bar** arranged separately"
 
 DO NOT just list rooms. REASON about which best matches what the client asked for.
 
@@ -197,11 +198,11 @@ Example transformation:
 BEFORE: "Room A: Available, capacity 40, matched: [sound system, coffee service], missing: []
 Room E: Available, capacity 120, matched: [sound system], missing: [cocktail bar]"
 
-AFTER: "For your networking event on 08.05.2026, I'd recommend **Room A** — it has everything you asked for: the sound system for presentations and coffee service are both included. At 40 capacity, it's perfectly sized for your 30 guests.
+AFTER: "For your networking event on **08.05.2026**, I'd recommend **Room A** — it has everything you asked for: the **sound system** for presentations and **coffee service** are both included. At 40 capacity, it's perfectly sized for your 30 guests.
 
-Room E (capacity 120) also has the sound system, though the cocktail bar setup would need to be arranged separately. It's a larger space if you want more room to move around.
+**Room E** (capacity 120) also has the **sound system**, though the **cocktail bar** setup would need to be arranged separately. It's a larger space if you want more room to move around.
 
-I'd go with Room A since it covers all your requirements. Shall I hold it for you?" """,
+I'd go with **Room A** since it covers all your requirements. Shall I hold it for you?" """,
 
     4: """You're presenting an offer/quote to a client.
 
