@@ -1,10 +1,10 @@
 # Pending Refactoring Tasks
 
-## Phase C - Large File Splitting (In Progress)
+## Phase C - Large File Splitting (COMPLETE)
 
-### main.py Route Extraction
+### main.py Route Extraction - COMPLETE
 
-**Status:** 🔄 In Progress (47% complete - 1018 lines removed)
+**Status:** ✅ Complete (79% reduction - 1720 lines removed)
 
 | Route Group | Status | Target File | Lines |
 |-------------|--------|-------------|-------|
@@ -16,10 +16,18 @@
 | Snapshots (`/api/snapshots/*`) | ✅ Done | `routes/snapshots.py` | ~60 |
 | Test Data (`/api/test-data/*`, `/api/qna`) | ✅ Done | `routes/test_data.py` | ~160 |
 | Workflow (`/api/workflow/*`) | ✅ Done | `routes/workflow.py` | ~35 |
-| Messages (`/api/send-message`, etc.) | ⏳ Pending | `routes/messages.py` | ~280 |
-| Conversation (`/api/conversation/*`) | ⏳ Pending | (in messages.py) | ~100 |
+| Messages (`/api/send-message`, etc.) | ✅ Done | `routes/messages.py` | ~700 |
 
-**Current state:** main.py reduced from 2188 → 1170 lines (47% reduction)
+**Final state:** main.py reduced from 2188 → 468 lines (79% reduction)
+
+**What remains in main.py (~468 lines):**
+- FastAPI app creation and lifespan
+- CORS middleware configuration
+- Router includes (9 routers)
+- Port management functions
+- Frontend launch functions
+- Process cleanup functions
+- Root endpoint
 
 ### Other Large Files (Deferred)
 
@@ -33,44 +41,35 @@ These files were analyzed but deferred due to high risk of breaking functionalit
 
 **Rationale:** Heavy interdependencies, shared state, conditional logic - splitting risks breaking functionality. See `docs/internal/OPEN_DECISIONS.md` DECISION-006.
 
-## Recommended Next Steps
+## Future Refactoring Opportunities
 
-### For main.py (remaining ~380 lines of routes to extract):
+### Potential Phase D - Handler Consolidation
 
-1. **Messages routes** → `backend/api/routes/messages.py`
-   - `/api/start-conversation` (~130 lines)
-   - `/api/send-message` (~150 lines)
-   - Contains core conversation logic, most complex
-   - Helper functions: `_extract_workflow_reply`, `_update_event_info_from_db`, etc.
+If handler files become too large, consider:
 
-2. **Conversation routes** (can be in messages.py or separate)
-   - `/api/conversation/{session_id}/confirm-date`
-   - `/api/accept-booking/{session_id}`
-   - `/api/reject-booking/{session_id}`
-   - `/api/conversation/{session_id}` (GET)
+1. **step2_handler.py** (3665 lines) - Could split into:
+   - `step2_date_parsing.py` - Date extraction logic
+   - `step2_proposals.py` - Date proposal generation
+   - `step2_versioning.py` - Version history management
+   - `step2_handler.py` - Main handler (orchestration only)
 
-### What to keep in main.py (~600 lines):
+2. **smart_shortcuts.py** (2196 lines) - Could split into:
+   - `shortcut_patterns.py` - Pattern definitions
+   - `shortcut_detection.py` - Detection logic
+   - `shortcut_handlers.py` - Action handlers
 
-These belong in main.py as app lifecycle/infrastructure:
-- FastAPI app creation and setup (~50 lines)
-- CORS middleware configuration (~20 lines)
-- Port management functions (~90 lines)
-- Frontend launch functions (~80 lines)
-- Lifespan management (~20 lines)
-- Root endpoint (~10 lines)
-- Process cleanup functions (~80 lines)
-- Startup code (`if __name__ == "__main__"`) (~20 lines)
+**Recommendation:** Only pursue if specific issues arise with these files.
 
 ## Completed Phases
 
-| Phase | Status | Commits |
-|-------|--------|---------|
-| A (prep) | ✅ Complete | - |
-| B (detection) | ✅ Complete | - |
-| C (large files) | 🔄 Partial | `57651b8`, `73cb07f`, `20f7901` |
-| D (error handling) | ✅ Complete | - |
-| E (folder renaming) | ✅ Complete | `65e7ddc` |
-| F (file renaming) | ✅ Complete | `366e465` |
+| Phase | Status | Commits | Result |
+|-------|--------|---------|--------|
+| A (prep) | ✅ Complete | - | - |
+| B (detection) | ✅ Complete | - | - |
+| C (large files) | ✅ Complete | `57651b8`, `73cb07f`, `20f7901`, `23e5903` | main.py: 2188 → 468 lines |
+| D (error handling) | ✅ Complete | - | - |
+| E (folder renaming) | ✅ Complete | `65e7ddc` | - |
+| F (file renaming) | ✅ Complete | `366e465` | - |
 
 ## Known Issues from Refactoring
 
