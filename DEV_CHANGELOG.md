@@ -2,6 +2,63 @@
 
 ## 2025-12-18
 
+### Feature: Site Visit Booking Implementation (Phase 1)
+
+**Goal:** Fix site visit date handling so client preferences for visit dates don't trigger event date change detours.
+
+**Problem:** After offer approval, when the manager proposes site visits and the client responds with a date preference like "what about April, preferably on a Wednesday afternoon around 4 pm", the system:
+1. Extracted the April date via LLM
+2. `_detect_structural_change()` saw this differed from `chosen_date` (08.05.2026)
+3. Triggered a detour to Step 2 (date confirmation)
+4. Showed room availability for April instead of site visit options
+
+**Root Cause:** The system didn't distinguish between site visit date preferences (when `site_visit_state.status == "proposed"`) and event date change requests.
+
+**Changes Made:**
+
+1. **`backend/workflows/steps/step7_confirmation/trigger/step7_handler.py`**:
+   - Modified `_detect_structural_change()` to skip date change detection when `site_visit_state.status == "proposed"`
+   - Added site visit handling block in `process()` after structural change detection
+   - Added `_extract_site_visit_preference()` - parses time (4 pm → 16:00), weekday (Wednesday → 2), month (April → 4)
+   - Added `_generate_preferred_visit_slots()` - generates slots matching client preference, before event date
+   - Added `_handle_site_visit_preference()` - presents refined slot options to client
+   - Added `_handle_site_visit_confirmation()` - confirms selected slot with direct confirm (no HIL)
+   - Added `_parse_slot_selection()` - parses ordinals (first/second), dates, or generic confirmations
+
+**Database Schema (Supabase-compatible):**
+```python
+"site_visit_state": {
+    "status": "idle|proposed|scheduled|completed|cancelled",
+    "requested_date": "2026-04-15",     # ISO date (client preference)
+    "requested_time": "16:00",          # Time preference
+    "requested_weekday": 2,             # 0-6 Mon-Sun
+    "proposed_slots": [...],            # Generated options
+    "confirmed_date": "2026-04-15",     # Final confirmed date
+    "confirmed_time": "16:00",          # Final confirmed time
+    "notes": None,                      # Optional notes
+}
+```
+
+**Expected Flow (Fixed):**
+```
+Manager: "Let's continue with site visit bookings..."
+Client: "what about april preferably on a wednesday afternoon (around 4 pm)?"
+System: "Here are available times matching your preference:
+         - 15.04.2026 at 16:00
+         - 22.04.2026 at 16:00
+         - 29.04.2026 at 16:00
+         Which would work best for you?"
+Client: "yes please proceed"
+System: "Your site visit is confirmed for 15.04.2026 at 16:00. We look forward to showing you Room E!"
+```
+
+**Files Changed:**
+- `backend/workflows/steps/step7_confirmation/trigger/step7_handler.py` (lines 120-135, 201-212, 559-815)
+
+**Tests:** 146 passed
+
+---
+
 ### Feature: Room Availability Feature-Based Comparison
 
 **Goal:** Enhance room availability comparison to show how room features match client preferences, not just capacity.
