@@ -545,6 +545,8 @@ def process(state: WorkflowState) -> GroupResult:
     body_markdown = " ".join(intro_lines)
 
     # Create snapshot with full room data for persistent link
+    # Include client preferences so info page can show feature matching
+    client_prefs = event_entry.get("preferences") or {}
     snapshot_data = {
         "rooms": verbalizer_rooms,
         "table_rows": table_rows,
@@ -553,6 +555,12 @@ def process(state: WorkflowState) -> GroupResult:
         "chosen_date": chosen_date,
         "display_date": display_chosen_date,
         "participants": participants,
+        # Client preferences for info page feature comparison
+        "client_preferences": {
+            "wish_products": client_prefs.get("wish_products", []),
+            "keywords": client_prefs.get("keywords", []),
+            "special_requirements": (event_entry.get("requirements") or {}).get("special_requirements", ""),
+        },
     }
     snapshot_id = create_snapshot(
         snapshot_type="rooms",
