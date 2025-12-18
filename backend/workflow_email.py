@@ -612,6 +612,14 @@ def approve_task_and_send(
         draft["body_markdown"] = new_body
         draft["body"] = new_body
         body_text = new_body
+        # Set site_visit_state to "proposed" so client's date preference is handled correctly
+        target_event.setdefault("site_visit_state", {
+            "status": "idle",
+            "proposed_slots": [],
+            "confirmed_date": None,
+            "confirmed_time": None,
+        })["status"] = "proposed"
+        db_io.save_db(db, path, lock_path=lock_path)
     elif note_text:
         appended = f"{body_text.rstrip()}\n\nManager note:\n{note_text}" if body_text.strip() else f"Manager note:\n{note_text}"
         body_text = appended
