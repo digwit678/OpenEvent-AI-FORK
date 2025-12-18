@@ -404,6 +404,45 @@ Changed `draft_message["requires_approval"] = True` to `draft_message["requires_
 
 **Regression Guard:** Room selections should keep the thread in "Awaiting Client" with `action=offer_draft_prepared` and no pending HIL requests unless the client explicitly accepts the offer.
 
+### Stale negotiation_pending_decision after detours (Fixed - 2025-12-17)
+**Symptoms:** After selecting a room ("Room B"), the system showed "sent to manager for approval" instead of generating an offer. This happened even though no offer had been accepted yet.
+
+**Root Cause:** When a client previously accepted an offer (triggering `negotiation_pending_decision`), then changed requirements (causing detour from step 5 → step 3), the `negotiation_pending_decision` was NEVER cleared. When the client selected a room and flow returned to step 4, it saw the stale pending decision and returned `offer_waiting_hil` instead of generating a fresh offer.
+
+**Fixes Applied:**
+1. **Step 1:** Clear `negotiation_pending_decision` when requirements hash changes (triggering requirements_updated detour).【F:backend/workflows/steps/step1_intake/trigger/step1_handler.py†L1152-L1153】
+2. **Step 4:** Clear `negotiation_pending_decision` when `_route_to_owner_step` detours to step 2 or 3.【F:backend/workflows/steps/step4_offer/trigger/step4_handler.py†L604-L606】
+3. **Step 5:** Clear `negotiation_pending_decision` when structural change detour goes to step 2 or 3.【F:backend/workflows/steps/step5_negotiation/trigger/step5_handler.py†L162-L164】
+
+**Regression Guard:** After any detour back to step 2 or 3, `negotiation_pending_decision` should be `null`. Room selections should generate a fresh offer, not show "sent to manager".
+
+### Initial Event Inquiries Return Generic Fallback Instead of Room Availability (Fixed - 2025-12-18)
+**Symptoms:** Initial event inquiries like "We'd like to organize a networking event for 60 guests on 08.05.2026, 18:00-22:00" returned generic fallback messages like "Thanks for your message. I'll follow up shortly with availability details." instead of proper room availability with specific rooms.
+
+**Root Cause (Three Issues):**
+1. **Q&A engine missing `non_event_info` handler:** When Q&A classification returned `qna_subtype: "non_event_info"`, the `_execute_query()` function in `engine.py` had no handler for this subtype, returning empty `db_summary` (0 rooms, 0 dates, 0 products).
+2. **Context builder not using captured state:** The `_resolve_*` functions in `context_builder.py` returned `source="UNUSED"` for `non_event_info` subtype instead of using captured state from Step 1.
+3. **Initial inquiries misrouted to Q&A path:** Step 3 handler detected questions in messages (via heuristic `is_general=True`) and routed initial inquiries through the Q&A path instead of the normal room availability flow. This happened because the Q&A path is designed for follow-up questions after rooms have been presented, not initial inquiries.
+
+**Chain of Failure:**
+```
+Initial inquiry with questions → is_general=True (heuristic detected "?")
+→ Q&A extraction returns qna_subtype: "non_event_info"
+→ _execute_query() has no handler → empty db_summary
+→ QnA verbalizer gets 0 rooms → LLM hallucinates or returns fallback
+→ Generic "Thanks for your message" shown to client
+```
+
+**Fixes Applied:**
+1. **`backend/workflows/qna/engine.py`** (lines 191-229): Added fallback handler for `non_event_info` subtype that uses captured state (date, attendees) to query room availability.
+2. **`backend/workflows/qna/context_builder.py`** (lines 139-143, 238-242, 321-325): Updated `_resolve_attendees`, `_resolve_date`, `_resolve_room` to use captured state for `non_event_info` subtype.
+3. **`backend/workflows/steps/step3_room_availability/trigger/step3_handler.py`** (lines 334-346): Added check to skip Q&A path for first entry to Step 3 by detecting `has_step3_history` (looks for `room_pending_decision` or audit_log entries for Step 3).
+
+**Regression Guard:** Initial event inquiries (first message to Step 3) should always show room availability with specific room names and features. If you see generic fallback messages for initial inquiries, check:
+1. Q&A classification subtype (should be handled even if `non_event_info`)
+2. `has_step3_history` check (should be False for initial inquiries, skipping Q&A path)
+3. `db_summary` in Q&A engine (should have rooms from captured state)
+
 ---
 
 ### Date Change Detours from Steps 3/4/5 (Fixed - 2025-12-03)
