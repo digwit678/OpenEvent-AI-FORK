@@ -2,6 +2,43 @@
 
 ## 2025-12-18
 
+### Fix: Initial Event Inquiries Returning Generic/Wrong Responses
+
+**Problem:** Initial event inquiries with questions (e.g., "Could you confirm availability?") were returning generic fallback messages or hallucinated content like "Room S" (which doesn't exist).
+
+**Root Causes:**
+1. Questions in messages triggered `is_general=True` via heuristic detection (question marks, interrogative patterns)
+2. Step 3 took the Q&A path for initial inquiries instead of showing room availability
+3. Q&A extraction classified inquiries as `qna_subtype: "non_event_info"`
+4. `_execute_query()` had no handler for `non_event_info`, returning empty `db_summary`
+5. Empty data caused LLM verbalizer to hallucinate room names
+
+**Fixes Applied:**
+
+1. **`backend/workflows/qna/engine.py`** - Added fallback for `non_event_info` subtype:
+   - Uses captured context (date/attendees) to query room availability
+   - Falls back to listing all rooms by capacity if no context available
+   - Added helpful notes for users
+
+2. **`backend/workflows/qna/context_builder.py`** - Updated `_resolve_*` functions:
+   - `_resolve_attendees()`: Now uses captured attendees for `non_event_info`
+   - `_resolve_date()`: Now uses captured date for `non_event_info`
+   - `_resolve_room()`: Now uses captured/locked room for `non_event_info`
+
+3. **`backend/workflows/steps/step3_room_availability/trigger/step3_handler.py`** - Skip Q&A for first entry:
+   - Added check for `has_step3_history` (room_pending_decision or audit_log entries)
+   - Initial inquiries now go through normal room availability path, not Q&A
+   - Q&A path reserved for follow-up questions after rooms have been presented
+
+**Files Changed:**
+- `backend/workflows/qna/engine.py` (lines 191-229)
+- `backend/workflows/qna/context_builder.py` (lines 139-143, 238-242, 321-325)
+- `backend/workflows/steps/step3_room_availability/trigger/step3_handler.py` (lines 334-346)
+
+**Tests:** 146 passed
+
+---
+
 ### Refactoring: Phase C - Extract Routes from main.py (Continued)
 
 **Task: Modularize main.py by extracting route handlers into separate files**

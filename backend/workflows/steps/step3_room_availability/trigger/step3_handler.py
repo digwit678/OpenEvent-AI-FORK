@@ -330,6 +330,20 @@ def process(state: WorkflowState) -> GroupResult:
     if general_qna_applicable and user_requested_room:
         deferred_general_qna = True
         general_qna_applicable = False
+
+    # Don't take Q&A path for initial inquiries (first entry to Step 3)
+    # The Q&A path is for follow-up questions after rooms have been presented
+    # Check if this is first entry by looking for room_pending_decision or audit_log entries
+    room_pending = event_entry.get("room_pending_decision")
+    audit_log = event_entry.get("audit_log") or []
+    has_step3_history = room_pending is not None or any(
+        entry.get("to_step") == 3 or entry.get("from_step") == 3
+        for entry in audit_log
+    )
+    if general_qna_applicable and not has_step3_history:
+        # First entry to Step 3 with an inquiry - skip Q&A, show room options directly
+        general_qna_applicable = False
+
     if general_qna_applicable:
         result = _present_general_room_qna(state, event_entry, classification, thread_id)
         return result
@@ -504,27 +518,31 @@ def process(state: WorkflowState) -> GroupResult:
     if not actions_payload:
         actions_payload = actions or [{"type": "send_reply"}]
 
+    # Build ONLY conversational intro for chat message
+    # Structured room data is in table_blocks (rendered separately in UI)
     intro_lines: List[str] = []
     if user_requested_room and user_requested_room != selected_room:
         intro_lines.append(
-            f"Sorry, {user_requested_room} isn't free on {display_chosen_date or 'your date'}."
+            f"Sorry, {user_requested_room} isn't available on {display_chosen_date or 'your date'}. "
+            f"I've found some great alternatives that fit your {participants or 'guest'} count and requirements."
         )
-        intro_lines.append("Here are the closest alternatives I'm holding for you:")
     elif selected_room and outcome in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}:
         descriptor = "available" if outcome == ROOM_OUTCOME_AVAILABLE else "on option"
         intro_lines.append(
-            f"Great — {selected_room} is {descriptor.lower()} on {display_chosen_date or 'your requested date'}."
+            f"Great news! {selected_room} is {descriptor} on {display_chosen_date or 'your requested date'} "
+            f"and is a perfect fit for your {participants or ''} guests."
         )
-        intro_lines.append("I've highlighted the best matches below.")
+        intro_lines.append("I've put together the room options for you to review.")
     else:
         intro_lines.append(
-            f"Sorry, none of the rooms are open on {display_chosen_date or 'your requested date'} without adjustments."
+            f"Unfortunately, the rooms aren't available on {display_chosen_date or 'your requested date'} as-is."
         )
-        intro_lines.append("I'm expanding the search window and monitoring these alternatives for you:")
+        intro_lines.append("I'm showing some alternatives with nearby dates that might work.")
 
-    if intro_lines:
-        segments = intro_lines + (["", body_markdown] if body_markdown else [])
-        body_markdown = "\n".join(segment for segment in segments if segment)
+    intro_lines.append("Just let me know which room you'd like and I'll prepare the offer.")
+
+    # body_markdown = ONLY conversational prose (structured data is in table_blocks)
+    body_markdown = " ".join(intro_lines)
 
     # Create snapshot with full room data for persistent link
     snapshot_data = {
@@ -580,13 +598,11 @@ def process(state: WorkflowState) -> GroupResult:
         room_status=outcome,
     )
 
+    # Capture menu options separately (NOT in body_markdown - shown in info cards)
     qa_lines = _general_qna_lines(state)
+    menu_content = None
     if qa_lines:
-        sections = [body_markdown] if body_markdown else []
-        if sections:
-            sections.append("")
-        sections.extend(qa_lines)
-        body_markdown = "\n".join(sections) if sections else "\n".join(qa_lines)
+        menu_content = "\n".join(qa_lines)
         headers = ["Availability overview"] + [header for header in headers if header]
         state.record_subloop("general_q_a")
         state.extras["subloop"] = "general_q_a"
@@ -604,6 +620,7 @@ def process(state: WorkflowState) -> GroupResult:
         "table_blocks": table_blocks,
         "actions": actions_payload,
         "headers": headers,
+        "menu_info": menu_content,  # Separate field for menu data (rendered in info cards)
     }
     attempt = _increment_room_attempt(event_entry)
     # Do not escalate room availability to HIL; approvals only happen at offer/negotiation (Step 5).
