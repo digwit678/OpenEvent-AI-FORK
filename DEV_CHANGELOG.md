@@ -2,6 +2,19 @@
 
 ## 2025-12-21
 
+### Fix: Step 4 HIL Approval Continuation
+
+**Problem:** When approving a Step 4 offer task (after deposit was paid), clicking "Approve" did nothing - the workflow didn't continue to site visit.
+
+**Root Cause:** The `approve_task_and_send` function only had special continuation handling for Step 5 tasks. Step 4 approvals just marked the task as approved without continuing the workflow.
+
+**Solution:** Added Step 4 handling in `backend/workflow_email.py`:
+- Check if `offer_accepted = True` and deposit is paid (or not required)
+- If so, apply the same negotiation decision logic as Step 5
+- Set `site_visit_state.status = "proposed"` to continue to site visit
+
+---
+
 ### Fix: Deposit Payment Workflow Continuation
 
 **Problem:** After clicking "pay deposit" button, the workflow stopped instead of continuing to send the offer for HIL approval. The deposit was marked as paid in the database, but no further processing occurred.
