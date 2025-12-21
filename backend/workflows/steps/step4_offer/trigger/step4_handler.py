@@ -125,6 +125,16 @@ def process(state: WorkflowState) -> GroupResult:
     if auto_accept:
         return auto_accept
 
+    # -------------------------------------------------------------------------
+    # DEPOSIT PAYMENT CONTINUATION: If offer was accepted, billing collected,
+    # and deposit just paid, proceed directly to HIL
+    # -------------------------------------------------------------------------
+    deposit_continuation = _check_deposit_payment_continuation(
+        state, event_entry, previous_step, thread_id, billing_missing
+    )
+    if deposit_continuation:
+        return deposit_continuation
+
     # [CHANGE DETECTION + Q&A] Tap incoming stream BEFORE offer composition to detect client revisions
     message_text = _message_text(state)
     normalized_message_text = _normalize_quotes(message_text)
@@ -269,6 +279,10 @@ def process(state: WorkflowState) -> GroupResult:
     acceptance_applicable = not (room_choice_signal or room_selection_phrase)
 
     if acceptance_applicable and _looks_like_offer_acceptance(normalized_message_text):
+        # Mark offer as accepted so we can continue after deposit payment
+        event_entry["offer_accepted"] = True
+        state.extras["persist"] = True
+
         billing_missing = _refresh_billing(event_entry)
         if billing_missing:
             _flag_billing_accept_pending(event_entry, billing_missing)
@@ -1575,6 +1589,54 @@ def _flag_billing_accept_pending(event_entry: Dict[str, Any], missing_fields: Li
     gate = event_entry.setdefault("billing_requirements", {})
     gate["awaiting_billing_for_accept"] = True
     gate["last_missing"] = list(missing_fields)
+
+
+def _check_deposit_payment_continuation(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    previous_step: int,
+    thread_id: str,
+    missing_fields: List[str],
+) -> Optional[GroupResult]:
+    """
+    Check if we should continue to HIL after deposit payment.
+
+    This handles the case where:
+    1. Client previously accepted the offer (offer_accepted = True)
+    2. Billing address was collected (no missing fields)
+    3. Deposit was required and is now paid
+
+    In this scenario, the deposit payment triggers continuation to HIL
+    without needing the message to be classified as acceptance.
+    """
+    # Check if offer was previously accepted
+    if not event_entry.get("offer_accepted"):
+        return None
+
+    # Check if billing is complete
+    if missing_fields:
+        return None
+
+    # Check deposit status
+    deposit_info = event_entry.get("deposit_info") or {}
+    deposit_required = deposit_info.get("deposit_required", False)
+    deposit_paid = deposit_info.get("deposit_paid", False)
+
+    # Only continue if deposit was required and is now paid
+    if not deposit_required or not deposit_paid:
+        return None
+
+    # All conditions met - continue to HIL
+    print(f"[Step4] Deposit payment continuation: offer_accepted=True, billing_complete=True, deposit_paid=True")
+
+    return _start_hil_acceptance_flow(
+        state,
+        event_entry,
+        previous_step,
+        thread_id,
+        audit_label="offer_accept_pending_hil_deposit_paid",
+        action="offer_accept_pending_hil",
+    )
 
 
 def _auto_accept_if_billing_ready(
