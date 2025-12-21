@@ -681,6 +681,49 @@ from backend.debug.hooks import trace_marker  # pylint: disable=import-outside-t
 
 **Regression Guard:** When a client message combines current step action + next step inquiry, the workflow should proceed naturally to the next step. The trace log should show `SEQUENTIAL_WORKFLOW` marker, and `is_general` should be `False`. If Q&A handling triggers for such messages, check that `detect_sequential_workflow_request()` is being called and that the patterns match the message.
 
+### Room Lock Cleared Unconditionally on Date Change (In Progress - 2025-12-21)
+**Status: PARTIAL FIX** - Multiple code paths identified and patched; further testing needed.
+
+**Symptoms:** When a client changes the date from the offer/negotiation stage (Steps 4/5), the system clears `locked_room_id` unconditionally. This forces the client to re-select the room even when the same room is still available on the new date. Expected behavior: if the locked room is still available, skip room selection and return directly to Step 4.
+
+**Root Cause:**
+Multiple code paths were clearing `locked_room_id=None` when a date change was detected:
+1. `step4_handler.py:220-250` — Date change detection in Step 4
+2. `step2_handler.py:881-897` — Date change detection in Step 2
+3. `step2_handler.py:2384-2393` — Date confirmation flow (main culprit)
+4. `step3_handler.py:291-307` — Date change detection in Step 3
+
+All four locations used `update_event_metadata(event_entry, locked_room_id=None, ...)` which erased the room lock before Step 3 could verify if the room was still available.
+
+**Fixes Applied:**
+1. **Preserve room lock on date changes:** Changed all four locations to only clear `room_eval_hash=None` (to trigger re-verification) while keeping `locked_room_id` intact.【F:backend/workflows/steps/step4_offer/trigger/step4_handler.py†L220-L250】【F:backend/workflows/steps/step2_date_confirmation/trigger/step2_handler.py†L881-L897】【F:backend/workflows/steps/step2_date_confirmation/trigger/step2_handler.py†L2384-L2393】【F:backend/workflows/steps/step3_room_availability/trigger/step3_handler.py†L291-L307】
+
+2. **Fast-skip logic in Step 3:** Added code to check if the locked room is still available on the new date. If available, update `room_eval_hash` and return to caller step (usually Step 4) without presenting room options again. If unavailable, clear the lock and proceed with normal room selection.【F:backend/workflows/steps/step3_room_availability/trigger/step3_handler.py†L438-L489】
+
+```python
+# FAST-SKIP: If room is already locked and still available on new date
+if locked_room_id and not explicit_room_change:
+    locked_room_status = status_map.get(locked_room_id, "").lower()
+    room_still_available = locked_room_status in ("available", "option")
+    if room_still_available:
+        update_event_metadata(event_entry, room_eval_hash=current_req_hash)
+        return _skip_room_evaluation(state, event_entry)  # Return to caller
+    else:
+        update_event_metadata(event_entry, locked_room_id=None, room_eval_hash=None)
+```
+
+3. **Requirements changes still clear lock:** When `change_type == "requirements"`, the lock IS cleared since the room may no longer fit the new capacity/duration.【F:backend/workflows/steps/step4_offer/trigger/step4_handler.py†L235-L245】
+
+**Testing Status:**
+- Initial test showed room lock still being cleared; additional code paths in step2_handler.py identified and fixed
+- Need to verify all code paths are covered with live API testing
+- Server reload timing may affect test results
+
+**Regression Guard:** When a client changes the date from Step 4/5:
+1. If the locked room is available on the new date → Step 3 should skip room selection and return to Step 4
+2. If the locked room is NOT available → Step 3 should clear the lock and present room options
+3. `locked_room_id` should only be `None` after Step 3 explicitly clears it due to unavailability
+
 ---
 
 ## Test Suite Status

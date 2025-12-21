@@ -288,15 +288,23 @@ def process(state: WorkflowState) -> GroupResult:
         if decision.next_step != 3:
             update_event_metadata(event_entry, current_step=decision.next_step)
 
-            # Clear room lock for date/requirements changes
-            if change_type.value in ("date", "requirements") and decision.next_step in (2, 3):
-                if decision.next_step == 2:
-                    update_event_metadata(
-                        event_entry,
-                        date_confirmed=False,
-                        room_eval_hash=None,
-                        locked_room_id=None,
-                    )
+            # For date changes: Keep room lock, invalidate room_eval_hash so Step 3 re-verifies
+            # Step 3 will check if the locked room is still available on the new date
+            if change_type.value == "date" and decision.next_step == 2:
+                update_event_metadata(
+                    event_entry,
+                    date_confirmed=False,
+                    room_eval_hash=None,  # Invalidate to trigger re-verification
+                    # NOTE: Keep locked_room_id to allow fast-skip if room still available
+                )
+            # For requirements changes, clear the lock since room may no longer fit
+            elif change_type.value == "requirements" and decision.next_step in (2, 3):
+                update_event_metadata(
+                    event_entry,
+                    date_confirmed=False if decision.next_step == 2 else None,
+                    room_eval_hash=None,
+                    locked_room_id=None,
+                )
 
             append_audit_entry(event_entry, 3, decision.next_step, f"{change_type.value}_change_detected")
 
@@ -434,6 +442,59 @@ def process(state: WorkflowState) -> GroupResult:
         },
     )
     status_map = _flatten_statuses(room_statuses)
+
+    # -------------------------------------------------------------------
+    # FAST-SKIP: If room is already locked and still available on new date
+    # after a date change detour, skip room selection and return to caller
+    # -------------------------------------------------------------------
+    if locked_room_id and not explicit_room_change:
+        locked_room_status = status_map.get(locked_room_id, "").lower()
+        room_still_available = locked_room_status in ("available", "option")
+        caller_step = event_entry.get("caller_step")
+
+        trace_gate(
+            thread_id,
+            "Step3_Room",
+            "locked_room_still_available",
+            room_still_available,
+            {
+                "locked_room_id": locked_room_id,
+                "status_on_new_date": locked_room_status,
+                "caller_step": caller_step,
+            },
+        )
+
+        if room_still_available:
+            # Room is still available on the new date - update hash and skip to caller
+            update_event_metadata(
+                event_entry,
+                room_eval_hash=current_req_hash,  # Re-validate room for new date
+            )
+            append_audit_entry(event_entry, 3, caller_step or 4, "room_revalidated_after_date_change")
+
+            trace_marker(
+                thread_id,
+                "fast_skip_room_still_available",
+                detail=f"Room {locked_room_id} still {locked_room_status} on {chosen_date}, skipping to step {caller_step}",
+                owner_step="Step3_Room",
+            )
+
+            return _skip_room_evaluation(state, event_entry)
+        else:
+            # Room is no longer available - clear lock and continue to room selection
+            update_event_metadata(
+                event_entry,
+                locked_room_id=None,
+                room_eval_hash=None,
+            )
+            append_audit_entry(event_entry, 3, 3, "room_unavailable_after_date_change")
+
+            trace_marker(
+                thread_id,
+                "room_lock_cleared",
+                detail=f"Room {locked_room_id} is {locked_room_status} on {chosen_date}, clearing lock",
+                owner_step="Step3_Room",
+            )
 
     preferred_room = _preferred_room(event_entry, user_requested_room)
     preferences = event_entry.get("preferences") or state.user_info.get("preferences") or {}

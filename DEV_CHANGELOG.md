@@ -1,5 +1,49 @@
 # Development Changelog
 
+## 2025-12-21
+
+### Feature: Room Lock Preservation on Date Change Detours
+
+**Goal:** When a client changes the date from the offer/negotiation stage (Steps 4/5) and the locked room is still available on the new date, skip room selection and return directly to Step 4.
+
+**Problem:** Previously, when a client changed the date, `locked_room_id` was cleared unconditionally in multiple code paths. This forced the client to re-select the room even when it was still available on the new date—unnecessary friction in the workflow.
+
+**Expected Behavior (per Workflow v4 DAG):**
+1. Client changes date → detour to Step 2 for date confirmation
+2. After date confirmed, return to Step 3
+3. Step 3 checks: is the locked room still available on the new date?
+   - YES → update `room_eval_hash` and return to caller step (Step 4)
+   - NO → clear lock and present room options
+
+**Changes Made:**
+
+1. **`backend/workflows/steps/step4_offer/trigger/step4_handler.py`**:
+   - Modified date change handling to only clear `room_eval_hash=None` (trigger re-verification)
+   - Keep `locked_room_id` intact so Step 3 can check availability
+   - Requirements changes still clear the lock (room may no longer fit)
+
+2. **`backend/workflows/steps/step2_date_confirmation/trigger/step2_handler.py`**:
+   - Modified date change detection (~L881-897) to preserve `locked_room_id`
+   - Modified date confirmation flow (~L2384-2393) to preserve `locked_room_id`
+   - Only clear `room_eval_hash` to trigger Step 3 re-verification
+
+3. **`backend/workflows/steps/step3_room_availability/trigger/step3_handler.py`**:
+   - Modified date change detection (~L291-307) to preserve `locked_room_id`
+   - Added fast-skip logic (~L438-489) to check if locked room is still available:
+     ```python
+     if locked_room_id and not explicit_room_change:
+         locked_room_status = status_map.get(locked_room_id, "").lower()
+         if locked_room_status in ("available", "option"):
+             update_event_metadata(event_entry, room_eval_hash=current_req_hash)
+             return _skip_room_evaluation(state, event_entry)  # Return to caller
+         else:
+             update_event_metadata(event_entry, locked_room_id=None, room_eval_hash=None)
+     ```
+
+**Testing Status:** Partial fix applied; additional testing needed to verify all code paths.
+
+---
+
 ## 2025-12-18
 
 ### Fix: New Event Creation When Existing Event in Site Visit State

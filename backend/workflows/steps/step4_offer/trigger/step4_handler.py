@@ -221,15 +221,24 @@ def process(state: WorkflowState) -> GroupResult:
         if decision.next_step != 4:
             update_event_metadata(event_entry, current_step=decision.next_step)
 
-            # Clear room lock for date/requirements changes
-            if change_type.value in ("date", "requirements") and decision.next_step in (2, 3):
-                if decision.next_step == 2:
-                    update_event_metadata(
-                        event_entry,
-                        date_confirmed=False,
-                        room_eval_hash=None,
-                        locked_room_id=None,
-                    )
+            # For date changes: Keep room lock, invalidate room_eval_hash so Step 3 re-verifies
+            # Step 3 will check if the locked room is still available on the new date
+            # and skip room selection if so, or clear the lock if not
+            if change_type.value == "date" and decision.next_step == 2:
+                update_event_metadata(
+                    event_entry,
+                    date_confirmed=False,
+                    room_eval_hash=None,  # Invalidate to trigger re-verification in Step 3
+                    # NOTE: Keep locked_room_id to allow fast-skip in Step 3 if room still available
+                )
+            # For requirements changes, clear the lock since room may no longer fit
+            elif change_type.value == "requirements" and decision.next_step in (2, 3):
+                update_event_metadata(
+                    event_entry,
+                    date_confirmed=False if decision.next_step == 2 else None,
+                    room_eval_hash=None,
+                    locked_room_id=None,
+                )
 
             append_audit_entry(event_entry, 4, decision.next_step, f"{change_type.value}_change_detected")
 
