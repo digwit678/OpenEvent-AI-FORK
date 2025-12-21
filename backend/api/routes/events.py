@@ -12,6 +12,7 @@ DEPENDS ON:
     - backend/workflow_email.py  # Database operations
 """
 
+import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException
@@ -20,6 +21,7 @@ from pydantic import BaseModel
 from backend.workflow_email import (
     load_db as wf_load_db,
     save_db as wf_save_db,
+    process_msg as wf_process_msg,
 )
 
 
@@ -101,11 +103,65 @@ async def pay_deposit(request: DepositPaymentRequest):
         wf_save_db(db)
         print(f"[Deposit] Event {request.event_id}: Deposit marked as paid")
 
+        # Check if prerequisites are met to continue workflow
+        billing_address = event_entry.get("billing_address")
+        offer_accepted = event_entry.get("offer_accepted", False)
+        client_email = event_entry.get("client_email", "")
+        thread_id = event_entry.get("thread_id", request.event_id)
+
+        if not billing_address:
+            print(f"[Deposit] Event {request.event_id}: Billing address missing, not continuing workflow")
+            return {
+                "status": "ok",
+                "event_id": request.event_id,
+                "deposit_amount": deposit_info.get("deposit_amount"),
+                "deposit_paid_at": deposit_info.get("deposit_paid_at"),
+                "workflow_continued": False,
+                "reason": "billing_address_missing",
+            }
+
+        if not offer_accepted:
+            print(f"[Deposit] Event {request.event_id}: Offer not accepted, not continuing workflow")
+            return {
+                "status": "ok",
+                "event_id": request.event_id,
+                "deposit_amount": deposit_info.get("deposit_amount"),
+                "deposit_paid_at": deposit_info.get("deposit_paid_at"),
+                "workflow_continued": False,
+                "reason": "offer_not_accepted",
+            }
+
+        # Continue workflow with synthetic message about deposit payment
+        synthetic_msg = {
+            "msg_id": str(uuid.uuid4()),
+            "from_name": "Client (GUI)",
+            "from_email": client_email,
+            "subject": f"Deposit paid for event {request.event_id}",
+            "ts": _now_iso(),
+            "body": "I have paid the deposit.",
+            "thread_id": thread_id,
+            "session_id": thread_id,
+            "event_id": request.event_id,
+            "deposit_just_paid": True,  # Signal to workflow handler
+        }
+
+        wf_res = {}
+        try:
+            wf_res = wf_process_msg(synthetic_msg)
+            print(f"[Deposit] Workflow continued: action={wf_res.get('action')} event_id={wf_res.get('event_id')}")
+        except Exception as exc:
+            print(f"[Deposit][ERROR] Failed to continue workflow: {exc}")
+            import traceback
+            traceback.print_exc()
+
         return {
             "status": "ok",
             "event_id": request.event_id,
             "deposit_amount": deposit_info.get("deposit_amount"),
             "deposit_paid_at": deposit_info.get("deposit_paid_at"),
+            "workflow_continued": True,
+            "workflow_action": wf_res.get("action"),
+            "response": wf_res.get("reply_text"),
         }
 
     except HTTPException:

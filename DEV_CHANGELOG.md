@@ -2,6 +2,35 @@
 
 ## 2025-12-21
 
+### Fix: Deposit Payment Workflow Continuation
+
+**Problem:** After clicking "pay deposit" button, the workflow stopped instead of continuing to send the offer for HIL approval. The deposit was marked as paid in the database, but no further processing occurred.
+
+**Root Cause:** The `/api/event/deposit/pay` endpoint only marked the deposit as paid without triggering workflow continuation. Additionally, the step4_handler didn't track that the offer was already accepted.
+
+**Solution:**
+1. **`backend/api/routes/events.py`**:
+   - After marking deposit paid, check if prerequisites are met (billing address + offer accepted)
+   - If yes, send synthetic message to trigger workflow continuation
+   - If no, return success but don't continue (missing prerequisites)
+
+2. **`backend/workflows/steps/step4_offer/trigger/step4_handler.py`**:
+   - Set `offer_accepted = True` on event_entry when acceptance is detected
+   - Added `_check_deposit_payment_continuation()` helper function
+   - When offer_accepted + billing complete + deposit paid → route directly to HIL
+
+**Flow After Fix:**
+1. Client says "all good" → `offer_accepted = True`
+2. System asks for billing address
+3. Client provides billing → billing stored
+4. System shows deposit reminder → halts
+5. Client clicks "pay deposit" → deposit marked paid
+6. Synthetic message triggers workflow continuation
+7. `_check_deposit_payment_continuation()` detects all conditions met
+8. Routes to HIL for final approval
+
+---
+
 ### Feature: Room Lock Preservation on Date Change Detours
 
 **Goal:** When a client changes the date from the offer/negotiation stage (Steps 4/5) and the locked room is still available on the new date, skip room selection and return directly to Step 4.
