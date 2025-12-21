@@ -56,7 +56,8 @@ ACCEPTANCE_PATTERNS = [
     r"\b(accept|agree|approved?|confirm)\w*\b",
     r"\b(looks?|sounds?|all|good\s+to)\s+(good|great|fine|okay|ok)\b",
     r"\b(yes|ok|okay|sure|yep|ja|oui)[\s,]*(please|send|go|proceed|do\s+it)?\b",
-    r"\b(that'?s?|i'?m?|all)?\s+fine\b",
+    r"\b(?:that'?s?|i'?m?|all)?\s*fine\b",  # "fine", "that's fine", "all fine", "I'm fine"
+    r"\ball\s+good\b",  # "all good" as standalone acceptance
     r"\b(send\s+it|go\s+ahead|proceed|let'?s?\s+(do|go|proceed))\b",
     r"\b(works?\s+for|happy\s+with|satisfied)\b",
     r"\b(d'?accord|einverstanden|va\s+bene)\b",
