@@ -2,12 +2,28 @@
 
 This file provides guidance to Claude 4.5 working on the OpenEvent-AI repository.
 
+## Current Stage: Testing / Pre-Production (December 2025)
+
+**The application is feature-complete for core workflow (Steps 1-7) and in active testing phase.**
+
+Goals for this phase:
+- Make the system **resilient against diverse client inputs** (multiple languages, edge cases)
+- Achieve **production stability** with comprehensive regression tests
+- Eliminate circular bugs and ensure all code paths are covered
+- Complete integration with Supabase/Hostinger for production deployment
+
+**Key metrics to watch:**
+- No silent fallback messages reaching clients
+- All HIL tasks route correctly
+- Special flows (billing, deposit, site visit) work end-to-end
+- LLM outputs fact-checked via "safety sandwich" validation
+
 ## Your Role
 
 - Act as a senior test- and workflow-focused engineer
 - Keep the system aligned with the management plan "Lindy" and Workflow v3/v4 specifications
 - Prioritize deterministic backend behaviour and strong automated tests over ad-hoc changes
-- Maintain clear documentation of bugs in TEAM_GUIDE.md and new features and changes communicated by me in the chat into the DEV_CHANGELOG.md . Always consult TEAM_GUIDE.md before fixing a bug in case it already existed. 
+- Maintain clear documentation of bugs in TEAM_GUIDE.md and new features and changes communicated by me in the chat into the DEV_CHANGELOG.md . Always consult TEAM_GUIDE.md before fixing a bug in case it already existed.
 - For new ideas collected in the chat (often too big to implement in the same task, happy accidents/ideas that happened while fixing another problem) write them to new_features.md in root so we can discuss them later.
 - For each new session always re-read the git commits since your last session to stay up to date and DEV_CHANGELOG.md for recent changes. Also reread the workflow v4 in backend workflow/specs/ . 
 
@@ -190,6 +206,102 @@ Maintain a lightweight log in DEV_CHANGELOG.md at repo root:
 
 newest entries at the top.
 
+## Bug Prevention Patterns (CRITICAL)
+
+**These patterns prevent the most common circular bugs. Check ALL of them before implementing any fix.**
+
+### Pattern 1: Special Flow State Detection
+
+When the workflow is in a special state (billing capture, deposit waiting, site visit), **ALL code paths must check for it** and bypass normal detection.
+
+**The Billing Flow Pattern (model for all special flows):**
+```python
+# Check BEFORE any change detection or routing
+in_billing_flow = (
+    event_entry.get("offer_accepted")
+    and (event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
+)
+
+if in_billing_flow:
+    # Skip date change detection
+    # Skip room change detection
+    # Skip requirements change detection
+    # Skip duplicate message detection
+    # Route directly to billing handler
+```
+
+**Checklist for any special flow state:**
+1. ✅ `workflow_email.py` - Duplicate message detection
+2. ✅ `workflow_email.py` - Step routing loop
+3. ✅ `step1_handler.py` - Change detection (date, room, requirements)
+4. ✅ Step handlers (step4/step5) - Confirmation gate checks
+
+### Pattern 2: Step Corruption Prevention
+
+**Problem:** Event gets stored at wrong step, causing wrong routing on next message.
+
+**Solution:** Force correct step BEFORE the routing loop, not after:
+```python
+# In workflow_email.py, BEFORE the main routing loop:
+if in_billing_flow and stored_step != 5:
+    print(f"[WF][BILLING_FIX] Correcting step from {stored_step} to 5")
+    state.event_entry["current_step"] = 5
+    state.extras["persist"] = True
+```
+
+### Pattern 3: Response Key Access
+
+**Problem:** Different handlers return different response structures, causing KeyError.
+
+**Solution:** Always use defensive `.get()` with defaults:
+```python
+# BAD - will crash if structure differs
+body = response["draft"]["body"]
+
+# GOOD - handles missing keys gracefully
+draft = response.get("draft") or {}
+body = draft.get("body", "Default message")
+```
+
+### Pattern 4: The "Detection Bypass" Rule
+
+**When fixing detection issues:** If a message should NOT trigger detection (e.g., billing address shouldn't trigger room change), add an **early return** guard, not a late filter:
+
+```python
+# At the TOP of detection function
+if in_special_flow:
+    return None  # Skip detection entirely
+
+# NOT at the bottom filtering results
+```
+
+### Pattern 5: Hash Guard Verification
+
+Before modifying room/date/requirements state, verify hash guards:
+```python
+# If room_eval_hash exists and matches requirements_hash, room is still valid
+# If offer_hash exists and matches current state, offer is still valid
+# Only clear hashes when the underlying data actually changes
+```
+
+### Common Circular Bug Patterns (From Recent History)
+
+| Pattern | Symptom | Cause | Fix |
+|---------|---------|-------|-----|
+| **Wrong step routing** | Event at Step 3 instead of Step 5 | Previous flow set step incorrectly | Force correct step before routing |
+| **Duplicate detection blocks flow** | `action=duplicate_message` | Special flow not exempted | Add `in_special_flow` bypass |
+| **Change detection during special flow** | Date/room change triggered when providing billing | Detection runs on all messages | Add `in_special_flow` guard |
+| **Response key mismatch** | KeyError on `response["body"]` | Handler returns `{"draft": {"body": ...}}` | Use `.get()` chains |
+| **HIL task not created** | Workflow completes but no task | Missing `actions` in response | Check return structure |
+
+### Testing Special Flows
+
+Always test with:
+1. **Fresh event** - New inquiry through full flow
+2. **Existing event at mid-step** - Continue from specific state
+3. **Corrupted state** - Event with wrong step value
+4. **Edge case inputs** - Empty strings, unicode, multilingual
+
 ## Testing Principles (High Priority)
 
 **The test suite is the main guardrail; keep it clean, well-structured and focused on high-value behaviours.**
@@ -248,12 +360,26 @@ OpenEvent is an AI-powered venue booking workflow system for The Atelier. It aut
 ## Development Commands
 
 ### Backend (Python FastAPI)
+
+**Preferred: Use the dev server script (handles cleanup, API keys, PID tracking):**
+```bash
+./scripts/dev_server.sh         # Start backend (with auto-cleanup)
+./scripts/dev_server.sh stop    # Stop backend
+./scripts/dev_server.sh restart # Restart backend
+./scripts/dev_server.sh status  # Check if running
+./scripts/dev_server.sh cleanup # Kill all dev processes (backend + frontend)
+```
+
+**Manual startup (if dev_server.sh unavailable):**
 ```bash
 # Start backend server (from repo root)
-export PYTHONDONTWRITEBYTECODE=1  # optional, prevents .pyc permission issues on macOS
+export PYTHONDONTWRITEBYTECODE=1  # prevents .pyc permission issues on macOS
+source scripts/oe_env.sh  # loads API key from Keychain
 uvicorn backend.main:app --reload --port 8000
+```
 
-# Run specific workflow step manually
+**Run specific workflow step manually:**
+```bash
 python -B backend/availability_pipeline.py <EVENT_ID>
 ```
 
@@ -519,3 +645,136 @@ The workflow uses three distinct LLM roles, each with strict boundaries:
 4. **Hash Mismatches:** If `room_eval_hash` doesn't match `requirements_hash`, Step 3 blocks until re-approved
 5. **Pytest Test Selection:** Default runs `v4` tests only; use `-m "v4 or legacy"` to include all
 6. **LLM Stub vs Live:** Tests in `tests/stubs/` use stubbed LLM responses; always validate critical flows with live OpenAI key mimicking real client interactions from workflow start to end (offer confirmation).
+
+## General Techniques for Resilient Code
+
+### Defensive State Access
+
+Always assume event_entry fields may be missing or malformed:
+```python
+# BAD - crashes if billing_requirements is None
+billing = event_entry["billing_requirements"]["address"]
+
+# GOOD - handles all missing cases
+billing_req = event_entry.get("billing_requirements") or {}
+address = billing_req.get("address", "")
+```
+
+### Unified Gate Checking
+
+Use the confirmation gate pattern for any multi-prerequisite check:
+```python
+from backend.workflows.common.confirmation_gate import check_confirmation_gate
+
+gate = check_confirmation_gate(event_entry)
+if gate.ready_for_hil:
+    # All prerequisites met
+elif gate.missing_billing:
+    # Request billing
+elif gate.missing_deposit:
+    # Show deposit button
+```
+
+### Detection Pipeline Order
+
+Follow this order to avoid false positives:
+1. **Special flow guards** (billing, deposit, site visit) - return early
+2. **Duplicate message check** - return early if duplicate
+3. **Intent classification** - determine message type
+4. **Entity extraction** - Regex → NER → LLM pipeline
+5. **Change detection** - only if not in special flow
+
+### Safety Sandwich Pattern
+
+All client-facing LLM output must go through verification:
+```python
+# 1. Build facts from database (deterministic)
+facts = build_room_offer_facts(event_entry)
+
+# 2. Generate LLM draft
+draft = llm_verbalize(facts)
+
+# 3. Verify/correct the draft
+verified = correct_output(facts, draft)  # Fixes hallucinations
+
+# 4. Only then send to client (via HIL)
+```
+
+### Multilingual Resilience
+
+The system handles German and English. When adding detection patterns:
+```python
+# Include both languages in keyword lists
+ACCEPTANCE_KEYWORDS = [
+    "yes", "ok", "agree", "accept",  # English
+    "ja", "einverstanden", "akzeptiert",  # German
+]
+
+# Use case-insensitive matching
+if any(kw in message.lower() for kw in ACCEPTANCE_KEYWORDS):
+    ...
+```
+
+## Dev Test Mode
+
+When testing with existing events, the system offers a continue/reset choice:
+
+**Enable/disable:**
+```bash
+export OE_DEV_TEST_MODE=true   # Enable choice (default)
+export OE_DEV_TEST_MODE=false  # Auto-continue always
+```
+
+**Skip programmatically:**
+```bash
+curl -X POST http://localhost:8000/api/start-conversation \
+  -H "Content-Type: application/json" \
+  -d '{"email_body": "...", "skip_dev_choice": true}'
+```
+
+## Production Readiness Checklist
+
+Before deploying to production:
+
+### Core Workflow
+- [ ] All 7 steps complete happy-path test
+- [ ] Detour and return flows work (date change → Step 2 → return)
+- [ ] Room lock preservation on date change
+- [ ] Site visit flow end-to-end
+- [ ] Deposit payment continuation
+
+### HIL Integration
+- [ ] All HIL tasks created at correct moments
+- [ ] Approve/reject buttons functional
+- [ ] Task persistence across server restarts
+- [ ] No orphaned tasks (completed events with pending tasks)
+
+### Error Handling
+- [ ] No silent fallback messages reaching clients
+- [ ] All LLM outputs fact-checked
+- [ ] Graceful handling of API timeouts
+- [ ] Database lock contention handled
+
+### Security
+- [ ] API keys never in code or logs
+- [ ] Input sanitization on all client messages
+- [ ] Rate limiting on public endpoints
+
+### Observability
+- [ ] Debug traces enabled for all flows
+- [ ] Error logging with context
+- [ ] Performance metrics for LLM calls
+
+## Quick Reference: Key Files
+
+| Purpose | Location |
+|---------|----------|
+| Main orchestrator | `backend/workflow_email.py` |
+| Step handlers | `backend/workflows/steps/step{N}_{name}/trigger/` |
+| Confirmation gate | `backend/workflows/common/confirmation_gate.py` |
+| Safety sandwich | `backend/ux/verbalizer_safety.py` |
+| Database adapter | `backend/workflows/io/database.py` |
+| Debug traces | `backend/debug/trace.py` |
+| Dev server script | `scripts/dev_server.sh` |
+| Test suite | `backend/tests/` |
+| Workflow specs | `backend/workflow/specs/` |
