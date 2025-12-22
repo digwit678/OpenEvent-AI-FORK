@@ -130,15 +130,27 @@ source venv/bin/activate
 # Install dependencies
 pip install -r requirements-dev.txt
 
-# Option A: Use the dev environment script (recommended for macOS)
-# This sets PYTHONPATH and loads OPENAI_API_KEY from macOS Keychain
+# Option A: Use the dev server script (RECOMMENDED)
+# Automatically handles port cleanup, PID tracking, and API key loading
+./scripts/dev_server.sh
+
+# Option B: Use the environment script + manual uvicorn
 source scripts/oe_env.sh
 uvicorn backend.main:app --reload --port 8000
 
-# Option B: Manual setup
+# Option C: Fully manual setup
 export PYTHONPATH=$(pwd)
 export OPENAI_API_KEY=your_api_key_here
 uvicorn backend.main:app --reload --port 8000
+```
+
+**Dev Server Script Commands:**
+```bash
+./scripts/dev_server.sh         # Start backend (with auto-cleanup)
+./scripts/dev_server.sh stop    # Stop backend
+./scripts/dev_server.sh restart # Restart backend
+./scripts/dev_server.sh status  # Check if backend is running
+./scripts/dev_server.sh cleanup # Kill all dev processes (backend + frontend)
 ```
 
 **Storing API Key in macOS Keychain (optional):**
@@ -146,7 +158,7 @@ uvicorn backend.main:app --reload --port 8000
 # Add key to Keychain (one-time setup)
 security add-generic-password -a "$USER" -s 'openevent-api-test-key' -w 'sk-your-key-here'
 
-# Then source scripts/oe_env.sh will auto-load it
+# Both dev_server.sh and oe_env.sh will auto-load it
 ```
 
 ### 2. Setup Frontend
@@ -185,8 +197,33 @@ Key environment variables (create a `.env` file):
 | `OPENAI_API_KEY` | (required) | API key for NLU and Verbalizer |
 | `OE_INTEGRATION_MODE` | `json` | `json` (local files) or `supabase` (production) |
 | `OE_HIL_ALL_LLM_REPLIES` | `false` | Require approval for ALL AI responses (see below) |
+| `OE_DEV_TEST_MODE` | `true` | Enable dev test mode (continue/reset choice) |
 | `WF_DEBUG_STATE` | `0` | Set to `1` for verbose workflow logging |
 | `VERBALIZER_TONE` | `professional` | Message tone: `professional` or `plain` |
+
+### Dev Test Mode (Continue/Reset Choice)
+
+When testing with an existing event, the system offers a choice to continue at the current step or reset to a new event. This is useful during development to avoid resetting the database between tests.
+
+**What happens:**
+- Message matches an existing event AND event is past Step 1
+- System returns a choice prompt instead of processing
+- "Continue" resumes at current step with all existing data
+- "Reset" creates a new event from scratch
+
+**Control the behavior:**
+```bash
+# Disable dev test mode (always continue automatically)
+export OE_DEV_TEST_MODE=false
+
+# Or skip choice programmatically:
+curl -X POST http://localhost:8000/api/start-conversation \
+  -H "Content-Type: application/json" \
+  -d '{"email_body": "...", "client_email": "...", "skip_dev_choice": true}'
+
+# Or use the continue endpoint:
+curl -X POST http://localhost:8000/api/client/{client_id}/continue
+```
 
 ### HIL Toggle for AI Reply Approval
 
