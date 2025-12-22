@@ -17,6 +17,7 @@ from backend.workflows.steps.step5_negotiation import (
     process,
     _handle_accept,
     _offer_summary_lines,
+    _apply_hil_negotiation_decision,
 )
 
-__all__ = ["process", "_handle_accept", "_offer_summary_lines"]
+__all__ = ["process", "_handle_accept", "_offer_summary_lines", "_apply_hil_negotiation_decision"]
