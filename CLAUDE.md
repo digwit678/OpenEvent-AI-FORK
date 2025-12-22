@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude 4.5 working on the OpenEvent-AI repository.
+This file provides guidance to Claude (Opus 4.5) working on the OpenEvent-AI repository.
 
 ## Current Stage: Testing / Pre-Production (December 2025)
 
@@ -37,20 +37,26 @@ Goals for this phase:
   - OpenEvent Database (dark-blue)
   - Condition (purple)
 - Event statuses: `Lead` → `Option` → `Confirmed`
-- Workflow steps: Follow documented Workflow v3/v4, especially Steps 1–4 and their detours
+- Workflow steps: Follow documented Workflow v3/v4, all Steps 1–7 and their detours
 
 ## Primary References
 
 **Always open/re-read relevant ones before major changes:**
+
+**Living documents (check frequently):**
+- `DEV_CHANGELOG.md` - Recent changes, fixes, new features (check at session start!)
+- `docs/TEAM_GUIDE.md` - Bugs, open issues, heuristics, prevention patterns
+- `backend/workflow/specs/` - V4 workflow specifications (authoritative)
+
+**Architecture & workflow:**
+- `docs/workflow_rules.md` - Core workflow rules
+- Openevent - Workflow v3 TO TEXT (MAIN).pdf - Main workflow reference
+- `docs/internal/step4_step5_requirements.md` - Offer/negotiation requirements
+
+**Legacy (for context only):**
 - AI-Powered Event Management Platform.pdf
 - Workflow v3.pdf
-- Workflow instance working on Lindy.pdf
-- Openevent - Workflow v3 TO TEXT (MAIN).pdf
 - Technical Workflow v2.pdf
-- workflow_rules.md
-- step4_step5_requirements.md
-- qna_shortcuts_debugger.md
-- TEAM_GUIDE.md (bugs, open issues, heuristics)
 
 ## Environment and API Keys
 
@@ -59,17 +65,19 @@ Goals for this phase:
 - Python code and tests must obtain the key via `backend/utils/openai_key.load_openai_api_key()`, not `os.getenv` directly
 
 **Before running any tests or scripts that call OpenAI:**
-1. Activate the dev environment from repo root:
+1. Use the dev server script (preferred) or activate manually:
    ```bash
-   cd /Users/nico/PycharmProjects/OpenEvent-AI
+   ./scripts/dev_server.sh   # Handles everything including API key
+   # OR manually:
    source scripts/oe_env.sh
    ```
 
-2. Preferred test commands under this activated environment:
+2. Run tests (API key loaded automatically):
    ```bash
-   pytest backend/tests/smoke/test_workflow_v3_agent.py -q
-   pytest backend/tests_integration/test_e2e_live_openai.py -q
-   # and other pytest commands
+   # Primary test suites
+   pytest backend/tests/detection/ -v    # Detection tests
+   pytest backend/tests/regression/ -v   # Regression tests
+   pytest backend/tests/flow/ -v         # Workflow flow tests
    ```
 
 ## Debugger and Conversation Traces
@@ -347,9 +355,10 @@ Add assertions or tests so that such paths are detectable and fail loudly in tes
 
 ## When in Doubt
 
-- Re-read Workflow v3 TO TEXT , FRONTEND_REFERENCE.md and TEAM_GUIDE.md
+- **Check TEAM_GUIDE.md** first - the bug may already be documented with a fix
+- **Check DEV_CHANGELOG.md** - recent changes may explain unexpected behavior
+- **Re-read Bug Prevention Patterns** (above) before implementing any fix
 - Prefer adding or strengthening tests before changing logic
-- If something feels like a "shortcut", check shortcut_workflow_request.txt and qna_shortcuts_debugger.md before proceeding
 
 ## Project Overview
 
@@ -398,38 +407,28 @@ npm test         # vitest
 
 ### Testing
 
-**Primary test suite (v4 workflow tests):**
+**Primary test suites:**
 ```bash
-# Run default v4 tests (excludes legacy)
+# Run all tests
 pytest
 
-# Run specific workflow alignment tests (Steps 1-3)
-pytest tests/specs/
+# Run by category
+pytest backend/tests/detection/ -v    # Intent/entity detection
+pytest backend/tests/regression/ -v   # Regression tests (critical!)
+pytest backend/tests/flow/ -v         # Workflow flow tests
 
-# Run end-to-end v4 tests
-pytest tests/e2e_v4/
+# Run single test with verbose output
+pytest backend/tests/regression/test_billing_flow.py -v
 
-# Run regression suite
-pytest tests/regression/
-
-# Run legacy v3 alignment tests (if needed)
-pytest -m legacy
-
-# Run all tests including legacy
-pytest -m "v4 or legacy"
-
-# Run single test
-pytest tests/e2e_v4/test_happy_path.py::test_intake_to_confirmation -v
+# Run with live OpenAI (not stubbed)
+AGENT_MODE=openai pytest backend/tests/flow/ -v
 ```
 
-**CI/stub mode (auto-selects live or stubbed LLM):**
+**Quick validation command:**
 ```bash
-./scripts/run_ci_or_stub.sh
+# Recommended: Run detection + regression + flow tests
+pytest backend/tests/detection/ backend/tests/regression/ backend/tests/flow/ -v --tb=short
 ```
-
-Test markers are defined in `pytest.ini`:
-- `v4`: Current workflow tests (default)
-- `legacy`: Legacy v3 alignment tests
 
 ### Dependencies
 ```bash
@@ -485,44 +484,42 @@ Confirmation / Deposit
 
 ### 7-Step Pipeline (Implementation Locations)
 
-1. **Step 1 - Intake** (`backend/workflows/groups/intake/`):
+1. **Step 1 - Intake** (`backend/workflows/steps/step1_intake/`):
    - [LLM-Classify] intent, [LLM-Extract] entities (Regex→NER→LLM)
    - Loops: ensure email present, date complete (Y-M-D), capacity present (int)
    - Captures `wish_products` for ranking (non-gating)
    - **Never re-runs post-creation** (HIL edits only)
 
-2. **Step 2 - Date Confirmation** (`backend/workflows/groups/date_confirmation/`):
+2. **Step 2 - Date Confirmation** (`backend/workflows/steps/step2_date_confirmation/`):
    - Calls `db.dates.next5` with **TODAY (Europe/Zurich)** ≥ TODAY, blackout/buffer rules
    - Presents none/one/many-feasible flows via [LLM-Verb] → [HIL] → send
    - Parses client reply [LLM-Extract] → ISO date
    - On confirmation: `db.events.update_date`, sets `date_confirmed=true`
 
-3. **Step 3 - Room Availability** (`backend/workflows/groups/room_availability/`):
+3. **Step 3 - Room Availability** (`backend/workflows/steps/step3_room_availability/`):
    - Entry guards: A (no room), B (room change request), C (requirements change)
    - Calls `db.rooms.search(chosen_date, requirements)` → branches:
      - Available: [LLM-Verb] → [HIL] → on "proceed" → `db.events.lock_room(locked_room_id, room_eval_hash=requirements_hash)`
      - Option: explain option → [HIL] → accept option or detour to Step 2
      - Unavailable: propose date/capacity change → detour to Step 2 (caller_step=3) or loop on req change
 
-4. **Step 4 - Offer** (`backend/workflows/groups/offer/`):
+4. **Step 4 - Offer** (`backend/workflows/steps/step4_offer/`):
    - Validates P1-P4; detours if any fail
-   - Products mini-flow:
-     - ≤5 rooms: [LLM-Verb] table (confirmed + up to 5 alts), rank by `wish_products` fulfillment
-     - >5 rooms: ask "specific products/catering?", re-rank via `db.products.rank`
-     - Special requests → [HIL] decide → loop until approved or denied
    - Compose: [LLM-Verb] professional offer + totals → [HIL] approve
+   - Handles billing address capture and deposit requirements
    - Send: `db.offers.create(status=Lead)` → `offer_id`
 
-5. **Step 5 - Negotiation** (`backend/workflows/groups/negotiation_close.py`):
+5. **Step 5 - Negotiation** (`backend/workflows/steps/step5_negotiation/`):
    - Interprets accept/decline/counter/clarification
+   - Handles billing flow when offer accepted
    - Structural changes route back to Steps 2/3/4 via detours
    - Accept → hands off to Step 7
 
-6. **Step 6 - Transition Checkpoint** (`backend/workflows/groups/transition_checkpoint.py`):
+6. **Step 6 - Transition Checkpoint** (deprecated - logic merged into Steps 5/7):
    - Validates all prerequisites before Step 7
    - Sets `transition_ready` flag
 
-7. **Step 7 - Confirmation** (`backend/workflows/groups/event_confirmation/`):
+7. **Step 7 - Confirmation** (`backend/workflows/steps/step7_confirmation/`):
    - Manages site visits, deposits, reserves, declines, final confirmations
    - Option/deposit branches via `db.policy.read`, `db.options.create_hold`
    - All transitions audited through HIL gates
@@ -613,11 +610,17 @@ The workflow uses three distinct LLM roles, each with strict boundaries:
 **Critical Boundary:** LLM adapters receive curated JSON payloads from the workflow engine and NEVER call database functions directly. All DB operations flow through the engine's adapter surface.
 
 **Environment Variables:**
-- `AGENT_MODE`: `openai` (live) or `stub` (testing)
-- `OE_LLM_PROFILE`: Profile name from `configs/llm_profiles.json`
-- `OPENAI_API_KEY`: Set via environment or macOS Keychain (see `scripts/run_ci_or_stub.sh`)
+- `AGENT_MODE`: `openai` (live) or `stub` (testing) - controls LLM behavior
+- `OE_DEV_TEST_MODE`: `true` (show continue/reset choice) or `false` (auto-continue)
+- `OE_HIL_ALL_LLM_REPLIES`: `true` to require HIL approval for ALL AI responses
+- `OPENAI_API_KEY`: Set via environment or macOS Keychain
+- `VERBALIZER_TONE`: `professional` (default) or `plain` for testing
 
-**Testing:** Tests in `tests/stubs/` provide deterministic LLM responses for regression tests but do not reflect live behaviour of agent using OpenAI key. So always test with real openai key mimicking real user flow as it happens in the real world (not just backend but UX and user perspective). The challenge of this application is making it generally useful and not having to specifically hardcode each new scenario. We are looking for a sustainable , long and general solution for all kind of client responses (focusing on 2 languages for now but planning multilingual usage for the future).
+**Testing Philosophy:**
+- Tests should use real OpenAI when possible to catch LLM behavior changes
+- Always test end-to-end flows (not just unit tests) mimicking real client interactions
+- The system must handle diverse inputs without hardcoding specific scenarios
+- Current languages: German and English (multilingual expansion planned)
 
 ## Important Implementation Notes
 
