@@ -1090,11 +1090,20 @@ def process(state: WorkflowState) -> GroupResult:
 
     # Use centralized change propagation system for systematic change detection and routing
     # Enhanced detection with dual-condition logic (revision signal + bound target)
+    # Skip change detection during billing flow - billing addresses shouldn't trigger date/room changes
+    in_billing_flow = (
+        event_entry.get("offer_accepted")
+        and (event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
+    )
     message_text = (state.message.subject or "") + "\n" + (state.message.body or "")
-    enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
-    change_type = enhanced_result.change_type if enhanced_result.is_change else None
+    if in_billing_flow:
+        # In billing flow, don't detect changes - just continue with billing capture
+        change_type = None
+    else:
+        enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
+        change_type = enhanced_result.change_type if enhanced_result.is_change else None
 
-    if needs_vague_date_confirmation:
+    if needs_vague_date_confirmation and not in_billing_flow:
         event_entry["range_query_detected"] = True
         update_event_metadata(
             event_entry,
@@ -1147,7 +1156,8 @@ def process(state: WorkflowState) -> GroupResult:
                     detoured_to_step2 = True
 
     # Fallback: legacy logic for cases not handled by change propagation
-    elif new_date and new_date != event_entry.get("chosen_date"):
+    # Skip during billing flow - billing addresses shouldn't trigger date changes
+    elif new_date and new_date != event_entry.get("chosen_date") and not in_billing_flow:
         if (
             previous_step not in (None, 1, 2)
             and event_entry.get("caller_step") is None
@@ -1205,8 +1215,13 @@ def process(state: WorkflowState) -> GroupResult:
             event_entry.pop("negotiation_pending_decision", None)
 
     # Fallback: room change detection (legacy)
+    # Skip room change detection if in billing flow - billing addresses shouldn't trigger room changes
+    in_billing_flow = (
+        event_entry.get("offer_accepted")
+        and (event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
+    )
     if new_preferred_room and new_preferred_room != event_entry.get("locked_room_id") and change_type is None:
-        if not detoured_to_step2:
+        if not detoured_to_step2 and not in_billing_flow:
             prev_step_for_room = event_entry.get("current_step") or previous_step
             if prev_step_for_room != 3 and event_entry.get("caller_step") is None:
                 update_event_metadata(event_entry, caller_step=prev_step_for_room)

@@ -14,6 +14,10 @@ from backend.workflows.common.billing import (
     missing_billing_fields,
     update_billing_details,
 )
+from backend.workflows.common.confirmation_gate import (
+    auto_continue_if_ready,
+    get_next_prompt,
+)
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.pricing import derive_room_rate, normalise_rate
 # MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
@@ -142,9 +146,77 @@ def process(state: WorkflowState) -> GroupResult:
 
     billing_missing = _refresh_billing(event_entry)
     state.extras["persist"] = True
-    auto_accept = _auto_accept_if_billing_ready(state, event_entry, thread_id, billing_missing)
-    if auto_accept:
-        return auto_accept
+
+    # -------------------------------------------------------------------------
+    # UNIFIED CONFIRMATION GATE: Order-independent check for all prerequisites
+    # Uses in-memory event_entry (which has latest billing) but reloads deposit
+    # status from database (in case it was paid via frontend API)
+    # -------------------------------------------------------------------------
+    event_id = event_entry.get("event_id")
+    if event_id and event_entry.get("offer_accepted"):
+        from backend.workflows.common.confirmation_gate import check_confirmation_gate
+
+        # First check in-memory state (has latest billing)
+        gate_status = check_confirmation_gate(event_entry)
+
+        # If deposit is required but not paid in memory, check database for API updates
+        if gate_status.deposit_required and not gate_status.deposit_paid:
+            _, db_status, fresh_entry = auto_continue_if_ready(event_id, event_entry)
+            # If deposit was paid via API, update our status
+            if db_status.deposit_paid:
+                gate_status = db_status
+                # Also update event_entry with fresh deposit info
+                event_entry["deposit_info"] = fresh_entry.get("deposit_info", {})
+                event_entry["deposit_state"] = fresh_entry.get("deposit_state", {})
+
+        if gate_status.ready_for_hil:
+            # All prerequisites met - continue to HIL
+            print(f"[Step5] Confirmation gate passed: billing_complete={gate_status.billing_complete}, "
+                  f"deposit_required={gate_status.deposit_required}, deposit_paid={gate_status.deposit_paid}")
+            # Use the existing _handle_accept flow
+            response = _handle_accept(event_entry)
+            # _handle_accept returns {"draft": {"body": ...}, ...}
+            accept_draft = response.get("draft") or {}
+            draft = {
+                "body_markdown": accept_draft.get("body", "Offer accepted - pending final approval."),
+                "step": 5,
+                "topic": "offer_accepted_hil_gate_passed",
+                "next_step": "Pending Final Approval",
+                "thread_state": "Waiting on HIL",
+                "requires_approval": True,
+            }
+            state.add_draft_message(draft)
+            update_event_metadata(event_entry, current_step=5, thread_state="Waiting on HIL")
+            state.set_thread_state("Waiting on HIL")
+            set_hil_open(thread_id, True)
+            state.extras["persist"] = True
+            return GroupResult(
+                action="offer_accept_pending_hil",
+                payload={
+                    "client_id": state.client_id,
+                    "event_id": event_id,
+                    "billing_complete": gate_status.billing_complete,
+                    "deposit_paid": gate_status.deposit_paid,
+                },
+                halt=True,
+            )
+
+        # Not ready - check if we need to prompt for missing items
+        next_prompt = get_next_prompt(gate_status, step=5)
+        if next_prompt:
+            state.add_draft_message(next_prompt)
+            update_event_metadata(event_entry, current_step=5, thread_state="Awaiting Client")
+            state.set_thread_state("Awaiting Client")
+            state.extras["persist"] = True
+            return GroupResult(
+                action="awaiting_prerequisites",
+                payload={
+                    "pending": gate_status.pending_items,
+                    "billing_complete": gate_status.billing_complete,
+                    "deposit_paid": gate_status.deposit_paid,
+                },
+                halt=True,
+            )
 
     message_text = (state.message.body or "").strip()
     user_info = state.user_info or {}

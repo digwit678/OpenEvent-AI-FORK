@@ -972,8 +972,13 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
             # Don't flag as duplicate if this is a detour return or offer update flow
             is_detour = state.event_entry.get("caller_step") is not None
             current_step = state.event_entry.get("current_step", 1)
+            # Don't flag as duplicate during billing flow - client may resend billing info
+            in_billing_flow = (
+                state.event_entry.get("offer_accepted")
+                and (state.event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
+            )
 
-            if not is_detour and current_step >= 2:
+            if not is_detour and not in_billing_flow and current_step >= 2:
                 # Return friendly "same message" response instead of processing
                 duplicate_response = GroupResult(
                     action="duplicate_message",
@@ -1020,6 +1025,19 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         )
         _persist_if_needed(state, path, lock_path)
         return _flush_and_finalize(shortcut_result, state, path, lock_path)
+
+    # [BILLING FLOW CORRECTION] Force step=5 when in billing flow
+    # This handles cases where step was incorrectly set before billing flow started
+    if state.event_entry:
+        in_billing_flow = (
+            state.event_entry.get("offer_accepted")
+            and (state.event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
+        )
+        stored_step = state.event_entry.get("current_step")
+        if in_billing_flow and stored_step != 5:
+            print(f"[WF][BILLING_FIX] Correcting step from {stored_step} to 5 for billing flow")
+            state.event_entry["current_step"] = 5
+            state.extras["persist"] = True
 
     for _ in range(6):
         event_entry = state.event_entry
