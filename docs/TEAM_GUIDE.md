@@ -489,6 +489,32 @@ Added `_apply_hil_negotiation_decision` to exports in:
 
 **Fix Applied:** Gate now uses in-memory `event_entry` for billing check (which has latest captured data), and only reloads from database to check deposit status (for frontend API updates).【F:backend/workflows/steps/step4_offer/trigger/step4_handler.py†L138-L149】【F:backend/workflows/steps/step5_negotiation/trigger/step5_handler.py†L159-L170】
 
+### Billing Address Routing to Wrong Step (Fixed - 2025-12-22)
+**Symptoms:** After accepting an offer and providing billing address, the system responded with a generic fallback message instead of routing to HIL for final approval. Billing address was sometimes captured as the original greeting message instead of the actual address.
+
+**Root Causes:**
+1. **Duplicate message detection:** The duplicate message check didn't account for billing flow, blocking repeated messages during billing capture.
+2. **Change detection during billing:** The billing address message triggered room/date change detection, causing the workflow to route to Step 3 instead of Step 5.
+3. **Step corruption:** If step was incorrectly set before billing flow started, it wasn't corrected.
+4. **Response key mismatch:** `_handle_accept()` returns `{"draft": {"body": ...}}` but the code expected `response["body"]`.
+
+**Fixes Applied:**
+1. **Duplicate bypass:** Added billing flow check to duplicate message detection - messages during `offer_accepted + awaiting_billing_for_accept` bypass duplicate detection.【F:backend/workflow_email.py†L975-L981】
+2. **Change detection guards:** Added `in_billing_flow` guards to skip:
+   - Enhanced change detection (date/room/requirements)
+   - Vague date confirmation check
+   - Legacy date change fallback
+   - Room change detection
+   【F:backend/workflows/steps/step1_intake/trigger/step1_handler.py†L1093-L1105】【F:backend/workflows/steps/step1_intake/trigger/step1_handler.py†L1156-L1160】【F:backend/workflows/steps/step1_intake/trigger/step1_handler.py†L1215-L1222】
+3. **Step correction:** Before the routing loop, force `current_step=5` when in billing flow regardless of stored value.【F:backend/workflow_email.py†L1031-L1042】
+4. **Response key fix:** Fixed Step 5 to access `response["draft"]["body"]` instead of `response["body"]`.【F:backend/workflows/steps/step5_negotiation/trigger/step5_handler.py†L179-L181】
+
+**Regression Guard:** After providing a billing address during accepted offer flow, the system should:
+- NOT trigger duplicate message detection
+- NOT route to Step 3 or any step other than Step 5
+- Correctly capture the billing address
+- Route to HIL for final approval with "sent to manager" message
+
 ### Room choice repeats / manual-review detours (Ongoing Fix)
 **Symptoms:** After a client types a room name (e.g., “Room E”), the workflow dropped back to Step 3, showed another room list, or enqueued manual review; sometimes the room label was mistaken for a billing address (“Billing Address: Room E”).
 
