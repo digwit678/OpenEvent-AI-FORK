@@ -14,10 +14,11 @@ Submodules:
     trigger/    - Main entry point (process function)
 """
 
-from .trigger.step5_handler import process, _handle_accept, _offer_summary_lines
+from .trigger.step5_handler import process, _handle_accept, _offer_summary_lines, _apply_hil_negotiation_decision
 
 __all__ = [
     "process",
     "_handle_accept",
     "_offer_summary_lines",
+    "_apply_hil_negotiation_decision",
 ]

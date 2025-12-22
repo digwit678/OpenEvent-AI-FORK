@@ -11,6 +11,10 @@ from backend.workflows.common.billing import (
     missing_billing_fields,
     update_billing_details,
 )
+from backend.workflows.common.confirmation_gate import (
+    auto_continue_if_ready,
+    get_next_prompt,
+)
 from backend.workflows.common.types import GroupResult, WorkflowState
 # MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
 from backend.detection.intent.confidence import check_nonsense_gate
@@ -121,19 +125,58 @@ def process(state: WorkflowState) -> GroupResult:
 
     billing_missing = _refresh_billing(event_entry)
     state.extras["persist"] = True
-    auto_accept = _auto_accept_if_billing_ready(state, event_entry, previous_step, thread_id, billing_missing)
-    if auto_accept:
-        return auto_accept
 
     # -------------------------------------------------------------------------
-    # DEPOSIT PAYMENT CONTINUATION: If offer was accepted, billing collected,
-    # and deposit just paid, proceed directly to HIL
+    # UNIFIED CONFIRMATION GATE: Order-independent check for all prerequisites
+    # Uses in-memory event_entry (which has latest billing) but reloads deposit
+    # status from database (in case it was paid via frontend API)
     # -------------------------------------------------------------------------
-    deposit_continuation = _check_deposit_payment_continuation(
-        state, event_entry, previous_step, thread_id, billing_missing
-    )
-    if deposit_continuation:
-        return deposit_continuation
+    event_id = event_entry.get("event_id")
+    if event_id and event_entry.get("offer_accepted"):
+        from backend.workflows.common.confirmation_gate import check_confirmation_gate, reload_and_check_gate
+
+        # First check in-memory state (has latest billing)
+        gate_status = check_confirmation_gate(event_entry)
+
+        # If deposit is required but not paid in memory, check database for API updates
+        if gate_status.deposit_required and not gate_status.deposit_paid:
+            _, db_status, fresh_entry = auto_continue_if_ready(event_id, event_entry)
+            # If deposit was paid via API, update our status
+            if db_status.deposit_paid:
+                gate_status = db_status
+                # Also update event_entry with fresh deposit info
+                event_entry["deposit_info"] = fresh_entry.get("deposit_info", {})
+                event_entry["deposit_state"] = fresh_entry.get("deposit_state", {})
+
+        if gate_status.ready_for_hil:
+            # All prerequisites met - continue to HIL
+            print(f"[Step4] Confirmation gate passed: billing_complete={gate_status.billing_complete}, "
+                  f"deposit_required={gate_status.deposit_required}, deposit_paid={gate_status.deposit_paid}")
+            return _start_hil_acceptance_flow(
+                state,
+                event_entry,
+                previous_step,
+                thread_id,
+                audit_label="offer_accept_pending_hil_gate_passed",
+                action="offer_accept_pending_hil",
+            )
+
+        # Not ready - check if we need to prompt for missing items
+        next_prompt = get_next_prompt(gate_status, step=4)
+        if next_prompt:
+            state.add_draft_message(next_prompt)
+            update_event_metadata(event_entry, current_step=4, thread_state="Awaiting Client")
+            state.set_thread_state("Awaiting Client")
+            state.extras["persist"] = True
+            return GroupResult(
+                action="awaiting_prerequisites",
+                payload={
+                    "pending": gate_status.pending_items,
+                    "billing_complete": gate_status.billing_complete,
+                    "deposit_paid": gate_status.deposit_paid,
+                },
+                halt=True,
+            )
 
     # [CHANGE DETECTION + Q&A] Tap incoming stream BEFORE offer composition to detect client revisions
     message_text = _message_text(state)
