@@ -263,11 +263,13 @@ class StubAgentAdapter(AgentAdapter):
         return results
 
     def _extract_date(self, text: str) -> Optional[str]:
-        # Pattern types: (1) EU numeric, (2) ISO, (3) DD Month YYYY, (4) Month DD, YYYY
+        # Pattern types: (1) EU numeric, (2) ISO, (3) DD Month YYYY, (4) Month DD, YYYY, (5) Month DD-DD, YYYY (range)
         patterns = [
             (r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b", "eu"),           # DD.MM.YYYY
             (r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", "iso"),            # YYYY-MM-DD
             (r"\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+(\d{4})\b", "dmy"),  # DD Month YYYY
+            # Month DD-DD, YYYY (date range) - captures first day
+            (r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+(\d{1,2})[\-–—]\d{1,2},?\s+(\d{4})\b", "mdy"),
             (r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})\b", "mdy"),  # Month DD, YYYY (US format)
         ]
         for pattern, ptype in patterns:
