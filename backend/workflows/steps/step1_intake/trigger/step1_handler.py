@@ -631,6 +631,36 @@ def process(state: WorkflowState) -> GroupResult:
         current_step = 1
     owner_step = _resolve_owner_step(current_step)
 
+    # [TESTING CONVENIENCE] When in dev/test mode, offer choice to continue or reset
+    # This helps with testing by not auto-continuing stale sessions
+    # Skip if message has skip_dev_choice flag (user already chose to continue)
+    dev_test_mode = os.getenv("DEV_TEST_MODE", "").lower() in ("1", "true", "yes")
+    skip_dev_choice = state.extras.get("skip_dev_choice", False)
+    if dev_test_mode and linked_event and current_step > 1 and not skip_dev_choice:
+        event_id = linked_event.get("event_id")
+        event_date = linked_event.get("chosen_date") or (linked_event.get("event_data") or {}).get("Event Date", "unknown")
+        locked_room = linked_event.get("locked_room_id") or "none"
+        offer_accepted = bool(linked_event.get("offer_accepted"))
+
+        return GroupResult(
+            action="dev_choice_required",
+            payload={
+                "client_id": email,
+                "event_id": event_id,
+                "current_step": current_step,
+                "step_name": owner_step,
+                "event_date": event_date,
+                "locked_room": locked_room,
+                "offer_accepted": offer_accepted,
+                "options": [
+                    {"id": "continue", "label": f"Continue at {owner_step}"},
+                    {"id": "reset", "label": "Reset client (delete all data)"},
+                ],
+                "message": f"Existing event detected for {email} at {owner_step}. Date: {event_date}, Room: {locked_room}",
+            },
+            halt=True,
+        )
+
     trace_marker(
         thread_id,
         "TRIGGER_Intake",
@@ -1263,6 +1293,37 @@ def _ensure_event_record(
             "reason": "terminal_status",
             "status": existing_status,
         })
+
+    # Offer already accepted - this event is essentially complete
+    # UNLESS the client is still providing billing/deposit info for the accepted offer
+    # In that case, we should continue the existing flow, not start fresh
+    if last_event.get("offer_accepted"):
+        # Check if this is a continuation of the accepted offer flow
+        billing_reqs = last_event.get("billing_requirements") or {}
+        awaiting_billing = billing_reqs.get("awaiting_billing_for_accept", False)
+        deposit_state = last_event.get("deposit_state") or {}
+        awaiting_deposit = deposit_state.get("required") and not deposit_state.get("paid")
+
+        # Also check if the message looks like billing info (address, postal code, etc.)
+        message_body = (state.message.body or "").strip().lower()
+        looks_like_billing = _looks_like_billing_fragment(message_body) if message_body else False
+
+        # Only create new event if this is truly a NEW inquiry, not a billing/deposit follow-up
+        if awaiting_billing or awaiting_deposit or looks_like_billing:
+            # Continue with existing event - don't create new
+            trace_db_write(_thread_id(state), "Step1_Intake", "offer_accepted_continue", {
+                "reason": "billing_or_deposit_followup",
+                "awaiting_billing": awaiting_billing,
+                "awaiting_deposit": awaiting_deposit,
+                "looks_like_billing": looks_like_billing,
+            })
+        else:
+            # New inquiry from same client after offer was accepted - create fresh event
+            should_create_new = True
+            trace_db_write(_thread_id(state), "Step1_Intake", "new_event_decision", {
+                "reason": "offer_already_accepted",
+                "event_id": last_event.get("event_id"),
+            })
 
     # Site visit in progress or scheduled - don't reuse for new inquiries
     # When site_visit_state.status is "proposed" or "scheduled", the event is mid-process
