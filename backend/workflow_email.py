@@ -637,6 +637,15 @@ def approve_task_and_send(
             if not decision_result.halt and (target_event.get("current_step") == 6):
                 process_transition(hil_state)
 
+            # Set site_visit_state to "proposed" so client's date preference is handled correctly
+            # (mirrors the Step 4 approval logic above)
+            target_event.setdefault("site_visit_state", {
+                "status": "idle",
+                "proposed_slots": [],
+                "confirmed_date": None,
+                "confirmed_time": None,
+            })["status"] = "proposed"
+
             if hil_state.extras.get("persist"):
                 db_io.save_db(db, path, lock_path=lock_path)
 
@@ -943,6 +952,9 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         part for part in ((message.subject or "").strip(), (message.body or "").strip()) if part
     )
     state.extras["general_qna_scan"] = quick_general_qna_scan(combined_text)
+    # [DEV TEST MODE] Pass through skip_dev_choice flag for testing convenience
+    if msg.get("skip_dev_choice"):
+        state.extras["skip_dev_choice"] = True
     classification = _ensure_general_qna_classification(state, combined_text)
     _debug_state("init", state, extra={"entity": "client"})
     last_result = intake.process(state)

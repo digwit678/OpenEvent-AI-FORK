@@ -3,23 +3,26 @@ MODULE: backend/api/routes/clients.py
 PURPOSE: Client management endpoints.
 
 ENDPOINTS:
-    POST /api/client/reset  - Reset all data for a client (testing only)
+    POST /api/client/reset     - Reset all data for a client (testing only)
+    POST /api/client/continue  - Continue workflow at current step (dev test mode)
 
 DEPENDS ON:
     - backend/workflow_email.py  # Database operations
 
 SECURITY NOTE:
-    The reset endpoint is for testing only and is disabled by default.
+    These endpoints are for testing only and are disabled by default.
     Set ENABLE_DANGEROUS_ENDPOINTS=true to enable (never in production!).
 """
 
 import os
+from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.workflow_email import (
     load_db as wf_load_db,
     save_db as wf_save_db,
+    process_msg as wf_process_msg,
 )
 
 
@@ -30,6 +33,14 @@ router = APIRouter(prefix="/api/client", tags=["clients"])
 
 class ClientResetRequest(BaseModel):
     email: str
+
+
+class ClientContinueRequest(BaseModel):
+    """Request to continue workflow at current step (bypasses dev_choice prompt)."""
+    email: str
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    session_id: Optional[str] = None
 
 
 # --- Route Handlers ---
@@ -136,4 +147,50 @@ async def reset_client_data(request: ClientResetRequest):
         "client_deleted": client_deleted,
         "events_deleted": deleted_events,
         "tasks_deleted": deleted_tasks,
+    }
+
+
+@router.post("/continue")
+async def continue_workflow(request: ClientContinueRequest):
+    """[Dev Test Mode] Continue workflow at current step, bypassing dev_choice prompt.
+
+    This endpoint is used when DEV_TEST_MODE is enabled and a client has an existing
+    event at a higher step. Instead of resetting, this allows continuing the workflow
+    from where it left off.
+
+    SECURITY: This endpoint is disabled by default.
+    Set ENABLE_DANGEROUS_ENDPOINTS=true to enable (development only).
+    """
+    is_dev = os.getenv("ENABLE_DANGEROUS_ENDPOINTS", "true").lower() == "true"
+    if not is_dev:
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is disabled. Set ENABLE_DANGEROUS_ENDPOINTS=true to enable (development only)."
+        )
+
+    email = request.email.lower().strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    # Build message payload with skip_dev_choice flag
+    msg = {
+        "from_email": email,
+        "subject": request.subject or "Continue workflow",
+        "body": request.body or "",
+        "skip_dev_choice": True,  # This bypasses the dev_choice prompt
+    }
+    if request.session_id:
+        msg["session_id"] = request.session_id
+
+    try:
+        result = wf_process_msg(msg)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to continue workflow: {exc}") from exc
+
+    print(f"[WF] client continue email={email} action={result.get('action', 'unknown')}")
+    return {
+        "email": email,
+        "action": result.get("action"),
+        "payload": result.get("payload"),
+        "draft_messages": result.get("draft_messages"),
     }

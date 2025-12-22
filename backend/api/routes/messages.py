@@ -429,6 +429,26 @@ async def start_conversation(request: StartConversationRequest):
             "is_complete": False,
             "event_info": None,
         }
+    # [DEV TEST MODE] Return choice prompt when existing event detected
+    # Note: payload fields are merged at top level by GroupResult.merged()
+    if wf_action == "dev_choice_required":
+        return {
+            "session_id": session_id,
+            "workflow_type": "dev_choice",
+            "response": wf_res.get("message", "Existing event detected"),
+            "is_complete": False,
+            "event_info": None,
+            "dev_choice": {
+                "client_id": wf_res.get("client_id"),
+                "event_id": wf_res.get("event_id"),
+                "current_step": wf_res.get("current_step"),
+                "step_name": wf_res.get("step_name"),
+                "event_date": wf_res.get("event_date"),
+                "locked_room": wf_res.get("locked_room"),
+                "offer_accepted": wf_res.get("offer_accepted"),
+                "options": wf_res.get("options", []),
+            },
+        }
     if wf_action == "ask_for_date_enqueued":
         event_info = EventInformation(
             date_email_received=datetime.now().strftime("%d.%m.%Y"),
