@@ -919,6 +919,75 @@ if last_event.get("offer_accepted"):
 
 ---
 
+## Bug Prevention Guidelines
+
+### The "Billing Flow" Pattern
+When implementing any special flow state (like billing capture, deposit waiting, site visit), ensure ALL code paths check for it:
+
+**Checklist for any "special flow state":**
+1. ✅ **Duplicate message detection** - Bypass for special flow
+2. ✅ **Change detection** - Skip date/room/requirements detection
+3. ✅ **Step routing** - Force correct step regardless of stored value
+4. ✅ **Response key access** - Verify return value structure
+
+**Code pattern (billing flow example):**
+```python
+in_billing_flow = (
+    event_entry.get("offer_accepted")
+    and (event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
+)
+```
+
+### Common Circular Bug Patterns
+
+**Pattern 1: Stored step gets corrupted**
+- **Symptom:** Event at wrong step despite correct flow
+- **Cause:** Previous flow set step incorrectly, new flow doesn't correct it
+- **Solution:** Force correct step before routing loop
+
+**Pattern 2: Change detection triggers on unrelated data**
+- **Symptom:** Billing address triggers room change
+- **Cause:** LLM extracts data that differs from stored values
+- **Solution:** Skip change detection during special flows
+
+**Pattern 3: Duplicate detection blocks valid messages**
+- **Symptom:** Valid input blocked as "duplicate"
+- **Cause:** Duplicate check doesn't account for special flows
+- **Solution:** Bypass duplicate check during special flows
+
+**Pattern 4: Response key mismatch**
+- **Symptom:** KeyError when processing response
+- **Cause:** Handler returns nested structure, caller expects flat
+- **Solution:** Always verify return value structure with `.get()`
+
+### Adding New Flow States
+
+When adding a new flow state (like a new pre-confirmation gate), add guards to:
+
+1. **`workflow_email.py`**
+   - Duplicate message detection (lines ~970-1000)
+   - Step correction before routing loop (lines ~1030-1042)
+
+2. **`step1_handler.py`**
+   - Change detection guards (lines ~1090-1105)
+   - Date change guards (lines ~1156-1160)
+   - Room change guards (lines ~1215-1222)
+
+3. **Step handlers (step4/step5)**
+   - Confirmation gate checks
+   - Response key access with `.get()`
+
+### Testing Special Flows
+
+Always test with:
+1. **Fresh event** - New inquiry through full flow
+2. **Existing event** - Continue from mid-flow state
+3. **Corrupted state** - Event with wrong step value
+4. **Duplicate message** - Same message sent twice
+5. **Change trigger** - Data that looks like a change request
+
+---
+
 ## Test Suite Status
 
 **Last Updated:** 2025-11-27

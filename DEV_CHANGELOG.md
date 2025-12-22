@@ -1,5 +1,93 @@
 # Development Changelog
 
+## 2025-12-22
+
+### Fix: Billing Address Routing to Wrong Step
+
+**Problem:** After accepting an offer and providing a billing address, the system responded with a generic fallback message instead of routing to HIL for final approval. The billing address was sometimes captured as the original greeting message.
+
+**Root Causes:**
+1. **Duplicate message detection** blocked billing flow messages
+2. **Change detection** during billing triggered room/date changes
+3. **Step corruption** wasn't corrected when entering billing flow
+4. **Response key mismatch** in `_handle_accept()` return value
+
+**Solution:**
+1. Added billing flow bypass to duplicate message detection
+2. Added `in_billing_flow` guards to skip all change detection in step1_handler
+3. Added step correction to force `current_step=5` when in billing flow
+4. Fixed Step 5 to access `response["draft"]["body"]` instead of `response["body"]`
+
+**Files Modified:**
+- `backend/workflow_email.py` - Duplicate bypass + step correction
+- `backend/workflows/steps/step1_intake/trigger/step1_handler.py` - Change detection guards
+- `backend/workflows/steps/step5_negotiation/trigger/step5_handler.py` - Response key fix
+
+---
+
+### Feature: Dev Server Script
+
+**Purpose:** Reliable backend server management with automatic cleanup.
+
+**Usage:**
+```bash
+./scripts/dev_server.sh         # Start backend
+./scripts/dev_server.sh stop    # Stop backend
+./scripts/dev_server.sh restart # Restart backend
+./scripts/dev_server.sh status  # Check status
+./scripts/dev_server.sh cleanup # Kill all dev processes
+```
+
+**Features:**
+- Automatically kills zombie processes on port 8000
+- Loads OpenAI API key from macOS Keychain
+- PID tracking for reliable process management
+- Color-coded output for easy debugging
+
+---
+
+### Feature: Dev Test Mode (Continue/Reset Choice)
+
+**Purpose:** When testing with an existing event, offers choice to continue at current step or reset to a new event.
+
+**How it works:**
+- When a message matches an existing event AND the event is past Step 1
+- System shows a choice prompt: "Continue" or "Reset"
+- "Continue" resumes at the current step with all existing data
+- "Reset" creates a new event from scratch
+
+**API Endpoints:**
+- `POST /api/client/{client_id}/continue` - Continue workflow at current step
+- Response includes `dev_choice` object when choice is needed
+
+**Skip the choice:**
+- Pass `skip_dev_choice: true` in the message payload to auto-continue
+
+---
+
+### Feature: Unified Confirmation Gate
+
+**Purpose:** Order-independent prerequisite checking for offer confirmation.
+
+**Location:** `backend/workflows/common/confirmation_gate.py`
+
+**Checks:**
+1. `offer_accepted` - Has client accepted?
+2. `billing_complete` - Is billing address complete?
+3. `deposit_required` - Is deposit needed per policy?
+4. `deposit_paid` - Has deposit been paid?
+
+**Usage:**
+```python
+from backend.workflows.common.confirmation_gate import check_confirmation_gate
+
+gate_status = check_confirmation_gate(event_entry)
+if gate_status.ready_for_hil:
+    # All prerequisites met - continue to HIL
+```
+
+---
+
 ## 2025-12-21
 
 ### Fix: Step 4 HIL Approval Continuation
