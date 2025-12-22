@@ -366,7 +366,128 @@ Changed `draft_message["requires_approval"] = True` to `draft_message["requires_
 - Address fragments (e.g., “Postal code: 8000; Country: Switzerland”) are now treated as billing updates on an existing event, so we stay on Step 4/5 instead of manual review. Room-choice replies stay room choices; we no longer overwrite billing with room labels, and we only display billing once at least some required fields are present.【F:backend/workflows/groups/intake/trigger/process.py†L600-L666】【F:backend/workflows/groups/offer/trigger/process.py†L60-L120】【F:backend/workflows/groups/negotiation_close.py†L70-L140】
 - Billing prompts now include a concrete example (“Helvetia Labs, Bahnhofstrasse 1, 8001 Zurich, Switzerland”). Partial replies won’t duplicate room prompts or trigger manual review detours.【F:backend/workflows/groups/offer/trigger/process.py†L130-L190】【F:backend/workflows/groups/intake/trigger/process.py†L610-L666】
 
-**Pending risk:** Empty or single-word replies still won’t capture billing; real-world replies should include at least one of street/postal/city/country.
+**Pending risk:** Empty or single-word replies still won't capture billing; real-world replies should include at least one of street/postal/city/country.
+
+### Raw Table Fallback Overwriting Verbalized Content (Fixed)
+**Symptoms:** Client asks about availability and receives ugly raw table markdown like "Room A | Status: available; Capacity up to 40..." instead of properly verbalized prose like "I'd be happy to help you check availability..."
+
+**Root Cause:** The `enrich_general_qna_step2()` function in `backend/workflows/common/general_qna.py` was unconditionally overwriting `draft["body_markdown"]` with raw table data, even when the LLM verbalizer had already generated proper prose. The enrichment function runs AFTER the verbalizer, destroying the verbalized content.
+
+**Fix Applied:**
+Added `_is_verbalized_content()` detection function that checks for conversational markers (e.g., "I'd be happy to", "Let me check", "Here's what I found") vs raw table markers (e.g., "Status: available", "Capacity up to"). When verbalized content is detected, the function preserves it and only sets `table_blocks` for frontend structured rendering.【F:backend/workflows/common/general_qna.py†L1183-L1275】
+
+**Regression Guard:** Any availability Q&A response should contain conversational prose, not raw table markdown. If you see "Room | Status:" patterns in client-facing messages, the verbalization preservation is failing.
+
+### Order-Dependent Prerequisites / Stale State Bug (Fixed)
+**Symptoms:** After client accepts offer and provides billing, deposit is requested. Client pays deposit via frontend "Pay Deposit" button, but:
+1. Workflow asks for deposit AGAIN (ignoring that it was just paid)
+2. Nothing is sent to HIL after deposit payment
+3. Workflow gets stuck in a loop
+
+**Root Cause:** The `event_entry` dict was loaded once at workflow start and never refreshed. When the frontend API marked the deposit as paid (via `/api/events/{id}/deposit`), the in-memory `event_entry` still had `deposit_paid=False`. The workflow checked the stale dict instead of reloading from database.
+
+**Fix Applied:**
+Created `backend/workflows/common/confirmation_gate.py` - a unified, order-independent prerequisites gate that:
+1. Reloads event from database to get fresh state (catches API changes)
+2. Checks all prerequisites in one place: `offer_accepted`, `billing_complete`, `deposit_paid`
+3. Returns `ready_for_hil=True` when all conditions are met
+4. Provides `get_next_prompt()` for appropriate prompting when not ready
+
+Wired the unified gate into both `step4_handler.py` and `step5_handler.py`, replacing the separate `_auto_accept_if_billing_ready` and `_check_deposit_payment_continuation` functions.【F:backend/workflows/common/confirmation_gate.py】【F:backend/workflows/steps/step4_offer/trigger/step4_handler.py†L129-L165】【F:backend/workflows/steps/step5_negotiation/trigger/step5_handler.py†L150-L203】
+
+**Regression Guard:** After paying deposit via frontend, workflow should immediately continue to HIL without asking for deposit again. Test by: accept offer → provide billing → pay deposit via frontend → verify HIL task is created.
+
+### Billing Address Creating New Event Instead of Continuing (Fixed)
+**Symptoms:** After client accepts offer and is asked for billing address, providing the address (e.g., "JLabs AG, Bahnhofstrasse 15, 8001 Zurich") triggers:
+1. A NEW event being created instead of continuing the existing one
+2. Wrong message sent ("Noted 22.12.2025. Preferred time?" - Step 2 date confirmation)
+3. Duplicate messages being sent
+
+**Root Cause:** The `_ensure_event_record` function in `step1_handler.py` checked `if last_event.get("offer_accepted")` and always created a new event when True, without checking if the client was still providing billing/deposit info for the accepted offer.
+
+**Fix Applied:**
+Added smart detection in `_ensure_event_record` that checks before creating new event:
+1. `awaiting_billing_for_accept=True` in `billing_requirements` → continue existing
+2. `deposit_state.required=True` and not paid → continue existing
+3. Message looks like billing info (postal codes, street names via `_looks_like_billing_fragment()`) → continue existing
+
+Only creates new event when: none of the above, indicating a truly new inquiry from the same client.【F:backend/workflows/steps/step1_intake/trigger/step1_handler.py†L1297-L1326】
+
+**Regression Guard:** After accepting offer and being asked for billing, providing an address should show "offer_accepted_continue" in debug log, NOT "new_event_decision" or "db.events.create". Only one event should exist per client's accepted offer.
+
+### HIL Approval Not Routing to Site Visit (Fixed)
+**Symptoms:** After manager approves offer via HIL, the workflow went to room availability instead of site visit proposal. Client's next message was handled incorrectly.
+
+**Root Cause:** In `workflow_email.py`, Step 4 HIL approval correctly set `site_visit_state.status="proposed"` but Step 5 HIL approval was missing this same logic. When the approval came from Step 5, the site_visit_state wasn't set, causing wrong routing.
+
+**Fix Applied:**
+Added site_visit_state initialization to Step 5 HIL approval path (mirroring Step 4 logic):
+```python
+target_event.setdefault("site_visit_state", {
+    "status": "idle",
+    "proposed_slots": [],
+    "confirmed_date": None,
+    "confirmed_time": None,
+})["status"] = "proposed"
+```
+【F:backend/workflow_email.py†L640-L647】
+
+**Regression Guard:** After HIL approval (either Step 4 or 5), `site_visit_state.status` should be "proposed". Client's next message should route to Step 7 site visit handling, not back to room availability.
+
+### Frontend Zombie Process / Stuck Loading (Operational)
+**Symptoms:** Frontend at localhost:3000 shows blank white page or stuck loading spinner indefinitely. Port 3000 appears occupied but page never loads.
+
+**Root Cause:** A Node.js process is listening on port 3000 but has become unresponsive (zombie process). This typically happens after abrupt termination or when the dev server crashes without cleanup.
+
+**Fix:**
+```bash
+# Kill zombie process
+kill -9 $(lsof -nP -iTCP:3000 -sTCP:LISTEN -t)
+# Restart frontend
+npm run dev
+```
+
+**Prevention:** Use the `scripts/dev_server.sh` script which cleans up stale processes before starting.
+
+### Date Range Not Parsed (Fixed)
+**Symptoms:** Client specifies "June 11–12, 2026" but system shows December 2025 dates. Date extraction returns null for range formats like "Month DD-DD, YYYY".
+
+**Root Cause:** The `_extract_date` regex in `agent_adapter.py` didn't have a pattern for date ranges with en-dash/hyphen between days (e.g., "June 11–12, 2026").
+
+**Fix Applied:**
+Added new regex pattern to handle date ranges:
+```python
+(r"\b(jan|feb|...)[a-z]*\s+(\d{1,2})[\-–—]\d{1,2},?\s+(\d{4})\b", "mdy")
+```
+This captures the first day of the range (e.g., June 11 from "June 11–12, 2026").【F:backend/adapters/agent_adapter.py†L271-L272】
+
+**Regression Guard:** Date ranges like "June 11–12, 2026" or "January 5-7, 2026" should extract the first day correctly.
+
+### HIL Approve Button Fails - Missing Export (Fixed)
+**Symptoms:** Clicking "Approve" in HIL panel shows error: `module 'backend.workflows.groups.negotiation_close' has no attribute '_apply_hil_negotiation_decision'`
+
+**Root Cause:** The deprecated `negotiation_close.py` wrapper didn't re-export `_apply_hil_negotiation_decision` from `step5_negotiation`.
+
+**Fix Applied:**
+Added `_apply_hil_negotiation_decision` to exports in:
+- `backend/workflows/steps/step5_negotiation/__init__.py`
+- `backend/workflows/groups/negotiation_close.py`
+
+**Regression Guard:** HIL approve/reject buttons should work. If this error reappears, check that all functions called by `workflow_email.py` are properly exported.
+
+### Confirmation Gate ImportError (Fixed)
+**Symptoms:** Workflow crashes with `ImportError: cannot import name 'DB_PATH'` when billing/deposit gate is checked.
+
+**Root Cause:** `confirmation_gate.py` tried to import `DB_PATH` from `database.py` but that constant doesn't exist.
+
+**Fix Applied:** Changed to compute the path directly: `Path(__file__).resolve().parents[2] / "events_database.json"`【F:backend/workflows/common/confirmation_gate.py†L127】
+
+### Billing Not Recognized After Capture (Fixed)
+**Symptoms:** Client provides billing address but system keeps asking for it in a loop.
+
+**Root Cause:** The confirmation gate was reloading from database to check billing status, but the billing had just been captured in memory and wasn't persisted yet. The database check saw old data without billing.
+
+**Fix Applied:** Gate now uses in-memory `event_entry` for billing check (which has latest captured data), and only reloads from database to check deposit status (for frontend API updates).【F:backend/workflows/steps/step4_offer/trigger/step4_handler.py†L138-L149】【F:backend/workflows/steps/step5_negotiation/trigger/step5_handler.py†L159-L170】
 
 ### Room choice repeats / manual-review detours (Ongoing Fix)
 **Symptoms:** After a client types a room name (e.g., “Room E”), the workflow dropped back to Step 3, showed another room list, or enqueued manual review; sometimes the room label was mistaken for a billing address (“Billing Address: Room E”).
@@ -723,6 +844,52 @@ if locked_room_id and not explicit_room_change:
 1. If the locked room is available on the new date → Step 3 should skip room selection and return to Step 4
 2. If the locked room is NOT available → Step 3 should clear the lock and present room options
 3. `locked_room_id` should only be `None` after Step 3 explicitly clears it due to unavailability
+
+### Event Reuse Bug - Stale offer_accepted Causing Wrong Flow (Fixed - 2025-12-22)
+**Symptoms:** New event inquiry from existing client gets routed to HIL confirmation flow instead of normal intake. Client sends "I'd like to book a workshop for 25 people on June 11, 2026" but receives HIL-related message instead of room availability.
+
+**Root Cause:** The `_ensure_event_record()` function in `step1_handler.py` reuses existing events for the same email address. When an existing event had `offer_accepted: True` from a previous booking, new inquiries from the same client would:
+1. Match to the old event via `last_event_for_email()`
+2. Reuse the event with stale `offer_accepted: True` state
+3. Step 4/5 sees `offer_accepted: True` and triggers HIL confirmation flow
+4. Wrong response sent to client
+
+**Fix Applied:**
+Added `offer_accepted: True` as a terminal condition in `_ensure_event_record()`:
+```python
+if last_event.get("offer_accepted"):
+    should_create_new = True
+    trace_db_write(_thread_id(state), "Step1_Intake", "new_event_decision", {
+        "reason": "offer_already_accepted",
+        "event_id": last_event.get("event_id"),
+    })
+```
+【F:backend/workflows/steps/step1_intake/trigger/step1_handler.py†L1267-L1275】
+
+**Regression Guard:** Once an offer is accepted, any new inquiry from the same client should create a fresh event (even if booking the same date for a different purpose). Debug log should show `db.events.create` with reason `offer_already_accepted`, not `db.events.update`.
+
+### Dev Test Mode - Continue/Reset Prompt for Testing (New Feature - 2025-12-22)
+**Purpose:** Testing convenience feature for the development branch. When `DEV_TEST_MODE=1` is set, existing clients at advanced steps get a choice prompt instead of auto-continuing.
+
+**How It Works:**
+1. When a message comes in from a client with existing event at step > 1
+2. Instead of auto-continuing, returns `action: "dev_choice_required"`
+3. Frontend shows options: "Continue at Step X" or "Reset client (delete all data)"
+4. User can call `/api/client/continue` or `/api/client/reset`
+
+**Environment Variable:** Set `DEV_TEST_MODE=1` to enable (also set `ENABLE_DANGEROUS_ENDPOINTS=true`)
+
+**Endpoints Added:**
+- `POST /api/client/continue` - Continue workflow at current step (reprocesses message with `skip_dev_choice: true`)
+- `POST /api/client/reset` - Delete all events/tasks for client (already existed)
+
+**Files Modified:**
+- `backend/workflows/steps/step1_intake/trigger/step1_handler.py` - Dev choice detection
+- `backend/workflow_email.py` - Pass `skip_dev_choice` flag through state
+- `backend/api/routes/clients.py` - Continue endpoint
+- `backend/api/routes/messages.py` - Handle `dev_choice_required` action
+
+**Note:** This feature is ONLY for the testing/frontend branch, not for production deployment.
 
 ---
 
