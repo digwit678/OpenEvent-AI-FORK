@@ -26,7 +26,6 @@ from pydantic import BaseModel
 from backend.domain import ConversationState, EventInformation
 from backend.conversation_manager import (
     active_conversations,
-    extract_information_incremental,
     render_step3_reply,
     pop_step3_payload,
 )
@@ -570,13 +569,10 @@ async def send_message(request: SendMessageRequest):
 
     conversation_state = active_conversations[request.session_id]
 
-    try:
-        conversation_state.event_info = extract_information_incremental(
-            request.message,
-            conversation_state.event_info,
-        )
-    except Exception as exc:
-        print(f"[WF][WARN] incremental extraction failed: {exc}")
+    # NOTE: Removed redundant extract_information_incremental() call (Dec 2025)
+    # It was making a separate gpt-4o-mini API call that updated in-memory state
+    # but didn't persist to the workflow database. The workflow's own detection
+    # in step1_handler.py handles all entity extraction properly.
 
     conversation_state.conversation_history.append({"role": "user", "content": request.message})
 
