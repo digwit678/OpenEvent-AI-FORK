@@ -1169,6 +1169,7 @@ def _extract_participants(requirements: Dict[str, Any]) -> Optional[int]:
 def _room_requirements_payload(entry: RankedRoom) -> Dict[str, List[str]]:
     return {
         "matched": list(entry.matched),
+        "closest": list(entry.closest),  # Moderate matches with context
         "missing": list(entry.missing),
     }
 

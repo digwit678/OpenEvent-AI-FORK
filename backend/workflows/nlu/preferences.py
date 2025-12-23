@@ -93,6 +93,7 @@ def extract_preferences(user_info: Dict[str, Any], raw_text: Optional[str] = Non
             preferences["room_match_breakdown"] = {
                 entry["room"]: {
                     "matched": entry["matched"],
+                    "closest": entry.get("closest", []),
                     "missing": entry["missing"],
                     "matches_detail": entry.get("matches_detail", []),
                     "alternatives": entry.get("alternatives", []),
@@ -221,11 +222,13 @@ def _score_rooms_by_products(wish_products: Sequence[str]) -> List[Dict[str, Any
         room_all_features = room_features | room_services | room_layouts
 
         score = 0.0
-        matched: List[str] = []
+        matched: List[str] = []  # Strong matches (>= 0.85)
+        closest: List[str] = []  # Moderate matches (0.65-0.85) - "comes closest to your X"
         missing: List[str] = []
         matches_detail: List[Dict[str, Any]] = []
         alternatives_detail: List[Dict[str, Any]] = []
         matched_lower: Set[str] = set()
+        closest_lower: Set[str] = set()
         alternatives_seen: Set[Tuple[str, str]] = set()
         for wish in wish_products:
             wish_normalized = _normalise_phrase(wish)
@@ -257,16 +260,18 @@ def _score_rooms_by_products(wish_products: Sequence[str]) -> List[Dict[str, Any
 
             best_ratio, best_product = top_matches[0]
             if best_ratio >= 0.85:
+                # Strong match - "includes the X you mentioned"
                 score += 1.0
                 if best_product.lower() not in matched_lower:
                     matched.append(best_product)
                     matched_lower.add(best_product.lower())
                 matches_detail.append(_make_match_entry(wish, best_product, best_ratio))
             elif best_ratio >= 0.65:
+                # Moderate match - "X comes closest to your Y preference"
                 score += 0.5
-                if best_product.lower() not in matched_lower:
-                    matched.append(best_product)
-                    matched_lower.add(best_product.lower())
+                if best_product.lower() not in closest_lower:
+                    closest.append(f"{best_product} (closest to {wish})")
+                    closest_lower.add(best_product.lower())
                 matches_detail.append(_make_match_entry(wish, best_product, best_ratio))
             elif best_ratio >= 0.5:
                 missing.append(wish)
@@ -291,6 +296,7 @@ def _score_rooms_by_products(wish_products: Sequence[str]) -> List[Dict[str, Any
                 "room": room,
                 "score": round(score, 3),
                 "matched": matched,
+                "closest": closest,  # Moderate matches with context
                 "missing": missing,
                 "matches_detail": matches_detail,
                 "alternatives": alternatives_detail,

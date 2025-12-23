@@ -100,12 +100,12 @@ The system avoids "always-on" LLM calls by using a tiered detection architecture
 /
 ├── atelier-ai-frontend/    # Next.js Frontend application
 ├── backend/                # Python Backend application
+│   ├── adapters/           # Interface adapters (Calendar, GUI)
 │   ├── api/                # FastAPI endpoints
 │   ├── main.py             # App entry point
 │   ├── workflow_email.py   # Core State Machine Orchestrator
 │   └── workflows/          # Business Logic
-│       ├── groups/         # Ste
-p implementations (intake, offer, etc.)
+│       ├── groups/         # Step implementations (intake, offer, etc.)
 │       ├── nlu/            # Detectors & Classifiers (Regex + LLM)
 │       └── io/             # Database & Task Management
 ├── docs/                   # Detailed documentation & rules
@@ -176,7 +176,7 @@ The project has a comprehensive regression suite.
 pytest
 
 # Run specific workflow tests
-pytest backend/tests/workflows/test_workflow_v3_alignment.py
+pytest backend/tests/flow/test_happy_path_step1_to_4.py
 ```
 
 ---
