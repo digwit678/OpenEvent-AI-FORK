@@ -170,7 +170,14 @@ class StubAgentAdapter(AgentAdapter):
         if room_match:
             entities["room"] = room_match.group(0).strip()
 
-        for evt_type in ["workshop", "meeting", "conference", "seminar", "wedding", "party", "training"]:
+        # Event types that affect room/catering preferences
+        event_types = [
+            "workshop", "meeting", "conference", "seminar", "wedding", "party",
+            "training", "dinner", "lunch", "breakfast", "brunch", "reception",
+            "cocktail", "apéro", "apero", "aperitif", "banquet", "gala",
+            "birthday", "celebration", "presentation", "lecture", "talk",
+        ]
+        for evt_type in event_types:
             if evt_type in lower_body:
                 entities["type"] = evt_type
                 break
