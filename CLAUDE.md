@@ -27,6 +27,55 @@ Goals for this phase:
 - For new ideas collected in the chat (often too big to implement in the same task, happy accidents/ideas that happened while fixing another problem) write them to new_features.md in root so we can discuss them later.
 - For each new session always re-read the git commits since your last session to stay up to date and DEV_CHANGELOG.md for recent changes. Also reread the workflow v4 in backend workflow/specs/ . 
 
+## NO-TOUCH ZONES (Requires Explicit Permission)
+
+**NEVER modify these files/directories without explicit user permission:**
+
+- `backend/workflows/specs/` (These are the "Source of Truth" definitions; do not change the law to fit the code)
+- `configs/llm_profiles.json` (LLM Configuration)
+- `backend/config.py` (Core backend configuration)
+- `backend/utils/openai_key.py` (Authentication logic)
+- `.env` / `.env.example` (Environment configuration)
+- `atelier-ai-frontend/package.json` / `backend/requirements.txt` (Dependency definitions - ask before adding deps)
+
+## QUALITY GATES (Run Before Committing)
+
+**Before ANY commit, ensure these pass:**
+
+1. **Backend Tests:**
+   ```bash
+   pytest
+   ```
+   *Must pass with zero failures.*
+
+2. **Frontend Check:**
+   ```bash
+   cd atelier-ai-frontend && npm run build
+   # and if applicable:
+   npm test
+   ```
+   *Must build without errors.*
+
+3. **Type/Lint Checks (if applicable):**
+   - Check for obvious syntax errors or type mismatches before finalizing.
+
+## REGRESSION PREVENTION & WORKFLOW
+
+1. **ONE change at a time**
+   - Do not combine refactors with bug fixes.
+   - Do not combine multiple feature implementations.
+
+2. **List affected files BEFORE writing code**
+   - Explicitly state: "I plan to modify X, Y, and Z."
+
+3. **Scope Guard**
+   - If a task requires touching more than 3 files, **STOP and ask for confirmation**.
+   - Do not "cleanup" unrelated code while fixing a bug.
+
+4. **Verify Tests First**
+   - Before fixing a bug, run the test that reproduces it.
+   - If no test exists, write one.
+
 ## Canonical Vocabulary and Concepts
 
 **Use these exact terms (do not invent new ones):**
