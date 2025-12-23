@@ -1,5 +1,27 @@
 # Development Changelog
 
+## 2025-12-23
+
+### Fix: HIL Message Not Appearing After Deposit Payment
+
+**Problem:** After paying the deposit via the "Pay Deposit" button, the HIL message asking the manager to approve the booking was not appearing in the chat.
+
+**Root Causes:**
+1. **Backend:** Deposit API returned `wf_res.get("reply_text")` which is `None` - workflow returns `draft_messages` array instead
+2. **Frontend:** `handlePayDeposit` didn't use the API response to append the message to chat
+
+**Solution:**
+1. Backend (events.py): Extract response from `draft_messages[-1].get("body_markdown")`
+2. Frontend (page.tsx): Capture result and call `appendMessage()` when `result.response` exists
+
+**Files Modified:**
+- `backend/api/routes/events.py` - Extract response from draft_messages
+- `atelier-ai-frontend/app/page.tsx` - Append HIL message to chat after deposit payment
+
+**Tests:** E2E frontend flow verified - complete flow from inquiry through deposit payment now shows HIL message.
+
+---
+
 ## 2025-12-22
 
 ### Fix: Billing Address Routing to Wrong Step
