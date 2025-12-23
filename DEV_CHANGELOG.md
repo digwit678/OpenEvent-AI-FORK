@@ -2,6 +2,21 @@
 
 ## 2025-12-23
 
+### Fix: Event Type Extraction for Preference Matching (dinner, banquet, etc.)
+
+**Problem:** When a client mentioned "dinner event" in their inquiry, the event type was not being extracted, so preference matching couldn't recommend rooms with relevant catering options.
+
+**Root Cause:** The `StubAgentAdapter._extract_entities()` only recognized a limited set of event types: workshop, meeting, conference, seminar, wedding, party, training. Food/catering event types like "dinner", "banquet", "cocktail" were missing.
+
+**Solution:** Expanded the event type list to include: dinner, lunch, breakfast, brunch, reception, cocktail, apéro, aperitif, banquet, gala, birthday, celebration, presentation, lecture, talk.
+
+**Files Modified:**
+- `backend/adapters/agent_adapter.py:173-183` - Expanded event_types list
+
+**Result:** "dinner event" now extracts `type: dinner`, which flows to `wish_products: ['dinner']`, enabling room preference matching with catering options.
+
+---
+
 ### Fix: Room Preference Matching for Layout Types (workshop, theatre, etc.)
 
 **Problem:** When a client mentioned "workshop" in their inquiry, the preference extraction worked but room matching returned 0.0 score for all rooms. Rooms with "workshop" layout capability were shown as `missing: ["workshop"]` instead of `matched: ["Workshop"]`.
