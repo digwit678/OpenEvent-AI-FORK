@@ -2,6 +2,29 @@
 
 ## 2025-12-23
 
+### Fix: Acceptance Messages Triggering False Positive Room Change Detection
+
+**Problem:** During the offer acceptance flow, "Yes, I accept" messages were incorrectly triggering room change detection, causing infinite loops between Step 5 → Step 3 with `structural_change_detour` action.
+
+**Root Cause:** The `_detect_structural_change` function in Step 5 ran LLM extraction on all messages, including acceptance messages. The LLM sometimes extracted spurious "room" values from acceptance phrases, triggering false positive room change detection.
+
+**Symptom:** Audit log showed repeated `Step 5 → 3 (negotiation_changed_room)` entries. Event stuck at `current_step: 3` with `caller_step: 5`.
+
+**Solution:** Added acceptance guard at the start of `_detect_structural_change`:
+```python
+if message_text:
+    is_acceptance, confidence, _ = matches_acceptance_pattern(message_text.lower())
+    if is_acceptance and confidence >= 0.7:
+        return None  # Skip change detection for acceptance messages
+```
+
+**Files Modified:**
+- `backend/workflows/steps/step5_negotiation/trigger/step5_handler.py:665-674` - Added acceptance guard
+
+**Tests:** E2E frontend flow verified: inquiry → room selection → offer → acceptance → billing → deposit → HIL task appears.
+
+---
+
 ### Fix: HIL Task Shows in Tasks Panel, Not Chat (Deposit Flow)
 
 **Problem:** After paying the deposit, the HIL message was appearing directly in chat instead of the Manager Tasks panel. The correct flow is: deposit payment → HIL task in Tasks panel → manager clicks Approve → message appears in chat.
