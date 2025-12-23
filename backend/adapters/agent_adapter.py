@@ -171,11 +171,16 @@ class StubAgentAdapter(AgentAdapter):
             entities["room"] = room_match.group(0).strip()
 
         # Event types that affect room/catering preferences
+        # Prioritize food/catering types (affect product matching) over generic event types
         event_types = [
-            "workshop", "meeting", "conference", "seminar", "wedding", "party",
-            "training", "dinner", "lunch", "breakfast", "brunch", "reception",
-            "cocktail", "apéro", "apero", "aperitif", "banquet", "gala",
-            "birthday", "celebration", "presentation", "lecture", "talk",
+            # Food/catering types first - these drive product matching
+            "dinner", "lunch", "breakfast", "brunch", "banquet", "gala",
+            "cocktail", "apéro", "apero", "aperitif", "reception",
+            # Event format types
+            "workshop", "training", "seminar", "conference", "meeting",
+            "presentation", "lecture", "talk",
+            # Celebration types (often have catering implications)
+            "wedding", "birthday", "celebration", "party",
         ]
         for evt_type in event_types:
             if evt_type in lower_body:
