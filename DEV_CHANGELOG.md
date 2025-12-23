@@ -1,5 +1,48 @@
 # Development Changelog
 
+## 2025-12-24
+
+### Fix: Verbalizer Not Mentioning Closest Preference Matches
+
+**Problem:** When a client mentioned "dinner" in their inquiry, the preference extraction and room scoring worked correctly (showing `closest: ['Classic Apéro (closest to dinner)']`), but the AI response never mentioned this preference match to the client.
+
+**Root Cause:** The `_format_facts_section()` function in `universal_verbalizer.py` extracted `matched` and `missing` from room requirements, but **not `closest`**. This meant the LLM never saw the closest match data in its prompt.
+
+**Solution:** Added `closest` extraction and formatting alongside `matched` and `missing` in the room data section.
+
+**Files Modified:**
+- `backend/ux/universal_verbalizer.py:597-603` - Added `closest` field extraction and formatting
+
+**Result:** AI responses now correctly mention preference matches, e.g., "While we don't have a dedicated dinner package, our Classic Apéro comes closest to what you're looking for."
+
+---
+
+### Fix: Event Type Priority Order for Preference Extraction
+
+**Problem:** "dinner party" was extracting as "party" instead of "dinner" because generic event types (party) appeared before food types (dinner) in the extraction list.
+
+**Solution:** Reordered event_types list to prioritize food/catering types first (dinner, lunch, breakfast...) before generic types (party, celebration).
+
+**Files Modified:**
+- `backend/adapters/agent_adapter.py:173-188` - Reordered event types with food types first
+
+**Result:** "dinner party" now correctly extracts as "dinner".
+
+---
+
+### Enhancement: Add Closest Matches to Verbalizer Room Payload
+
+**Problem:** The Step 3 handler was calculating closest preference matches but not passing them to the verbalizer.
+
+**Solution:** Added `closest` field to the requirements dict in `_verbalizer_rooms_payload()` and updated `_derive_hint()` to show closest matches when no exact matches exist.
+
+**Files Modified:**
+- `backend/workflows/steps/step3_room_availability/trigger/step3_handler.py:1183-1188, 1248` - Added closest to payload and hint derivation
+
+**Result:** Room buttons now show hints like "Classic Apéro" for closest matches when no exact match exists.
+
+---
+
 ## 2025-12-23
 
 ### Fix: Event Type Extraction for Preference Matching (dinner, banquet, etc.)
