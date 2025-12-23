@@ -1293,6 +1293,8 @@ def _ensure_event_record(
     if not last_event:
         create_event_entry(state.db, event_data)
         event_entry = state.db["events"][-1]
+        # Store thread_id so tasks can be filtered by session in frontend
+        event_entry["thread_id"] = _thread_id(state)
         trace_db_write(_thread_id(state), "Step1_Intake", "db.events.create", {"event_id": event_entry.get("event_id")})
         return event_entry
 
@@ -1369,6 +1371,8 @@ def _ensure_event_record(
     if should_create_new:
         create_event_entry(state.db, event_data)
         event_entry = state.db["events"][-1]
+        # Store thread_id so tasks can be filtered by session in frontend
+        event_entry["thread_id"] = _thread_id(state)
         trace_db_write(_thread_id(state), "Step1_Intake", "db.events.create", {
             "event_id": event_entry.get("event_id"),
             "reason": "new_inquiry_detected",
@@ -1379,11 +1383,16 @@ def _ensure_event_record(
     if idx is None:
         create_event_entry(state.db, event_data)
         event_entry = state.db["events"][-1]
+        # Store thread_id so tasks can be filtered by session in frontend
+        event_entry["thread_id"] = _thread_id(state)
         trace_db_write(_thread_id(state), "Step1_Intake", "db.events.create", {"event_id": event_entry.get("event_id")})
         return event_entry
 
     state.updated_fields = update_event_entry(state.db, idx, event_data)
     event_entry = state.db["events"][idx]
+    # Ensure thread_id is set for backward compatibility with existing events
+    if not event_entry.get("thread_id"):
+        event_entry["thread_id"] = _thread_id(state)
     trace_db_write(
         _thread_id(state),
         "Step1_Intake",
