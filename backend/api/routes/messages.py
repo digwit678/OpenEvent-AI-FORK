@@ -33,9 +33,9 @@ from backend.core.fallback import wrap_fallback, create_fallback_context
 from backend.adapters.calendar_adapter import get_calendar_adapter
 from backend.adapters.client_gui_adapter import ClientGUIAdapter
 from backend.workflows.common.payloads import PayloadValidationError, validate_confirm_date_payload
-from backend.workflows.groups.date_confirmation import compose_date_confirmation_reply
+from backend.workflows.steps.step2_date_confirmation import compose_date_confirmation_reply
 from backend.workflows.common.prompts import append_footer
-from backend.workflows.groups.room_availability import run_availability_workflow
+from backend.workflows.steps.step3_room_availability import run_availability_workflow
 from backend.utils import json_io
 from backend.workflow_email import (
     process_msg as wf_process_msg,

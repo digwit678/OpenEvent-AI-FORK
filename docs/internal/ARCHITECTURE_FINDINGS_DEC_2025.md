@@ -186,9 +186,50 @@ Thanks for the update. I'll keep you posted as I gather the details.
 
 ---
 
+## Pyright Static Analysis (Dec 23, 2025)
+
+Ran `pyright` on all workflow files. Results:
+
+### Fixed Bugs:
+1. **`TaskStatus.COMPLETED` → `TaskStatus.DONE`** (workflow_email.py:1205)
+   - The `TaskStatus` enum has `DONE`, not `COMPLETED`
+   - This was in the debug CLI menu (dead code but still wrong)
+   - Commit: `e5567b6`
+
+2. **`_determine_offer_total` broken import** (tasks.py)
+   - Imported from deprecated shim that didn't export this function
+   - Wrapped in try/except so silently failed, returning None
+   - Fixed to import from correct location: `step5_handler.py`
+   - Commit: `cc4fc89`
+
+### Dead Code (Not Fixed):
+1. **`JSONDatabaseAdapter.create_task`** (adapter.py:208-230)
+   - Imports non-existent `create_task` from tasks.py
+   - Never called externally (only from `create_message_approval` which is never called on JSON adapter)
+   - Would crash if ever used, but harmless since it's dead code
+
+### Type Safety Issues (Not Bugs):
+- Many "None is not assignable to str" warnings
+- These are strict type checking issues, not runtime bugs
+- The code handles None properly at runtime
+
+### Files Moved to DEPRECATED:
+- `backend/models.py` (shim with zero imports)
+- `backend/llm/intent_classifier.py` (migrated to detection/)
+- `backend/workflows/nlu/general_qna_classifier.py` (migrated)
+- `backend/workflows/nlu/keyword_buckets.py` (migrated)
+- `backend/workflows/nlu/semantic_matchers.py` (migrated)
+- `backend/workflows/nlu/sequential_workflow.py` (migrated)
+
+Total: ~130K of dead code consolidated in `backend/DEPRECATED/`
+
+---
+
 ## Recommended Actions
 
 1. **Immediate**: ~~Continue debugging why step 5 isn't reached~~ ✅ Fixed (thread_id issue)
-2. **Short-term**: Remove `extract_information_incremental` from messages.py
+2. **Short-term**: ~~Remove `extract_information_incremental` from messages.py~~ ✅ Removed (commit `21f08e1`)
 3. **Medium-term**: Consolidate billing capture to ONE location
 4. **Long-term**: Refactor to single entry point for all special flows
+5. **Cleanup**: Update ~40 files with `from backend.workflows.groups` imports to use `backend.workflows.steps` (Step 2 refactor)
+6. **Cleanup**: Delete `backend/DEPRECATED/` folder after step 2 refactor

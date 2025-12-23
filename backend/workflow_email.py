@@ -13,11 +13,13 @@ from backend.domain import TaskStatus, TaskType
 
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 from backend.workflows.common.types import GroupResult
-from backend.workflows.groups import intake, date_confirmation, room_availability
-from backend.workflows.groups.offer.trigger import process as process_offer
-from backend.workflows.groups.negotiation_close import process as process_negotiation
-from backend.workflows.groups.transition_checkpoint import process as process_transition
-from backend.workflows.groups.event_confirmation.trigger import process as process_confirmation
+from backend.workflows.steps import step1_intake as intake
+from backend.workflows.steps import step2_date_confirmation as date_confirmation
+from backend.workflows.steps import step3_room_availability as room_availability
+from backend.workflows.steps.step4_offer.trigger import process as process_offer
+from backend.workflows.steps.step5_negotiation import process as process_negotiation
+from backend.workflows.steps.step6_transition import process as process_transition
+from backend.workflows.steps.step7_confirmation.trigger import process as process_confirmation
 from backend.workflows.io import database as db_io
 from backend.workflows.io.database import update_event_metadata
 from backend.workflows.io import tasks as task_io
@@ -565,8 +567,8 @@ def approve_task_and_send(
         # If offer was accepted and deposit is paid (or not required), continue workflow
         if offer_accepted and (not deposit_required or deposit_paid):
             from backend.workflows.common.types import IncomingMessage, WorkflowState
-            from backend.workflows.groups import negotiation_close as negotiation_group
-            from backend.workflows.groups.transition_checkpoint import process as process_transition
+            from backend.workflows.steps import step5_negotiation as negotiation_group
+            from backend.workflows.steps.step6_transition import process as process_transition
 
             print(f"[HIL] Step 4 offer approved with deposit paid, continuing to site visit")
 
@@ -614,8 +616,8 @@ def approve_task_and_send(
         pending_decision = target_event.get("negotiation_pending_decision")
         if pending_decision:
             from backend.workflows.common.types import IncomingMessage, WorkflowState
-            from backend.workflows.groups import negotiation_close as negotiation_group
-            from backend.workflows.groups.transition_checkpoint import process as process_transition
+            from backend.workflows.steps import step5_negotiation as negotiation_group
+            from backend.workflows.steps.step6_transition import process as process_transition
 
             hil_message = IncomingMessage.from_dict(
                 {
@@ -820,7 +822,7 @@ def reject_task_and_send(
         pending_decision = target_event.get("negotiation_pending_decision")
         if pending_decision:
             from backend.workflows.common.types import IncomingMessage, WorkflowState
-            from backend.workflows.groups import negotiation_close as negotiation_group
+            from backend.workflows.steps import step5_negotiation as negotiation_group
 
             hil_message = IncomingMessage.from_dict(
                 {
