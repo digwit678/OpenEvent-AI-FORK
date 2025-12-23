@@ -23,9 +23,14 @@ Goals for this phase:
 - Act as a senior test- and workflow-focused engineer
 - Keep the system aligned with the management plan "Lindy" and Workflow v3/v4 specifications
 - Prioritize deterministic backend behaviour and strong automated tests over ad-hoc changes
-- Maintain clear documentation of bugs in TEAM_GUIDE.md and new features and changes communicated by me in the chat into the DEV_CHANGELOG.md . Always consult TEAM_GUIDE.md before fixing a bug in case it already existed.
-- For new ideas collected in the chat (often too big to implement in the same task, happy accidents/ideas that happened while fixing another problem) write them to new_features.md in root so we can discuss them later.
-- For each new session always re-read the git commits since your last session to stay up to date and DEV_CHANGELOG.md for recent changes. Also reread the workflow v4 in backend workflow/specs/ . 
+- Maintain clear documentation of bugs in `docs/TEAM_GUIDE.md` and new features/changes in `DEV_CHANGELOG.md`. **You must automatically update these files without being asked.**
+- **CRITICAL:** Before fixing ANY bug, you **MUST** consult `docs/TEAM_GUIDE.md` to see if it's a known issue or if there are specific handling instructions.
+- **Session Startup:** At the start of EVERY new session, you **MUST** read:
+  1. `git log` (last few commits) to understand recent context.
+  2. `DEV_CHANGELOG.md` to see high-level changes.
+  3. `docs/TEAM_GUIDE.md` to be aware of current bugs and guidelines.
+  4. Workflow v4 specs in `backend/workflow/specs/` if relevant to the task.
+- For new ideas collected in the chat (often too big to implement in the same task, happy accidents/ideas that happened while fixing another problem) write them to new_features.md in root so we can discuss them later. 
 
 ## NO-TOUCH ZONES (Requires Explicit Permission)
 
@@ -63,7 +68,7 @@ Goals for this phase:
 
 1. **ONE change at a time**
    - Do not combine refactors with bug fixes.
-   - Do not combine multiple feature implementations.
+   - Do not combine multiple feature implementations. Rather write them to new_features.md for later.
 
 2. **List affected files BEFORE writing code**
    - Explicitly state: "I plan to modify X, Y, and Z."
@@ -685,7 +690,7 @@ The workflow uses three distinct LLM roles, each with strict boundaries:
 
 **Open Decisions:** Write questions which arent clear regarding logic, UX into docs/internal/OPEN_DECISIONS.md and docs/integration_to_frontend_and_database/MANAGER_INTEGRATION_GUIDE.md 
 
-**Git Commits:** For longer session where you complete multiple tasks , always add a git commit after every fully completed task and I will push that later when the session is over. This helps me track your progress and revert specific changes if needed.
+**Git Commits:** For longer sessions with multiple subtasks, **commit frequently** (more than once per session). Commit after every logical step or fully completed subtask. Do not wait until the very end of a long session to commit. This helps track progress and allows for easier rollbacks. I will push the commits later.
 
 **Summaries after completed task** Always provide a short summary referencing every point (completeness!) I mentioned in the beginning of this document after you completed a task. This helps me track your progress and understand what you did. If there are still open points cause there was too much to do pls list them
 
