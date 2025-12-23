@@ -701,6 +701,21 @@ def process(state: WorkflowState) -> GroupResult:
         json.dumps(user_info, ensure_ascii=False),
         outputs=user_info,
     )
+    # [REGEX FALLBACK] If LLM failed to extract date, try regex parsing
+    # This handles cases like "February 14th, 2026" that LLM might miss
+    if not user_info.get("date") and not user_info.get("event_date"):
+        body_text = message_payload.get("body") or ""
+        fallback_year = _fallback_year_from_ts(message_payload.get("ts"))
+        parsed_date = parse_first_date(body_text, fallback_year=fallback_year)
+        if parsed_date:
+            user_info["date"] = parsed_date.isoformat()
+            user_info["event_date"] = format_iso_date_to_ddmmyyyy(parsed_date.isoformat())
+            print(f"[Step1] Regex fallback extracted date: {parsed_date.isoformat()}")
+            # Boost confidence if we found date via regex - indicates valid event request
+            if intent == IntentLabel.EVENT_REQUEST and confidence < 0.90:
+                confidence = 0.90
+                state.confidence = confidence
+                print(f"[Step1] Boosted confidence to {confidence} due to regex date extraction")
     # Preserve raw message content for downstream semantic extraction.
     needs_vague_date_confirmation = _needs_vague_date_confirmation(user_info)
     if needs_vague_date_confirmation:
