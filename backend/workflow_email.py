@@ -1038,12 +1038,20 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
             print(f"[WF][BILLING_FIX] Correcting step from {stored_step} to 5 for billing flow")
             state.event_entry["current_step"] = 5
             state.extras["persist"] = True
+        elif in_billing_flow:
+            print(f"[WF][BILLING_FLOW] Already at step 5, proceeding with billing flow")
 
-    for _ in range(6):
+    print(f"[WF][PRE_ROUTE] About to enter routing loop, event_entry exists={state.event_entry is not None}")
+    if state.event_entry:
+        print(f"[WF][PRE_ROUTE] current_step={state.event_entry.get('current_step')}, offer_accepted={state.event_entry.get('offer_accepted')}")
+
+    for iteration in range(6):
         event_entry = state.event_entry
         if not event_entry:
+            print(f"[WF][ROUTE][{iteration}] No event_entry, breaking")
             break
         step = event_entry.get("current_step")
+        print(f"[WF][ROUTE][{iteration}] current_step={step}")
         if step == 2:
             last_result = date_confirmation.process(state)
             _debug_state("post_step2", state)
@@ -1089,9 +1097,11 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
                 _debug_state("halt_step7", state)
                 return _flush_and_finalize(last_result, state, path, lock_path)
             continue
+        print(f"[WF][ROUTE] No handler for step {step}, breaking")
         break
 
     _debug_state("final", state)
+    print(f"[WF][FINAL] Returning with action={last_result.action if last_result else 'None'}, halt={last_result.halt if last_result else 'N/A'}")
     return _flush_and_finalize(last_result, state, path, lock_path)
 
 
@@ -1192,7 +1202,7 @@ def task_cli_loop(db_path: Path = DB_PATH) -> None:
         elif choice in {"2", "3", "4"}:
             task_id = input("Task ID: ").strip()
             notes = input("Notes (optional): ").strip() or None
-            status_map = {"2": TaskStatus.APPROVED, "3": TaskStatus.REJECTED, "4": TaskStatus.COMPLETED}
+            status_map = {"2": TaskStatus.APPROVED, "3": TaskStatus.REJECTED, "4": TaskStatus.DONE}
             db = load_db(db_path)
             update_task_status(db, task_id, status_map[choice], notes)
             save_db(db, db_path)
