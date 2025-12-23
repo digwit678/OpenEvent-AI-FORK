@@ -43,7 +43,7 @@ from backend.utils.profiler import profile_step
 from backend.utils.pseudolinks import generate_room_details_link, generate_qna_link
 from backend.utils.page_snapshots import create_snapshot
 from backend.workflow_verbalizer_test_hooks import render_rooms
-from backend.workflows.groups.room_availability.db_pers import load_rooms_config
+from backend.workflows.steps.step3_room_availability.db_pers import load_rooms_config
 from backend.workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
 from backend.rooms import rank as rank_rooms_profiles
 
