@@ -1180,6 +1180,12 @@ def _derive_hint(entry: Optional[RankedRoom], preferences: Optional[Dict[str, An
     matched = [item for item in entry.matched if item]
     if matched:
         return ", ".join(matched[:3])
+    # Show closest matches (partial/similar products) if no exact matches
+    closest = [item for item in entry.closest if item]
+    if closest:
+        # Extract just the product name from "Classic Apéro (closest to dinner)" format
+        clean_closest = [item.split(" (closest")[0] for item in closest]
+        return ", ".join(clean_closest[:3])
     if explicit:
         missing = [item for item in entry.missing if item]
         if missing:
@@ -1245,6 +1251,7 @@ def _verbalizer_rooms_payload(
                 },
                 "requirements": {
                     "matched": list(entry.matched),
+                    "closest": list(entry.closest),  # Partial matches with context
                     "missing": list(entry.missing),
                 },
                 "hint": hint_label,
