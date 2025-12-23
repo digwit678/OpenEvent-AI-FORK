@@ -2,6 +2,22 @@
 
 ## 2025-12-23
 
+### Fix: Room Preference Matching for Layout Types (workshop, theatre, etc.)
+
+**Problem:** When a client mentioned "workshop" in their inquiry, the preference extraction worked but room matching returned 0.0 score for all rooms. Rooms with "workshop" layout capability were shown as `missing: ["workshop"]` instead of `matched: ["Workshop"]`.
+
+**Root Cause:** The `_score_rooms_by_products` function in `preferences.py` only checked `features` and `services` from room data, but `capacity_by_layout` keys (like "workshop", "theatre", "u_shape") were not included in matchable features.
+
+**Solution:** Updated both `_room_catalog()` and `_score_rooms_by_products()` to include layout types from `capacity_by_layout` as matchable room features.
+
+**Files Modified:**
+- `backend/workflows/nlu/preferences.py:391-404` - Include layout keys in `_room_catalog()`
+- `backend/workflows/nlu/preferences.py:219-221` - Include layout keys in `_score_rooms_by_products()`
+
+**Result:** Rooms A, B, C, D, F now correctly match "workshop" preference with score 1.0.
+
+---
+
 ### Fix: Acceptance Messages Triggering False Positive Room Change Detection
 
 **Problem:** During the offer acceptance flow, "Yes, I accept" messages were incorrectly triggering room change detection, causing infinite loops between Step 5 → Step 3 with `structural_change_detour` action.

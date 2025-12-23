@@ -212,11 +212,13 @@ def _score_rooms_by_products(wish_products: Sequence[str]) -> List[Dict[str, Any
     for room, data in catalog.items():
         phrases = data["phrases"]
         variants_map = data.get("product_variants") or {}
-        # Get room's native features and services for direct matching
+        # Get room's native features, services, and layout types for direct matching
         room_info = rooms_data.get(room, {})
         room_features = set(_normalise_phrase(f) for f in (room_info.get("features") or []))
         room_services = set(_normalise_phrase(s) for s in (room_info.get("services") or []))
-        room_all_features = room_features | room_services
+        # Include layout types (workshop, theatre, u_shape, etc.) as matchable features
+        room_layouts = set(_normalise_phrase(k) for k in (room_info.get("capacity_by_layout") or {}).keys())
+        room_all_features = room_features | room_services | room_layouts
 
         score = 0.0
         matched: List[str] = []
@@ -388,14 +390,20 @@ def _normalise_phrase(value: str) -> str:
 @lru_cache(maxsize=1)
 def _room_catalog() -> Dict[str, Dict[str, Any]]:
     rooms = _load_rooms()
-    room_products = {
-        room["name"]: {
+    room_products = {}
+    for room in rooms:
+        # Collect all matchable features: features + services + layout types
+        features = list(room.get("features") or [])
+        features.extend(room.get("services") or [])
+        # Include capacity_by_layout keys (e.g., "workshop", "theatre", "u_shape")
+        # These are valid room capabilities that clients may request
+        layout_keys = list((room.get("capacity_by_layout") or {}).keys())
+        features.extend(layout_keys)
+        room_products[room["name"]] = {
             "phrases": {},
-            "features": room.get("features") or [],
+            "features": features,
             "product_variants": {},
         }
-        for room in rooms
-    }
     room_ids = {room.get("id", "").strip().lower(): room["name"] for room in rooms if room.get("id")}
     room_aliases = {room["name"].strip().lower(): room["name"] for room in rooms}
     product_records = list_product_records()
