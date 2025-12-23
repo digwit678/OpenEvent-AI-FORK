@@ -1,5 +1,7 @@
 # OpenEvent AI Architecture Diagrams
 
+> **Note:** These diagrams are static visualizations. While the high-level logic remains accurate, some file paths (e.g., `availability_pipeline.py`) or step names may refer to legacy locations. Please consult `docs/DEPENDENCY_GRAPH.md` for the current, authoritative code structure and file locations.
+
 This document provides visual explanations of the system's architecture, workflow stages, and detection logic.
 
 ## 1. System Context & High-Level Architecture
