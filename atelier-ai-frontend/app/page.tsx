@@ -887,14 +887,9 @@ function EmailThreadUIContent() {
         await refreshTasks();
         setSessionDepositInfo((prev) => prev ? { ...prev, deposit_paid: true } : null);
 
-        // Show the workflow response in the chat if available
-        if (result.response) {
-          appendMessage({
-            role: 'assistant',
-            content: result.response,
-            timestamp: new Date(),
-          });
-        }
+        // NOTE: Don't append the response to chat here - the HIL task should appear
+        // in the Tasks panel for manager approval. The message will be sent to chat
+        // only after the manager approves the task.
 
         alert(
           `Deposit of CHF ${depositAmount.toLocaleString('de-CH', {
@@ -909,7 +904,7 @@ function EmailThreadUIContent() {
         setDepositPayingFor(null);
       }
     },
-    [refreshTasks, appendMessage]
+    [refreshTasks]
   );
 
   const handleKeyPress = useCallback(
