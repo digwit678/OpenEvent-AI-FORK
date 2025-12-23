@@ -27,9 +27,13 @@ async def workflow_health():
 async def get_hil_status():
     """Get the HIL toggle status for AI reply approval.
 
-    Returns whether the OE_HIL_ALL_LLM_REPLIES toggle is enabled.
-    When enabled, all AI replies require manager approval before
-    being sent to the client.
+    Returns whether HIL mode is enabled (all AI replies require manager approval).
+
+    To toggle this setting, use:
+        POST /api/config/hil-mode {"enabled": true/false}
+
+    To get detailed status including source (database/environment/default):
+        GET /api/config/hil-mode
     """
     return {
         "hil_all_replies_enabled": is_hil_all_replies_enabled(),
