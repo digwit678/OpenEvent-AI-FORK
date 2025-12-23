@@ -180,29 +180,30 @@ Context: The client needs to choose a room for their event. Help them understand
 
 CRITICAL - You must:
 1. START with a clear recommendation ("I'd recommend **Room A** because...")
-2. USE the matched/missing data in each room to personalize your response:
-   - If a room has matched features: "includes the **sound system** and **coffee service** you mentioned"
-   - If a room is missing features: "the **cocktail bar** would need to be arranged separately"
-3. COMPARE alternatives by their matched features, not just capacity
-4. Make the decision EASY with a clear next step
-5. **BOLD** all matched features and room names using **markdown** (e.g., **sound system**, **Room A**)
+2. USE the matched/closest/missing data in each room to personalize your response:
+   - If a room has **matched** features (exact matches): "includes the **sound system** you mentioned"
+   - If a room has **closest** features (partial matches): these are phrased as "X (closest to Y)" - say "our **Classic Apéro** comes closest to your dinner preference"
+   - If a room is **missing** features: "the **cocktail bar** would need to be arranged separately"
+3. BE HONEST about match quality - don't claim exact matches when they're only close
+4. COMPARE alternatives by their matched features, not just capacity
+5. Make the decision EASY with a clear next step
+6. **BOLD** all features and room names using **markdown**
 
-The rooms data includes `requirements.matched` and `requirements.missing` arrays - USE THEM to personalize your response.
+The rooms data includes:
+- `requirements.matched` - exact matches (strong)
+- `requirements.closest` - partial matches with context like "Classic Apéro (closest to dinner)"
+- `requirements.missing` - features not available
 
-Example: If Room A has matched=["sound system", "coffee service"], say "**Room A** has both the **sound system** and **coffee service** you requested"
-Example: If Room B has missing=["cocktail bar"], say "**Room B** would need the **cocktail bar** arranged separately"
+For **closest** items: Present them honestly as alternatives, e.g., "While we don't have a dedicated dinner menu, our **Classic Apéro** comes closest to what you're looking for"
 
-DO NOT just list rooms. REASON about which best matches what the client asked for.
+DO NOT claim something is an exact match when it's only in the "closest" list.
 
 Example transformation:
-BEFORE: "Room A: Available, capacity 40, matched: [sound system, coffee service], missing: []
-Room E: Available, capacity 120, matched: [sound system], missing: [cocktail bar]"
+BEFORE: "Room A: Available, capacity 40, matched: [], closest: [Classic Apéro (closest to dinner)], missing: []"
 
-AFTER: "For your networking event on **08.05.2026**, I'd recommend **Room A** — it has everything you asked for: the **sound system** for presentations and **coffee service** are both included. At 40 capacity, it's perfectly sized for your 30 guests.
+AFTER: "For your dinner event on **08.05.2026**, I'd recommend **Room A** — it's perfectly sized for your 40 guests. While we don't have a dedicated dinner package, our **Classic Apéro** comes closest to what you're looking for for your meal.
 
-**Room E** (capacity 120) also has the **sound system**, though the **cocktail bar** setup would need to be arranged separately. It's a larger space if you want more room to move around.
-
-I'd go with **Room A** since it covers all your requirements. Shall I hold it for you?" """,
+Shall I prepare an offer with the apéro option, or would you like to discuss other catering arrangements?" """,
 
     4: """You're presenting an offer/quote to a client.
 

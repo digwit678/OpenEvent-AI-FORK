@@ -364,6 +364,45 @@ Always test with:
 3. **Corrupted state** - Event with wrong step value
 4. **Edge case inputs** - Empty strings, unicode, multilingual
 
+### Frontend End-to-End Testing Protocol (CRITICAL)
+
+**For billing→deposit→HIL flow and other critical workflows, ALWAYS verify in the actual frontend UI, not just via API/Python tests.** Some issues only manifest in the frontend session flow due to session/thread_id handling.
+
+**Protocol for Frontend Testing:**
+
+1. **Use fresh client data:**
+   - Use a new email address (e.g., `test-YYYYMMDD@example.com`), OR
+   - Click "Reset Client" button to clear existing client data
+
+2. **Run complete flow in frontend:**
+   - Start conversation with initial inquiry
+   - Go through each step (date → room → offer)
+   - Accept offer → Provide billing → Pay deposit
+   - Verify HIL task appears in "📋 Manager Tasks" section
+
+3. **Verify database state after each critical step:**
+   ```bash
+   python3 -c "
+   import json
+   with open('backend/events_database.json') as f:
+       db = json.load(f)
+   for e in db.get('events', []):
+       if 'YOUR_EMAIL' in json.dumps(e):
+           print(f'Step: {e.get(\"current_step\")}')
+           print(f'Billing: {(e.get(\"billing_details\") or {}).get(\"street\")}')
+           print(f'HIL Tasks: {len(e.get(\"pending_hil_requests\", []))}')
+   "
+   ```
+
+4. **Expected outcomes for billing→HIL flow:**
+   - `billing_details.street` populated after billing message
+   - `awaiting_billing_for_accept=False` after billing captured
+   - `deposit_paid=True` after Pay Deposit clicked
+   - `pending_hil_requests` contains offer_message task
+   - "📋 Manager Tasks" section visible with Approve/Reject buttons
+
+**Why frontend testing matters:** The frontend uses `/api/send-message` which has different session handling than direct `process_msg()` calls. Issues like billing not being captured can occur in frontend but not in API tests.
+
 ## Testing Principles (High Priority)
 
 **The test suite is the main guardrail; keep it clean, well-structured and focused on high-value behaviours.**
@@ -442,9 +481,7 @@ uvicorn backend.main:app --reload --port 8000
 ```
 
 **Run specific workflow step manually:**
-```bash
-python -B backend/availability_pipeline.py <EVENT_ID>
-```
+Deprecated. Please use the dev server or run tests.
 
 ### Frontend (Next.js)
 ```bash
