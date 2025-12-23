@@ -24123,6 +24123,2116 @@
         ]
       },
       "pending_hil_requests": []
+    },
+    {
+      "event_id": "8e3031b4-ad7b-4296-a554-1826ab083ff7",
+      "created_at": "2025-12-23T23:21:03.526457",
+      "status": "Lead",
+      "current_step": 3,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": "15.03.2026",
+      "date_confirmed": true,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 20,
+        "seating_layout": "party",
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": null
+      },
+      "requirements_hash": "9c62fae4f24da69ca0f5e36d8ee8fba7cd3b2be70532049f3fb15a450f58dd96",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2025-12-23T23:21:03Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 3,
+          "reason": "date_updated_initial"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "23.12.2025",
+        "Status": "Lead",
+        "Event Date": "15.03.2026",
+        "Name": "Not specified",
+        "Email": "dinner-fresh-da4df3d0@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Not specified",
+        "Number of Participants": "20",
+        "Type of Event": "party",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "a8cc86ae-6793-47a0-97a7-38ef4d06827a"
+      ],
+      "captured": {},
+      "verified": {},
+      "captured_sources": [],
+      "deferred_intents": [],
+      "calendar_event_id": "openevent-8e3031b4-ad7b-4296-a554-1826ab083ff7",
+      "thread_id": "14e19d29-67b6-48bb-95aa-a9f54834d4a5",
+      "current_step_stage": "step_1",
+      "caller_step_stage": null,
+      "subflow_group": "intake",
+      "requested_window": {},
+      "offer_hash": null,
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "wish_products": [
+        "party"
+      ],
+      "preferences": {
+        "wish_products": [
+          "party"
+        ],
+        "keywords": [
+          "party"
+        ],
+        "default_hint": "party",
+        "room_recommendations": [
+          {
+            "room": "Room A",
+            "score": 0.0,
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "party"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "party",
+                "product": "Coffee & Tea Bar",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Cocktail Bar Setup",
+                "score": 0.5
+              }
+            ]
+          },
+          {
+            "room": "Room B",
+            "score": 0.0,
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "party"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "party",
+                "product": "Prosecco Service",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Coffee & Tea Bar",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Cocktail Bar Setup",
+                "score": 0.5
+              }
+            ]
+          },
+          {
+            "room": "Room C",
+            "score": 0.0,
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "party"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "party",
+                "product": "Prosecco Service",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Coffee & Tea Bar",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Cocktail Bar Setup",
+                "score": 0.5
+              }
+            ]
+          },
+          {
+            "room": "Room D",
+            "score": 0.0,
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "party"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "party",
+                "product": "Prosecco Service",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Coffee & Tea Bar",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Cocktail Bar Setup",
+                "score": 0.5
+              }
+            ]
+          },
+          {
+            "room": "Room E",
+            "score": 0.0,
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "party"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "party",
+                "product": "Prosecco Service",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Coffee & Tea Bar",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Cocktail Bar Setup",
+                "score": 0.5
+              }
+            ]
+          }
+        ],
+        "room_similarity": {
+          "Room A": 0.0,
+          "Room B": 0.0,
+          "Room C": 0.0,
+          "Room D": 0.0,
+          "Room E": 0.0
+        },
+        "room_match_breakdown": {
+          "Room A": {
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "party"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "party",
+                "product": "Coffee & Tea Bar",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Cocktail Bar Setup",
+                "score": 0.5
+              }
+            ]
+          },
+          "Room B": {
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "party"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "party",
+                "product": "Prosecco Service",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Coffee & Tea Bar",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Cocktail Bar Setup",
+                "score": 0.5
+              }
+            ]
+          },
+          "Room C": {
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "party"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "party",
+                "product": "Prosecco Service",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Coffee & Tea Bar",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Cocktail Bar Setup",
+                "score": 0.5
+              }
+            ]
+          },
+          "Room D": {
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "party"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "party",
+                "product": "Prosecco Service",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Coffee & Tea Bar",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Cocktail Bar Setup",
+                "score": 0.5
+              }
+            ]
+          },
+          "Room E": {
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "party"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "party",
+                "product": "Prosecco Service",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Coffee & Tea Bar",
+                "score": 0.5
+              },
+              {
+                "wish": "party",
+                "product": "Cocktail Bar Setup",
+                "score": 0.5
+              }
+            ]
+          }
+        }
+      },
+      "vague_month": "march",
+      "vague_time_of_day": "evening",
+      "weekdays_hint": [
+        20
+      ],
+      "window_scope": {
+        "month": "March",
+        "weekdays_hint": [
+          20
+        ]
+      },
+      "last_client_message": "Hello, I want to organize a dinner party for 20 guests on March 15th, 2026.\nHello, I want to organize a dinner party for 20 guests on March 15th, 2026.",
+      "room_proposal_attempts": 1,
+      "room_pending_decision": {
+        "selected_room": "Room A",
+        "selected_status": "Available",
+        "requirements_hash": "9c62fae4f24da69ca0f5e36d8ee8fba7cd3b2be70532049f3fb15a450f58dd96",
+        "summary": "Room availability summary — Room A: Available; Room B: Option; Room C: Available; Room D: Available; Room E: Available; Room F: Available.",
+        "hint": "Missing: party",
+        "available_dates": [
+          "2026-03-16",
+          "2026-03-14",
+          "2026-03-17"
+        ]
+      },
+      "pending_hil_requests": []
+    },
+    {
+      "event_id": "c1dcf130-e319-45f3-8748-e6f5dcdd85d4",
+      "created_at": "2025-12-23T23:22:16.984958",
+      "status": "Lead",
+      "current_step": 3,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": "15.03.2026",
+      "date_confirmed": true,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 20,
+        "seating_layout": "dinner",
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": null
+      },
+      "requirements_hash": "f2a1113973d43f1a6a6b2388866b9ff965439b3b334427f8992f635feb792fe7",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2025-12-23T23:22:16Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 3,
+          "reason": "date_updated_initial"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "23.12.2025",
+        "Status": "Lead",
+        "Event Date": "15.03.2026",
+        "Name": "Not specified",
+        "Email": "dinner-test-210add3f@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Not specified",
+        "Number of Participants": "20",
+        "Type of Event": "dinner",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "937ab678-257c-4fa6-a4d2-7c415ced17ff"
+      ],
+      "captured": {},
+      "verified": {},
+      "captured_sources": [],
+      "deferred_intents": [],
+      "calendar_event_id": "openevent-c1dcf130-e319-45f3-8748-e6f5dcdd85d4",
+      "thread_id": "f300af21-7233-4997-ac4f-1b56975c0923",
+      "current_step_stage": "step_1",
+      "caller_step_stage": null,
+      "subflow_group": "intake",
+      "requested_window": {},
+      "offer_hash": null,
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "wish_products": [
+        "dinner"
+      ],
+      "preferences": {
+        "wish_products": [
+          "dinner"
+        ],
+        "keywords": [
+          "dinner"
+        ],
+        "default_hint": "dinner",
+        "room_recommendations": [
+          {
+            "room": "Room A",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              }
+            ]
+          },
+          {
+            "room": "Room B",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          {
+            "room": "Room C",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          {
+            "room": "Room D",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          {
+            "room": "Room E",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          }
+        ],
+        "room_similarity": {
+          "Room A": 0.5,
+          "Room B": 0.5,
+          "Room C": 0.5,
+          "Room D": 0.5,
+          "Room E": 0.5
+        },
+        "room_match_breakdown": {
+          "Room A": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              }
+            ]
+          },
+          "Room B": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          "Room C": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          "Room D": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          "Room E": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          }
+        }
+      },
+      "vague_month": "march",
+      "vague_time_of_day": "evening",
+      "weekdays_hint": [
+        20
+      ],
+      "window_scope": {
+        "month": "March",
+        "weekdays_hint": [
+          20
+        ]
+      },
+      "last_client_message": "Hello, I want to organize a dinner party for 20 guests on March 15th, 2026.\nHello, I want to organize a dinner party for 20 guests on March 15th, 2026.",
+      "room_proposal_attempts": 1,
+      "room_pending_decision": {
+        "selected_room": "Room A",
+        "selected_status": "Available",
+        "requirements_hash": "f2a1113973d43f1a6a6b2388866b9ff965439b3b334427f8992f635feb792fe7",
+        "summary": "Room availability summary — Room A: Available; Room B: Option; Room C: Available; Room D: Available; Room E: Available; Room F: Available.",
+        "hint": "Classic Apéro",
+        "available_dates": [
+          "2026-03-16",
+          "2026-03-14",
+          "2026-03-17"
+        ]
+      },
+      "pending_hil_requests": []
+    },
+    {
+      "event_id": "8bb470f2-9d1b-4b05-8bd4-ced7bf46d1a3",
+      "created_at": "2025-12-23T23:22:41.923346",
+      "status": "Lead",
+      "current_step": 3,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": "10.04.2026",
+      "date_confirmed": true,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 30,
+        "seating_layout": "dinner",
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": null
+      },
+      "requirements_hash": "0b06982047ed7873c4d328ef08454bc235cfee34457a94a6091146202d85c904",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2025-12-23T23:22:41Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 3,
+          "reason": "date_updated_initial"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "23.12.2025",
+        "Status": "Lead",
+        "Event Date": "10.04.2026",
+        "Name": "Not specified",
+        "Email": "dinner-verify-b019b7a4@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Not specified",
+        "Number of Participants": "30",
+        "Type of Event": "dinner",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "5e4638f9-f2d2-445c-a145-80abd419a98f"
+      ],
+      "captured": {},
+      "verified": {},
+      "captured_sources": [],
+      "deferred_intents": [],
+      "calendar_event_id": "openevent-8bb470f2-9d1b-4b05-8bd4-ced7bf46d1a3",
+      "thread_id": "02759020-db04-49da-ad65-70e1987821bd",
+      "current_step_stage": "step_1",
+      "caller_step_stage": null,
+      "subflow_group": "intake",
+      "requested_window": {},
+      "offer_hash": null,
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "wish_products": [
+        "dinner"
+      ],
+      "preferences": {
+        "wish_products": [
+          "dinner"
+        ],
+        "keywords": [
+          "dinner"
+        ],
+        "default_hint": "dinner",
+        "room_recommendations": [
+          {
+            "room": "Room A",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              }
+            ]
+          },
+          {
+            "room": "Room B",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          {
+            "room": "Room C",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          {
+            "room": "Room D",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          {
+            "room": "Room E",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          }
+        ],
+        "room_similarity": {
+          "Room A": 0.5,
+          "Room B": 0.5,
+          "Room C": 0.5,
+          "Room D": 0.5,
+          "Room E": 0.5
+        },
+        "room_match_breakdown": {
+          "Room A": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              }
+            ]
+          },
+          "Room B": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          "Room C": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          "Room D": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          "Room E": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          }
+        }
+      },
+      "vague_month": "april",
+      "vague_time_of_day": "evening",
+      "weekdays_hint": [
+        30
+      ],
+      "window_scope": {
+        "month": "April",
+        "weekdays_hint": [
+          30
+        ]
+      },
+      "last_client_message": "Hello, we would like to book a dinner for 30 people on April 10th, 2026.\nHello, we would like to book a dinner for 30 people on April 10th, 2026.",
+      "room_proposal_attempts": 1,
+      "room_pending_decision": {
+        "selected_room": "Room A",
+        "selected_status": "Available",
+        "requirements_hash": "0b06982047ed7873c4d328ef08454bc235cfee34457a94a6091146202d85c904",
+        "summary": "Room availability summary — Room A: Available; Room B: Available; Room C: Available; Room D: Available; Room E: Available; Room F: Available.",
+        "hint": "Classic Apéro",
+        "available_dates": [
+          "2026-04-11",
+          "2026-04-09",
+          "2026-04-12"
+        ]
+      },
+      "pending_hil_requests": []
+    },
+    {
+      "event_id": "5789fdeb-9824-43f4-9147-9cbe713a1b71",
+      "created_at": "2025-12-23T23:24:47.523735",
+      "status": "Lead",
+      "current_step": 3,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": "10.04.2026",
+      "date_confirmed": true,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 30,
+        "seating_layout": "dinner",
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": null
+      },
+      "requirements_hash": "0b06982047ed7873c4d328ef08454bc235cfee34457a94a6091146202d85c904",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2025-12-23T23:24:47Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 3,
+          "reason": "date_updated_initial"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "23.12.2025",
+        "Status": "Lead",
+        "Event Date": "10.04.2026",
+        "Name": "Not specified",
+        "Email": "dinner-final-2bda1d07@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Not specified",
+        "Number of Participants": "30",
+        "Type of Event": "dinner",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "696e5127-e2c5-4ab2-bda7-924f8c2166a4"
+      ],
+      "captured": {},
+      "verified": {},
+      "captured_sources": [],
+      "deferred_intents": [],
+      "calendar_event_id": "openevent-5789fdeb-9824-43f4-9147-9cbe713a1b71",
+      "thread_id": "8c806e03-7343-417c-bc09-d6f819ef3f7e",
+      "current_step_stage": "step_1",
+      "caller_step_stage": null,
+      "subflow_group": "intake",
+      "requested_window": {},
+      "offer_hash": null,
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "wish_products": [
+        "dinner"
+      ],
+      "preferences": {
+        "wish_products": [
+          "dinner"
+        ],
+        "keywords": [
+          "dinner"
+        ],
+        "default_hint": "dinner",
+        "room_recommendations": [
+          {
+            "room": "Room A",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              }
+            ]
+          },
+          {
+            "room": "Room B",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          {
+            "room": "Room C",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          {
+            "room": "Room D",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          {
+            "room": "Room E",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          }
+        ],
+        "room_similarity": {
+          "Room A": 0.5,
+          "Room B": 0.5,
+          "Room C": 0.5,
+          "Room D": 0.5,
+          "Room E": 0.5
+        },
+        "room_match_breakdown": {
+          "Room A": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              }
+            ]
+          },
+          "Room B": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          "Room C": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          "Room D": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          "Room E": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          }
+        }
+      },
+      "vague_month": "april",
+      "vague_time_of_day": "evening",
+      "weekdays_hint": [
+        30
+      ],
+      "window_scope": {
+        "month": "April",
+        "weekdays_hint": [
+          30
+        ]
+      },
+      "last_client_message": "Hello, we would like to book a dinner for 30 people on April 10th, 2026.\nHello, we would like to book a dinner for 30 people on April 10th, 2026.",
+      "room_proposal_attempts": 1,
+      "room_pending_decision": {
+        "selected_room": "Room A",
+        "selected_status": "Available",
+        "requirements_hash": "0b06982047ed7873c4d328ef08454bc235cfee34457a94a6091146202d85c904",
+        "summary": "Room availability summary — Room A: Available; Room B: Available; Room C: Available; Room D: Available; Room E: Available; Room F: Available.",
+        "hint": "Classic Apéro",
+        "available_dates": [
+          "2026-04-11",
+          "2026-04-09",
+          "2026-04-12"
+        ]
+      },
+      "pending_hil_requests": []
+    },
+    {
+      "event_id": "ce7d7973-007d-435f-83a6-2c08985ce99e",
+      "created_at": "2025-12-23T23:38:41.313476",
+      "status": "Lead",
+      "current_step": 3,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": "20.03.2026",
+      "date_confirmed": true,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 30,
+        "seating_layout": "dinner",
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": null
+      },
+      "requirements_hash": "0b06982047ed7873c4d328ef08454bc235cfee34457a94a6091146202d85c904",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2025-12-23T23:38:41Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 3,
+          "reason": "date_updated_initial"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "23.12.2025",
+        "Status": "Lead",
+        "Event Date": "20.03.2026",
+        "Name": "Not specified",
+        "Email": "dinner-openai@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Not specified",
+        "Number of Participants": "30",
+        "Type of Event": "dinner",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "116bb437-9501-4198-a4e3-66febf4294be"
+      ],
+      "captured": {},
+      "verified": {},
+      "captured_sources": [],
+      "deferred_intents": [],
+      "calendar_event_id": "openevent-ce7d7973-007d-435f-83a6-2c08985ce99e",
+      "thread_id": "c51c8073-e48f-401b-b1f6-fdb084f5d651",
+      "current_step_stage": "step_1",
+      "caller_step_stage": null,
+      "subflow_group": "intake",
+      "requested_window": {},
+      "offer_hash": null,
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "wish_products": [
+        "dinner"
+      ],
+      "preferences": {
+        "wish_products": [
+          "dinner"
+        ],
+        "keywords": [
+          "dinner"
+        ],
+        "default_hint": "dinner",
+        "room_recommendations": [
+          {
+            "room": "Room A",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              }
+            ]
+          },
+          {
+            "room": "Room B",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          {
+            "room": "Room C",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          {
+            "room": "Room D",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          {
+            "room": "Room E",
+            "score": 0.5,
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          }
+        ],
+        "room_similarity": {
+          "Room A": 0.5,
+          "Room B": 0.5,
+          "Room C": 0.5,
+          "Room D": 0.5,
+          "Room E": 0.5
+        },
+        "room_match_breakdown": {
+          "Room A": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              }
+            ]
+          },
+          "Room B": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          "Room C": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          "Room D": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          },
+          "Room E": {
+            "matched": [],
+            "closest": [
+              "Classic Apéro (closest to dinner)"
+            ],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "dinner",
+                "product": "Classic Apéro",
+                "score": 0.667
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "dinner",
+                "product": "Premium Apéro",
+                "score": 0.667
+              },
+              {
+                "wish": "dinner",
+                "product": "Prosecco Service",
+                "score": 0.6
+              }
+            ]
+          }
+        }
+      },
+      "vague_month": "march",
+      "vague_time_of_day": "evening",
+      "weekdays_hint": [
+        30
+      ],
+      "window_scope": {
+        "month": "March",
+        "weekdays_hint": [
+          30
+        ]
+      },
+      "last_client_message": "Hello, I would like to book a private dinner for 30 guests on March 20th, 2026.\nHello, I would like to book a private dinner for 30 guests on March 20th, 2026. My email is dinner-openai@example.com\n\nBest regards,\nSarah Johnson",
+      "room_proposal_attempts": 1,
+      "room_pending_decision": {
+        "selected_room": "Room A",
+        "selected_status": "Available",
+        "requirements_hash": "0b06982047ed7873c4d328ef08454bc235cfee34457a94a6091146202d85c904",
+        "summary": "Room availability summary — Room A: Available; Room B: Available; Room C: Available; Room D: Available; Room E: Available; Room F: Available.",
+        "hint": "Classic Apéro",
+        "available_dates": [
+          "2026-03-21",
+          "2026-03-19",
+          "2026-03-22"
+        ]
+      },
+      "pending_hil_requests": []
     }
   ],
   "clients": {
@@ -44700,6 +46810,1671 @@
             },
             "event_date": "20.01.2026",
             "vague_month": "january",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "dinner"
+              ],
+              "keywords": [
+                "dinner"
+              ],
+              "default_hint": "dinner",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    }
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.5,
+                "Room B": 0.5,
+                "Room C": 0.5,
+                "Room D": 0.5,
+                "Room E": 0.5
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    }
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "event_ids": []
+    },
+    "dinner-fresh-da4df3d0@example.com": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "a8cc86ae-6793-47a0-97a7-38ef4d06827a",
+          "ts": "2025-12-23T23:21:03.511593Z",
+          "subject": "Hello, I want to organize a dinner party for 20 guests on March 15th, 2026.",
+          "body_preview": "Hello, I want to organize a dinner party for 20 guests on March 15th, 2026.",
+          "intent": "event_request",
+          "confidence": 0.9,
+          "user_info": {
+            "date": "2026-03-15",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 20,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": "party",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              20
+            ],
+            "window": {
+              "month": "March",
+              "weekdays_hint": [
+                20
+              ]
+            },
+            "event_date": "15.03.2026",
+            "vague_month": "march",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "party"
+              ],
+              "keywords": [
+                "party"
+              ],
+              "default_hint": "party",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "party"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "party",
+                      "product": "Coffee & Tea Bar",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Cocktail Bar Setup",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "party"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "party",
+                      "product": "Prosecco Service",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Coffee & Tea Bar",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Cocktail Bar Setup",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "party"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "party",
+                      "product": "Prosecco Service",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Coffee & Tea Bar",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Cocktail Bar Setup",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "party"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "party",
+                      "product": "Prosecco Service",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Coffee & Tea Bar",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Cocktail Bar Setup",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "party"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "party",
+                      "product": "Prosecco Service",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Coffee & Tea Bar",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Cocktail Bar Setup",
+                      "score": 0.5
+                    }
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.0,
+                "Room B": 0.0,
+                "Room C": 0.0,
+                "Room D": 0.0,
+                "Room E": 0.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "party"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "party",
+                      "product": "Coffee & Tea Bar",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Cocktail Bar Setup",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "party"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "party",
+                      "product": "Prosecco Service",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Coffee & Tea Bar",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Cocktail Bar Setup",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "party"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "party",
+                      "product": "Prosecco Service",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Coffee & Tea Bar",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Cocktail Bar Setup",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "party"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "party",
+                      "product": "Prosecco Service",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Coffee & Tea Bar",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Cocktail Bar Setup",
+                      "score": 0.5
+                    }
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "party"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "party",
+                      "product": "Prosecco Service",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Coffee & Tea Bar",
+                      "score": 0.5
+                    },
+                    {
+                      "wish": "party",
+                      "product": "Cocktail Bar Setup",
+                      "score": 0.5
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "event_ids": []
+    },
+    "dinner-test-210add3f@example.com": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "937ab678-257c-4fa6-a4d2-7c415ced17ff",
+          "ts": "2025-12-23T23:22:16.928733Z",
+          "subject": "Hello, I want to organize a dinner party for 20 guests on March 15th, 2026.",
+          "body_preview": "Hello, I want to organize a dinner party for 20 guests on March 15th, 2026.",
+          "intent": "event_request",
+          "confidence": 0.9,
+          "user_info": {
+            "date": "2026-03-15",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 20,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": "dinner",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              20
+            ],
+            "window": {
+              "month": "March",
+              "weekdays_hint": [
+                20
+              ]
+            },
+            "event_date": "15.03.2026",
+            "vague_month": "march",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "dinner"
+              ],
+              "keywords": [
+                "dinner"
+              ],
+              "default_hint": "dinner",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    }
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.5,
+                "Room B": 0.5,
+                "Room C": 0.5,
+                "Room D": 0.5,
+                "Room E": 0.5
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    }
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "event_ids": []
+    },
+    "dinner-verify-b019b7a4@example.com": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "5e4638f9-f2d2-445c-a145-80abd419a98f",
+          "ts": "2025-12-23T23:22:41.906797Z",
+          "subject": "Hello, we would like to book a dinner for 30 people on April 10th, 2026.",
+          "body_preview": "Hello, we would like to book a dinner for 30 people on April 10th, 2026.",
+          "intent": "event_request",
+          "confidence": 0.9,
+          "user_info": {
+            "date": "2026-04-10",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": "dinner",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              30
+            ],
+            "window": {
+              "month": "April",
+              "weekdays_hint": [
+                30
+              ]
+            },
+            "event_date": "10.04.2026",
+            "vague_month": "april",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "dinner"
+              ],
+              "keywords": [
+                "dinner"
+              ],
+              "default_hint": "dinner",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    }
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.5,
+                "Room B": 0.5,
+                "Room C": 0.5,
+                "Room D": 0.5,
+                "Room E": 0.5
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    }
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "event_ids": []
+    },
+    "dinner-final-2bda1d07@example.com": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "696e5127-e2c5-4ab2-bda7-924f8c2166a4",
+          "ts": "2025-12-23T23:24:47.468021Z",
+          "subject": "Hello, we would like to book a dinner for 30 people on April 10th, 2026.",
+          "body_preview": "Hello, we would like to book a dinner for 30 people on April 10th, 2026.",
+          "intent": "event_request",
+          "confidence": 0.9,
+          "user_info": {
+            "date": "2026-04-10",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": "dinner",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              30
+            ],
+            "window": {
+              "month": "April",
+              "weekdays_hint": [
+                30
+              ]
+            },
+            "event_date": "10.04.2026",
+            "vague_month": "april",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [
+                "dinner"
+              ],
+              "keywords": [
+                "dinner"
+              ],
+              "default_hint": "dinner",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    }
+                  ]
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.5,
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.5,
+                "Room B": 0.5,
+                "Room C": 0.5,
+                "Room D": 0.5,
+                "Room E": 0.5
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    }
+                  ]
+                },
+                "Room B": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "closest": [
+                    "Classic Apéro (closest to dinner)"
+                  ],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "dinner",
+                      "product": "Classic Apéro",
+                      "score": 0.667
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "dinner",
+                      "product": "Premium Apéro",
+                      "score": 0.667
+                    },
+                    {
+                      "wish": "dinner",
+                      "product": "Prosecco Service",
+                      "score": 0.6
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "event_ids": []
+    },
+    "dinner-openai@example.com": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "116bb437-9501-4198-a4e3-66febf4294be",
+          "ts": "2025-12-23T23:38:41.255893Z",
+          "subject": "Hello, I would like to book a private dinner for 30 guests on March 20th, 2026. ",
+          "body_preview": "Hello, I would like to book a private dinner for 30 guests on March 20th, 2026. My email is dinner-openai@example.com\n\nBest regards,\nSarah Johnson",
+          "intent": "event_request",
+          "confidence": 0.9,
+          "user_info": {
+            "date": "2026-03-20",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 30,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": "dinner",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              30
+            ],
+            "window": {
+              "month": "March",
+              "weekdays_hint": [
+                30
+              ]
+            },
+            "event_date": "20.03.2026",
+            "vague_month": "march",
             "vague_time_of_day": "evening",
             "preferences": {
               "wish_products": [

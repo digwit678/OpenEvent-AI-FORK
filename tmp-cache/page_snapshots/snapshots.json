@@ -18560,6 +18560,1934 @@
           "- Alpine Roots Degustation \u2014 CHF 105 per event (Rooms: all)"
         ]
       }
+    },
+    "snap_20251223_232103_95e1a1d6": {
+      "snapshot_id": "snap_20251223_232103_95e1a1d6",
+      "type": "rooms",
+      "created_at": "2025-12-23T23:21:03.532435",
+      "expires_at": "2025-12-30T23:21:03.532435",
+      "event_id": "8e3031b4-ad7b-4296-a554-1826ab083ff7",
+      "params": {
+        "date": "15.03.2026",
+        "capacity": "20"
+      },
+      "data": {
+        "rooms": [
+          {
+            "id": "Room A",
+            "name": "Room A",
+            "capacity": 40,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "missing": [
+                "party"
+              ]
+            },
+            "hint": "Missing: party",
+            "alternatives": [
+              "16.03.2026",
+              "14.03.2026",
+              "17.03.2026"
+            ]
+          },
+          {
+            "id": "Room D",
+            "name": "Room D",
+            "capacity": 26,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "missing": [
+                "party"
+              ]
+            },
+            "hint": "Missing: party",
+            "alternatives": [
+              "16.03.2026",
+              "14.03.2026",
+              "17.03.2026"
+            ]
+          },
+          {
+            "id": "Room E",
+            "name": "Room E",
+            "capacity": 120,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "missing": [
+                "party"
+              ]
+            },
+            "hint": "Missing: party",
+            "alternatives": [
+              "16.03.2026",
+              "14.03.2026",
+              "17.03.2026"
+            ]
+          }
+        ],
+        "table_rows": [
+          {
+            "date": "15.03.2026",
+            "room": "Room A",
+            "status": "Available",
+            "hint": "Missing: party",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [],
+              "missing": [
+                "party"
+              ]
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room D",
+            "status": "Available",
+            "hint": "Missing: party",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [],
+              "missing": [
+                "party"
+              ]
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room E",
+            "status": "Available",
+            "hint": "Missing: party",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [],
+              "missing": [
+                "party"
+              ]
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room F",
+            "status": "Available",
+            "hint": "Party",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room C",
+            "status": "Available",
+            "hint": "Missing: party",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [],
+              "missing": [
+                "party"
+              ]
+            },
+            "coffee_match": "\u2717",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room B",
+            "status": "Option",
+            "hint": "Missing: party",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [],
+              "missing": [
+                "party"
+              ]
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          }
+        ],
+        "selected_room": "Room A",
+        "outcome": "Available",
+        "chosen_date": "15.03.2026",
+        "display_date": "15.03.2026",
+        "participants": 20,
+        "client_preferences": {
+          "wish_products": [
+            "party"
+          ],
+          "keywords": [
+            "party"
+          ],
+          "special_requirements": null
+        }
+      }
+    },
+    "snap_20251223_232108_351cbf7a": {
+      "snapshot_id": "snap_20251223_232108_351cbf7a",
+      "type": "catering",
+      "created_at": "2025-12-23T23:21:08.900285",
+      "expires_at": "2025-12-30T23:21:08.900285",
+      "event_id": "8e3031b4-ad7b-4296-a554-1826ab083ff7",
+      "params": {},
+      "data": {
+        "menus": [
+          {
+            "name": "Seasonal Garden Trio",
+            "slug": "seasonal-garden-trio",
+            "price_per_person": "CHF 92",
+            "description": "Charred leek tart, truffle risotto, and citrus pavlova matched with Swiss whites.",
+            "availability_window": "Available December\u2013March",
+            "dietary": [
+              "vegetarian",
+              "wine pairing included",
+              "vegetarian"
+            ],
+            "courses": 3,
+            "vegetarian": true,
+            "wine_pairing": true
+          },
+          {
+            "name": "Lakeview Signature Journey",
+            "slug": "lakeview-signature-journey",
+            "price_per_person": "CHF 118",
+            "description": "Lake char crudo, veal tenderloin, and Swiss meringue finale with matching wines.",
+            "availability_window": "Available February\u2013April",
+            "dietary": [
+              "wine pairing included",
+              "includes meat & seafood"
+            ],
+            "courses": 3,
+            "vegetarian": false,
+            "wine_pairing": true
+          }
+        ],
+        "title": "Dinner three-course menus with wine pairings:",
+        "month_hint": null,
+        "lines": [
+          "Dinner three-course menus with wine pairings:",
+          "- Seasonal Garden Trio \u2014 CHF 92 per event (Rooms: all)",
+          "- Lakeview Signature Journey \u2014 CHF 118 per event (Rooms: all)"
+        ]
+      }
+    },
+    "snap_20251223_232216_2b15abca": {
+      "snapshot_id": "snap_20251223_232216_2b15abca",
+      "type": "rooms",
+      "created_at": "2025-12-23T23:22:16.999333",
+      "expires_at": "2025-12-30T23:22:16.999333",
+      "event_id": "c1dcf130-e319-45f3-8748-e6f5dcdd85d4",
+      "params": {
+        "date": "15.03.2026",
+        "capacity": "20"
+      },
+      "data": {
+        "rooms": [
+          {
+            "id": "Room A",
+            "name": "Room A",
+            "capacity": 40,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "16.03.2026",
+              "14.03.2026",
+              "17.03.2026"
+            ]
+          },
+          {
+            "id": "Room D",
+            "name": "Room D",
+            "capacity": 26,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "16.03.2026",
+              "14.03.2026",
+              "17.03.2026"
+            ]
+          },
+          {
+            "id": "Room E",
+            "name": "Room E",
+            "capacity": 120,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "16.03.2026",
+              "14.03.2026",
+              "17.03.2026"
+            ]
+          }
+        ],
+        "table_rows": [
+          {
+            "date": "15.03.2026",
+            "room": "Room A",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room D",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room E",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room F",
+            "status": "Available",
+            "hint": "Dinner",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room C",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2717",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room B",
+            "status": "Option",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          }
+        ],
+        "selected_room": "Room A",
+        "outcome": "Available",
+        "chosen_date": "15.03.2026",
+        "display_date": "15.03.2026",
+        "participants": 20,
+        "client_preferences": {
+          "wish_products": [
+            "dinner"
+          ],
+          "keywords": [
+            "dinner"
+          ],
+          "special_requirements": null
+        }
+      }
+    },
+    "snap_20251223_232219_7689c60f": {
+      "snapshot_id": "snap_20251223_232219_7689c60f",
+      "type": "catering",
+      "created_at": "2025-12-23T23:22:19.326054",
+      "expires_at": "2025-12-30T23:22:19.326054",
+      "event_id": "c1dcf130-e319-45f3-8748-e6f5dcdd85d4",
+      "params": {},
+      "data": {
+        "menus": [
+          {
+            "name": "Seasonal Garden Trio",
+            "slug": "seasonal-garden-trio",
+            "price_per_person": "CHF 92",
+            "description": "Charred leek tart, truffle risotto, and citrus pavlova matched with Swiss whites.",
+            "availability_window": "Available December\u2013March",
+            "dietary": [
+              "vegetarian",
+              "wine pairing included",
+              "vegetarian"
+            ],
+            "courses": 3,
+            "vegetarian": true,
+            "wine_pairing": true
+          },
+          {
+            "name": "Lakeview Signature Journey",
+            "slug": "lakeview-signature-journey",
+            "price_per_person": "CHF 118",
+            "description": "Lake char crudo, veal tenderloin, and Swiss meringue finale with matching wines.",
+            "availability_window": "Available February\u2013April",
+            "dietary": [
+              "wine pairing included",
+              "includes meat & seafood"
+            ],
+            "courses": 3,
+            "vegetarian": false,
+            "wine_pairing": true
+          }
+        ],
+        "title": "Dinner three-course menus with wine pairings:",
+        "month_hint": null,
+        "lines": [
+          "Dinner three-course menus with wine pairings:",
+          "- Seasonal Garden Trio \u2014 CHF 92 per event (Rooms: all)",
+          "- Lakeview Signature Journey \u2014 CHF 118 per event (Rooms: all)"
+        ]
+      }
+    },
+    "snap_20251223_232241_5606ba08": {
+      "snapshot_id": "snap_20251223_232241_5606ba08",
+      "type": "rooms",
+      "created_at": "2025-12-23T23:22:41.929223",
+      "expires_at": "2025-12-30T23:22:41.929223",
+      "event_id": "8bb470f2-9d1b-4b05-8bd4-ced7bf46d1a3",
+      "params": {
+        "date": "10.04.2026",
+        "capacity": "30"
+      },
+      "data": {
+        "rooms": [
+          {
+            "id": "Room A",
+            "name": "Room A",
+            "capacity": 40,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "11.04.2026",
+              "09.04.2026",
+              "12.04.2026"
+            ]
+          },
+          {
+            "id": "Room B",
+            "name": "Room B",
+            "capacity": 60,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "11.04.2026",
+              "09.04.2026",
+              "12.04.2026"
+            ]
+          },
+          {
+            "id": "Room E",
+            "name": "Room E",
+            "capacity": 120,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "11.04.2026",
+              "09.04.2026",
+              "12.04.2026"
+            ]
+          }
+        ],
+        "table_rows": [
+          {
+            "date": "10.04.2026",
+            "room": "Room A",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-04-11",
+              "2026-04-09",
+              "2026-04-12"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "10.04.2026",
+            "room": "Room B",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-04-11",
+              "2026-04-09",
+              "2026-04-12"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "10.04.2026",
+            "room": "Room E",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-04-11",
+              "2026-04-09",
+              "2026-04-12"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "10.04.2026",
+            "room": "Room F",
+            "status": "Available",
+            "hint": "Dinner",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-04-11",
+              "2026-04-09",
+              "2026-04-12"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "10.04.2026",
+            "room": "Room D",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-04-11",
+              "2026-04-09",
+              "2026-04-12"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "10.04.2026",
+            "room": "Room C",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-04-11",
+              "2026-04-09",
+              "2026-04-12"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2717",
+            "u_shape_match": null,
+            "projector_match": null
+          }
+        ],
+        "selected_room": "Room A",
+        "outcome": "Available",
+        "chosen_date": "10.04.2026",
+        "display_date": "10.04.2026",
+        "participants": 30,
+        "client_preferences": {
+          "wish_products": [
+            "dinner"
+          ],
+          "keywords": [
+            "dinner"
+          ],
+          "special_requirements": null
+        }
+      }
+    },
+    "snap_20251223_232244_b836ec3e": {
+      "snapshot_id": "snap_20251223_232244_b836ec3e",
+      "type": "catering",
+      "created_at": "2025-12-23T23:22:44.703716",
+      "expires_at": "2025-12-30T23:22:44.703716",
+      "event_id": "8bb470f2-9d1b-4b05-8bd4-ced7bf46d1a3",
+      "params": {},
+      "data": {
+        "menus": [
+          {
+            "name": "Lakeview Signature Journey",
+            "slug": "lakeview-signature-journey",
+            "price_per_person": "CHF 118",
+            "description": "Lake char crudo, veal tenderloin, and Swiss meringue finale with matching wines.",
+            "availability_window": "Available February\u2013April",
+            "dietary": [
+              "wine pairing included",
+              "includes meat & seafood"
+            ],
+            "courses": 3,
+            "vegetarian": false,
+            "wine_pairing": true
+          }
+        ],
+        "title": "Dinner three-course menus with wine pairings:",
+        "month_hint": null,
+        "lines": [
+          "Dinner three-course menus with wine pairings:",
+          "- Lakeview Signature Journey \u2014 CHF 118 per event (Rooms: all)"
+        ]
+      }
+    },
+    "snap_20251223_232447_a6329bf7": {
+      "snapshot_id": "snap_20251223_232447_a6329bf7",
+      "type": "rooms",
+      "created_at": "2025-12-23T23:24:47.535379",
+      "expires_at": "2025-12-30T23:24:47.535379",
+      "event_id": "5789fdeb-9824-43f4-9147-9cbe713a1b71",
+      "params": {
+        "date": "10.04.2026",
+        "capacity": "30"
+      },
+      "data": {
+        "rooms": [
+          {
+            "id": "Room A",
+            "name": "Room A",
+            "capacity": 40,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "11.04.2026",
+              "09.04.2026",
+              "12.04.2026"
+            ]
+          },
+          {
+            "id": "Room B",
+            "name": "Room B",
+            "capacity": 60,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "11.04.2026",
+              "09.04.2026",
+              "12.04.2026"
+            ]
+          },
+          {
+            "id": "Room E",
+            "name": "Room E",
+            "capacity": 120,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "11.04.2026",
+              "09.04.2026",
+              "12.04.2026"
+            ]
+          }
+        ],
+        "table_rows": [
+          {
+            "date": "10.04.2026",
+            "room": "Room A",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-04-11",
+              "2026-04-09",
+              "2026-04-12"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "10.04.2026",
+            "room": "Room B",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-04-11",
+              "2026-04-09",
+              "2026-04-12"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "10.04.2026",
+            "room": "Room E",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-04-11",
+              "2026-04-09",
+              "2026-04-12"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "10.04.2026",
+            "room": "Room F",
+            "status": "Available",
+            "hint": "Dinner",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-04-11",
+              "2026-04-09",
+              "2026-04-12"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "10.04.2026",
+            "room": "Room D",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-04-11",
+              "2026-04-09",
+              "2026-04-12"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "10.04.2026",
+            "room": "Room C",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-04-11",
+              "2026-04-09",
+              "2026-04-12"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2717",
+            "u_shape_match": null,
+            "projector_match": null
+          }
+        ],
+        "selected_room": "Room A",
+        "outcome": "Available",
+        "chosen_date": "10.04.2026",
+        "display_date": "10.04.2026",
+        "participants": 30,
+        "client_preferences": {
+          "wish_products": [
+            "dinner"
+          ],
+          "keywords": [
+            "dinner"
+          ],
+          "special_requirements": null
+        }
+      }
+    },
+    "snap_20251223_232450_0d15cc84": {
+      "snapshot_id": "snap_20251223_232450_0d15cc84",
+      "type": "catering",
+      "created_at": "2025-12-23T23:24:50.065535",
+      "expires_at": "2025-12-30T23:24:50.065535",
+      "event_id": "5789fdeb-9824-43f4-9147-9cbe713a1b71",
+      "params": {},
+      "data": {
+        "menus": [
+          {
+            "name": "Lakeview Signature Journey",
+            "slug": "lakeview-signature-journey",
+            "price_per_person": "CHF 118",
+            "description": "Lake char crudo, veal tenderloin, and Swiss meringue finale with matching wines.",
+            "availability_window": "Available February\u2013April",
+            "dietary": [
+              "wine pairing included",
+              "includes meat & seafood"
+            ],
+            "courses": 3,
+            "vegetarian": false,
+            "wine_pairing": true
+          }
+        ],
+        "title": "Dinner three-course menus with wine pairings:",
+        "month_hint": null,
+        "lines": [
+          "Dinner three-course menus with wine pairings:",
+          "- Lakeview Signature Journey \u2014 CHF 118 per event (Rooms: all)"
+        ]
+      }
+    },
+    "snap_20251223_232741_583ed817": {
+      "snapshot_id": "snap_20251223_232741_583ed817",
+      "type": "rooms",
+      "created_at": "2025-12-23T23:27:41.407522",
+      "expires_at": "2025-12-30T23:27:41.407522",
+      "event_id": "820341fa-60af-477c-b4f7-6a5afb257a31",
+      "params": {
+        "date": "20.02.2026",
+        "capacity": "25"
+      },
+      "data": {
+        "rooms": [
+          {
+            "id": "Room A",
+            "name": "Room A",
+            "capacity": 40,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "21.02.2026",
+              "19.02.2026",
+              "22.02.2026"
+            ]
+          },
+          {
+            "id": "Room B",
+            "name": "Room B",
+            "capacity": 60,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "21.02.2026",
+              "19.02.2026",
+              "22.02.2026"
+            ]
+          },
+          {
+            "id": "Room D",
+            "name": "Room D",
+            "capacity": 26,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "21.02.2026",
+              "19.02.2026",
+              "22.02.2026"
+            ]
+          }
+        ],
+        "table_rows": [
+          {
+            "date": "20.02.2026",
+            "room": "Room A",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-21",
+              "2026-02-19",
+              "2026-02-22"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "20.02.2026",
+            "room": "Room B",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-21",
+              "2026-02-19",
+              "2026-02-22"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "20.02.2026",
+            "room": "Room D",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-21",
+              "2026-02-19",
+              "2026-02-22"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "20.02.2026",
+            "room": "Room E",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-21",
+              "2026-02-19",
+              "2026-02-22"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "20.02.2026",
+            "room": "Room F",
+            "status": "Available",
+            "hint": "Dinner",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-21",
+              "2026-02-19",
+              "2026-02-22"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "20.02.2026",
+            "room": "Room C",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-02-21",
+              "2026-02-19",
+              "2026-02-22"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2717",
+            "u_shape_match": null,
+            "projector_match": null
+          }
+        ],
+        "selected_room": "Room A",
+        "outcome": "Available",
+        "chosen_date": "20.02.2026",
+        "display_date": "20.02.2026",
+        "participants": 25,
+        "client_preferences": {
+          "wish_products": [
+            "dinner"
+          ],
+          "keywords": [
+            "dinner"
+          ],
+          "special_requirements": null
+        }
+      }
+    },
+    "snap_20251223_232744_300469b6": {
+      "snapshot_id": "snap_20251223_232744_300469b6",
+      "type": "catering",
+      "created_at": "2025-12-23T23:27:44.404993",
+      "expires_at": "2025-12-30T23:27:44.404993",
+      "event_id": "820341fa-60af-477c-b4f7-6a5afb257a31",
+      "params": {},
+      "data": {
+        "menus": [
+          {
+            "name": "Seasonal Garden Trio",
+            "slug": "seasonal-garden-trio",
+            "price_per_person": "CHF 92",
+            "description": "Charred leek tart, truffle risotto, and citrus pavlova matched with Swiss whites.",
+            "availability_window": "Available December\u2013March",
+            "dietary": [
+              "vegetarian",
+              "wine pairing included",
+              "vegetarian"
+            ],
+            "courses": 3,
+            "vegetarian": true,
+            "wine_pairing": true
+          },
+          {
+            "name": "Alpine Roots Degustation",
+            "slug": "alpine-roots-degustation",
+            "price_per_person": "CHF 105",
+            "description": "Roasted beet mille-feuille, herb gnocchi, and warm chocolate tart with alpine wine pairing.",
+            "availability_window": "Available November\u2013February",
+            "dietary": [
+              "vegetarian",
+              "wine pairing included",
+              "vegetarian"
+            ],
+            "courses": 3,
+            "vegetarian": true,
+            "wine_pairing": true
+          },
+          {
+            "name": "Lakeview Signature Journey",
+            "slug": "lakeview-signature-journey",
+            "price_per_person": "CHF 118",
+            "description": "Lake char crudo, veal tenderloin, and Swiss meringue finale with matching wines.",
+            "availability_window": "Available February\u2013April",
+            "dietary": [
+              "wine pairing included",
+              "includes meat & seafood"
+            ],
+            "courses": 3,
+            "vegetarian": false,
+            "wine_pairing": true
+          }
+        ],
+        "title": "Dinner three-course menus with wine pairings:",
+        "month_hint": null,
+        "lines": [
+          "Dinner three-course menus with wine pairings:",
+          "- Seasonal Garden Trio \u2014 CHF 92 per event (Rooms: all)",
+          "- Alpine Roots Degustation \u2014 CHF 105 per event (Rooms: all)",
+          "- Lakeview Signature Journey \u2014 CHF 118 per event (Rooms: all)"
+        ]
+      }
+    },
+    "snap_20251223_233252_2a8500a7": {
+      "snapshot_id": "snap_20251223_233252_2a8500a7",
+      "type": "rooms",
+      "created_at": "2025-12-23T23:32:52.373486",
+      "expires_at": "2025-12-30T23:32:52.373486",
+      "event_id": "029a9c82-eb22-4e89-8f18-454caeefb871",
+      "params": {
+        "date": "15.03.2026",
+        "capacity": "30"
+      },
+      "data": {
+        "rooms": [
+          {
+            "id": "Room A",
+            "name": "Room A",
+            "capacity": 40,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "16.03.2026",
+              "14.03.2026",
+              "17.03.2026"
+            ]
+          },
+          {
+            "id": "Room E",
+            "name": "Room E",
+            "capacity": 120,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "16.03.2026",
+              "14.03.2026",
+              "17.03.2026"
+            ]
+          },
+          {
+            "id": "Room F",
+            "name": "Room F",
+            "capacity": 45,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "closest": [],
+              "missing": []
+            },
+            "hint": "Dinner",
+            "alternatives": [
+              "16.03.2026",
+              "14.03.2026",
+              "17.03.2026"
+            ]
+          }
+        ],
+        "table_rows": [
+          {
+            "date": "15.03.2026",
+            "room": "Room A",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room E",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room F",
+            "status": "Available",
+            "hint": "Dinner",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room D",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room C",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2717",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "15.03.2026",
+            "room": "Room B",
+            "status": "Option",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-16",
+              "2026-03-14",
+              "2026-03-17"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          }
+        ],
+        "selected_room": "Room A",
+        "outcome": "Available",
+        "chosen_date": "15.03.2026",
+        "display_date": "15.03.2026",
+        "participants": 30,
+        "client_preferences": {
+          "wish_products": [
+            "dinner"
+          ],
+          "keywords": [
+            "dinner"
+          ],
+          "special_requirements": null
+        }
+      }
+    },
+    "snap_20251223_233254_d8f126c9": {
+      "snapshot_id": "snap_20251223_233254_d8f126c9",
+      "type": "catering",
+      "created_at": "2025-12-23T23:32:54.823302",
+      "expires_at": "2025-12-30T23:32:54.823302",
+      "event_id": "029a9c82-eb22-4e89-8f18-454caeefb871",
+      "params": {},
+      "data": {
+        "menus": [
+          {
+            "name": "Seasonal Garden Trio",
+            "slug": "seasonal-garden-trio",
+            "price_per_person": "CHF 92",
+            "description": "Charred leek tart, truffle risotto, and citrus pavlova matched with Swiss whites.",
+            "availability_window": "Available December\u2013March",
+            "dietary": [
+              "vegetarian",
+              "wine pairing included",
+              "vegetarian"
+            ],
+            "courses": 3,
+            "vegetarian": true,
+            "wine_pairing": true
+          },
+          {
+            "name": "Lakeview Signature Journey",
+            "slug": "lakeview-signature-journey",
+            "price_per_person": "CHF 118",
+            "description": "Lake char crudo, veal tenderloin, and Swiss meringue finale with matching wines.",
+            "availability_window": "Available February\u2013April",
+            "dietary": [
+              "wine pairing included",
+              "includes meat & seafood"
+            ],
+            "courses": 3,
+            "vegetarian": false,
+            "wine_pairing": true
+          }
+        ],
+        "title": "Dinner three-course menus with wine pairings:",
+        "month_hint": null,
+        "lines": [
+          "Dinner three-course menus with wine pairings:",
+          "- Seasonal Garden Trio \u2014 CHF 92 per event (Rooms: all)",
+          "- Lakeview Signature Journey \u2014 CHF 118 per event (Rooms: all)"
+        ]
+      }
+    },
+    "snap_20251223_233841_09679c8b": {
+      "snapshot_id": "snap_20251223_233841_09679c8b",
+      "type": "rooms",
+      "created_at": "2025-12-23T23:38:41.328118",
+      "expires_at": "2025-12-30T23:38:41.328118",
+      "event_id": "ce7d7973-007d-435f-83a6-2c08985ce99e",
+      "params": {
+        "date": "20.03.2026",
+        "capacity": "30"
+      },
+      "data": {
+        "rooms": [
+          {
+            "id": "Room A",
+            "name": "Room A",
+            "capacity": 40,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "21.03.2026",
+              "19.03.2026",
+              "22.03.2026"
+            ]
+          },
+          {
+            "id": "Room B",
+            "name": "Room B",
+            "capacity": 60,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "21.03.2026",
+              "19.03.2026",
+              "22.03.2026"
+            ]
+          },
+          {
+            "id": "Room E",
+            "name": "Room E",
+            "capacity": 120,
+            "badges": {
+              "coffee": null,
+              "capacity": "\u2713",
+              "u-shape": null,
+              "projector": null
+            },
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "hint": "Classic Ap\u00e9ro",
+            "alternatives": [
+              "21.03.2026",
+              "19.03.2026",
+              "22.03.2026"
+            ]
+          }
+        ],
+        "table_rows": [
+          {
+            "date": "20.03.2026",
+            "room": "Room A",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-21",
+              "2026-03-19",
+              "2026-03-22"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "20.03.2026",
+            "room": "Room B",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-21",
+              "2026-03-19",
+              "2026-03-22"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "20.03.2026",
+            "room": "Room E",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-21",
+              "2026-03-19",
+              "2026-03-22"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "20.03.2026",
+            "room": "Room F",
+            "status": "Available",
+            "hint": "Dinner",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-21",
+              "2026-03-19",
+              "2026-03-22"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "20.03.2026",
+            "room": "Room D",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-21",
+              "2026-03-19",
+              "2026-03-22"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2713",
+            "u_shape_match": null,
+            "projector_match": null
+          },
+          {
+            "date": "20.03.2026",
+            "room": "Room C",
+            "status": "Available",
+            "hint": "Classic Ap\u00e9ro",
+            "requirements_score": 0.0,
+            "available_dates": [
+              "2026-03-21",
+              "2026-03-19",
+              "2026-03-22"
+            ],
+            "requirements": {
+              "matched": [],
+              "closest": [
+                "Classic Ap\u00e9ro (closest to dinner)"
+              ],
+              "missing": []
+            },
+            "coffee_match": "\u2717",
+            "u_shape_match": null,
+            "projector_match": null
+          }
+        ],
+        "selected_room": "Room A",
+        "outcome": "Available",
+        "chosen_date": "20.03.2026",
+        "display_date": "20.03.2026",
+        "participants": 30,
+        "client_preferences": {
+          "wish_products": [
+            "dinner"
+          ],
+          "keywords": [
+            "dinner"
+          ],
+          "special_requirements": null
+        }
+      }
+    },
+    "snap_20251223_233844_be1a6f20": {
+      "snapshot_id": "snap_20251223_233844_be1a6f20",
+      "type": "catering",
+      "created_at": "2025-12-23T23:38:44.589326",
+      "expires_at": "2025-12-30T23:38:44.589326",
+      "event_id": "ce7d7973-007d-435f-83a6-2c08985ce99e",
+      "params": {},
+      "data": {
+        "menus": [
+          {
+            "name": "Seasonal Garden Trio",
+            "slug": "seasonal-garden-trio",
+            "price_per_person": "CHF 92",
+            "description": "Charred leek tart, truffle risotto, and citrus pavlova matched with Swiss whites.",
+            "availability_window": "Available December\u2013March",
+            "dietary": [
+              "vegetarian",
+              "wine pairing included",
+              "vegetarian"
+            ],
+            "courses": 3,
+            "vegetarian": true,
+            "wine_pairing": true
+          },
+          {
+            "name": "Lakeview Signature Journey",
+            "slug": "lakeview-signature-journey",
+            "price_per_person": "CHF 118",
+            "description": "Lake char crudo, veal tenderloin, and Swiss meringue finale with matching wines.",
+            "availability_window": "Available February\u2013April",
+            "dietary": [
+              "wine pairing included",
+              "includes meat & seafood"
+            ],
+            "courses": 3,
+            "vegetarian": false,
+            "wine_pairing": true
+          }
+        ],
+        "title": "Dinner three-course menus with wine pairings:",
+        "month_hint": null,
+        "lines": [
+          "Dinner three-course menus with wine pairings:",
+          "- Seasonal Garden Trio \u2014 CHF 92 per event (Rooms: all)",
+          "- Lakeview Signature Journey \u2014 CHF 118 per event (Rooms: all)"
+        ]
+      }
     }
   }
 }
