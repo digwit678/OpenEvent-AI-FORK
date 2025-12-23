@@ -515,6 +515,50 @@ Added `_apply_hil_negotiation_decision` to exports in:
 - Correctly capture the billing address
 - Route to HIL for final approval with "sent to manager" message
 
+### Frontend Billing Capture Intermittent Failure (Investigating - 2025-12-23)
+**Symptoms:** When running the full billing→deposit→HIL flow through the frontend UI, the billing address message is sometimes not persisted to the database. The frontend shows the correct response ("Thank you for providing your billing details!") but the `billing_details.street` remains `None`. When deposit is paid, the workflow cannot continue to HIL because billing is incomplete.
+
+**Observed Behavior:**
+1. Client accepts offer → System requests billing address ✅
+2. Client provides billing (e.g., "Company AG, Street 50, 8001 Zürich, Switzerland") → Frontend shows correct response ✅
+3. `billing_details.street` remains `None` in database ❌
+4. Client pays deposit → Deposit marked as paid ✅
+5. Workflow does NOT continue to HIL because `billing_complete=False` ❌
+
+**Workaround:** Calling `process_msg()` directly with the same billing message captures billing correctly and creates the HIL task. This confirms the workflow engine code is correct.
+
+**Root Cause (Suspected):** The frontend `/api/send-message` endpoint calls `wf_process_msg()`, but there may be a session/thread_id mismatch causing the event lookup or billing capture to fail silently. The debug logs `[Step5][DEBUG] ✅ Captured billing address` do NOT appear when sent through frontend, but DO appear when sent directly via `process_msg()`.
+
+**Files Involved:**
+- `backend/api/routes/messages.py` - `/api/send-message` endpoint
+- `backend/api/routes/events.py` - `/api/events/{event_id}/deposit` endpoint (checks `billing_complete`)
+- `backend/workflow_email.py:1029-1042` - Billing flow step correction (works correctly)
+- `backend/workflows/steps/step5_negotiation/trigger/step5_handler.py:141-154` - Billing capture (works correctly when called)
+
+**Testing Protocol:** Always test billing→deposit→HIL flow in the actual frontend UI with a fresh client (use "Reset Client" button or new email). Do NOT rely solely on API/Python tests - the issue only manifests in the frontend session flow.
+
+**Regression Guard:** After the complete frontend flow (accept offer → provide billing → pay deposit), verify:
+1. `billing_details.street` is populated in database
+2. `pending_hil_requests` contains the HIL task
+3. The "📋 Manager Tasks" section appears in the frontend with approve/reject buttons
+
+### HIL Task Not Appearing in Tasks Panel After Deposit Payment (Fixed - 2025-12-23)
+**Symptoms:** After paying deposit via the frontend "Pay Deposit" button, the HIL message appeared directly in the chat instead of in the Manager Tasks panel. The expected flow is: deposit payment → HIL task in Tasks panel → manager clicks Approve → site visit message appears in chat.
+
+**Root Cause:** Two issues combined:
+1. **Frontend:** `handlePayDeposit` in `page.tsx` was calling `appendMessage()` to add the API response directly to chat, bypassing the HIL flow entirely.
+2. **Backend:** Event entries didn't have `thread_id` stored, so when tasks were filtered by `task.payload?.thread_id === sessionId`, the task's `thread_id` (defaulting to `event_id`) didn't match the frontend's `sessionId`, hiding the task from the panel.
+
+**Fixes Applied:**
+1. **Frontend:** Removed `appendMessage()` from `handlePayDeposit` - HIL tasks should appear in Tasks panel for manager approval, not in chat.【F:atelier-ai-frontend/app/page.tsx†L886-L907】
+2. **Backend:** Added `thread_id = _thread_id(state)` to event entries in 4 places in step1_handler.py when events are created/updated.【F:backend/workflows/steps/step1_intake/trigger/step1_handler.py†L1293-L1403】
+
+**Regression Guard:** After paying deposit:
+1. HIL task should appear in the "📋 Manager Tasks" section (NOT in chat)
+2. Task should be visible because `thread_id` matches `sessionId`
+3. Clicking Approve should send the site visit message to chat
+4. Test with fresh session to ensure `thread_id` is set correctly on new events
+
 ### Room choice repeats / manual-review detours (Ongoing Fix)
 **Symptoms:** After a client types a room name (e.g., “Room E”), the workflow dropped back to Step 3, showed another room list, or enqueued manual review; sometimes the room label was mistaken for a billing address (“Billing Address: Room E”).
 

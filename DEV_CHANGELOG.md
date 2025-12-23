@@ -2,23 +2,23 @@
 
 ## 2025-12-23
 
-### Fix: HIL Message Not Appearing After Deposit Payment
+### Fix: HIL Task Shows in Tasks Panel, Not Chat (Deposit Flow)
 
-**Problem:** After paying the deposit via the "Pay Deposit" button, the HIL message asking the manager to approve the booking was not appearing in the chat.
+**Problem:** After paying the deposit, the HIL message was appearing directly in chat instead of the Manager Tasks panel. The correct flow is: deposit payment → HIL task in Tasks panel → manager clicks Approve → message appears in chat.
 
 **Root Causes:**
-1. **Backend:** Deposit API returned `wf_res.get("reply_text")` which is `None` - workflow returns `draft_messages` array instead
-2. **Frontend:** `handlePayDeposit` didn't use the API response to append the message to chat
+1. **Frontend:** Previous fix incorrectly added `appendMessage()` to `handlePayDeposit`, which bypassed the HIL flow and sent messages directly to chat
+2. **Backend:** Event entries didn't have `thread_id` stored, so tasks filtered by `task.payload?.thread_id === sessionId` didn't match, hiding tasks from the panel
 
 **Solution:**
-1. Backend (events.py): Extract response from `draft_messages[-1].get("body_markdown")`
-2. Frontend (page.tsx): Capture result and call `appendMessage()` when `result.response` exists
+1. Frontend (page.tsx): Removed `appendMessage()` from `handlePayDeposit` - HIL tasks should stay in Tasks panel
+2. Backend (step1_handler.py): Added `thread_id` to event entries in 4 places when created/updated
 
 **Files Modified:**
-- `backend/api/routes/events.py` - Extract response from draft_messages
-- `atelier-ai-frontend/app/page.tsx` - Append HIL message to chat after deposit payment
+- `atelier-ai-frontend/app/page.tsx:886-907` - Removed appendMessage from deposit handler
+- `backend/workflows/steps/step1_intake/trigger/step1_handler.py:1293-1403` - Added thread_id to events
 
-**Tests:** E2E frontend flow verified - complete flow from inquiry through deposit payment now shows HIL message.
+**Tests:** E2E frontend flow verified - deposit payment → HIL in Tasks panel → Approve → site visit message in chat.
 
 ---
 
