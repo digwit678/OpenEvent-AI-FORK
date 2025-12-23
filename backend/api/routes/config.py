@@ -5,6 +5,8 @@ PURPOSE: Configuration management endpoints.
 ENDPOINTS:
     GET  /api/config/global-deposit  - Get global deposit config
     POST /api/config/global-deposit  - Set global deposit config
+    GET  /api/config/hil-mode        - Get HIL mode status
+    POST /api/config/hil-mode        - Toggle HIL mode (all AI replies require approval)
 
 DEPENDS ON:
     - backend/workflow_email.py  # Database operations
@@ -39,6 +41,29 @@ class GlobalDepositConfig(BaseModel):
     deposit_percentage: int = 30
     deposit_fixed_amount: float = 0.0
     deposit_deadline_days: int = 10
+
+
+class HILModeConfig(BaseModel):
+    """
+    Human-in-the-Loop mode configuration.
+
+    When enabled, ALL AI-generated replies require manager approval before
+    being sent to clients. This is the recommended setting for production
+    environments during initial deployment.
+
+    MANAGER WORKFLOW:
+    1. AI generates a reply draft
+    2. Draft appears in "AI Reply Approval" queue (separate from client tasks)
+    3. Manager reviews, optionally edits the message
+    4. Manager approves → message sent to client
+    5. Manager rejects → message discarded, no client notification
+
+    USE CASES:
+    - Production launch: Enable to review all AI outputs
+    - Gradual trust building: Monitor AI quality before full automation
+    - Compliance: Ensure human review of all client communications
+    """
+    enabled: bool
 
 
 class PromptConfig(BaseModel):
@@ -117,6 +142,102 @@ async def set_global_deposit_config(config: GlobalDepositConfig):
     except Exception as exc:
         raise HTTPException(
             status_code=500, detail=f"Failed to save deposit config: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# HIL Mode Configuration Endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/hil-mode")
+async def get_hil_mode():
+    """
+    Get the current HIL (Human-in-the-Loop) mode status.
+
+    When enabled, ALL AI-generated replies require manager approval before
+    being sent to clients.
+
+    Priority order:
+    1. Database setting (if set) - allows runtime toggle
+    2. Environment variable OE_HIL_ALL_LLM_REPLIES - server default
+    3. False (disabled) - backwards compatible default
+
+    Returns:
+        enabled: bool - Whether HIL mode is active
+        source: str - Where the setting came from ("database", "environment", "default")
+    """
+    try:
+        db = wf_load_db()
+        hil_config = db.get("config", {}).get("hil_mode", {})
+
+        # Check database first
+        if "enabled" in hil_config:
+            return {
+                "enabled": hil_config["enabled"],
+                "source": "database",
+                "updated_at": hil_config.get("updated_at"),
+            }
+
+        # Fall back to environment variable
+        import os
+        env_value = os.getenv("OE_HIL_ALL_LLM_REPLIES", "").lower()
+        if env_value in ("true", "1", "yes"):
+            return {"enabled": True, "source": "environment"}
+        elif env_value in ("false", "0", "no"):
+            return {"enabled": False, "source": "environment"}
+
+        # Default
+        return {"enabled": False, "source": "default"}
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load HIL mode config: {exc}"
+        ) from exc
+
+
+@router.post("/hil-mode")
+async def set_hil_mode(config: HILModeConfig):
+    """
+    Toggle HIL (Human-in-the-Loop) mode for AI replies.
+
+    When enabled:
+    - ALL AI-generated replies go to "AI Reply Approval" queue
+    - Manager must approve each reply before it's sent to client
+    - Manager can edit the reply before approving
+
+    When disabled:
+    - AI replies are sent directly to clients (current behavior)
+    - Only specific workflow actions require HIL approval
+
+    This setting persists in the database and takes effect immediately.
+    It overrides the OE_HIL_ALL_LLM_REPLIES environment variable.
+    """
+    try:
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+
+        db["config"]["hil_mode"] = {
+            "enabled": config.enabled,
+            "updated_at": _now_iso(),
+        }
+        wf_save_db(db)
+
+        # Notify the integration config module to refresh
+        from backend.workflows.io.integration.config import refresh_hil_setting
+        refresh_hil_setting()
+
+        status = "enabled" if config.enabled else "disabled"
+        print(f"[Config] HIL mode {status} - all AI replies {'require' if config.enabled else 'do not require'} manager approval")
+
+        return {
+            "status": "ok",
+            "enabled": config.enabled,
+            "message": f"HIL mode {status}. {'All AI replies now require manager approval.' if config.enabled else 'AI replies will be sent directly to clients.'}",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save HIL mode config: {exc}"
         ) from exc
 
 
