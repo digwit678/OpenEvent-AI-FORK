@@ -23,6 +23,7 @@ from backend.workflow_email import (
     save_db as wf_save_db,
     process_msg as wf_process_msg,
 )
+from backend.workflows.common.confirmation_gate import check_confirmation_gate
 
 
 router = APIRouter(tags=["events"])
@@ -103,24 +104,14 @@ async def pay_deposit(request: DepositPaymentRequest):
         wf_save_db(db)
         print(f"[Deposit] Event {request.event_id}: Deposit marked as paid")
 
-        # Check if prerequisites are met to continue workflow
-        billing_address = event_entry.get("billing_address")
-        offer_accepted = event_entry.get("offer_accepted", False)
-        client_email = event_entry.get("client_email", "")
+        # Check if prerequisites are met to continue workflow using unified gate
+        # Note: We just updated deposit_paid above, so use fresh event_entry state
+        gate_status = check_confirmation_gate(event_entry)
+        # Email is stored in event_data.Email, NOT directly as client_email
+        client_email = (event_entry.get("event_data") or {}).get("Email", "")
         thread_id = event_entry.get("thread_id", request.event_id)
 
-        if not billing_address:
-            print(f"[Deposit] Event {request.event_id}: Billing address missing, not continuing workflow")
-            return {
-                "status": "ok",
-                "event_id": request.event_id,
-                "deposit_amount": deposit_info.get("deposit_amount"),
-                "deposit_paid_at": deposit_info.get("deposit_paid_at"),
-                "workflow_continued": False,
-                "reason": "billing_address_missing",
-            }
-
-        if not offer_accepted:
+        if not gate_status.offer_accepted:
             print(f"[Deposit] Event {request.event_id}: Offer not accepted, not continuing workflow")
             return {
                 "status": "ok",
@@ -130,6 +121,23 @@ async def pay_deposit(request: DepositPaymentRequest):
                 "workflow_continued": False,
                 "reason": "offer_not_accepted",
             }
+
+        if not gate_status.billing_complete:
+            print(f"[Deposit] Event {request.event_id}: Billing incomplete (missing: {gate_status.billing_missing}), not continuing workflow")
+            return {
+                "status": "ok",
+                "event_id": request.event_id,
+                "deposit_amount": deposit_info.get("deposit_amount"),
+                "deposit_paid_at": deposit_info.get("deposit_paid_at"),
+                "workflow_continued": False,
+                "reason": "billing_address_missing",
+                "billing_missing": gate_status.billing_missing,
+            }
+
+        # All prerequisites met - continue to HIL
+        print(f"[Deposit] Event {request.event_id}: All prerequisites met (billing_complete={gate_status.billing_complete}, "
+              f"deposit_paid={gate_status.deposit_paid}, offer_accepted={gate_status.offer_accepted}) - continuing to HIL")
+        print(f"[Deposit] Using client_email={client_email}, thread_id={thread_id}")
 
         # Continue workflow with synthetic message about deposit payment
         synthetic_msg = {
