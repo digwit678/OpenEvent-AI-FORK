@@ -1289,10 +1289,12 @@ def _ensure_event_record(
     new_event_date = event_data.get("Event Date")
     existing_event_date = last_event.get("chosen_date") or (last_event.get("event_data") or {}).get("Event Date")
 
-    # Different dates = new inquiry, but ONLY if new message actually contains a date
+    # Different dates = new inquiry, but ONLY if BOTH dates are actual dates
     # (not "Not specified" default value)
-    new_date_is_actual = new_event_date and new_event_date not in ("Not specified", "not specified", None, "")
-    if new_date_is_actual and existing_event_date and new_event_date != existing_event_date:
+    placeholder_values = ("Not specified", "not specified", None, "")
+    new_date_is_actual = new_event_date and new_event_date not in placeholder_values
+    existing_date_is_actual = existing_event_date and existing_event_date not in placeholder_values
+    if new_date_is_actual and existing_date_is_actual and new_event_date != existing_event_date:
         should_create_new = True
         trace_db_write(_thread_id(state), "Step1_Intake", "new_event_decision", {
             "reason": "different_date",
