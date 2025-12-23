@@ -162,6 +162,13 @@ async def pay_deposit(request: DepositPaymentRequest):
             import traceback
             traceback.print_exc()
 
+        # Extract response from draft_messages (workflow returns draft_messages, not reply_text)
+        draft_messages = wf_res.get("draft_messages") or []
+        response_text = None
+        if draft_messages:
+            latest_draft = draft_messages[-1]
+            response_text = latest_draft.get("body_markdown") or latest_draft.get("body")
+
         return {
             "status": "ok",
             "event_id": request.event_id,
@@ -169,7 +176,8 @@ async def pay_deposit(request: DepositPaymentRequest):
             "deposit_paid_at": deposit_info.get("deposit_paid_at"),
             "workflow_continued": True,
             "workflow_action": wf_res.get("action"),
-            "response": wf_res.get("reply_text"),
+            "response": response_text,
+            "draft_messages": draft_messages,
         }
 
     except HTTPException:
