@@ -29,7 +29,8 @@ Goals for this phase:
   1. `git log` (last few commits) to understand recent context.
   2. `DEV_CHANGELOG.md` to see high-level changes.
   3. `docs/TEAM_GUIDE.md` to be aware of current bugs and guidelines.
-  4. Workflow v4 specs in `backend/workflow/specs/` if relevant to the task.
+  4. `TO_DO_NEXT_SESS.md` - check this file every time to track pending implementation goals and long-term roadmap. Always update this file with new planned tasks before starting work.
+  5. Workflow v4 specs in `backend/workflow/specs/` if relevant to the task.
 - For new ideas collected in the chat (often too big to implement in the same task, happy accidents/ideas that happened while fixing another problem) write them to new_features.md in root so we can discuss them later. 
 
 ## NO-TOUCH ZONES (Requires Explicit Permission)
