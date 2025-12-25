@@ -13,6 +13,7 @@ from backend.workflows.change_propagation import (
     detect_change_type_enhanced,
     route_change_on_updated_variable,
 )
+from backend.detection.keywords.buckets import has_revision_signal
 import json
 
 from backend.domain import IntentLabel
@@ -1061,41 +1062,49 @@ def process(state: WorkflowState) -> GroupResult:
 
     room_choice_selected = state.extras.pop("room_choice_selected", None)
     if room_choice_selected:
-        pending_info = event_entry.get("room_pending_decision") or {}
-        selected_status = None
-        if isinstance(pending_info, dict) and pending_info.get("selected_room") == room_choice_selected:
-            selected_status = pending_info.get("selected_status")
-        status_value = selected_status or "Available"
-        chosen_date = (
-            event_entry.get("chosen_date")
-            or user_info.get("event_date")
-            or user_info.get("date")
-        )
-        update_event_metadata(
-            event_entry,
-            locked_room_id=room_choice_selected,
-            room_status=status_value,
-            room_eval_hash=event_entry.get("requirements_hash"),
-            caller_step=None,
-            current_step=4,
-            thread_state="Awaiting Client",
-        )
-        event_entry.setdefault("event_data", {})["Preferred Room"] = room_choice_selected
-        append_audit_entry(event_entry, state.current_step or 1, 4, "room_choice_captured")
-        state.current_step = 4
-        state.caller_step = None
-        state.set_thread_state("Awaiting Client")
-        state.extras["persist"] = True
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": intent.value,
-            "confidence": round(confidence, 3),
-            "locked_room_id": room_choice_selected,
-            "thread_state": state.thread_state,
-            "persisted": True,
-        }
-        return GroupResult(action="room_choice_captured", payload=payload, halt=False)
+        existing_lock = event_entry.get("locked_room_id")
+        # If a different room is already locked, DON'T update the lock here.
+        # Let the normal workflow continue so change detection can route to Step 3.
+        if existing_lock and existing_lock != room_choice_selected:
+            print(f"[Step1] Room change detected: {existing_lock} → {room_choice_selected}, skipping room_choice_captured")
+            # Don't return here - let the normal flow continue with change detection
+            # The user_info["room"] is already set, so detect_change_type_enhanced will find it
+        else:
+            pending_info = event_entry.get("room_pending_decision") or {}
+            selected_status = None
+            if isinstance(pending_info, dict) and pending_info.get("selected_room") == room_choice_selected:
+                selected_status = pending_info.get("selected_status")
+            status_value = selected_status or "Available"
+            chosen_date = (
+                event_entry.get("chosen_date")
+                or user_info.get("event_date")
+                or user_info.get("date")
+            )
+            update_event_metadata(
+                event_entry,
+                locked_room_id=room_choice_selected,
+                room_status=status_value,
+                room_eval_hash=event_entry.get("requirements_hash"),
+                caller_step=None,
+                current_step=4,
+                thread_state="Awaiting Client",
+            )
+            event_entry.setdefault("event_data", {})["Preferred Room"] = room_choice_selected
+            append_audit_entry(event_entry, state.current_step or 1, 4, "room_choice_captured")
+            state.current_step = 4
+            state.caller_step = None
+            state.set_thread_state("Awaiting Client")
+            state.extras["persist"] = True
+            payload = {
+                "client_id": state.client_id,
+                "event_id": event_entry.get("event_id"),
+                "intent": intent.value,
+                "confidence": round(confidence, 3),
+                "locked_room_id": room_choice_selected,
+                "thread_state": state.thread_state,
+                "persisted": True,
+            }
+            return GroupResult(action="room_choice_captured", payload=payload, halt=False)
 
     new_preferred_room = requirements.get("preferred_room")
 
@@ -1110,13 +1119,19 @@ def process(state: WorkflowState) -> GroupResult:
         event_entry.get("offer_accepted")
         and (event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
     )
-    message_text = (state.message.subject or "") + "\n" + (state.message.body or "")
+    # BUG FIX: Only use message body for change detection, NOT subject.
+    # The subject contains system-generated timestamps (e.g., "Client follow-up (2025-12-24 17:18)")
+    # which were incorrectly triggering DATE change detection.
+    message_text = state.message.body or ""
     if in_billing_flow:
         # In billing flow, don't detect changes - just continue with billing capture
         change_type = None
     else:
         enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
         change_type = enhanced_result.change_type if enhanced_result.is_change else None
+        print(f"[Step1][CHANGE_DETECT] user_info.date={user_info.get('date')}, user_info.event_date={user_info.get('event_date')}")
+        print(f"[Step1][CHANGE_DETECT] is_change={enhanced_result.is_change}, change_type={change_type}")
+        print(f"[Step1][CHANGE_DETECT] message_text={message_text[:100] if message_text else 'None'}...")
 
     if needs_vague_date_confirmation and not in_billing_flow:
         event_entry["range_query_detected"] = True
@@ -1159,16 +1174,34 @@ def process(state: WorkflowState) -> GroupResult:
             audit_reason = f"{change_type.value}_change_detected"
             append_audit_entry(event_entry, previous_step, decision.next_step, audit_reason)
 
-            # Clear room lock for date/requirements changes
+            # Handle room lock based on change type
             if change_type.value in ("date", "requirements") and decision.next_step in (2, 3):
                 if decision.next_step == 2:
+                    if change_type.value == "date":
+                        # DATE change to Step 2: KEEP locked_room_id so Step 3 can fast-skip
+                        # if the room is still available on the new date
+                        update_event_metadata(
+                            event_entry,
+                            date_confirmed=False,
+                            room_eval_hash=None,  # Invalidate for re-verification
+                            # NOTE: Do NOT clear locked_room_id for date changes
+                        )
+                    else:
+                        # REQUIREMENTS change to Step 2: clear room lock since room may no longer fit
+                        update_event_metadata(
+                            event_entry,
+                            date_confirmed=False,
+                            room_eval_hash=None,
+                            locked_room_id=None,
+                        )
+                    detoured_to_step2 = True
+                elif decision.next_step == 3:
+                    # Going to Step 3 for requirements change: clear room lock but KEEP date confirmed
                     update_event_metadata(
                         event_entry,
-                        date_confirmed=False,
                         room_eval_hash=None,
                         locked_room_id=None,
                     )
-                    detoured_to_step2 = True
 
     # Fallback: legacy logic for cases not handled by change propagation
     # Skip during billing flow - billing addresses shouldn't trigger date changes
@@ -1307,17 +1340,33 @@ def _ensure_event_record(
     existing_event_date = last_event.get("chosen_date") or (last_event.get("event_data") or {}).get("Event Date")
 
     # Different dates = new inquiry, but ONLY if BOTH dates are actual dates
-    # (not "Not specified" default value)
+    # (not "Not specified" default value) AND there's no DATE CHANGE intent
     placeholder_values = ("Not specified", "not specified", None, "")
     new_date_is_actual = new_event_date and new_event_date not in placeholder_values
     existing_date_is_actual = existing_event_date and existing_event_date not in placeholder_values
+
+    # Check if this is a DATE CHANGE request vs a NEW inquiry
+    # Date changes have revision signals ("change", "switch", "actually", "instead", etc.)
+    message_text = (state.message.body or "") + " " + (state.message.subject or "")
+    is_date_change_request = has_revision_signal(message_text)
+
     if new_date_is_actual and existing_date_is_actual and new_event_date != existing_event_date:
-        should_create_new = True
-        trace_db_write(_thread_id(state), "Step1_Intake", "new_event_decision", {
-            "reason": "different_date",
-            "new_date": new_event_date,
-            "existing_date": existing_event_date,
-        })
+        if is_date_change_request:
+            # This is a date CHANGE on existing event - don't create new event
+            trace_db_write(_thread_id(state), "Step1_Intake", "date_change_detected", {
+                "reason": "date_change_request",
+                "old_date": existing_event_date,
+                "new_date": new_event_date,
+            })
+            # Don't set should_create_new = True; continue with existing event
+        else:
+            # This is a genuine NEW inquiry with a different date
+            should_create_new = True
+            trace_db_write(_thread_id(state), "Step1_Intake", "new_event_decision", {
+                "reason": "different_date",
+                "new_date": new_event_date,
+                "existing_date": existing_event_date,
+            })
 
     # Terminal states - don't reuse
     existing_status = last_event.get("status", "").lower()

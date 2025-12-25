@@ -241,7 +241,8 @@ class StubAgentAdapter(AgentAdapter):
 
         # Pattern 2: HH:MM or HH.MM with optional Uhr/h suffix (24h format)
         # Skip if followed by AM/PM (already handled above)
-        for match in re.finditer(r"\b(\d{1,2})[:.](\d{2})(?:\s*(?:uhr|h))?(?!\s*(?:am|pm))\b", text, re.IGNORECASE):
+        # BUG FIX: Add negative lookahead (?!\.\d{2,4}) to avoid matching dates like "07.02.2026"
+        for match in re.finditer(r"\b(\d{1,2})[:.](\d{2})(?!\.\d{2,4})(?:\s*(?:uhr|h))?(?!\s*(?:am|pm))\b", text, re.IGNORECASE):
             hours, minutes = int(match.group(1)), int(match.group(2))
             if 0 <= hours <= 23 and 0 <= minutes <= 59:
                 time_str = f"{hours:02d}:{minutes:02d}"
