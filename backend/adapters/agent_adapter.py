@@ -318,12 +318,15 @@ class OpenAIAgentAdapter(AgentAdapter):
         "Classify the email below. Respond with JSON object {\"intent\": <event_request|other>, "
         "\"confidence\": <0-1 float>}."
     )
-    _ENTITY_PROMPT = (
-        "Extract booking details from the email. Return JSON with keys: date (YYYY-MM-DD or null), "
+    _ENTITY_PROMPT_TEMPLATE = (
+        "Today is {today}. Extract booking details from the email. "
+        "Return JSON with keys: date (YYYY-MM-DD or null), "
         "start_time, end_time, city, participants, room, name, email, type, catering, phone, company, "
-        "language, notes, billing_address, products_add (array of {name, quantity} for items to add), "
+        "language, notes, billing_address, products_add (array of {{name, quantity}} for items to add), "
         "products_remove (array of product names to remove). Use null when unknown. "
-        "For 'add another X' or 'one more X', include {\"name\": \"X\", \"quantity\": 1} in products_add."
+        "IMPORTANT: When a year is explicitly mentioned (e.g., '2026'), use that exact year. "
+        "For vague dates like 'late spring' or 'next month', return null for date. "
+        "For 'add another X' or 'one more X', include {{\"name\": \"X\", \"quantity\": 1}} in products_add."
     )
 
     _ENTITY_KEYS = [
@@ -400,8 +403,11 @@ class OpenAIAgentAdapter(AgentAdapter):
         subject = msg.get("subject") or ""
         body = msg.get("body") or ""
         try:
+            # Build prompt with today's date for accurate year extraction
+            today_str = date.today().strftime("%Y-%m-%d")
+            prompt = self._ENTITY_PROMPT_TEMPLATE.format(today=today_str)
             payload = self._run_completion(
-                prompt=self._ENTITY_PROMPT,
+                prompt=prompt,
                 body=body,
                 subject=subject,
                 model=self._entity_model,
@@ -415,6 +421,12 @@ class OpenAIAgentAdapter(AgentAdapter):
 
     def extract_user_information(self, msg: Dict[str, Any]) -> Dict[str, Any]:
         return self.extract_entities(msg)
+
+    def analyze_message(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+        """Combine intent classification and entity extraction into a single response."""
+        intent, confidence = self.route_intent(msg)
+        fields = self.extract_entities(msg)
+        return {"intent": intent, "confidence": confidence, "fields": fields}
 
 
 _AGENT_SINGLETON: Optional[AgentAdapter] = None
