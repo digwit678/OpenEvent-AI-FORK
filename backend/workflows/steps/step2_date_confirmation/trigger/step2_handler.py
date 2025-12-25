@@ -29,7 +29,7 @@ from backend.workflows.common.datetime_parse import (
     to_ddmmyyyy,
     to_iso_date,
 )
-from backend.workflows.common.prompts import append_footer, format_sections_with_headers
+from backend.workflows.common.prompts import append_footer, format_sections_with_headers, verbalize_draft_body
 from backend.workflows.common.catalog import list_free_dates
 from backend.workflows.common.capture import capture_user_fields, capture_workflow_requirements, promote_fields
 from backend.workflows.common.sorting import rank_rooms
@@ -889,12 +889,15 @@ def process(state: WorkflowState) -> GroupResult:
                 )
             # For requirements changes, clear the lock since room may no longer fit
             elif change_type.value == "requirements" and decision.next_step in (2, 3):
-                update_event_metadata(
-                    event_entry,
-                    date_confirmed=False if decision.next_step == 2 else None,
-                    room_eval_hash=None,
-                    locked_room_id=None,
-                )
+                # BUG FIX: Only set date_confirmed=False when going to Step 2
+                # Passing None would overwrite existing True value!
+                metadata_updates = {
+                    "room_eval_hash": None,
+                    "locked_room_id": None,
+                }
+                if decision.next_step == 2:
+                    metadata_updates["date_confirmed"] = False
+                update_event_metadata(event_entry, **metadata_updates)
 
             append_audit_entry(event_entry, 2, decision.next_step, f"{change_type.value}_change_detected")
 
@@ -1003,7 +1006,27 @@ def process(state: WorkflowState) -> GroupResult:
         if filled:
             window = filled
         else:
-            return _handle_partial_confirmation(state, event_entry, window)
+            # If room is already locked (detour case), skip time confirmation.
+            # Time is handled in Step 3 (room availability), not Step 2.
+            locked_room = event_entry.get("locked_room_id")
+            if locked_room:
+                # Complete the window with default time and proceed
+                default_start = time(14, 0)
+                default_end = time(22, 0)
+                start_iso, end_iso = build_window_iso(window.iso_date, default_start, default_end)
+                window = ConfirmationWindow(
+                    display_date=window.display_date,
+                    iso_date=window.iso_date,
+                    start_time="14:00",
+                    end_time="22:00",
+                    start_iso=start_iso,
+                    end_iso=end_iso,
+                    inherited_times=True,
+                    partial=False,
+                    source_message_id=window.source_message_id,
+                )
+            else:
+                return _handle_partial_confirmation(state, event_entry, window)
 
     pending_window_payload = event_entry.get("pending_date_confirmation")
     if pending_window_payload:
@@ -1605,14 +1628,24 @@ def _present_candidate_dates(
 
     _trace_candidate_gate(_thread_id(state), formatted_dates[:5])
 
+    # Universal Verbalizer: transform to warm, human-like message
+    participants = _extract_participants_from_state(state)
+    body_markdown = verbalize_draft_body(
+        prompt,
+        step=2,
+        topic="date_candidates",
+        participants_count=participants,
+        candidate_dates=[format_iso_date_to_ddmmyyyy(iso) or iso for iso in formatted_dates[:5]],
+    )
+
     headers = ["Availability overview"]
     if date_header_label:
         headers.append(date_header_label)
     if escalate_to_hil:
         headers.append("Manual follow-up required")
     draft_message = {
-        "body": prompt,
-        "body_markdown": prompt,
+        "body": body_markdown,
+        "body_markdown": body_markdown,
         "step": 2,
         "next_step": "Room Availability",
         "topic": "date_candidates",
@@ -2017,6 +2050,19 @@ def _resolve_confirmation_window(state: WorkflowState, event_entry: dict) -> Opt
     )
 
 
+def _strip_system_subject(subject: str) -> str:
+    """Strip system-generated metadata from subject lines.
+
+    The API adds "Client follow-up (YYYY-MM-DD HH:MM)" to follow-up messages.
+    This timestamp should NOT be used for date extraction as it represents
+    when the message was sent, not the requested event date.
+    """
+    import re
+    # Pattern: "Client follow-up (YYYY-MM-DD HH:MM)" or similar system-generated prefixes
+    pattern = r"^Client follow-up\s*\(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\)\s*"
+    return re.sub(pattern, "", subject, flags=re.IGNORECASE).strip()
+
+
 def _determine_date(
     user_info: Dict[str, Optional[str]],
     body_text: str,
@@ -2038,13 +2084,16 @@ def _determine_date(
         if ddmmyyyy and is_valid_ddmmyyyy(ddmmyyyy):
             return ddmmyyyy, iso_candidate
 
+    # BUG FIX: Strip system-generated timestamps from subject before parsing
+    clean_subject = _strip_system_subject(subject_text)
     parsed = parse_first_date(body_text, reference=reference_day, allow_relative=True) or parse_first_date(
-        subject_text, reference=reference_day, allow_relative=True
+        clean_subject, reference=reference_day, allow_relative=True
     )
     if parsed:
         return parsed.strftime("%d.%m.%Y"), parsed.isoformat()
 
-    combined_text = " ".join(value for value in (subject_text, body_text) if value)
+    # Also use clean subject for relative date resolution
+    combined_text = " ".join(value for value in (clean_subject, body_text) if value)
     candidate_isos = _candidate_iso_list(event_entry)
     relative_candidates = candidate_isos if candidate_isos else None
     relative_date = resolve_relative_date(combined_text, reference_day, candidates=relative_candidates)
