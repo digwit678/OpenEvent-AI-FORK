@@ -524,8 +524,9 @@ def process(state: WorkflowState) -> GroupResult:
         needs_products=product_tokens,
     )
     room_profiles = {entry["room"]: entry for entry in profile_entries}
-    order_map = {entry["room"]: idx for idx, entry in enumerate(profile_entries)}
-    ranked_rooms.sort(key=lambda entry: order_map.get(entry.room, len(order_map)))
+    # NOTE: Do NOT re-sort ranked_rooms by profile order - that would override
+    # the preferred_room bonus from rank_rooms(). The ranking from sorting.py
+    # already considers availability, capacity, preferences AND preferred_room.
 
     # Check if ANY room can accommodate the requested capacity
     capacity_exceeded = False
@@ -1719,17 +1720,14 @@ def _to_iso(display_date: Optional[str]) -> Optional[str]:
 
 
 def _select_room(ranked: List[RankedRoom]) -> Optional[RankedRoom]:
+    """Return the top-ranked room that's available or on option.
+
+    The ranking already incorporates status weight (Available=60, Option=35)
+    plus preferred_room bonus (30 points). We trust the ranking order and
+    return the first available/option room.
+    """
     for entry in ranked:
-        if entry.status == ROOM_OUTCOME_AVAILABLE and entry.capacity_ok:
-            return entry
-    for entry in ranked:
-        if entry.status == ROOM_OUTCOME_AVAILABLE:
-            return entry
-    for entry in ranked:
-        if entry.status == ROOM_OUTCOME_OPTION and entry.capacity_ok:
-            return entry
-    for entry in ranked:
-        if entry.status == ROOM_OUTCOME_OPTION:
+        if entry.status in (ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION):
             return entry
     return ranked[0] if ranked else None
 
