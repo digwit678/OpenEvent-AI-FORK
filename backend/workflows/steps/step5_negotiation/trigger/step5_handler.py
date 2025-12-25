@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import os
 import re
 from datetime import date as dt_date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+
+# Debug flag - set WF_DEBUG_STATE=1 to enable verbose workflow prints
+WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"
 
 from backend.workflows.common.datetime_parse import parse_all_dates
 from backend.workflows.common.timeutils import parse_ddmmyyyy
@@ -140,24 +144,29 @@ def process(state: WorkflowState) -> GroupResult:
         state.extras["persist"] = True
 
     billing_req = event_entry.get("billing_requirements") or {}
-    print(f"[Step5][DEBUG] awaiting_billing_for_accept={billing_req.get('awaiting_billing_for_accept')}")
+    if WF_DEBUG:
+        print(f"[Step5][DEBUG] awaiting_billing_for_accept={billing_req.get('awaiting_billing_for_accept')}")
     if billing_req.get("awaiting_billing_for_accept"):
         # Skip billing capture for synthetic deposit payment messages
         # (their body is "I have paid the deposit." which would corrupt billing)
         is_deposit_signal = (state.message.extras or {}).get("deposit_just_paid", False)
-        print(f"[Step5][DEBUG] is_deposit_signal={is_deposit_signal}")
+        if WF_DEBUG:
+            print(f"[Step5][DEBUG] is_deposit_signal={is_deposit_signal}")
         if not is_deposit_signal:
             message_text = (state.message.body or "").strip()
-            print(f"[Step5][DEBUG] message_text={repr(message_text[:100] if message_text else '')}")
+            if WF_DEBUG:
+                print(f"[Step5][DEBUG] message_text={repr(message_text[:100] if message_text else '')}")
             if message_text:
                 event_entry.setdefault("event_data", {})["Billing Address"] = message_text
                 state.extras["persist"] = True
-                print(f"[Step5][DEBUG] ✅ Captured billing address: {message_text[:50]}...")
+                if WF_DEBUG:
+                    print(f"[Step5][DEBUG] ✅ Captured billing address: {message_text[:50]}...")
                 # FORCE SAVE: Ensure billing is persisted immediately
                 # This fixes the bug where deferred persistence wasn't saving billing
                 try:
                     db_io.save_db(state.db, state.db_path)
-                    print(f"[Step5][DEBUG] ✅ FORCE SAVED billing to database")
+                    if WF_DEBUG:
+                        print(f"[Step5][DEBUG] ✅ FORCE SAVED billing to database")
                 except Exception as save_err:
                     print(f"[Step5][ERROR] Failed to force save billing: {save_err}")
 
@@ -166,7 +175,8 @@ def process(state: WorkflowState) -> GroupResult:
     # FORCE SAVE after billing refresh to ensure billing_details is persisted
     try:
         db_io.save_db(state.db, state.db_path)
-        print(f"[Step5][DEBUG] ✅ FORCE SAVED after billing refresh (billing_missing={billing_missing})")
+        if WF_DEBUG:
+            print(f"[Step5][DEBUG] ✅ FORCE SAVED after billing refresh (billing_missing={billing_missing})")
     except Exception as save_err:
         print(f"[Step5][ERROR] Failed to save after billing refresh: {save_err}")
 
@@ -200,8 +210,9 @@ def process(state: WorkflowState) -> GroupResult:
 
         if gate_status.ready_for_hil:
             # All prerequisites met - continue to HIL
-            print(f"[Step5] Confirmation gate passed: billing_complete={gate_status.billing_complete}, "
-                  f"deposit_required={gate_status.deposit_required}, deposit_paid={gate_status.deposit_paid}")
+            if WF_DEBUG:
+                print(f"[Step5] Confirmation gate passed: billing_complete={gate_status.billing_complete}, "
+                      f"deposit_required={gate_status.deposit_required}, deposit_paid={gate_status.deposit_paid}")
             # Use the existing _handle_accept flow
             response = _handle_accept(event_entry)
             # _handle_accept returns {"draft": {"body": ...}, ...}
@@ -394,6 +405,18 @@ def process(state: WorkflowState) -> GroupResult:
         return result
 
     if classification == "accept":
+        # ---------------------------------------------------------------------
+        # COMBINED ACCEPT + BILLING: Capture billing from same message
+        # When client sends "Yes, I accept. Billing: [address]", the billing
+        # info is in user_info but wasn't being captured before refresh check.
+        # ---------------------------------------------------------------------
+        billing_from_message = user_info.get("billing_address")
+        if billing_from_message and str(billing_from_message).strip():
+            event_entry.setdefault("event_data", {})["Billing Address"] = str(billing_from_message).strip()
+            state.extras["persist"] = True
+            if WF_DEBUG:
+                print(f"[Step5][ACCEPT] Captured billing from acceptance message: {billing_from_message[:50]}...")
+
         billing_missing = _refresh_billing(event_entry)
         if billing_missing:
             _flag_billing_accept_pending(event_entry, billing_missing)
@@ -681,11 +704,13 @@ def _detect_structural_change(
     # First check user_info (from LLM extraction)
     new_iso_date = user_info.get("date")
     new_ddmmyyyy = user_info.get("event_date")
-    print(f"[Step5][DETECT] user_info.date={new_iso_date}, user_info.event_date={new_ddmmyyyy}")
-    print(f"[Step5][DETECT] chosen_date={event_entry.get('chosen_date')}, message_text={message_text[:100] if message_text else 'None'}...")
+    if WF_DEBUG:
+        print(f"[Step5][DETECT] user_info.date={new_iso_date}, user_info.event_date={new_ddmmyyyy}")
+        print(f"[Step5][DETECT] chosen_date={event_entry.get('chosen_date')}, message_text={message_text[:100] if message_text else 'None'}...")
     if not in_site_visit_mode and (new_iso_date or new_ddmmyyyy):
         candidate = new_ddmmyyyy or _iso_to_ddmmyyyy(new_iso_date)
-        print(f"[Step5][DETECT] candidate={candidate}")
+        if WF_DEBUG:
+            print(f"[Step5][DETECT] candidate={candidate}")
         if candidate and candidate != event_entry.get("chosen_date"):
             # -------------------------------------------------------------------------
             # HALLUCINATION GUARD: Verify the date actually appears in the message

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from enum import Enum
 from typing import Literal, Optional
+
+# Debug flag - set WF_DEBUG_STATE=1 to enable verbose workflow prints
+WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"
 
 try:  # pragma: no cover - optional dependency for CLI environments
     from pydantic import BaseModel, EmailStr, Field
@@ -120,17 +124,19 @@ class EventInformation(BaseModel):
             "billing_address",
         ]
 
-        print("\n=== IS_COMPLETE CHECK (RELAXED) ===")
-        for field in critical_fields:
-            value = getattr(self, field)
-            is_valid = not (value == "Not specified" or value is None or value == "")
-            print(f"{field}: '{value}' → {'✅' if is_valid else '❌'}")
+        if WF_DEBUG:
+            print("\n=== IS_COMPLETE CHECK (RELAXED) ===")
+            for field in critical_fields:
+                value = getattr(self, field)
+                is_valid = not (value == "Not specified" or value is None or value == "")
+                print(f"{field}: '{value}' → {'✅' if is_valid else '❌'}")
 
         for field in critical_fields:
             value = getattr(self, field)
             if value == "Not specified" or value is None or value == "":
-                print(f"❌ FAILED: {field}")
-                print("===================================\n")
+                if WF_DEBUG:
+                    print(f"❌ FAILED: {field}")
+                    print("===================================\n")
                 return False
 
         if (
@@ -138,12 +144,14 @@ class EventInformation(BaseModel):
             or self.catering_preference is None
             or len(self.catering_preference) < 5
         ):
-            print("❌ FAILED: catering_preference")
-            print("===================================\n")
+            if WF_DEBUG:
+                print("❌ FAILED: catering_preference")
+                print("===================================\n")
             return False
 
-        print("✅ ALL CRITICAL CHECKS PASSED!")
-        print("===================================\n")
+        if WF_DEBUG:
+            print("✅ ALL CRITICAL CHECKS PASSED!")
+            print("===================================\n")
         return True
 
     def to_dict(self) -> dict[str, str | Literal["Not specified"]]:
