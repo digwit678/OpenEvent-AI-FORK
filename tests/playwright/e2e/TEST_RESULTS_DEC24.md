@@ -5,19 +5,28 @@
 | Tier | Tests Run | Passed | Failed |
 |------|-----------|--------|--------|
 | CRITICAL (01) | 3 | 3 | 0 |
-| CORE - Step Gating (04) | 2 | 1 | 1 |
+| CORE - Step Gating (04) | 2 | 2 | 0 |
 | CORE - Detours (05) | 5 | 5 | 0 |
 | CORE - Full Flow (FLOW) | 2 | 2 | 0 |
-| **Total** | **12** | **11** | **1** |
+| **Total** | **12** | **12** | **0** |
 
 ### December 25 Updates
+**All 12 tests now PASSING!** 🎉
+
+**GATE-001 Fix (preferred room ranking):**
+- Increased `preferred_bonus` from 10→30 (sorting.py)
+- Removed re-sorting that overrode ranking (step3_handler.py)
+- Added LLM instruction for room ordering (verbalizer_agent.py)
+- Simplified `_select_room()` to trust ranking (step3_handler.py)
+
 **All detour tests now PASSING** after bug fixes:
 - Fixed room change time confirmation bug (step2_handler.py)
 - Fixed date change room lock preservation (step1_handler.py)
 - Fixed capacity exceeds all rooms handling (step3_handler.py, ranking.py)
 
-**Full flow test PASSING**:
+**Full flow tests PASSING**:
 - FLOW-001: Complete happy path (intake → site visit message) ✅
+- GATE-001: Room Before Date (intake → Room A preferred → site visit) ✅
 
 ---
 
@@ -40,16 +49,16 @@
 
 ## Tier 2: CORE - Step Gating (04_core_step_gating)
 
-### GATE-001: Room Before Date 🔴 FAIL
+### GATE-001: Room Before Date ✅ PASS
 **Scenario:** Client requests Room A without specifying date
 
-**Issues Found:**
-- Date extraction error: "26.12.2025" → "24.12.2025" (today!)
-- Room A preference not remembered after date provided
-- No acknowledgment of requested room preference
+**Fixed (Dec 25):**
+- Increased `preferred_bonus` from 10→30 to overcome status weight difference
+- Removed re-sorting that overrode preferred room ranking
+- Added LLM instruction to respect `recommended_room` in room ordering
+- Simplified `_select_room()` to trust ranking order
 
-**Expected:** System asks for date, remembers Room A preference
-**Actual:** System asked for date but forgot Room A
+**Result:** System correctly asks for date, remembers Room A preference, recommends Room A when rooms are presented
 
 ### GATE-002: Offer Before Room ✅ PASS
 **Scenario:** Client tries to get offer before selecting room
