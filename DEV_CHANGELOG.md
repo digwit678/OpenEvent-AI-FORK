@@ -1,5 +1,120 @@
 # Development Changelog
 
+## 2025-12-25
+
+### E2E Test Validation: Full Flow to Site Visit ✅
+
+**Summary:** Completed end-to-end validation of the complete booking workflow from intake to site visit message.
+
+**Tests Passed:**
+- DET-001: Date Change from Step 3 ✅
+- DET-002: Date Change Room Unavailable ✅
+- DET-003: Room Change from Step 4 ✅
+- DET-004: Requirements Change from Step 4 ✅
+- DET-004b: Capacity Exceeds All Rooms ✅
+- FLOW-001: Full Happy Path (intake → site visit) ✅
+- FLOW-002: Capacity Exceeded Recovery → Site Visit ✅
+
+**Key Flows Verified:**
+1. Shortcut capture at intake (date, capacity, requirements)
+2. Detour routing (date/room/requirements changes)
+3. Room lock preservation during date changes
+4. Billing gate enforcement before confirmation
+5. Deposit gate enforcement before HIL
+6. HIL task creation and approval
+7. Site visit message delivery
+
+**Test Results File:** `tests/playwright/e2e/TEST_RESULTS_DEC24.md`
+
+---
+
+### Fix: Capacity Exceeds All Rooms - Proper Handling
+
+**Problem:** When client requested capacity exceeding all rooms (e.g., 150 guests, max room is 120), system showed contradictory message: "Room B is a great fit for your 150 guests. However, it has a capacity of 60."
+
+**Root Cause:**
+- Room ranking marked `capacity_fit=0` for rooms that don't fit, but didn't filter them out
+- Step 3 handler didn't detect "no room fits capacity" case
+- Verbalizer received all rooms and generated nonsensical message
+
+**Solution:**
+1. Added `get_max_capacity()` and `any_room_fits_capacity()` helpers to `backend/rooms/ranking.py`
+2. Added capacity check in Step 3 handler before room selection
+3. Created `_handle_capacity_exceeded()` function with:
+   - Clear message explaining capacity limits
+   - Three alternatives: reduce capacity, split event, external venue partnership
+   - Action buttons for quick resolution
+
+**Files Modified:**
+- `backend/rooms/ranking.py` - Added capacity helper functions
+- `backend/rooms/__init__.py` - Exported new functions
+- `backend/workflows/steps/step3_room_availability/trigger/step3_handler.py` - Added capacity exceeded detection and handler
+
+**Test Results:**
+- 150 guests → "Capacity exceeded" message with max (120) and options ✅
+- Client reduces to 100 → Shows Room E as best fit ✅
+- Flow continues normally after capacity adjustment ✅
+
+---
+
+### Fix: Date Change Clears Room Lock + Asks for Time
+
+**Problem:** Client at Step 4/5 with locked room requests date change. System clears `locked_room_id` and asks "Preferred time?" instead of showing Room A availability on new date.
+
+**Root Cause:** Two bugs:
+1. Step 1 intake handler cleared `locked_room_id` for DATE changes, but should preserve it
+2. Step 2 handler always asked for time when `window.partial`, but should skip for detour cases
+
+**Solution:**
+1. For DATE changes, only clear `room_eval_hash` but KEEP `locked_room_id`
+2. When room is already locked, skip time confirmation and fill with default times
+
+**Files Modified:**
+- `backend/workflows/steps/step1_intake/trigger/step1_handler.py` - Preserve lock for DATE changes
+- `backend/workflows/steps/step2_date_confirmation/trigger/step2_handler.py` - Skip time confirmation when room locked
+
+---
+
+### Fix: Room Change Updating Lock Before Change Detection
+
+**Problem:** Client requests room change ("switch to Room D") but system triggers Step 2 time confirmation loop instead of Step 3 room availability.
+
+**Root Cause:** Step 1 immediately updated `locked_room_id` to the new room before change detection ran, causing `user_info.room == locked_room_id` (no change detected).
+
+**Solution:** When a different room is already locked, skip the early room lock update and let normal change detection route to Step 3.
+
+**Files Modified:**
+- `backend/workflows/steps/step1_intake/trigger/step1_handler.py` - Check existing lock before updating
+- `backend/workflows/steps/step3_room_availability/trigger/step3_handler.py` - Check ChangeType.ROOM flag
+
+---
+
+### Fix: Subject Line Date Pollution in Change Detection
+
+**Problem:** Client at Step 3 requested capacity change ("Actually we're 50 now") but system asked for date confirmation instead of showing room availability.
+
+**Root Cause:** The `_message_text()` function combined subject + body. API adds "Client follow-up (2025-12-24 21:07)" to follow-up subjects. The timestamp triggered DATE change detection instead of REQUIREMENTS.
+
+**Solution:** Added `_strip_system_subject()` helper to remove system timestamps from subject before change detection.
+
+**Files Modified:**
+- `backend/workflows/steps/step3_room_availability/trigger/step3_handler.py` - Added helper function and updated `_message_text()`
+
+---
+
+### Fix: Date Change Creating New Event Instead of Updating
+
+**Problem:** Client requested date change ("Actually, can we change the date to 20.02.2026?") but system created a NEW event with blank requirements, asking for capacity again.
+
+**Root Cause:** `_ensure_event_record()` compared dates and created new event when they differed, without checking if it was a change request vs new inquiry.
+
+**Solution:** Added `has_revision_signal()` check to detect date change requests (keywords: "change", "switch", "actually", "instead"). Only create new event for genuine new inquiries without change signals.
+
+**Files Modified:**
+- `backend/workflows/steps/step1_intake/trigger/step1_handler.py` - Added revision signal import and check in `_ensure_event_record()`
+
+---
+
 ## 2025-12-24
 
 ### Fix: Verbalizer Not Mentioning Closest Preference Matches
