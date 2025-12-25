@@ -290,12 +290,15 @@ def process(state: WorkflowState) -> GroupResult:
                 )
             # For requirements changes, clear the lock since room may no longer fit
             elif change_type.value == "requirements" and decision.next_step in (2, 3):
-                update_event_metadata(
-                    event_entry,
-                    date_confirmed=False if decision.next_step == 2 else None,
-                    room_eval_hash=None,
-                    locked_room_id=None,
-                )
+                # BUG FIX: Only set date_confirmed=False when going to Step 2
+                # Passing None would overwrite existing True value!
+                metadata_updates = {
+                    "room_eval_hash": None,
+                    "locked_room_id": None,
+                }
+                if decision.next_step == 2:
+                    metadata_updates["date_confirmed"] = False
+                update_event_metadata(event_entry, **metadata_updates)
 
             append_audit_entry(event_entry, 4, decision.next_step, f"{change_type.value}_change_detected")
 
