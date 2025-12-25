@@ -2,6 +2,25 @@
 
 ## 2025-12-25
 
+### GATE-001 Fix: Preferred Room Ranking Honored ✅
+
+**Summary:** Fixed bug where client's preferred room (e.g., "Room A for 30 people") was not being recommended/selected even when the preference was correctly stored.
+
+**Root Causes Fixed:**
+1. **Re-sorting override**: `step3_handler.py:528` re-sorted ranked_rooms by profile order, overriding preferred_room bonus
+2. **Insufficient bonus**: 10-point preferred_room bonus couldn't overcome Available(60) vs Option(35) = 25-point status difference
+3. **LLM reordering**: Verbalizer prompt allowed LLM to "reorder items for clarity"
+4. **_select_room() priority**: Function prioritized Available rooms over Option rooms regardless of ranking
+
+**Files Changed:**
+- `backend/workflows/common/sorting.py` - preferred_bonus 10→30
+- `backend/workflows/steps/step3_room_availability/trigger/step3_handler.py` - removed re-sorting, simplified _select_room()
+- `backend/llm/verbalizer_agent.py` - added ROOM ORDERING instruction
+
+**E2E Test:** Full flow verified - intake → Room A recommended → selected → offer → billing → deposit → HIL → site visit
+
+---
+
 ### E2E Test Validation: Full Flow to Site Visit ✅
 
 **Summary:** Completed end-to-end validation of the complete booking workflow from intake to site visit message.
