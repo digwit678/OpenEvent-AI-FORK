@@ -1144,7 +1144,8 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
 
     if not table_rows:
         fallback_line = "I need a specific date before I can confirm availability."
-        body_lines = [CLIENT_AVAILABILITY_HEADER, fallback_line, "", "NEXT STEP:", next_step_line]
+        # Don't include header in body - it's set in headers[] and joined by _format_draft_text
+        body_lines = [fallback_line, "", "NEXT STEP:", next_step_line]
         body_markdown = "\n".join(body_lines).strip()
         footer_text = "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client"
         draft["body_markdown"] = body_markdown
@@ -1245,7 +1246,9 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
         # Fall through to set table_blocks below without overwriting body_markdown
     else:
         # No verbalized content - build raw table response
-        body_lines = [CLIENT_AVAILABILITY_HEADER]
+        # Note: Don't include CLIENT_AVAILABILITY_HEADER in body_lines - it's set
+        # in headers[] and _format_draft_text joins headers + body
+        body_lines = []
         if intro_text:
             body_lines.append(intro_text)
         if table_lines:
@@ -1427,7 +1430,8 @@ def _structured_table_blocks(db_summary: Dict[str, Any]) -> List[Dict[str, Any]]
 
 
 def _fallback_structured_body(action_payload: Dict[str, Any]) -> str:
-    lines = [CLIENT_AVAILABILITY_HEADER]
+    # Don't include header here - it's set in headers[] and joined by _format_draft_text
+    lines = []
     summary = action_payload.get("db_summary") or {}
     rooms = summary.get("rooms") or []
     products = summary.get("products") or []
