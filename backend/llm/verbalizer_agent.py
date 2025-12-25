@@ -352,9 +352,8 @@ STRICT RULES:
 6. You MUST NOT change any numbers, dates, or prices
 7. You MAY:
    - Add a brief, professional greeting
-   - Recommend rooms based on matched preferences
    - Explain differences between rooms briefly
-   - Reorder or group items for clarity
+8. ROOM ORDERING: If a "recommended_room" is specified in the facts, you MUST present that room FIRST as the primary recommendation. The client explicitly requested this room.
 
 Keep the response concise (under 120 words)."""
 

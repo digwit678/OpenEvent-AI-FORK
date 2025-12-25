@@ -103,7 +103,10 @@ def rank_rooms(
             except (TypeError, ValueError):
                 similarity_score = 0.0
         preference_value += similarity_score
-        preferred_bonus = 10.0 if room.strip().lower() == preferred_lower else 0.0
+        # Bonus increased from 10 to 30 to overcome status_weight difference
+        # between Available (60) and Option (35). User's explicit room preference
+        # should take precedence even if room has pending (Lead) requests.
+        preferred_bonus = 30.0 if room.strip().lower() == preferred_lower else 0.0
         matched_items: List[str] = []
         closest_items: List[str] = []
         missing_items: List[str] = []
