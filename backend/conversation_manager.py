@@ -20,7 +20,16 @@ from backend.workflows.steps.step3_room_availability.trigger import process as s
 
 load_dotenv(override=False)
 
-client = OpenAI(api_key=load_openai_api_key())
+# Lazy-initialized OpenAI client to avoid blocking import without API key
+_client: Optional[OpenAI] = None
+
+
+def _get_openai_client() -> OpenAI:
+    """Get or create the OpenAI client (lazy initialization)."""
+    global _client
+    if _client is None:
+        _client = OpenAI(api_key=load_openai_api_key())
+    return _client
 
 # In-memory storage for demo
 active_conversations: dict[str, ConversationState] = {}
@@ -359,7 +368,7 @@ Current conversation context will be provided with each message."""
 
 def classify_email(email_body: str) -> str:
     """Classify if email is a new event request or something else"""
-    response = client.chat.completions.create(
+    response = _get_openai_client().chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": """Classify this email into ONE category:
@@ -419,7 +428,7 @@ def extract_information_incremental(email_body: str, current_info: EventInformat
     - Extract event type from context (workshop, birthday party, meeting, etc.)
     - Return valid JSON only"""
 
-    response = client.chat.completions.create(
+    response = _get_openai_client().chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": extraction_prompt}],
         response_format={"type": "json_object"},
@@ -665,7 +674,7 @@ def generate_response(conversation_state: ConversationState, user_message: str) 
         {"role": "system", "content": context},
     ] + conversation_state.conversation_history
     # updated parameters ( tocheck)
-    response = client.chat.completions.create(
+    response = _get_openai_client().chat.completions.create(
         model="gpt-4o-mini",
         messages=messages,
         temperature=0.45,

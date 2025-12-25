@@ -481,13 +481,13 @@ def _get_effective_prompts() -> Tuple[str, Dict[int, str]]:
     try:
         # Avoid circular imports
         from backend.workflows.io.database import load_db
-        
-        # Load DB (best effort assumption on path)
-        db_path = Path("events_database.json")
-        if not db_path.exists():
+        from backend.workflow_email import DB_PATH
+
+        # Load DB using canonical path
+        if not DB_PATH.exists():
             return UNIVERSAL_SYSTEM_PROMPT, STEP_PROMPTS
-            
-        db = load_db(db_path)
+
+        db = load_db(DB_PATH)
         config = db.get("config", {}).get("prompts", {})
         
         system_prompt = config.get("system_prompt", UNIVERSAL_SYSTEM_PROMPT)

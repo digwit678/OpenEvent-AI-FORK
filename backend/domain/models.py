@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Literal, Optional
 
 try:  # pragma: no cover - optional dependency for CLI environments
-    from pydantic import BaseModel, EmailStr
+    from pydantic import BaseModel, EmailStr, Field
 except Exception:  # pragma: no cover - fallback when Pydantic is absent
     class BaseModel:  # type: ignore[override]
         """Lightweight stand-in mirroring the subset of Pydantic we rely on."""
@@ -27,6 +27,12 @@ except Exception:  # pragma: no cover - fallback when Pydantic is absent
             return self.dict()
 
     EmailStr = str  # type: ignore[assignment]
+
+    def Field(*args, default_factory=None, **kwargs):  # type: ignore[no-redef]
+        """Stub for Pydantic Field when Pydantic is absent."""
+        if default_factory is not None:
+            return default_factory()
+        return None
 
 
 class EventStatus(str, Enum):
@@ -174,4 +180,4 @@ class ConversationState(BaseModel):
     event_id: Optional[str] = None
     workflow_type: Optional[str] = None
     is_complete: bool = False
-    created_at: datetime = datetime.now()
+    created_at: datetime = Field(default_factory=datetime.now)

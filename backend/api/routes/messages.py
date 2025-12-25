@@ -41,6 +41,7 @@ from backend.workflow_email import (
     process_msg as wf_process_msg,
     load_db as wf_load_db,
     save_db as wf_save_db,
+    DB_PATH as WF_DB_PATH,
 )
 
 router = APIRouter(tags=["messages"])
@@ -48,8 +49,9 @@ router = APIRouter(tags=["messages"])
 # GUI adapter for availability workflow
 GUI_ADAPTER = ClientGUIAdapter()
 
-# Centralized events database file
-EVENTS_FILE = "events_database.json"
+# DEPRECATED: Use WF_DB_PATH from workflow_email.py for canonical DB path
+# Kept for backwards compatibility in response messages
+EVENTS_FILE = str(WF_DB_PATH)
 
 
 # ---------------------------------------------------------------------------
@@ -114,15 +116,15 @@ CONFIRM_PHRASES = {
 
 def load_events_database():
     """Load all events from the database file."""
-    if Path(EVENTS_FILE).exists():
-        with open(EVENTS_FILE, 'r', encoding='utf-8') as f:
+    if WF_DB_PATH.exists():
+        with open(WF_DB_PATH, 'r', encoding='utf-8') as f:
             return json_io.load(f)
     return {"events": []}
 
 
 def save_events_database(database):
     """Save all events to the database file."""
-    with open(EVENTS_FILE, 'w', encoding='utf-8') as f:
+    with open(WF_DB_PATH, 'w', encoding='utf-8') as f:
         json_io.dump(database, f, indent=2, ensure_ascii=False)
 
 

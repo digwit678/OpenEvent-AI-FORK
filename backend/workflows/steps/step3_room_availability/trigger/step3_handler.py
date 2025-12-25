@@ -1424,6 +1424,7 @@ def _general_qna_lines(state: WorkflowState) -> List[str]:
     rows: Optional[List[Dict[str, Any]]] = None
     title: Optional[str] = None
     month_hint: Optional[str] = None
+    request: Optional[Dict[str, Any]] = None  # Initialize to prevent NameError if payload branch taken
     event_entry = state.event_entry or {}
     if not payload:
         payload = event_entry.get("general_qa_payload")
