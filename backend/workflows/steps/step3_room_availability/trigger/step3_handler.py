@@ -45,7 +45,7 @@ from backend.utils.page_snapshots import create_snapshot
 from backend.workflow_verbalizer_test_hooks import render_rooms
 from backend.workflows.steps.step3_room_availability.db_pers import load_rooms_config
 from backend.workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
-from backend.rooms import rank as rank_rooms_profiles
+from backend.rooms import rank as rank_rooms_profiles, get_max_capacity, any_room_fits_capacity
 
 from ..condition.decide import room_status_on_date
 from ..llm.analysis import summarize_room_statuses
@@ -56,6 +56,7 @@ __workflow_role__ = "trigger"
 ROOM_OUTCOME_UNAVAILABLE = "Unavailable"
 ROOM_OUTCOME_AVAILABLE = "Available"
 ROOM_OUTCOME_OPTION = "Option"
+ROOM_OUTCOME_CAPACITY_EXCEEDED = "CapacityExceeded"
 
 ROOM_SIZE_ORDER = {
     "Room A": 1,
@@ -299,12 +300,15 @@ def process(state: WorkflowState) -> GroupResult:
                 )
             # For requirements changes, clear the lock since room may no longer fit
             elif change_type.value == "requirements" and decision.next_step in (2, 3):
-                update_event_metadata(
-                    event_entry,
-                    date_confirmed=False if decision.next_step == 2 else None,
-                    room_eval_hash=None,
-                    locked_room_id=None,
-                )
+                # Only clear date_confirmed when going to Step 2
+                # BUG FIX: Passing None would overwrite existing True value!
+                metadata_updates = {
+                    "room_eval_hash": None,
+                    "locked_room_id": None,
+                }
+                if decision.next_step == 2:
+                    metadata_updates["date_confirmed"] = False
+                update_event_metadata(event_entry, **metadata_updates)
 
             append_audit_entry(event_entry, 3, decision.next_step, f"{change_type.value}_change_detected")
 
@@ -329,7 +333,10 @@ def process(state: WorkflowState) -> GroupResult:
             return GroupResult(action="change_detour", payload=payload, halt=False)
 
     # No change detected: check if Q&A should be handled
-    user_requested_room = state.user_info.get("room") if state.user_info.get("_room_choice_detected") else None
+    # NOTE: Room can be detected via _room_choice_detected OR via ChangeType.ROOM detection
+    # The change_type variable is set earlier (line ~233) if a room change was detected
+    room_change_detected_flag = state.user_info.get("_room_choice_detected") or (change_type == ChangeType.ROOM)
+    user_requested_room = state.user_info.get("room") if room_change_detected_flag else None
     locked_room_id = event_entry.get("locked_room_id")
 
     # -------------------------------------------------------------------------
@@ -519,6 +526,26 @@ def process(state: WorkflowState) -> GroupResult:
     room_profiles = {entry["room"]: entry for entry in profile_entries}
     order_map = {entry["room"]: idx for idx, entry in enumerate(profile_entries)}
     ranked_rooms.sort(key=lambda entry: order_map.get(entry.room, len(order_map)))
+
+    # Check if ANY room can accommodate the requested capacity
+    capacity_exceeded = False
+    max_venue_capacity = 0
+    if participants and participants > 0:
+        if not any_room_fits_capacity(participants):
+            capacity_exceeded = True
+            max_venue_capacity = get_max_capacity()
+            print(f"[Step3][CAPACITY_EXCEEDED] Requested {participants} guests, max venue capacity is {max_venue_capacity}")
+
+    # If capacity exceeds all rooms, handle it specially
+    if capacity_exceeded:
+        return _handle_capacity_exceeded(
+            state=state,
+            event_entry=event_entry,
+            participants=participants,
+            max_capacity=max_venue_capacity,
+            chosen_date=chosen_date,
+        )
+
     selected_entry = _select_room(ranked_rooms)
     selected_room = selected_entry.room if selected_entry else None
     selected_status = selected_entry.status if selected_entry else None
@@ -868,28 +895,50 @@ def _detour_to_date(state: WorkflowState, event_entry: dict) -> GroupResult:
 
 
 def _detour_for_capacity(state: WorkflowState, event_entry: dict) -> GroupResult:
-    """[Trigger] Redirect to Step 1 when attendee count is missing."""
+    """[Trigger] Ask for attendee count when missing, stay at Step 3.
+
+    Instead of detouring to Step 1 (which has no handler in the routing loop),
+    we generate a response asking for capacity and stay at Step 3. When the
+    client responds with capacity, intake will extract it and routing will
+    return to Step 3 for room evaluation.
+    """
 
     thread_id = _thread_id(state)
     trace_detour(
         thread_id,
         "Step3_Room",
-        "Step1_Intake",
+        "Step3_Room",  # Stay at Step 3
         "capacity_missing",
         {},
     )
-    if event_entry.get("caller_step") is None:
-        update_event_metadata(event_entry, caller_step=3)
-    update_event_metadata(
-        event_entry,
-        current_step=1,
+
+    # Generate message asking for participant count
+    draft_body = append_footer(
+        "To find the best room for your event, I need to know how many people will be attending. "
+        "Could you please share the expected number of participants?",
+        step=3,
+        next_step=3,
         thread_state="Awaiting Client",
     )
-    append_audit_entry(event_entry, 3, 1, "room_requires_capacity")
-    state.current_step = 1
-    state.caller_step = 3
+    draft = {
+        "body": draft_body,
+        "body_markdown": draft_body,
+        "topic": "capacity_request",
+        "requires_approval": False,
+    }
+    state.add_draft_message(draft)
+
+    # Stay at Step 3, waiting for capacity
+    update_event_metadata(
+        event_entry,
+        current_step=3,
+        thread_state="Awaiting Client",
+    )
+    append_audit_entry(event_entry, 3, 3, "room_requires_capacity")
+    state.current_step = 3
     state.set_thread_state("Awaiting Client")
     state.extras["persist"] = True
+
     payload = {
         "client_id": state.client_id,
         "event_id": state.event_id,
@@ -899,7 +948,8 @@ def _detour_for_capacity(state: WorkflowState, event_entry: dict) -> GroupResult
         "context": state.context_snapshot,
         "persisted": True,
     }
-    return GroupResult(action="room_detour_capacity", payload=payload, halt=False)
+    # halt=True so the draft message is returned to the client
+    return GroupResult(action="room_detour_capacity", payload=payload, halt=True)
 
 
 def _skip_room_evaluation(state: WorkflowState, event_entry: dict) -> GroupResult:
@@ -925,6 +975,111 @@ def _skip_room_evaluation(state: WorkflowState, event_entry: dict) -> GroupResul
         "persisted": True,
     }
     return GroupResult(action="room_eval_skipped", payload=payload, halt=False)
+
+
+def _handle_capacity_exceeded(
+    state: WorkflowState,
+    event_entry: dict,
+    participants: int,
+    max_capacity: int,
+    chosen_date: Optional[str],
+) -> GroupResult:
+    """
+    Handle the case where requested capacity exceeds all available rooms.
+
+    Per workflow spec S3_Unavailable:
+    - Verbalize unavailability
+    - Propose capacity change (reduce to fit largest room)
+    - Offer alternatives (split event, external venue)
+    """
+    from backend.workflows.common.prompts import verbalize_draft_body
+
+    display_date = _format_display_date(chosen_date) if chosen_date else "your requested date"
+
+    # Build core facts for verbalizer
+    body_lines = [
+        f"[CAPACITY_LIMIT] Client requested {participants} guests.",
+        f"Maximum venue capacity is {max_capacity} guests (Room E).",
+        f"Event date: {display_date}.",
+        "",
+        "OPTIONS:",
+        f"1. Reduce to {max_capacity} or fewer guests",
+        "2. Split into two sessions/time slots",
+        "3. External venue partnership for larger groups",
+        "",
+        "ASK: Which option works best, or provide updated guest count.",
+    ]
+    raw_body = "\n".join(body_lines)
+
+    # Verbalize to professional, warm message
+    body_markdown = verbalize_draft_body(
+        raw_body,
+        step=3,
+        topic="capacity_exceeded",
+        event_date=display_date,
+        participants_count=participants,
+        rooms=[],  # No rooms available
+        room_name=None,
+        room_status=ROOM_OUTCOME_CAPACITY_EXCEEDED,
+    )
+
+    # Log and audit
+    append_audit_entry(event_entry, 3, 3, "capacity_exceeded", {
+        "requested": participants,
+        "max_available": max_capacity,
+    })
+    print(f"[Step3][CAPACITY_EXCEEDED] Generated response for {participants} guests (max: {max_capacity})")
+
+    # Update state - stay at Step 3 awaiting client response
+    state.extras["persist"] = True
+    state.extras["capacity_exceeded"] = True
+
+    # Build actions for frontend
+    actions_payload = [
+        {
+            "type": "reduce_capacity",
+            "label": f"Proceed with {max_capacity} guests",
+            "capacity": max_capacity,
+        },
+        {
+            "type": "contact_manager",
+            "label": "Discuss alternatives with manager",
+        },
+    ]
+
+    draft_message = {
+        "body": body_markdown,
+        "body_markdown": body_markdown,
+        "step": 3,
+        "next_step": "Capacity confirmation",
+        "thread_state": "Awaiting Client",
+        "topic": "capacity_exceeded",
+        "room": None,
+        "status": ROOM_OUTCOME_CAPACITY_EXCEEDED,
+        "table_blocks": [],
+        "actions": actions_payload,
+        "headers": ["Capacity exceeded"],
+        "requires_approval": False,
+        "created_at_step": 3,
+    }
+
+    # Add draft to state (standard pattern for all step handlers)
+    state.add_draft_message(draft_message)
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": state.event_id,
+        "draft_messages": state.draft_messages,
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "persisted": True,
+        "thread_state": "Awaiting Client",
+        "context": state.context_snapshot,
+        "capacity_exceeded": True,
+        "requested_capacity": participants,
+        "max_capacity": max_capacity,
+    }
+    return GroupResult(action="capacity_exceeded", payload=payload, halt=True)
 
 
 def _preferred_room(event_entry: dict, user_requested_room: Optional[str]) -> Optional[str]:
@@ -1857,16 +2012,35 @@ def _format_alternative_dates_section(dates: List[str], more_available: bool) ->
     return "\n".join(lines)
 
 
+def _strip_system_subject(subject: str) -> str:
+    """Strip system-generated metadata from subject lines.
+
+    The API adds "Client follow-up (YYYY-MM-DD HH:MM)" to follow-up messages.
+    This timestamp should NOT be used for change detection as it represents
+    when the message was sent, not the requested event date.
+    """
+    import re
+    # Pattern: "Client follow-up (YYYY-MM-DD HH:MM)" or similar system-generated prefixes
+    pattern = r"^Client follow-up\s*\(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\)\s*"
+    return re.sub(pattern, "", subject, flags=re.IGNORECASE).strip()
+
+
 def _message_text(state: WorkflowState) -> str:
-    """Extract full message text from state."""
+    """Extract full message text from state.
+
+    BUG FIX: Strips system-generated timestamps from subject before combining.
+    These timestamps were incorrectly triggering DATE change detection.
+    """
     message = state.message
     if not message:
         return ""
     subject = message.subject or ""
     body = message.body or ""
-    if subject and body:
-        return f"{subject}\n{body}"
-    return subject or body
+    # Strip system-generated timestamps from subject
+    clean_subject = _strip_system_subject(subject)
+    if clean_subject and body:
+        return f"{clean_subject}\n{body}"
+    return clean_subject or body
 
 
 def _present_general_room_qna(

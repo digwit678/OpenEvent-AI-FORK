@@ -718,6 +718,26 @@ Initial inquiry with questions → is_general=True (heuristic detected "?")
 
 **Reproduction:** Start new event → provide dates in February → confirm "2026-02-07" → check if Step 3 shows correct date.
 
+### Capacity Exceeds All Rooms - No Filtering/Routing (Fixed Dec 25)
+**Symptoms:** Client requests capacity that exceeds ALL available rooms (e.g., 150 people when max room is 120). Previously showed contradictory message: "Room B is a great fit for your 150 guests. However, it has a capacity of 60."
+
+**Fix Applied:**
+1. Added `get_max_capacity()` and `any_room_fits_capacity()` helpers to `backend/rooms/ranking.py`
+2. Added capacity check in Step 3 handler before room selection
+3. Created `_handle_capacity_exceeded()` function with:
+   - Clear message explaining capacity limits
+   - Three alternatives: reduce capacity, split event, external venue partnership
+   - Action buttons for quick resolution
+
+**Files Modified:**
+- `backend/rooms/ranking.py` - Added capacity helper functions
+- `backend/rooms/__init__.py` - Exported new functions
+- `backend/workflows/steps/step3_room_availability/trigger/step3_handler.py` - Added capacity exceeded detection and handler
+
+**Regression Guard:** Request 150 people → should see "Capacity exceeded" message with max (120) and three alternatives. Client reduces to 100 → should see Room E as best fit.
+
+---
+
 ### Python Bytecode Cache Causing Startup Failures (Fixed)
 **Symptoms:** First API request after restarting the backend fails with `__init__() got an unexpected keyword argument 'draft'` (500 Internal Server Error). Subsequent requests succeed. Frontend shows "Error connecting to backend" even though the backend is running.
 
@@ -960,6 +980,110 @@ if last_event.get("offer_accepted"):
 - `backend/api/routes/messages.py` - Handle `dev_choice_required` action
 
 **Note:** This feature is ONLY for the testing/frontend branch, not for production deployment.
+
+### Subject Line Date Pollution in Change Detection (Fixed - 2025-12-25)
+**Symptoms:** Client at Step 3 with confirmed date and locked room requests a capacity change (e.g., "Actually we're 50 now"). Instead of showing room availability for 50 people, the system asks for date confirmation ("Noted 08.02.2026. Preferred time?").
+
+**Root Cause:** The `_message_text()` function in `step3_handler.py` was combining subject line + body for change detection. The API adds system-generated metadata to follow-up subjects like "Client follow-up (2025-12-24 21:07)". The timestamp in the subject triggered DATE change detection instead of REQUIREMENTS change detection.
+
+**Fix Applied:**
+Added `_strip_system_subject()` helper that removes system-generated metadata from subject lines before combining with body:
+```python
+def _strip_system_subject(subject: str) -> str:
+    pattern = r"^Client follow-up\s*\(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\)\s*"
+    return re.sub(pattern, "", subject, flags=re.IGNORECASE).strip()
+```
+【F:backend/workflows/steps/step3_room_availability/trigger/step3_handler.py†L40-L60】
+
+**Regression Guard:** Requirements changes at Step 3 should route to room availability (not Step 2 date confirmation). Test by: confirm date → lock room → send "Actually we're 50 now" → verify room options for 50 people appear (not "Preferred time?").
+
+### Date Change Creating New Event Instead of Updating (Fixed - 2025-12-25)
+**Symptoms:** Client at Step 4/5 requests date change (e.g., "Actually, can we change the date to 20.02.2026?"). Instead of updating the existing event and preserving capacity/room, the system creates a NEW event with blank requirements and asks for capacity again.
+
+**Root Cause:** The `_ensure_event_record()` function compared dates: if `new_event_date != existing_event_date`, it set `should_create_new = True`. This didn't distinguish between a genuine NEW inquiry vs a DATE CHANGE request on an existing event.
+
+**Fix Applied:**
+Added check for revision signals before deciding to create new event:
+```python
+is_date_change_request = has_revision_signal(message_text)
+if new_date_is_actual and existing_date_is_actual and new_event_date != existing_event_date:
+    if is_date_change_request:
+        # Date CHANGE on existing event - continue with existing
+        pass
+    else:
+        # Genuine NEW inquiry - create new event
+        should_create_new = True
+```
+【F:backend/workflows/steps/step1_intake/trigger/step1_handler.py†L1330-L1351】
+
+**Regression Guard:** Date change requests (with "change", "switch", "actually", "instead" keywords) should preserve existing event data (participants, room lock, etc.). Test by: complete offer flow → send "change the date to X" → verify capacity/room are preserved for new date.
+
+### Room Change Updating Lock Before Change Detection (Fixed - 2025-12-25)
+**Symptoms:** Client at Step 4/5 requests room change (e.g., "Actually, can we switch to Room D instead?"). Instead of routing to Step 3 (room availability) to evaluate the new room, the system triggers Step 2 (date confirmation) and asks for time confirmation.
+
+**Root Cause:** In `step1_handler.py`, when a room choice was selected, the code immediately updated `locked_room_id` to the new room. By the time `detect_change_type_enhanced()` ran, `user_info.room == locked_room_id`, so no ROOM change was detected. The system then detected something else (DATE from metadata) and caused a routing loop between Step 4 and Step 2.
+
+**Fix Applied:**
+Added check in `step1_handler.py` to NOT update `locked_room_id` if a different room is already locked:
+```python
+room_choice_selected = state.extras.pop("room_choice_selected", None)
+if room_choice_selected:
+    existing_lock = event_entry.get("locked_room_id")
+    # If a different room is already locked, DON'T update the lock here.
+    # Let the normal workflow continue so change detection can route to Step 3.
+    if existing_lock and existing_lock != room_choice_selected:
+        print(f"[Step1] Room change detected: {existing_lock} → {room_choice_selected}")
+        # Don't return here - let normal flow continue with change detection
+    else:
+        # Normal room locking logic for first-time selection
+        ...
+```
+【F:backend/workflows/steps/step1_intake/trigger/step1_handler.py†L1067-L1111】
+
+Additionally, `step3_handler.py` was updated to recognize room changes detected via `ChangeType.ROOM` (not just `_room_choice_detected` flag):
+```python
+room_change_detected_flag = state.user_info.get("_room_choice_detected") or (change_type == ChangeType.ROOM)
+```
+【F:backend/workflows/steps/step3_room_availability/trigger/step3_handler.py†L334-L339】
+
+**Regression Guard:** Room change requests should route to Step 3 (room availability) and show room options. Test by: complete offer flow with Room A → send "switch to Room D" → verify room availability options appear (not time confirmation).
+
+### Date Change Clears Room Lock + Asks for Time (Fixed - 2025-12-25)
+**Symptoms:** Client at Step 4/5 with locked room requests date change (e.g., "Actually, can we change to 20.02.2026?"). Instead of preserving Room A and checking its availability on the new date, the system:
+1. Clears `locked_room_id` to null
+2. Routes to Step 2 and asks "Preferred time?" instead of proceeding
+
+**Root Cause:** Two separate bugs:
+1. **Step 1 intake handler** (line 1177-1186): For DATE changes, it was clearing `locked_room_id` when routing to Step 2, but DATE changes should PRESERVE the room lock so Step 3 can fast-skip if room is still available.
+2. **Step 2 handler** (line 1004-1029): When `window.partial` (date without time) and no time hint available, it always asked for time. But for detour cases (room already locked), time should be skipped and filled with defaults.
+
+**Fix Applied:**
+1. In `step1_handler.py`: For DATE changes to Step 2, only clear `room_eval_hash` but KEEP `locked_room_id`:
+```python
+if change_type.value == "date":
+    # DATE change to Step 2: KEEP locked_room_id
+    update_event_metadata(
+        event_entry,
+        date_confirmed=False,
+        room_eval_hash=None,  # Invalidate for re-verification
+        # NOTE: Do NOT clear locked_room_id for date changes
+    )
+```
+【F:backend/workflows/steps/step1_intake/trigger/step1_handler.py†L1177-L1188】
+
+2. In `step2_handler.py`: When room is locked, skip time confirmation and fill with default times:
+```python
+locked_room = event_entry.get("locked_room_id")
+if locked_room:
+    # Complete the window with default time and proceed
+    default_start = time(14, 0)
+    default_end = time(22, 0)
+    start_iso, end_iso = build_window_iso(window.iso_date, default_start, default_end)
+    window = ConfirmationWindow(...)  # with defaults
+```
+【F:backend/workflows/steps/step2_date_confirmation/trigger/step2_handler.py†L1009-L1027】
+
+**Regression Guard:** Date change with locked room should preserve the room and skip time confirmation. Test by: complete offer flow with Room A → send "change date to X" → verify Room A availability shown on new date (not "Preferred time?" prompt).
 
 ---
 
