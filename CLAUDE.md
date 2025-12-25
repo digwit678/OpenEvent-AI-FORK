@@ -16,8 +16,10 @@ Goals for this phase:
 - No silent fallback messages reaching clients
 - All HIL tasks route correctly
 - Special flows (billing, deposit, site visit) work end-to-end
-- LLM outputs fact-checked via "safety sandwich" validation
-
+- LLM outputs fact-checked via "safety sandwich" validation$
+- Always write tests with clear expectations (it's crucial to understand this application's requirements precisely) also for UX and test for each main section (detection, workflow, Q&A, shortcuts) at least one test for every gatekeeping variable per section (e.g. date change, room change , billing adress change , capcaity change for detour)
+- Frontend E2E (up until site visit agent reply after HIL confirmation in offer step) using playwright tests for critical flows (billing→deposit→HIL) must have been run before marking a task as fixed / done . 
+- save manual confirms for running tests by preparing shell scripts also for crucial development commands (starting backend, running tests etc.) - that way I don't have to constantly babysit you with these permission commands.
 ## Your Role
 
 - Act as a senior test- and workflow-focused engineer
@@ -740,7 +742,8 @@ The workflow uses three distinct LLM roles, each with strict boundaries:
 4. **Hash Mismatches:** If `room_eval_hash` doesn't match `requirements_hash`, Step 3 blocks until re-approved
 5. **Pytest Test Selection:** Default runs `v4` tests only; use `-m "v4 or legacy"` to include all
 6. **LLM Stub vs Live:** Tests in `tests/stubs/` use stubbed LLM responses; always validate critical flows with live OpenAI key mimicking real client interactions from workflow start to end (offer confirmation).
-
+7. **Dont forget one full real E2E (up to site visit agent reply) on the frontend using playwright to test after debugging, new feature integration that the workflow still runs as expected till the end.**
+8. **Dont forget to update TEAM_GUIDE.md and DEV_CHANGELOG.md when fixing bugs or adding features**
 ## General Techniques for Resilient Code
 
 ### Defensive State Access

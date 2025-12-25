@@ -681,10 +681,40 @@ def _detect_structural_change(
     # First check user_info (from LLM extraction)
     new_iso_date = user_info.get("date")
     new_ddmmyyyy = user_info.get("event_date")
+    print(f"[Step5][DETECT] user_info.date={new_iso_date}, user_info.event_date={new_ddmmyyyy}")
+    print(f"[Step5][DETECT] chosen_date={event_entry.get('chosen_date')}, message_text={message_text[:100] if message_text else 'None'}...")
     if not in_site_visit_mode and (new_iso_date or new_ddmmyyyy):
         candidate = new_ddmmyyyy or _iso_to_ddmmyyyy(new_iso_date)
+        print(f"[Step5][DETECT] candidate={candidate}")
         if candidate and candidate != event_entry.get("chosen_date"):
-            return 2, "negotiation_changed_date"
+            # -------------------------------------------------------------------------
+            # HALLUCINATION GUARD: Verify the date actually appears in the message
+            # LLM may hallucinate dates (e.g., today's date) for messages without dates.
+            # Only treat as date change if the date appears in the actual message text.
+            # -------------------------------------------------------------------------
+            if message_text:
+                date_in_message = False
+                # Check if DD.MM.YYYY format appears
+                if candidate and candidate in message_text:
+                    date_in_message = True
+                # Check if ISO format appears
+                elif new_iso_date and new_iso_date in message_text:
+                    date_in_message = True
+                else:
+                    # Parse dates from message directly and compare
+                    parsed_dates = list(parse_all_dates(message_text, fallback_year=dt_date.today().year))
+                    parsed_iso = {d.isoformat() for d in parsed_dates}
+                    if new_iso_date and new_iso_date in parsed_iso:
+                        date_in_message = True
+
+                if not date_in_message:
+                    # Date was likely hallucinated by LLM - skip date change detection
+                    # Let the requirements/room/product checks below handle it
+                    pass
+                else:
+                    return 2, "negotiation_changed_date"
+            else:
+                return 2, "negotiation_changed_date"
 
     # Fallback: parse dates directly from message text (same as Step 2/3/4)
     # This catches cases where user_info wasn't populated with the new date
