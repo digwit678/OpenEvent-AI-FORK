@@ -2,6 +2,30 @@
 
 ## 2025-12-26
 
+### W2: Extract HIL Task APIs ✅
+
+**Summary:** Extracted HIL task management functions from workflow_email.py (1352→886 lines) into a dedicated runtime module.
+
+**New Files:**
+- `backend/workflows/runtime/__init__.py` - Runtime package init
+- `backend/workflows/runtime/hil_tasks.py` - HIL task APIs (574 lines)
+
+**Extracted Functions:**
+- `approve_task_and_send` - Approve HIL task and emit send_reply payload
+- `reject_task_and_send` - Reject HIL task and emit response payload
+- `cleanup_tasks` - Remove resolved/stale HIL tasks
+- `list_pending_tasks` - Re-export from task_io
+- `_compose_hil_decision_reply` - Helper for decision replies
+
+**Changes to workflow_email.py:**
+- Added import from `backend.workflows.runtime.hil_tasks`
+- Removed function definitions (now delegated to runtime module)
+- Preserved public API (`__all__` unchanged)
+
+**Verification:** All 146 core tests pass, 15 smoke tests pass, pytest collection clean.
+
+---
+
 ### W1: workflow_email.py Explicit Facade ✅
 
 **Summary:** Made workflow_email.py an explicit public API facade with documented `__all__`.
