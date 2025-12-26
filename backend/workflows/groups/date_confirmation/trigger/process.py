@@ -9,6 +9,8 @@ from backend.workflows.steps.step2_date_confirmation.trigger.process import (
     ConfirmationWindow,
     _finalize_confirmation,
     _resolve_confirmation_window,
+    _present_candidate_dates,
+    _present_general_room_qna,
 )
 
 __all__ = [
@@ -16,4 +18,6 @@ __all__ = [
     "ConfirmationWindow",
     "_finalize_confirmation",
     "_resolve_confirmation_window",
+    "_present_candidate_dates",
+    "_present_general_room_qna",
 ]
