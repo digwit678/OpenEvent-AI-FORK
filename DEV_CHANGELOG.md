@@ -1,6 +1,53 @@
 # Development Changelog
 
+## 2025-12-26
+
+### T0: Pytest Collection Stabilization ✅
+
+**Summary:** Fixed pytest collection failures to enable safe refactoring (prerequisite for all W/D/I/R/O/N series refactors).
+
+**Fixes:**
+1. **Legacy tests ignored** - Added `tests/_legacy` to `pytest.ini:norecursedirs` to prevent stale imports from breaking collection
+2. **Step 2 compat exports** - Exported `_present_candidate_dates` and `_present_general_room_qna` from Step 2 trigger/process.py shim (required by e2e tests)
+3. **Step 4 compat exports** - Exported `_apply_product_operations` and `_compose_offer_summary` from Step 4 trigger/process.py shim
+4. **general_qna_classifier shim** - Created `backend/workflows/nlu/general_qna_classifier.py` re-exporting from detection module
+5. **intent_classifier shim** - Created `backend/llm/intent_classifier.py` re-exporting from detection module
+6. **Duplicate test file** - Renamed `tests/workflows/test_change_integration_e2e.py` to avoid basename collision with `tests/specs/dag/`
+
+**Files Changed:**
+- `pytest.ini` - norecursedirs updated
+- `backend/workflows/steps/step2_date_confirmation/trigger/process.py` - added exports
+- `backend/workflows/groups/date_confirmation/trigger/process.py` - added exports
+- `backend/workflows/steps/step4_offer/trigger/process.py` - added exports
+- `backend/workflows/nlu/general_qna_classifier.py` - new shim file
+- `backend/llm/intent_classifier.py` - new shim file
+- `tests/workflows/test_change_integration_e2e_workflows.py` - renamed
+
+**Verification:** `pytest --collect-only` passes with 0 errors. All 146 detection/regression/flow tests pass.
+
+---
+
 ## 2025-12-25
+
+### Code Review Fixes: Date Extraction, Billing Capture, Debug Gating ✅
+
+**Summary:** Addressed remaining high-priority issues from backend code review.
+
+**Fixes:**
+1. **Date Year Extraction Bug** - Added `Today is {today}` to LLM entity extraction prompt so LLM knows current date when interpreting natural language dates like "February 7th". Also added missing `analyze_message()` method to `OpenAIAgentAdapter`.
+
+2. **Combined Accept+Billing Capture** - When client sends acceptance with billing in same message ("Yes, I accept. Billing: Company, Street, City"), now captures billing from `user_info.billing_address` before calling `_refresh_billing`.
+
+3. **Debug Print Gating** - Wrapped debug prints in `step5_handler.py` and `domain/models.py` with `WF_DEBUG` flag. Set `WF_DEBUG_STATE=1` to enable verbose output.
+
+**Files Changed:**
+- `backend/adapters/agent_adapter.py` - date context in LLM prompt, analyze_message()
+- `backend/domain/models.py` - WF_DEBUG gating for is_complete prints
+- `backend/workflows/steps/step5_negotiation/trigger/step5_handler.py` - billing capture, WF_DEBUG gating
+
+**Commit:** `d8d7566`
+
+---
 
 ### GATE-001 Fix: Preferred Room Ranking Honored ✅
 
