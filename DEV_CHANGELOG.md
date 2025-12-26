@@ -2,6 +2,38 @@
 
 ## 2025-12-26
 
+### W1: workflow_email.py Explicit Facade ✅
+
+**Summary:** Made workflow_email.py an explicit public API facade with documented `__all__`.
+
+**Changes:**
+- Added explicit `__all__` list defining public API surface
+- Added W-PUBLIC documentation block describing each exported symbol
+- Public API includes: `DB_PATH`, `load_db`, `save_db`, `get_default_db`, `process_msg`, `list_pending_tasks`, `approve_task_and_send`, `reject_task_and_send`, `cleanup_tasks`, `run_samples`, `task_cli_loop`
+
+**Files Changed:**
+- `backend/workflow_email.py` - added `__all__` and PUBLIC API documentation
+
+**Verification:** All 146 core tests pass, 15 smoke tests pass, pytest collection clean.
+
+---
+
+### R0: Step3 Q&A Verification + Missing Exports ✅
+
+**Summary:** Verified Step3 Q&A UnboundLocal fix was already in place. Added additional missing exports discovered when running Q&A tests.
+
+**Fixes:**
+- Step3 UnboundLocal fix already present at line 1427: `request: Optional[Dict[str, Any]] = None`
+- Added missing Step 2 exports: `_candidate_dates_for_constraints`, `ensure_qna_extraction`
+
+**Files Changed:**
+- `backend/workflows/steps/step2_date_confirmation/trigger/process.py` - added exports
+- `backend/workflows/groups/date_confirmation/trigger/process.py` - added exports
+
+**Verification:** All 64 detection tests pass, all 146 core tests pass.
+
+---
+
 ### T0: Pytest Collection Stabilization ✅
 
 **Summary:** Fixed pytest collection failures to enable safe refactoring (prerequisite for all W/D/I/R/O/N series refactors).
