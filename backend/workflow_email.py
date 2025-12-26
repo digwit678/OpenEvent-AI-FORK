@@ -43,6 +43,53 @@ from backend.debug.state_store import STATE_STORE
 logger = logging.getLogger(__name__)
 WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"
 
+# ============================================================================
+# PUBLIC API SURFACE (W-PUBLIC)
+# ============================================================================
+# Only these symbols are part of the stable public interface. External code
+# (API routes, agents, tests) should import ONLY from this list.
+#
+# Constants:
+#   DB_PATH                - Default database path
+#
+# Database operations:
+#   load_db                - Load database (use with `with FileLock(...)`)
+#   save_db                - Save database (use with `with FileLock(...)`)
+#   get_default_db         - Get default database dict (re-export from db_io)
+#
+# Core workflow:
+#   process_msg            - Process incoming message through workflow
+#
+# HIL task management:
+#   list_pending_tasks     - List pending HIL tasks (re-export from task_io)
+#   approve_task_and_send  - Approve HIL task and send response
+#   reject_task_and_send   - Reject HIL task and send response
+#   cleanup_tasks          - Clean up stale/orphaned tasks
+#
+# CLI utilities:
+#   run_samples            - Run sample conversations (CLI only)
+#   task_cli_loop          - Interactive task management (CLI only)
+# ============================================================================
+
+__all__ = [
+    # Constants
+    "DB_PATH",
+    # Database operations
+    "load_db",
+    "save_db",
+    "get_default_db",
+    # Core workflow
+    "process_msg",
+    # HIL task management
+    "list_pending_tasks",
+    "approve_task_and_send",
+    "reject_task_and_send",
+    "cleanup_tasks",
+    # CLI utilities
+    "run_samples",
+    "task_cli_loop",
+]
+
 _ENTITY_LABELS = {
     "client": "Client",
     "assistant": "Agent",
