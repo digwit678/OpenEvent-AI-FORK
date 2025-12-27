@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 from datetime import date as dt_date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
-
-# Debug flag - set WF_DEBUG_STATE=1 to enable verbose workflow prints
-WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"
 
 logger = logging.getLogger(__name__)
 
@@ -165,29 +161,19 @@ def process(state: WorkflowState) -> GroupResult:
         state.extras["persist"] = True
 
     billing_req = event_entry.get("billing_requirements") or {}
-    if WF_DEBUG:
-        print(f"[Step5][DEBUG] awaiting_billing_for_accept={billing_req.get('awaiting_billing_for_accept')}")
     if billing_req.get("awaiting_billing_for_accept"):
         # Skip billing capture for synthetic deposit payment messages
         # (their body is "I have paid the deposit." which would corrupt billing)
         is_deposit_signal = (state.message.extras or {}).get("deposit_just_paid", False)
-        if WF_DEBUG:
-            print(f"[Step5][DEBUG] is_deposit_signal={is_deposit_signal}")
         if not is_deposit_signal:
             message_text = (state.message.body or "").strip()
-            if WF_DEBUG:
-                print(f"[Step5][DEBUG] message_text={repr(message_text[:100] if message_text else '')}")
             if message_text:
                 event_entry.setdefault("event_data", {})["Billing Address"] = message_text
                 state.extras["persist"] = True
-                if WF_DEBUG:
-                    print(f"[Step5][DEBUG] ✅ Captured billing address: {message_text[:50]}...")
                 # FORCE SAVE: Ensure billing is persisted immediately
                 # This fixes the bug where deferred persistence wasn't saving billing
                 try:
                     db_io.save_db(state.db, state.db_path)
-                    if WF_DEBUG:
-                        print(f"[Step5][DEBUG] ✅ FORCE SAVED billing to database")
                 except Exception as save_err:
                     logger.error("Failed to force save billing: %s", save_err)
 
@@ -196,8 +182,6 @@ def process(state: WorkflowState) -> GroupResult:
     # FORCE SAVE after billing refresh to ensure billing_details is persisted
     try:
         db_io.save_db(state.db, state.db_path)
-        if WF_DEBUG:
-            print(f"[Step5][DEBUG] ✅ FORCE SAVED after billing refresh (billing_missing={billing_missing})")
     except Exception as save_err:
         logger.error("Failed to save after billing refresh: %s", save_err)
 
@@ -231,9 +215,6 @@ def process(state: WorkflowState) -> GroupResult:
 
         if gate_status.ready_for_hil:
             # All prerequisites met - continue to HIL
-            if WF_DEBUG:
-                print(f"[Step5] Confirmation gate passed: billing_complete={gate_status.billing_complete}, "
-                      f"deposit_required={gate_status.deposit_required}, deposit_paid={gate_status.deposit_paid}")
             # Use the existing _handle_accept flow
             response = _handle_accept(event_entry)
             # _handle_accept returns {"draft": {"body": ...}, ...}
@@ -435,8 +416,6 @@ def process(state: WorkflowState) -> GroupResult:
         if billing_from_message and str(billing_from_message).strip():
             event_entry.setdefault("event_data", {})["Billing Address"] = str(billing_from_message).strip()
             state.extras["persist"] = True
-            if WF_DEBUG:
-                print(f"[Step5][ACCEPT] Captured billing from acceptance message: {billing_from_message[:50]}...")
 
         billing_missing = _refresh_billing(event_entry)
         if billing_missing:
@@ -682,13 +661,8 @@ def _detect_structural_change(
     # First check user_info (from LLM extraction)
     new_iso_date = user_info.get("date")
     new_ddmmyyyy = user_info.get("event_date")
-    if WF_DEBUG:
-        print(f"[Step5][DETECT] user_info.date={new_iso_date}, user_info.event_date={new_ddmmyyyy}")
-        print(f"[Step5][DETECT] chosen_date={event_entry.get('chosen_date')}, message_text={message_text[:100] if message_text else 'None'}...")
     if not in_site_visit_mode and (new_iso_date or new_ddmmyyyy):
         candidate = new_ddmmyyyy or _iso_to_ddmmyyyy(new_iso_date)
-        if WF_DEBUG:
-            print(f"[Step5][DETECT] candidate={candidate}")
         if candidate and candidate != event_entry.get("chosen_date"):
             # -------------------------------------------------------------------------
             # HALLUCINATION GUARD: Verify the date actually appears in the message
