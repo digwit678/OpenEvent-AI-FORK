@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from collections import defaultdict
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -18,206 +18,58 @@ from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.common.datetime_parse import build_window_iso
 import importlib
 from backend.workflows.steps.step1_intake.condition.checks import suggest_dates
-from backend.config.flags import env_flag
 
 date_process_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.process")
 ConfirmationWindow = getattr(date_process_module, "ConfirmationWindow")
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.services.products import normalise_product_payload
 
+# Import from extracted modules and re-export for compatibility
+from backend.workflows.planner.shortcuts_flags import (
+    _flag_enabled,
+    _max_combined,
+    _legacy_shortcuts_allowed,
+    _needs_input_priority,
+    _product_flow_enabled,
+    _capture_budget_on_hil,
+    _no_unsolicited_menus,
+    _event_scoped_upsell_enabled,
+    _budget_default_currency,
+    _budget_parse_strict,
+    _max_missing_items_per_hil,
+    atomic_turns_enabled,
+    shortcut_allow_date_room,
+)
+from backend.workflows.planner.shortcuts_gate import (
+    _shortcuts_allowed,
+    _coerce_participants,
+    _debug_shortcut_gate,
+)
+from backend.workflows.planner.shortcuts_types import (
+    ParsedIntent,
+    PlannerTelemetry,
+    AtomicDecision,
+    PlannerResult,
+    _PREASK_CLASS_COPY,
+    _CLASS_KEYWORDS,
+    _ORDINAL_WORDS_BY_LANG,
+)
+
+# Re-export gate function for tests that import it directly
+_shortcuts_allowed = _shortcuts_allowed  # noqa: F811 - intentional re-export
+
 logger = logging.getLogger(__name__)
 
-# Feature flags ----------------------------------------------------------------
 
-
-def _env_flag(name: str, default: str = "false") -> str:
-    return os.environ.get(name, default)
-
-
-def _flag_enabled() -> bool:
-    return env_flag("SMART_SHORTCUTS", False)
-
-
-def _max_combined() -> int:
-    value = _env_flag("SMART_SHORTCUTS_MAX_COMBINED", os.environ.get("MAX_COMBINED", "3"))
-    try:
-        return max(1, int(value))
-    except (TypeError, ValueError):
-        return 3
-
-
-def _legacy_shortcuts_allowed() -> bool:
-    return env_flag("LEGACY_SHORTCUTS_ALLOWED", False)
-
-
-def _needs_input_priority() -> List[str]:
-    default = ["time", "availability", "site_visit", "offer_hil", "budget", "billing"]
-    raw = os.environ.get("SMART_SHORTCUTS_NEEDS_INPUT")
-    if not raw:
-        return default
-    items = [item.strip() for item in raw.split(",") if item.strip()]
-    return items or default
-
-
-def _product_flow_enabled() -> bool:
-    return env_flag("PRODUCT_FLOW_ENABLED", False)
-
-
-def _capture_budget_on_hil() -> bool:
-    return env_flag("CAPTURE_BUDGET_ON_HIL", False)
-
-
-def _no_unsolicited_menus() -> bool:
-    return env_flag("NO_UNSOLICITED_MENUS", False)
-
-
-def _event_scoped_upsell_enabled() -> bool:
-    return env_flag("EVENT_SCOPED_UPSELL", False)
-
-
-def _budget_default_currency() -> str:
-    return os.environ.get("BUDGET_DEFAULT_CURRENCY", "CHF")
-
-
-def _budget_parse_strict() -> bool:
-    return env_flag("BUDGET_PARSE_STRICT", False)
-
-
-def _max_missing_items_per_hil() -> int:
-    try:
-        return max(1, int(os.environ.get("MAX_MISSING_ITEMS_PER_HIL", "10") or 10))
-    except (TypeError, ValueError):
-        return 10
-
-
-_PREASK_CLASS_COPY = {
-    "catering": "Would you like to see catering options we can provide on-site?",
-    "av": "Would you like to see AV add-ons (e.g., extra mics, adapters)?",
-    "furniture": "Would you like to see furniture layouts or add-ons?",
-}
-
-_CLASS_KEYWORDS = {
-    "catering": {"catering", "food", "menu", "buffet", "lunch", "coffee"},
-    "av": {"av", "audio", "visual", "video", "projector", "sound", "microphone"},
-    "furniture": {"furniture", "chairs", "tables", "layout", "seating"},
-}
-
-_ORDINAL_WORDS_BY_LANG = {
-    "en": {
-        "first": 1,
-        "1st": 1,
-        "one": 1,
-        "second": 2,
-        "2nd": 2,
-        "two": 2,
-        "third": 3,
-        "3rd": 3,
-        "three": 3,
-        "fourth": 4,
-        "4th": 4,
-        "four": 4,
-        "fifth": 5,
-        "5th": 5,
-        "five": 5,
-    },
-    "de": {
-        "erste": 1,
-        "zuerst": 1,
-        "zweite": 2,
-        "zweiter": 2,
-        "dritte": 3,
-        "dritter": 3,
-        "vierte": 4,
-        "vierter": 4,
-        "fuenfte": 5,
-    },
-}
-
-
-
-# Intent structures ------------------------------------------------------------
-
-
-@dataclass
-class ParsedIntent:
-    type: str
-    data: Dict[str, Any]
-    verifiable: bool
-    reason: Optional[str] = None
-
-
-@dataclass
-class PlannerTelemetry:
-    executed_intents: List[str] = field(default_factory=list)
-    combined_confirmation: bool = False
-    needs_input_next: Optional[str] = None
-    deferred: List[Dict[str, Any]] = field(default_factory=list)
-    artifact_match: Optional[str] = None
-    added_items: List[Dict[str, Any]] = field(default_factory=list)
-    missing_items: List[Dict[str, Any]] = field(default_factory=list)
-    offered_hil: bool = False
-    hil_request_created: bool = False
-    budget_provided: bool = False
-    upsell_shown: bool = False
-    room_checked: bool = False
-    menus_included: str = "false"
-    menus_phase: str = "none"
-    product_prices_included: bool = False
-    product_price_missing: bool = False
-    gatekeeper_passed: Optional[bool] = None
-    answered_question_first: Optional[bool] = None
-    delta_availability_used: Optional[bool] = None
-    preask_candidates: List[str] = field(default_factory=list)
-    preask_shown: List[str] = field(default_factory=list)
-    preask_response: Dict[str, str] = field(default_factory=dict)
-    preview_class_shown: str = "none"
-    preview_items_count: int = 0
-    choice_context_active: bool = False
-    selection_method: str = "none"
-    re_prompt_reason: str = "none"
-    legacy_shortcut_invocations: int = 0
-    shortcut_path_used: str = "none"
-
-    def to_log(self, msg_id: Optional[str], event_id: Optional[str]) -> Dict[str, Any]:
-        return {
-            "executed_intents": list(self.executed_intents),
-            "combined_confirmation": bool(self.combined_confirmation),
-            "needs_input_next": self.needs_input_next,
-            "deferred_count": len(self.deferred),
-            "source_msg_id": msg_id,
-            "event_id": event_id,
-            "artifact_match": self.artifact_match,
-            "added_items": self.added_items,
-            "missing_items": self.missing_items,
-            "offered_hil": self.offered_hil,
-            "hil_request_created": self.hil_request_created,
-            "budget_provided": self.budget_provided,
-            "upsell_shown": self.upsell_shown,
-            "room_checked": self.room_checked,
-            "menus_included": self.menus_included,
-            "menus_phase": self.menus_phase,
-            "product_prices_included": self.product_prices_included,
-            "product_price_missing": self.product_price_missing,
-            "gatekeeper_passed": self.gatekeeper_passed,
-            "answered_question_first": self.answered_question_first,
-            "delta_availability_used": self.delta_availability_used,
-            "legacy_shortcut_invocations": self.legacy_shortcut_invocations,
-            "shortcut_path_used": self.shortcut_path_used,
-        }
-
-
-@dataclass
-class AtomicDecision:
-    execute: List[ParsedIntent]
-    deferred: List[Tuple[ParsedIntent, str]]
-    use_combo: bool = False
-    shortcut_path_used: str = "none"
+# NOTE: Constants and dataclasses (ParsedIntent, PlannerTelemetry, AtomicDecision,
+# PlannerResult, _PREASK_CLASS_COPY, _CLASS_KEYWORDS, _ORDINAL_WORDS_BY_LANG)
+# are now imported from shortcuts_types.py (see imports at top of file)
 
 
 class AtomicTurnPolicy:
     def __init__(self) -> None:
-        self.atomic_turns = env_flag("ATOMIC_TURNS", False)
-        self.allow_date_room = env_flag("SHORTCUT_ALLOW_DATE_ROOM", True)
+        self.atomic_turns = atomic_turns_enabled()
+        self.allow_date_room = shortcut_allow_date_room()
 
     def decide(self, planner: "_ShortcutPlanner") -> AtomicDecision:
         if not self.atomic_turns:
@@ -252,20 +104,7 @@ class AtomicTurnPolicy:
         return decision
 
 
-class PlannerResult(dict):
-    """Dictionary-like payload returned by the shortcut planner with a stable accessor."""
-
-    def __init__(self, payload: Dict[str, Any]):
-        super().__init__(payload)
-
-    def merged(self) -> Dict[str, Any]:
-        """Return a shallow copy of the planner payload for external consumers."""
-
-        payload = dict(self)
-        payload.setdefault("message", "")
-        payload.setdefault("telemetry", {})
-        payload.setdefault("state_delta", {})
-        return payload
+# NOTE: PlannerResult is now imported from shortcuts_types.py
 
 
 # Planner execution ------------------------------------------------------------
@@ -307,65 +146,8 @@ def maybe_run_smart_shortcuts(state: WorkflowState) -> Optional[GroupResult]:
     return GroupResult(action="smart_shortcut_processed", payload=result.merged())
 
 
-def _shortcuts_allowed(event_entry: Dict[str, Any]) -> bool:
-    """Gate smart shortcuts on confirmed date + capacity readiness."""
-
-    current_step = event_entry.get("current_step") or 0
-    if current_step and isinstance(current_step, str):
-        try:
-            current_step = int(current_step)
-        except ValueError:
-            current_step = 0
-    if current_step < 3:
-        return False
-
-    # [BILLING FLOW BYPASS] Don't intercept messages during billing capture flow
-    # When offer is accepted and we're awaiting billing, let step 5 handle the message
-    if event_entry.get("offer_accepted"):
-        billing_req = event_entry.get("billing_requirements") or {}
-        if billing_req.get("awaiting_billing_for_accept"):
-            return False
-
-    if event_entry.get("date_confirmed") is not True:
-        return False
-
-    if _coerce_participants(event_entry) is not None:
-        return True
-
-    shortcuts = event_entry.get("shortcuts") or {}
-    return bool(shortcuts.get("capacity_ok"))
-
-
-def _coerce_participants(event_entry: Dict[str, Any]) -> Optional[int]:
-    requirements = event_entry.get("requirements") or {}
-    raw = requirements.get("number_of_participants")
-    if raw in (None, "", "Not specified", "none"):
-        raw = requirements.get("participants")
-    if raw in (None, "", "Not specified", "none"):
-        return None
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        try:
-            return int(str(raw).strip())
-        except (TypeError, ValueError):
-            return None
-
-
-def _debug_shortcut_gate(state: str, event_entry: Dict[str, Any], user_info: Dict[str, Any]) -> None:
-    if os.getenv("WF_DEBUG_STATE") != "1":
-        return
-    info = {
-        "state": state,
-        "step": event_entry.get("current_step"),
-        "date_confirmed": event_entry.get("date_confirmed"),
-        "participants": (event_entry.get("requirements") or {}).get("number_of_participants"),
-        "capacity_shortcut": (event_entry.get("shortcuts") or {}).get("capacity_ok"),
-        "wish_products": (event_entry.get("wish_products") or []),
-        "user_shortcut": (user_info or {}).get("shortcut_capacity_ok"),
-    }
-    formatted = " ".join(f"{key}={value}" for key, value in info.items())
-    print(f"[WF DEBUG][shortcuts] {formatted}")
+# NOTE: _shortcuts_allowed, _coerce_participants, _debug_shortcut_gate
+# are now imported from shortcuts_gate.py (see imports at top of file)
 
 
 class _ShortcutPlanner:

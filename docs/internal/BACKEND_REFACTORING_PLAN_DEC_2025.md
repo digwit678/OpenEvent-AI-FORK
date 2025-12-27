@@ -1249,8 +1249,8 @@ Estimates are rough (single developer, with tests).
 | N1 | ✅ Step5 debug/log hygiene | Removed WF_DEBUG prints (-27 lines) (2025-12-27) | - | - | DONE |
 | N2 | ✅ Step5 classification extraction | `classification.py` (118 lines) verified 2025-12-27 | N1 | - | DONE |
 | N3 | ✅ Step5 billing gate extraction | `common/billing_gate.py` (118 lines) verified 2025-12-27 | N2 | - | DONE |
-| S1 | Smart shortcuts gate/flags extraction | planner submodules + facade | T0 | Medium | 2–5h |
-| S2 | Smart shortcuts types/telemetry extraction | planner submodules + facade | S1 | Medium | 2–5h |
+| S1 | ✅ Smart shortcuts gate/flags extraction | `shortcuts_flags.py` + `shortcuts_gate.py` (2025-12-28) | T0 | - | DONE |
+| S2 | ✅ Smart shortcuts types/telemetry extraction | `shortcuts_types.py` (153 lines) (2025-12-28) | S1 | - | DONE |
 | S3 | Smart shortcuts planner extraction | planner submodules + facade | S2 | High | 4–10h |
 | C0 | Conversation manager: remove import-time OpenAI | conversation_manager.py | T0 | Medium | 1–3h |
 | C1 | Conversation manager session store split | legacy module + route imports | C0 | Medium | 2–6h |
