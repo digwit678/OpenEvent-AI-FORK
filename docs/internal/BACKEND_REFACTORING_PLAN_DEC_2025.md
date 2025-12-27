@@ -53,6 +53,19 @@ This document translates the existing backend review findings into **junior-dev-
 
 **Verification:** All 146 tests pass + imports verified
 
+### D0-D4: Step 2 Date Parsing Extraction — 2025-12-27
+
+**Summary:** Committed 693 lines of pre-existing extractions for Step 2 date confirmation.
+
+**Modules:**
+- `constants.py` (156 lines) - month/weekday mappings, keyword sets
+- `types.py` (48 lines) - ConfirmationWindow, WindowHints
+- `date_parsing.py` (242 lines) - 10 pure parsing functions
+- `proposal_tracking.py` (122 lines) - 5 history management functions
+- `calendar_checks.py` (125 lines) - 3 calendar availability functions
+
+**Verification:** All 146 tests pass + imports verified
+
 ---
 
 ## Open Refactoring Tasks 🔄
