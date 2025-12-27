@@ -2,6 +2,24 @@
 
 ## 2025-12-27
 
+### N1: Step5 Debug/Log Hygiene ✅
+
+**Summary:** Converted unguarded ERROR prints to proper logging in step5_handler.py.
+
+**Changes:**
+- Added `import logging` and `logger = logging.getLogger(__name__)`
+- Converted 2 ERROR prints to `logger.error()` (lines 174, 184)
+- All 11 DEBUG prints already guarded by `WF_DEBUG` flag
+
+**Why proper logging:**
+- Errors should never be silently ignored in production
+- `logger.error()` allows log-level configuration without code changes
+- Follows existing codebase pattern (adapter.py, smart_shortcuts.py)
+
+**Verification:** All 146 core tests pass.
+
+---
+
 ### I2: Isolate Dev/Test Mode Flow ✅
 
 **Summary:** Extracted dev/test mode "continue or reset" logic from step1_handler.py (1407→1392 lines) into dedicated module.

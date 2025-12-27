@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 from datetime import date as dt_date, datetime, timezone
@@ -7,6 +8,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # Debug flag - set WF_DEBUG_STATE=1 to enable verbose workflow prints
 WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"
+
+logger = logging.getLogger(__name__)
 
 from backend.workflows.common.datetime_parse import parse_all_dates
 from backend.workflows.common.timeutils import parse_ddmmyyyy
@@ -168,7 +171,7 @@ def process(state: WorkflowState) -> GroupResult:
                     if WF_DEBUG:
                         print(f"[Step5][DEBUG] ✅ FORCE SAVED billing to database")
                 except Exception as save_err:
-                    print(f"[Step5][ERROR] Failed to force save billing: {save_err}")
+                    logger.error("Failed to force save billing: %s", save_err)
 
     billing_missing = _refresh_billing(event_entry)
     state.extras["persist"] = True
@@ -178,7 +181,7 @@ def process(state: WorkflowState) -> GroupResult:
         if WF_DEBUG:
             print(f"[Step5][DEBUG] ✅ FORCE SAVED after billing refresh (billing_missing={billing_missing})")
     except Exception as save_err:
-        print(f"[Step5][ERROR] Failed to save after billing refresh: {save_err}")
+        logger.error("Failed to save after billing refresh: %s", save_err)
 
     # Clear awaiting_billing_for_accept once billing is complete
     if not billing_missing and billing_req.get("awaiting_billing_for_accept"):
