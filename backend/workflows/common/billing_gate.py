@@ -1,19 +1,23 @@
 """
 Billing gate utilities for offer acceptance flow.
 
-Extracted from step5_handler.py for better modularity (N3 refactoring).
-These functions handle billing address capture and validation during
-offer acceptance.
+Shared module used by Step4 (Offer) and Step5 (Negotiation) for billing
+address capture and validation during offer acceptance.
 
-Note: These functions are duplicated in Step4 - future refactoring
-will consolidate to a single shared module.
+Originally extracted from step5_handler.py (N3 refactoring), then moved
+to common/ for O2 consolidation.
 
 Usage:
-    from .billing_gate import refresh_billing, flag_billing_accept_pending
+    from backend.workflows.common.billing_gate import (
+        refresh_billing,
+        flag_billing_accept_pending,
+        billing_prompt_draft,
+    )
 
     missing = refresh_billing(event_entry)
     if missing:
         flag_billing_accept_pending(event_entry, missing)
+        return billing_prompt_draft(missing, step=4)
 """
 
 from __future__ import annotations
