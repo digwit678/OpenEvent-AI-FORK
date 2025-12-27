@@ -1243,10 +1243,10 @@ Estimates are rough (single developer, with tests).
 | R1 | Step3 constants/types extraction | Step3 trigger submodules | R0 | Medium | 2–4h |
 | R2 | ✅ Step3 Q&A bridge extraction | Unified in `common/general_qna.py` (2025-12-27) | - | - | DONE |
 | R3 | Step3 selection action extraction | Step3 selection module + shims | R2 | Medium | 2–5h |
-| O0 | Step4 compat export `_apply_product_operations` | Step4 trigger/process shim | T0 | Low | 0.25–1h |
+| O0 | ✅ Step4 compat export (verified working) | process.py compat shim intact (2025-12-27) | - | - | DONE |
 | O1 | ✅ Step4 product ops extraction | `product_ops.py` (465 lines) committed 2025-12-27 | O0 | - | DONE |
 | O2 | Step4 billing gate extraction | Step4 billing_gate module | O1 | Medium | 2–6h |
-| N1 | Step5 debug/log hygiene | step5_handler.py | T0 | Low | 0.5–2h |
+| N1 | ✅ Step5 debug/log hygiene | Removed WF_DEBUG prints (-27 lines) (2025-12-27) | - | - | DONE |
 | N2 | Step5 classification extraction | Step5 classification module | N1 | Medium | 2–5h |
 | N3 | Step5 billing gate extraction | Step5 billing_gate module | N2 | Medium | 2–6h |
 | S1 | Smart shortcuts gate/flags extraction | planner submodules + facade | T0 | Medium | 2–5h |
