@@ -59,6 +59,9 @@ from .date_fallback import fallback_year_from_ts as _fallback_year_from_ts
 from .gate_confirmation import looks_like_offer_acceptance as _looks_like_offer_acceptance
 from .gate_confirmation import looks_like_billing_fragment as _looks_like_billing_fragment
 
+# Dev/test mode helper (I2 refactoring)
+from .dev_test_mode import maybe_show_dev_choice as _maybe_show_dev_choice
+
 __workflow_role__ = "trigger"
 
 
@@ -558,35 +561,17 @@ def process(state: WorkflowState) -> GroupResult:
         current_step = 1
     owner_step = _resolve_owner_step(current_step)
 
-    # [TESTING CONVENIENCE] When in dev/test mode, offer choice to continue or reset
-    # This helps with testing by not auto-continuing stale sessions
-    # Skip if message has skip_dev_choice flag (user already chose to continue)
-    dev_test_mode = os.getenv("DEV_TEST_MODE", "").lower() in ("1", "true", "yes")
+    # [TESTING CONVENIENCE] Dev/test mode choice prompt (I2 extraction)
     skip_dev_choice = state.extras.get("skip_dev_choice", False)
-    if dev_test_mode and linked_event and current_step > 1 and not skip_dev_choice:
-        event_id = linked_event.get("event_id")
-        event_date = linked_event.get("chosen_date") or (linked_event.get("event_data") or {}).get("Event Date", "unknown")
-        locked_room = linked_event.get("locked_room_id") or "none"
-        offer_accepted = bool(linked_event.get("offer_accepted"))
-
-        return GroupResult(
-            action="dev_choice_required",
-            payload={
-                "client_id": email,
-                "event_id": event_id,
-                "current_step": current_step,
-                "step_name": owner_step,
-                "event_date": event_date,
-                "locked_room": locked_room,
-                "offer_accepted": offer_accepted,
-                "options": [
-                    {"id": "continue", "label": f"Continue at {owner_step}"},
-                    {"id": "reset", "label": "Reset client (delete all data)"},
-                ],
-                "message": f"Existing event detected for {email} at {owner_step}. Date: {event_date}, Room: {locked_room}",
-            },
-            halt=True,
-        )
+    dev_choice_result = _maybe_show_dev_choice(
+        linked_event=linked_event,
+        current_step=current_step,
+        owner_step=owner_step,
+        client_email=email,
+        skip_dev_choice=skip_dev_choice,
+    )
+    if dev_choice_result:
+        return dev_choice_result
 
     trace_marker(
         thread_id,
