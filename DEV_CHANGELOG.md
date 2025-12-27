@@ -1,5 +1,77 @@
 # Development Changelog
 
+## 2025-12-28
+
+### S2: Smart Shortcuts Types/Telemetry Extraction ✅
+
+**Summary:** Extracted dataclasses and constants from `smart_shortcuts.py`.
+
+**New Module:**
+- `backend/workflows/planner/shortcuts_types.py` (153 lines)
+
+**Types extracted:**
+- `ParsedIntent` - Parsed user intent from message text
+- `PlannerTelemetry` - Telemetry data with `to_log()` method
+- `AtomicDecision` - Decision about atomic execution
+- `PlannerResult` - Dictionary-like payload wrapper
+
+**Constants extracted:**
+- `PREASK_CLASS_COPY` - Pre-ask class copy text
+- `CLASS_KEYWORDS` - Keywords for class detection
+- `ORDINAL_WORDS_BY_LANG` - Ordinal word mappings (EN/DE)
+
+**Verification:** All 517 tests pass
+
+---
+
+### S1: Smart Shortcuts Flags and Gate Extraction ✅
+
+**Summary:** Extracted env flag parsing and gate checking functions from `smart_shortcuts.py`.
+
+**New Modules:**
+- `backend/workflows/planner/shortcuts_flags.py` (104 lines) - All env flag functions
+- `backend/workflows/planner/shortcuts_gate.py` (85 lines) - Gate checking functions
+
+**Functions extracted to shortcuts_flags.py:**
+- `shortcuts_enabled()` (was `_flag_enabled`)
+- `max_combined()` (was `_max_combined`)
+- `legacy_shortcuts_allowed()` (was `_legacy_shortcuts_allowed`)
+- `needs_input_priority()` (was `_needs_input_priority`)
+- `product_flow_enabled()` (was `_product_flow_enabled`)
+- `capture_budget_on_hil()` (was `_capture_budget_on_hil`)
+- `no_unsolicited_menus()` (was `_no_unsolicited_menus`)
+- `event_scoped_upsell_enabled()` (was `_event_scoped_upsell_enabled`)
+- `budget_default_currency()` (was `_budget_default_currency`)
+- `budget_parse_strict()` (was `_budget_parse_strict`)
+- `max_missing_items_per_hil()` (was `_max_missing_items_per_hil`)
+- `atomic_turns_enabled()` (new public name)
+- `shortcut_allow_date_room()` (new public name)
+
+**Functions extracted to shortcuts_gate.py:**
+- `shortcuts_allowed()` (was `_shortcuts_allowed`)
+- `coerce_participants()` (was `_coerce_participants`)
+- `debug_shortcut_gate()` (was `_debug_shortcut_gate`)
+
+**Result:** `smart_shortcuts.py` reduced by ~100 lines, functions re-exported for compatibility
+
+**Verification:** All 146 tests pass, shortcuts gate tests pass
+
+---
+
+### Dead Code Cleanup ✅
+
+**Summary:** Removed unused functions from step4_handler.py and step5_handler.py that were replaced by `confirmation_gate.py`.
+
+**Removed:**
+- `step4_handler.py`: `_check_deposit_payment_continuation` (~46 lines), `_auto_accept_if_billing_ready` (~72 lines)
+- `step5_handler.py`: `_auto_accept_if_billing_ready` (~22 lines)
+
+**Result:** -143 lines total dead code removed
+
+**Verification:** All 146 tests pass
+
+---
+
 ## 2025-12-27
 
 ### N1: Step5 Debug/Log Hygiene ✅
