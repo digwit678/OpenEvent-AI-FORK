@@ -1248,7 +1248,7 @@ Estimates are rough (single developer, with tests).
 | O2 | Step4 billing gate extraction | Step4 billing_gate module | O1 | Medium | 2–6h |
 | N1 | ✅ Step5 debug/log hygiene | Removed WF_DEBUG prints (-27 lines) (2025-12-27) | - | - | DONE |
 | N2 | ✅ Step5 classification extraction | `classification.py` (118 lines) verified 2025-12-27 | N1 | - | DONE |
-| N3 | Step5 billing gate extraction | Step5 billing_gate module | N2 | Medium | 2–6h |
+| N3 | ✅ Step5 billing gate extraction | `common/billing_gate.py` (118 lines) verified 2025-12-27 | N2 | - | DONE |
 | S1 | Smart shortcuts gate/flags extraction | planner submodules + facade | T0 | Medium | 2–5h |
 | S2 | Smart shortcuts types/telemetry extraction | planner submodules + facade | S1 | Medium | 2–5h |
 | S3 | Smart shortcuts planner extraction | planner submodules + facade | S2 | High | 4–10h |
