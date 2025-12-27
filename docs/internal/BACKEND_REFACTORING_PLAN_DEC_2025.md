@@ -1239,7 +1239,7 @@ Estimates are rough (single developer, with tests).
 | D3 | ✅ Step2 candidate presentation extraction | `proposal_tracking.py` (2025-12-27) | - | - | DONE |
 | D4 | ✅ Step2 confirmation resolution extraction | `calendar_checks.py` (2025-12-27) | - | - | DONE |
 | D5 | Step2 Q&A bridge extraction | general_qna module + shims | D4 | Medium | 2–6h |
-| R0 | Fix Step3 Q&A request crash | step3_handler.py | T0 | Low | 0.25–1h |
+| R0 | ✅ Fix Step3 Q&A request crash | Already fixed (line 1431 init) | T0 | - | DONE |
 | R1 | Step3 constants/types extraction | Step3 trigger submodules | R0 | Medium | 2–4h |
 | R2 | ✅ Step3 Q&A bridge extraction | Unified in `common/general_qna.py` (2025-12-27) | - | - | DONE |
 | R3 | Step3 selection action extraction | Step3 selection module + shims | R2 | Medium | 2–5h |
@@ -1252,7 +1252,7 @@ Estimates are rough (single developer, with tests).
 | S1 | ✅ Smart shortcuts gate/flags extraction | `shortcuts_flags.py` + `shortcuts_gate.py` (2025-12-28) | T0 | - | DONE |
 | S2 | ✅ Smart shortcuts types/telemetry extraction | `shortcuts_types.py` (153 lines) (2025-12-28) | S1 | - | DONE |
 | S3 | Smart shortcuts planner extraction | planner submodules + facade | S2 | High | 4–10h |
-| C0 | Conversation manager: remove import-time OpenAI | conversation_manager.py | T0 | Medium | 1–3h |
+| C0 | ✅ Conversation manager: lazy OpenAI init | Already fixed (_get_openai_client) | T0 | - | DONE |
 | C1 | Conversation manager session store split | legacy module + route imports | C0 | Medium | 2–6h |
 | G0 | Freeze groups as pure re-export | groups/* + guard test | T0 | Medium | 1–4h |
 | B0 | Import boundary enforcement test | tests/gatekeeping/* | T0 | Medium | 2–6h |
