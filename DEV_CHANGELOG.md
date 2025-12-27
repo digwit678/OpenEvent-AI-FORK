@@ -2,6 +2,28 @@
 
 ## 2025-12-27
 
+### W2: Complete HIL Task Extraction ✅
+
+**Summary:** Extracted remaining HIL task functions from `workflow_email.py` to `backend/workflows/runtime/hil_tasks.py`.
+
+**Functions Extracted:**
+- `_thread_identifier()` - Get stable thread identifier from state
+- `_hil_signature()` - Generate duplicate-prevention signatures
+- `_hil_action_type_for_step()` - Map step → action type string
+- `enqueue_hil_tasks()` - Create HIL task records from draft messages (was `_enqueue_hil_tasks`)
+
+**Result:** `workflow_email.py`: 778 → 647 lines (-131 lines, ~17% reduction)
+
+**Files Modified:**
+- `backend/workflow_email.py` - Removed 4 functions, updated imports
+- `backend/workflows/runtime/hil_tasks.py` - Added 4 functions
+
+**Note:** W1 (facade reorganization) was already complete - `__all__` was well-organized.
+
+**Verification:** All 146 tests pass
+
+---
+
 ### P2: Make Guards Pure ✅
 
 **Summary:** Refactored `backend/workflow/guards.py` to be pure - returns decisions without side effects.

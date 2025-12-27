@@ -114,6 +114,20 @@ This document translates the existing backend review findings into **junior-dev-
 
 **Verification:** All 146 tests pass
 
+### W2: Complete HIL Task Extraction — 2025-12-27
+
+**Summary:** Extracted remaining HIL functions from `workflow_email.py` to `backend/workflows/runtime/hil_tasks.py`.
+
+**Functions Moved:**
+- `_thread_identifier()` - Get stable thread identifier from state
+- `_hil_signature()` - Generate signature to prevent duplicate HIL tasks
+- `_hil_action_type_for_step()` - Map workflow step to action type string
+- `enqueue_hil_tasks()` (was `_enqueue_hil_tasks`) - Create HIL task records from drafts
+
+**Result:** `workflow_email.py`: 778 → 647 lines (-131 lines, ~17% reduction)
+
+**Verification:** All 146 tests pass + imports verified
+
 ---
 
 ## Open Refactoring Tasks 🔄
@@ -1213,9 +1227,9 @@ Estimates are rough (single developer, with tests).
 
 | ID | Title | Files (primary) | Depends On | Risk | Est. |
 |---:|-------|------------------|------------|------|------|
-| T0 | Fix pytest collection (compat + stale imports + dup test name) | tests/*, Step2/Step4 compat shims | - | Medium | 2–6h |
-| W1 | Make `workflow_email.py` explicit facade | `backend/workflow_email.py` | T0 | Medium | 1–2h |
-| W2 | Extract HIL task APIs (keep re-exports) | `backend/workflows/runtime/hil_tasks.py` + facade | W1 | Medium | 1–3h |
+| T0 | ✅ Fix pytest collection (compat + stale imports + dup test name) | tests/*, Step2/Step4 compat shims (2025-12-27) | - | - | DONE |
+| W1 | ✅ Make `workflow_email.py` explicit facade | `__all__` organized with semantic groups (2025-12-27) | T0 | - | DONE |
+| W2 | ✅ Extract HIL task APIs (keep re-exports) | `hil_tasks.py` + facade (-131 lines) (2025-12-27) | W1 | - | DONE |
 | W3 | ✅ Extract router loop (keep `process_msg`) | `backend/workflows/runtime/router.py` (2025-12-27) | W2 | - | DONE |
 | I1 | ✅ Extract Step1 pure helpers | 6 modules extracted (2025-12-27) | - | - | DONE |
 | I2 | ✅ Isolate dev/test mode flow | `dev_test_mode.py` already exists | - | - | DONE |
