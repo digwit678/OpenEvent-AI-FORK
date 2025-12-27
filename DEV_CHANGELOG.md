@@ -18,6 +18,27 @@
 
 ---
 
+### N2: Step5 Classification Extraction ✅
+
+**Summary:** Verified Step5 classification module extraction is complete.
+
+**Module:** `backend/workflows/steps/step5_negotiation/trigger/classification.py` (118 lines)
+
+**Functions:**
+- `collect_detected_intents(message_text)` - Detect all possible intents with confidence scores
+- `classify_message(message_text)` - Return highest-confidence intent
+- `iso_to_ddmmyyyy(raw)` - Date format conversion
+
+**Integration:**
+- Imported in `step5_handler.py` as `_classify_message`, `_collect_detected_intents`, `_iso_to_ddmmyyyy`
+- Re-exported via package `__init__.py` for backward compatibility
+
+**Note:** `_ask_classification_clarification()` remains in step5_handler.py (uses state mutation).
+
+**Verification:** All 146 tests pass
+
+---
+
 ### W2 Import Fixes ✅
 
 **Summary:** Fixed missing imports after W2 HIL task extraction.
