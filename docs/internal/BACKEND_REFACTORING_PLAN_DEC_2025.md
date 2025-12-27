@@ -97,6 +97,23 @@ This document translates the existing backend review findings into **junior-dev-
 
 **Verification:** All 146 tests pass
 
+### P2: Make Guards Pure — 2025-12-27
+
+**Summary:** Refactored `backend/workflow/guards.py` to be pure - no metadata writes.
+
+**Changes:**
+- Extended `GuardSnapshot` dataclass with new fields:
+  - `forced_step: Optional[int]` - Step to force if different from current
+  - `requirements_hash_changed: bool` - Whether hash was recomputed
+  - `deposit_bypass: bool` - Whether deposit payment bypass is active
+- Refactored `evaluate()` to return decisions without side effects
+- Updated `pre_route.py` to apply metadata updates from snapshot
+- Removed unused imports from guards.py
+
+**Result:** Guards now follow functional programming pattern - compute decisions, return snapshot, caller applies writes.
+
+**Verification:** All 146 tests pass
+
 ---
 
 ## Open Refactoring Tasks 🔄
@@ -1229,7 +1246,7 @@ Estimates are rough (single developer, with tests).
 | F2 | Step7 site-visit extraction | step7 site_visit module | F1 | High | 4–10h |
 | F3 | ✅ Step7 Q&A bridge extraction | Unified in `common/general_qna.py` (2025-12-27) | - | - | DONE |
 | P1 | ✅ Introduce pre-route pipeline module | `runtime/pre_route.py` (207 lines) 2025-12-27 | W3 | - | DONE |
-| P2 | Make guards pure (no metadata writes) | workflow/guards.py + router | P1 | High | 3–8h |
+| P2 | ✅ Make guards pure (no metadata writes) | `guards.py` pure + `pre_route.py` applies (2025-12-27) | - | - | DONE |
 | DB1 | Remove step-level force-save patterns | Step5 (and any others) | P1 | Medium | 2–6h |
 | DCON1 | Detection import surface cleanup | tests + optional shims | T0 | Medium | 2–6h |
 
