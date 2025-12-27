@@ -14,18 +14,13 @@ from backend.domain import TaskStatus, TaskType
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 from backend.workflows.common.types import GroupResult
 from backend.workflows.steps import step1_intake as intake
-from backend.workflows.steps import step2_date_confirmation as date_confirmation
-from backend.workflows.steps import step3_room_availability as room_availability
-from backend.workflows.steps.step4_offer.trigger import process as process_offer
-from backend.workflows.steps.step5_negotiation import process as process_negotiation
-from backend.workflows.steps.step6_transition import process as process_transition
-from backend.workflows.steps.step7_confirmation.trigger import process as process_confirmation
+# Step handlers moved to runtime/router.py (W3 extraction)
 from backend.workflows.io import database as db_io
 from backend.workflows.io.database import update_event_metadata
 from backend.workflows.io import tasks as task_io
 from backend.workflows.io.integration.config import is_hil_all_replies_enabled
 from backend.workflows.llm import adapter as llm_adapter
-from backend.workflows.planner import maybe_run_smart_shortcuts
+# maybe_run_smart_shortcuts moved to runtime/pre_route.py (P1 extraction)
 from backend.workflows.nlu import (
     detect_general_room_query,
     empty_general_qna_detection,
@@ -37,7 +32,7 @@ from backend.workflow.state import stage_payload, WorkflowStep, write_stage
 from backend.debug.lifecycle import close_if_ended
 from backend.debug.settings import is_trace_enabled
 from backend.debug.trace import set_hil_open
-from backend.workflow.guards import evaluate as evaluate_guards
+# evaluate_guards moved to runtime/pre_route.py (P1 extraction)
 from backend.debug.state_store import STATE_STORE
 
 # Import HIL task APIs from runtime module (W2 extraction)
@@ -47,6 +42,12 @@ from backend.workflows.runtime.hil_tasks import (
     cleanup_tasks,
     list_pending_tasks,
 )
+
+# Import router from runtime module (W3 extraction)
+from backend.workflows.runtime.router import run_routing_loop
+
+# Import pre-route pipeline from runtime module (P1 extraction)
+from backend.workflows.runtime.pre_route import run_pre_route_pipeline
 
 logger = logging.getLogger(__name__)
 WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"
@@ -496,146 +497,37 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     last_result = intake.process(state)
     _debug_state("post_intake", state, extra={"intent": state.intent.value if state.intent else None})
 
-    # [DUPLICATE MESSAGE DETECTION] Check if client sent the exact same message twice in a row
-    # This prevents confusing duplicate responses when client accidentally resends
-    if state.event_entry:
-        last_client_msg = state.event_entry.get("last_client_message", "")
-        normalized_current = combined_text.strip().lower()
-        normalized_last = (last_client_msg or "").strip().lower()
+    # Run pre-routing pipeline (P1 extraction)
+    # Handles: duplicate detection, post-intake halt, guards, shortcuts, billing flow correction
+    early_return, last_result = run_pre_route_pipeline(
+        state,
+        last_result,
+        combined_text,
+        path,
+        lock_path,
+        persist_fn=_persist_if_needed,
+        debug_fn=_debug_state,
+        finalize_fn=_flush_and_finalize,
+    )
+    if early_return is not None:
+        return early_return
 
-        # Only check for duplicates if we have a previous message and messages are identical
-        if normalized_last and normalized_current == normalized_last:
-            # Don't flag as duplicate if this is a detour return or offer update flow
-            is_detour = state.event_entry.get("caller_step") is not None
-            current_step = state.event_entry.get("current_step", 1)
-            # Don't flag as duplicate during billing flow - client may resend billing info
-            in_billing_flow = (
-                state.event_entry.get("offer_accepted")
-                and (state.event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
-            )
+    # Run the step routing loop (W3 extraction)
+    halted_result, last_result = run_routing_loop(
+        state,
+        last_result,
+        path,
+        lock_path,
+        persist_fn=_persist_if_needed,
+        debug_fn=_debug_state,
+        finalize_fn=_flush_and_finalize,
+    )
 
-            if not is_detour and not in_billing_flow and current_step >= 2:
-                # Return friendly "same message" response instead of processing
-                duplicate_response = GroupResult(
-                    action="duplicate_message",
-                    halt=True,
-                    payload={
-                        "draft": {
-                            "body_markdown": (
-                                "I notice this is the same message as before. "
-                                "Is there something specific you'd like to add or clarify? "
-                                "I'm happy to help with any questions or changes."
-                            ),
-                            "hil_required": False,
-                        },
-                    },
-                )
-                from backend.debug.hooks import trace_marker  # pylint: disable=import-outside-toplevel
-                trace_marker(
-                    state.thread_id,
-                    "DUPLICATE_MESSAGE_DETECTED",
-                    detail="Client sent identical message twice in a row",
-                    owner_step=f"Step{current_step}",
-                )
-                return _flush_and_finalize(duplicate_response, state, path, lock_path)
+    # If router halted, return the finalized result directly
+    if halted_result is not None:
+        return halted_result
 
-        # Store current message for next comparison (only if not a duplicate)
-        state.event_entry["last_client_message"] = combined_text.strip()
-        state.extras["persist"] = True
-
-    _persist_if_needed(state, path, lock_path)
-    if last_result.halt:
-        _debug_state("halt_post_intake", state)
-        return _flush_and_finalize(last_result, state, path, lock_path)
-
-    guard_snapshot = evaluate_guards(state)
-    if guard_snapshot.step2_required and guard_snapshot.candidate_dates:
-        state.extras["guard_candidate_dates"] = list(guard_snapshot.candidate_dates)
-
-    shortcut_result = maybe_run_smart_shortcuts(state)
-    if shortcut_result is not None:
-        _debug_state(
-            "smart_shortcut",
-            state,
-            extra={"shortcut_action": shortcut_result.action},
-        )
-        _persist_if_needed(state, path, lock_path)
-        return _flush_and_finalize(shortcut_result, state, path, lock_path)
-
-    # [BILLING FLOW CORRECTION] Force step=5 when in billing flow
-    # This handles cases where step was incorrectly set before billing flow started
-    if state.event_entry:
-        in_billing_flow = (
-            state.event_entry.get("offer_accepted")
-            and (state.event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
-        )
-        stored_step = state.event_entry.get("current_step")
-        if in_billing_flow and stored_step != 5:
-            print(f"[WF][BILLING_FIX] Correcting step from {stored_step} to 5 for billing flow")
-            state.event_entry["current_step"] = 5
-            state.extras["persist"] = True
-        elif in_billing_flow:
-            print(f"[WF][BILLING_FLOW] Already at step 5, proceeding with billing flow")
-
-    print(f"[WF][PRE_ROUTE] About to enter routing loop, event_entry exists={state.event_entry is not None}")
-    if state.event_entry:
-        print(f"[WF][PRE_ROUTE] current_step={state.event_entry.get('current_step')}, offer_accepted={state.event_entry.get('offer_accepted')}")
-
-    for iteration in range(6):
-        event_entry = state.event_entry
-        if not event_entry:
-            print(f"[WF][ROUTE][{iteration}] No event_entry, breaking")
-            break
-        step = event_entry.get("current_step")
-        print(f"[WF][ROUTE][{iteration}] current_step={step}")
-        if step == 2:
-            last_result = date_confirmation.process(state)
-            _debug_state("post_step2", state)
-            _persist_if_needed(state, path, lock_path)
-            if last_result.halt:
-                _debug_state("halt_step2", state)
-                return _flush_and_finalize(last_result, state, path, lock_path)
-            continue
-        if step == 3:
-            last_result = room_availability.process(state)
-            _debug_state("post_step3", state)
-            _persist_if_needed(state, path, lock_path)
-            if last_result.halt:
-                _debug_state("halt_step3", state)
-                return _flush_and_finalize(last_result, state, path, lock_path)
-            continue
-        if step == 4:
-            last_result = process_offer(state)
-            _debug_state("post_step4", state)
-            _persist_if_needed(state, path, lock_path)
-            if last_result.halt:
-                _debug_state("halt_step4", state)
-                return _flush_and_finalize(last_result, state, path, lock_path)
-            continue
-        if step == 5:
-            last_result = process_negotiation(state)
-            _persist_if_needed(state, path, lock_path)
-            if last_result.halt:
-                _debug_state("halt_step5", state)
-                return _flush_and_finalize(last_result, state, path, lock_path)
-            continue
-        if step == 6:
-            last_result = process_transition(state)
-            _persist_if_needed(state, path, lock_path)
-            if last_result.halt:
-                _debug_state("halt_step6", state)
-                return _flush_and_finalize(last_result, state, path, lock_path)
-            continue
-        if step == 7:
-            last_result = process_confirmation(state)
-            _persist_if_needed(state, path, lock_path)
-            if last_result.halt:
-                _debug_state("halt_step7", state)
-                return _flush_and_finalize(last_result, state, path, lock_path)
-            continue
-        print(f"[WF][ROUTE] No handler for step {step}, breaking")
-        break
-
+    # Loop completed without halting - finalize and return
     _debug_state("final", state)
     print(f"[WF][FINAL] Returning with action={last_result.action if last_result else 'None'}, halt={last_result.halt if last_result else 'N/A'}")
     return _flush_and_finalize(last_result, state, path, lock_path)
