@@ -39,6 +39,25 @@
 
 ---
 
+### N3: Step5 Billing Gate Extraction ✅
+
+**Summary:** Verified Step5 billing gate module extraction is complete.
+
+**Module:** `backend/workflows/common/billing_gate.py` (118 lines)
+
+**Functions:**
+- `refresh_billing(event_entry)` - Parse and persist billing details, return missing fields
+- `flag_billing_accept_pending(event_entry, missing_fields)` - Mark event as awaiting billing
+- `billing_prompt_draft(missing_fields, step)` - Create billing request message
+
+**Integration:**
+- Imported in `step5_handler.py` as `_refresh_billing`, `_flag_billing_accept_pending`, `_billing_prompt_draft`
+- Also used by Step4 (O2 consolidation)
+
+**Verification:** All 146 tests pass
+
+---
+
 ### W2 Import Fixes ✅
 
 **Summary:** Fixed missing imports after W2 HIL task extraction.
