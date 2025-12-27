@@ -801,29 +801,7 @@ def _apply_hil_negotiation_decision(state: WorkflowState, event_entry: Dict[str,
     }
     return GroupResult(action="negotiation_hil_approved", payload=payload, halt=False)
 
-
-def _auto_accept_if_billing_ready(
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-    thread_id: str,
-    missing_fields: list[str],
-) -> Optional[GroupResult]:
-    gate = event_entry.get("billing_requirements") or {}
-    if not gate.get("awaiting_billing_for_accept"):
-        return None
-    if missing_fields:
-        gate["last_missing"] = list(missing_fields)
-        return None
-
-    gate["awaiting_billing_for_accept"] = False
-    gate["last_missing"] = []
-    return _start_hil_acceptance(
-        state,
-        event_entry,
-        thread_id,
-        audit_label="offer_accept_pending_hil_auto",
-        action="negotiation_accept_pending_hil",
-    )
+# NOTE: _auto_accept_if_billing_ready was removed (dead code) - replaced by confirmation_gate.py
 
 
 def _start_hil_acceptance(
