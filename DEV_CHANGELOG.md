@@ -2,6 +2,29 @@
 
 ## 2025-12-27
 
+### I2: Isolate Dev/Test Mode Flow ✅
+
+**Summary:** Extracted dev/test mode "continue or reset" logic from step1_handler.py (1407→1392 lines) into dedicated module.
+
+**New File:**
+- `backend/workflows/steps/step1_intake/trigger/dev_test_mode.py` (115 lines) - Dev/test mode utilities
+
+**Extracted Functions:**
+- `is_dev_test_mode_enabled()` - Check if DEV_TEST_MODE env var is set
+- `should_show_dev_choice()` - Determine if dev choice prompt should be shown
+- `build_dev_choice_result()` - Build the GroupResult for dev choice
+- `maybe_show_dev_choice()` - Main entry point for dev mode handling
+
+**Test File:**
+- `tests/specs/intake/test_dev_test_mode.py` (26 tests) - Characterization tests
+
+**Verification:**
+- All 26 dev_test_mode tests pass
+- All 146 core tests pass
+- E2E Playwright: Full flow (inquiry→room→offer→billing→deposit→HIL→site visit) works
+
+---
+
 ### Intent Classification Edge Case Fix ✅
 
 **Summary:** Fixed generic intent classification rescue for event-type messages that LLM incorrectly classifies as "other".
