@@ -2,6 +2,255 @@
 
 ## 2025-12-27
 
+### F1+F2: Step 7 Site-Visit Extraction ✅
+
+**Summary:** Extracted ~390 lines from `step7_handler.py` into 4 focused modules (43% reduction).
+
+**New Modules Created:**
+
+| Module | Functions | Lines |
+|--------|-----------|-------|
+| `constants.py` | `CONFIRM_KEYWORDS`, `RESERVE_KEYWORDS`, `VISIT_KEYWORDS`, `DECLINE_KEYWORDS`, `CHANGE_KEYWORDS`, `QUESTION_KEYWORDS` | 14 |
+| `helpers.py` | `iso_to_ddmmyyyy`, `base_payload`, `thread_id`, `any_keyword_match`, `contains_word` | 60 |
+| `classification.py` | `classify_message` | 49 |
+| `site_visit.py` | 9 site-visit functions: `handle_site_visit`, `site_visit_unavailable_response`, `generate_visit_slots`, `extract_site_visit_preference`, `generate_preferred_visit_slots`, `handle_site_visit_preference`, `parse_slot_selection`, `handle_site_visit_confirmation`, `ensure_calendar_block` | 372 |
+
+**Step 7 Handler Changes:**
+- `step7_handler.py`: 916 → 524 lines (-392 lines, 43% reduction)
+- All site-visit logic isolated in dedicated `site_visit.py` module
+- Classification and helpers modularized for testability
+
+**Verification:**
+- All 146 core tests pass
+- Imports verified via `import backend.workflow_email`
+
+---
+
+### I1: Step 1 Pure Helper Extraction ✅
+
+**Summary:** Extracted ~260 lines of pure helper functions from `step1_handler.py` into 6 focused modules.
+
+**New Modules Created:**
+
+| Module | Functions | Lines |
+|--------|-----------|-------|
+| `intent_helpers.py` | `needs_vague_date_confirmation`, `initial_intent_detail`, `has_same_turn_shortcut`, `resolve_owner_step` | ~50 |
+| `keyword_matching.py` | `keyword_regex`, `contains_keyword`, `product_token_regex`, `match_product_token`, `extract_quantity_from_window`, `menu_token_candidates` + constants | ~115 |
+| `confirmation_parsing.py` | `extract_confirmation_details`, `looks_like_gate_confirmation` + constants | ~105 |
+| `room_detection.py` | `detect_room_choice` | ~65 |
+| `product_detection.py` | `menu_price_value`, `detect_menu_choice` | ~45 |
+| `entity_extraction.py` | `participants_from_event` | ~30 |
+
+**Changes to step1_handler.py:**
+- Removed ~260 lines of implementations
+- Added imports from new modules
+- Removed unused import: `handle_select_room_action` from step3
+- Removed unused import: `load_rooms` (now in extracted modules)
+- Removed unused import: `parse_time_range` (now in extracted modules)
+
+**Note:** `_detect_product_update_request` (~150 lines) kept in handler as it has side effects (mutates user_info) - candidate for future refactoring.
+
+**Verification:**
+- All 146 core tests pass
+- E2E Playwright test passed (inquiry → offer → billing → deposit → HIL → site visit)
+
+---
+
+### Unified `_present_general_room_qna` Across Steps 3/4/5/7 ✅
+
+**Summary:** Extracted duplicated Q&A handling logic from 4 step handlers into a shared function, reducing ~684 lines to ~175 lines (~75% reduction).
+
+**Analysis:**
+- Steps 3, 4, 5, 7 each had ~171 lines of nearly identical `_present_general_room_qna` code
+- Only differences: step numbers (3/4/5/7) and step names
+- Step 2 has a more complex version (~354 lines) with extra features - left as-is for now
+
+**Changes:**
+
+| File | Change |
+|------|--------|
+| `backend/workflows/common/general_qna.py` | Added shared `present_general_room_qna(step_number, step_name)` (~190 lines) |
+| `backend/workflows/steps/step3_.../step3_handler.py` | Replaced ~171 lines with 10-line thin wrapper |
+| `backend/workflows/steps/step4_.../step4_handler.py` | Replaced ~171 lines with 10-line thin wrapper |
+| `backend/workflows/steps/step5_.../step5_handler.py` | Replaced ~171 lines with 10-line thin wrapper |
+| `backend/workflows/steps/step7_.../step7_handler.py` | Replaced ~171 lines with 10-line thin wrapper |
+
+**Thin Wrapper Pattern:**
+```python
+def _present_general_room_qna(state, event_entry, classification, thread_id):
+    """Handle general Q&A at Step N - delegates to shared implementation."""
+    return present_general_room_qna(
+        state, event_entry, classification, thread_id,
+        step_number=N, step_name="Step Name"
+    )
+```
+
+**Verification:**
+- All 146 core tests pass
+- E2E Playwright test passed (inquiry → offer → billing → deposit → HIL → site visit)
+
+---
+
+### D5: Step2 Q&A Bridge Analysis ✅ (No Extraction Needed)
+
+**Summary:** Analyzed `_present_general_room_qna` function for extraction. Found that D5 extraction is not needed - the architecture is already correct.
+
+**Findings:**
+
+1. **Shared Q&A logic already extracted:** Common Q&A functions exist in `backend/workflows/common/general_qna.py` (1560 lines)
+   - `enrich_general_qna_step2`, `render_general_qna_reply`, `_fallback_structured_body`
+
+2. **Step-specific functions correctly remain in handlers:** Each step (2, 3, 4, 5, 7) has its own `_present_general_room_qna` implementation
+   - These are NOT duplicates - each handles step-specific state and routing
+   - Extracting would create circular imports or require massive multi-step refactoring
+
+3. **D-series complete for Step2:** D1-D4 achieved 7.3% reduction (3726 → 3453 lines, -273 lines)
+
+**Files Examined:**
+- `backend/workflows/steps/step2_date_confirmation/trigger/step2_handler.py`
+- `backend/workflows/common/general_qna.py`
+
+**Verification:**
+- All 146 core tests pass
+- E2E Playwright test passed (inquiry → offer → billing → deposit → HIL → site visit)
+
+---
+
+### D4: Step2 Calendar Checks Extraction ✅
+
+**Summary:** Extracted 3 calendar check functions from step2_handler.py into dedicated module.
+
+**New File:**
+- `backend/workflows/steps/step2_date_confirmation/trigger/calendar_checks.py` (125 lines)
+
+**Extracted Functions (3 total):**
+- `candidate_is_calendar_free` - Check room availability on date/time
+- `future_fridays_in_may_june` - Find Fridays in late spring period
+- `maybe_fuzzy_friday_candidates` - Fuzzy "late spring Friday" matching
+
+**Line Count Changes:**
+- `step2_handler.py`: 3487 → 3453 lines (-34 lines)
+- New `calendar_checks.py`: 125 lines
+- Cumulative D1-D4: 3726 → 3453 (-273 lines, 7.3% reduction)
+
+**Verification:**
+- All 146 core tests pass
+- E2E test passed (billing → deposit → HIL → site visit)
+
+---
+
+### D3: Step2 Proposal Tracking Extraction ✅
+
+**Summary:** Extracted 5 proposal tracking functions from step2_handler.py into dedicated module.
+
+**New File:**
+- `backend/workflows/steps/step2_date_confirmation/trigger/proposal_tracking.py` (122 lines)
+
+**Extracted Functions (5 total):**
+- Attempt counter: `increment_date_attempt`, `reset_date_attempts`
+- History tracking: `collect_proposal_history`, `update_proposal_history`, `proposal_skip_dates`
+
+**Line Count Changes:**
+- `step2_handler.py`: 3530 → 3487 lines (-43 lines)
+- New `proposal_tracking.py`: 122 lines
+- Cumulative D1+D2+D3: 3726 → 3487 (-239 lines, 6.4% reduction)
+
+**Verification:**
+- All 146 core tests pass
+
+---
+
+### D2: Step2 Date Parsing Extraction ✅
+
+**Summary:** Extracted 11 pure date parsing functions from step2_handler.py into dedicated module.
+
+**New File:**
+- `backend/workflows/steps/step2_date_confirmation/trigger/date_parsing.py` (242 lines)
+
+**Extracted Functions (11 total, all pure/no side effects):**
+- ISO parsing: `safe_parse_iso_date`, `iso_date_is_past`, `normalize_iso_candidate`, `next_matching_date`
+- Display formatting: `format_display_dates`, `human_join`
+- Weekday parsing: `clean_weekdays_hint`, `parse_weekday_mentions`, `weekday_indices_from_hint`
+- Normalization: `normalize_month_token`, `normalize_weekday_tokens`
+
+**Line Count Changes:**
+- `step2_handler.py`: 3621 → 3530 lines (-91 lines)
+- New `date_parsing.py`: 242 lines
+- Cumulative D1+D2: 3726 → 3530 (-196 lines, 5.3% reduction)
+
+**Compat Constraint Preserved:**
+- Uses private alias imports: `safe_parse_iso_date as _safe_parse_iso_date`
+- All dependent functions in step2_handler.py continue to work via aliases
+
+**Verification:**
+- All 146 core tests pass
+- Import chain verified
+
+---
+
+### D1: Step2 Constants & Types Extraction ✅
+
+**Summary:** Extracted constants and types from step2_handler.py (largest handler at 3726 lines) into dedicated modules.
+
+**New Files:**
+- `backend/workflows/steps/step2_date_confirmation/trigger/constants.py` (156 lines)
+- `backend/workflows/steps/step2_date_confirmation/trigger/types.py` (48 lines)
+
+**Extracted Constants:**
+- `MONTH_NAME_TO_INDEX`, `WEEKDAY_NAME_TO_INDEX`, `WEEKDAY_LABELS` - Date parsing mappings
+- `PLACEHOLDER_NAMES`, `AFFIRMATIVE_TOKENS`, `CONFIRMATION_KEYWORDS` - NLU token sets
+- `SIGNATURE_MARKERS` - Email signature detection
+- `TIME_HINT_DEFAULTS` - Vague time hint resolution
+
+**Extracted Types:**
+- `ConfirmationWindow` dataclass - Resolved confirmation payload
+- `WindowHints` type alias - Tuple for (date_hint, time_hint, room_hint)
+
+**Line Count Changes:**
+- `step2_handler.py`: 3726 → 3621 lines (-105 lines)
+- New `constants.py`: 156 lines
+- New `types.py`: 48 lines
+
+**Compat Constraint Preserved:**
+- `ConfirmationWindow` still exported via `process.py` for smart_shortcuts dynamic imports
+- Uses private alias imports: `MONTH_NAME_TO_INDEX as _MONTH_NAME_TO_INDEX`
+
+**Verification:**
+- All 146 core tests pass
+- Import chain verified: `process.py` → `step2_handler.py` → `types.py`
+
+---
+
+### O1: Step4 Product Ops Extraction ✅
+
+**Summary:** Extracted product operations functions from step4_handler.py into dedicated module.
+
+**New File:**
+- `backend/workflows/steps/step4_offer/trigger/product_ops.py` (465 lines)
+
+**Extracted Functions (17 total):**
+- Core operations: `apply_product_operations`, `autofill_products_from_preferences`
+- State checks: `products_ready`, `ensure_products_container`, `has_offer_update`
+- Participant count: `infer_participant_count`
+- Room utilities: `room_alias_map` (LRU cached), `room_aliases`, `product_unavailable_in_room`
+- Normalization: `normalise_products`, `normalise_product_names`, `normalise_product_fields`, `upsert_product`
+- Menu: `menu_name_set`
+- Line building: `build_product_line_from_record`, `summarize_product_line`, `build_alternative_suggestions`
+
+**Line Count Changes:**
+- `step4_handler.py`: 2108 → 1782 lines (-326 lines)
+- New `product_ops.py`: 465 lines
+
+**Key Constraint Preserved:**
+- `_apply_product_operations` still exported via `process.py` for test compatibility
+- Uses private alias imports: `apply_product_operations as _apply_product_operations`
+
+**Verification:**
+- All 146 core tests pass
+- Import chain verified: `process.py` → `step4_handler.py` → `product_ops.py`
+
+---
+
 ### O2: Step4 Billing Gate Consolidation ✅
 
 **Summary:** Consolidated Step4 and Step5 billing gate functions into shared module.

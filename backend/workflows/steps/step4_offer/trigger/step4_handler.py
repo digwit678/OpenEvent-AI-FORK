@@ -17,6 +17,26 @@ from backend.workflows.common.billing_gate import (
     flag_billing_accept_pending as _flag_billing_accept_pending,
     billing_prompt_draft as _billing_prompt_draft,
 )
+# Product operations helpers (O1 refactoring)
+from .product_ops import (
+    apply_product_operations as _apply_product_operations,
+    autofill_products_from_preferences as _autofill_products_from_preferences,
+    products_ready as _products_ready,
+    ensure_products_container as _ensure_products_container,
+    has_offer_update as _has_offer_update,
+    infer_participant_count as _infer_participant_count,
+    room_alias_map as _room_alias_map,
+    room_aliases as _room_aliases,
+    product_unavailable_in_room as _product_unavailable_in_room,
+    normalise_products as _normalise_products,
+    normalise_product_names as _normalise_product_names,
+    normalise_product_fields as _normalise_product_fields,
+    upsert_product as _upsert_product,
+    menu_name_set as _menu_name_set,
+    build_product_line_from_record as _build_product_line_from_record,
+    summarize_product_line as _summarize_product_line,
+    build_alternative_suggestions as _build_alternative_suggestions,
+)
 from backend.workflows.common.confirmation_gate import (
     auto_continue_if_ready,
     get_next_prompt,
@@ -25,7 +45,11 @@ from backend.workflows.common.types import GroupResult, WorkflowState
 # MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
 from backend.detection.intent.confidence import check_nonsense_gate
 from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
+from backend.workflows.common.general_qna import (
+    append_general_qna_to_primary,
+    present_general_room_qna,
+    _fallback_structured_body,
+)
 from backend.workflows.change_propagation import (
     detect_change_type,
     detect_change_type_enhanced,
@@ -839,362 +863,13 @@ def _has_capacity(event_entry: Dict[str, Any]) -> bool:
         return False
 
 
-def _products_ready(event_entry: Dict[str, Any]) -> bool:
-    products = event_entry.get("products") or []
-    selected = event_entry.get("selected_products") or []
-    products_state = event_entry.get("products_state") or {}
-    line_items = products_state.get("line_items") or []
-    skip_flag = bool(products_state.get("skip_products") or event_entry.get("products_skipped"))
-    return bool(products or selected or line_items or skip_flag)
-
-
-def _ensure_products_container(event_entry: Dict[str, Any]) -> None:
-    if "products" not in event_entry or not isinstance(event_entry["products"], list):
-        event_entry["products"] = []
-
-
-def _has_offer_update(user_info: Dict[str, Any]) -> bool:
-    update_keys = (
-        "products_add",
-        "products_remove",
-        "products_skip",
-        "skip_products",
-        "products_none",
-        "offer_total_override",
-        "room_rate",
-        "offer_id",
-    )
-    return any(bool(user_info.get(key)) for key in update_keys)
-
-
-def _autofill_products_from_preferences(
-    event_entry: Dict[str, Any],
-    user_info: Dict[str, Any],
-    *,
-    min_score: float = 0.5,
-) -> bool:
-    products_state = event_entry.setdefault("products_state", {})
-    if products_state.get("autofill_applied"):
-        return False
-
-    # Prevent autofill if products were already manually selected or modified.
-    if _has_offer_update(user_info):
-        return False
-
-    existing_products = event_entry.get("products") or []
-    if existing_products:
-        products_state["autofill_applied"] = True
-        return False
-
-    preferences = {}
-    event_prefs = event_entry.get("preferences")
-    if isinstance(event_prefs, dict):
-        preferences = dict(event_prefs)
-    elif isinstance(user_info.get("preferences"), dict):
-        preferences = dict(user_info["preferences"])
-    if not preferences:
-        return False
-
-    selected_room = event_entry.get("locked_room_id")
-    if not selected_room:
-        pending = event_entry.get("room_pending_decision") or {}
-        selected_room = pending.get("selected_room")
-    if not selected_room:
-        return False
-
-    breakdown_map = preferences.get("room_match_breakdown") or {}
-    breakdown = breakdown_map.get(selected_room)
-    if not isinstance(breakdown, dict):
-        return False
-
-    matches_detail = breakdown.get("matches_detail") or []
-    matched_names = breakdown.get("matched") or []
-    if not matches_detail and matched_names:
-        matches_detail = [{"product": name, "wish": None, "score": 1.0} for name in matched_names if name]
-
-    if not matches_detail:
-        return False
-
-    participants = _infer_participant_count(event_entry)
-    match_threshold = max(0.65, min_score)
-    additions: List[Dict[str, Any]] = []
-    summary_entries: List[Dict[str, Any]] = []
-    included_lower: Set[str] = set()
-
-    for entry in matches_detail:
-        product_name = entry.get("product")
-        if not product_name:
-            continue
-        score = float(entry.get("score") or 0.0)
-        if score < match_threshold:
-            continue
-        record = find_product(product_name)
-        if not record or _product_unavailable_in_room(record, selected_room):
-            continue
-        product_key = record.name.strip().lower()
-        if product_key in included_lower:
-            continue
-        item = _build_product_line_from_record(record, participants)
-        additions.append(item)
-        summary_entries.append(_summarize_product_line(record, entry.get("wish"), score, item))
-        included_lower.add(product_key)
-
-    if not additions:
-        # No confident matches; keep prompt logic in place.
-        return False
-
-    for item in additions:
-        _upsert_product(event_entry["products"], item)
-
-    alternatives_payload = _build_alternative_suggestions(
-        breakdown.get("alternatives") or [],
-        included_lower,
-        selected_room,
-        min_score=min_score,
-    )
-
-    products_state["autofill_summary"] = {
-        "matched": summary_entries,
-        "alternatives": alternatives_payload["products"],
-        "catering_alternatives": alternatives_payload["catering"],
-    }
-    products_state["autofill_applied"] = True
-    return True
-
-
-def _apply_product_operations(event_entry: Dict[str, Any], user_info: Dict[str, Any]) -> bool:
-    participant_count = _infer_participant_count(event_entry)
-    additions = _normalise_products(
-        user_info.get("products_add"),
-        participant_count=participant_count,
-    )
-    removals = _normalise_product_names(user_info.get("products_remove"))
-    changes = False
-
-    if additions:
-        for item in additions:
-            _upsert_product(event_entry["products"], item)
-        changes = True
-
-    if removals:
-        event_entry["products"] = [item for item in event_entry["products"] if item["name"].lower() not in removals]
-        changes = True
-
-    skip_flag = any(bool(user_info.get(key)) for key in ("products_skip", "skip_products", "products_none"))
-    if skip_flag:
-        products_state = event_entry.setdefault("products_state", {})
-        products_state["skip_products"] = True
-        changes = True
-
-    if changes:
-        products_state = event_entry.setdefault("products_state", {})
-        products_state.pop("awaiting_client_products", None)
-        summary = products_state.get("autofill_summary")
-        if summary is not None:
-            # Clear matched entries so the offer summary reflects the explicit product list.
-            summary["matched"] = []
-
-    return changes
-
-
-def _normalise_products(payload: Any, *, participant_count: Optional[int] = None) -> List[Dict[str, Any]]:
-    return normalise_product_payload(payload, participant_count=participant_count)
-
-
-def _normalise_product_names(payload: Any) -> List[str]:
-    if not payload:
-        return []
-    items = payload if isinstance(payload, list) else [payload]
-    names: List[str] = []
-    for raw in items:
-        if isinstance(raw, dict):
-            name = raw.get("name")
-        else:
-            name = raw
-        text = str(name or "").strip()
-        if text:
-            names.append(text.lower())
-    return names
-
-
-def _upsert_product(products: List[Dict[str, Any]], item: Dict[str, Any]) -> None:
-    """Add or update product in the products list. For existing products, increments quantity."""
-    for existing in products:
-        if existing["name"].lower() == item["name"].lower():
-            # Increment quantity instead of replacing it
-            existing["quantity"] = existing.get("quantity", 0) + item.get("quantity", 1)
-            existing["unit_price"] = item["unit_price"]
-            return
-    products.append(item)
-
-
-def _build_product_line_from_record(record: Any, participants: Optional[int]) -> Dict[str, Any]:
-    quantity = 1
-    if record.unit == "per_person" and participants:
-        quantity = max(1, int(participants))
-    item: Dict[str, Any] = {
-        "name": record.name,
-        "quantity": quantity,
-        "unit_price": float(record.base_price or 0.0),
-    }
-    if getattr(record, "product_id", None):
-        item["product_id"] = record.product_id
-    if getattr(record, "unit", None):
-        item["unit"] = record.unit
-    if getattr(record, "category", None):
-        item["category"] = record.category
-    return item
-
-
-def _summarize_product_line(
-    record: Any,
-    wish: Optional[str],
-    score: float,
-    item: Dict[str, Any],
-) -> Dict[str, Any]:
-    unit_price = float(item.get("unit_price") or 0.0)
-    quantity = int(item.get("quantity") or 1)
-    total = unit_price * quantity
-    return {
-        "name": record.name,
-        "category": record.category or "General",
-        "unit": record.unit,
-        "wish": wish,
-        "match_pct": int(round(score * 100)),
-        "unit_price": unit_price,
-        "quantity": quantity,
-        "total": round(total, 2),
-    }
-
-
-def _build_alternative_suggestions(
-    raw_alternatives: List[Dict[str, Any]],
-    included_lower: Set[str],
-    room_name: str,
-    *,
-    min_score: float,
-) -> Dict[str, List[Dict[str, Any]]]:
-    best_by_product: Dict[str, Dict[str, Any]] = {}
-    for entry in raw_alternatives:
-        product_name = entry.get("product")
-        if not product_name:
-            continue
-        score = float(entry.get("score") or 0.0)
-        if score < min_score:
-            continue
-        record = find_product(product_name)
-        if not record or _product_unavailable_in_room(record, room_name):
-            continue
-        key = record.name.strip().lower()
-        if key in included_lower:
-            continue
-        stored = best_by_product.get(key)
-        if stored and stored["score"] >= score:
-            continue
-        best_by_product[key] = {
-            "name": record.name,
-            "category": record.category or "General",
-            "unit": record.unit,
-            "unit_price": float(record.base_price or 0.0),
-            "score": score,
-            "wish": entry.get("wish"),
-        }
-
-    product_alternatives: List[Dict[str, Any]] = []
-    catering_alternatives: List[Dict[str, Any]] = []
-    for payload in sorted(best_by_product.values(), key=lambda item: item["score"], reverse=True):
-        formatted = {
-            "name": payload["name"],
-            "category": payload["category"],
-            "unit": payload["unit"],
-            "unit_price": payload["unit_price"],
-            "match_pct": int(round(payload["score"] * 100)),
-            "wish": payload.get("wish"),
-        }
-        category_lower = (payload["category"] or "").strip().lower()
-        if category_lower in {"catering", "beverages"}:
-            catering_alternatives.append(formatted)
-        else:
-            product_alternatives.append(formatted)
-
-    return {"products": product_alternatives, "catering": catering_alternatives}
-
-
-def _infer_participant_count(event_entry: Dict[str, Any]) -> Optional[int]:
-    requirements = event_entry.get("requirements") or {}
-    participants = requirements.get("number_of_participants")
-    if participants is None:
-        participants = (event_entry.get("event_data") or {}).get("Number of Participants")
-    if participants is None:
-        participants = (event_entry.get("captured") or {}).get("participants")
-    try:
-        return int(str(participants).strip())
-    except (TypeError, ValueError, AttributeError):
-        return None
-
-
-def _product_unavailable_in_room(record: Any, room_name: str) -> bool:
-    aliases = _room_aliases(room_name)
-    record_unavailable = {str(entry).strip().lower() for entry in getattr(record, "unavailable_in", [])}
-    return any(alias in record_unavailable for alias in aliases)
-
-
-@lru_cache(maxsize=1)
-def _room_alias_map() -> Dict[str, Set[str]]:
-    mapping: Dict[str, Set[str]] = {}
-    for record in load_room_catalog():
-        identifiers = {
-            record.name.strip().lower(),
-            (record.room_id or record.name).strip().lower(),
-        }
-        mapping[record.name] = identifiers
-    return mapping
-
-
-def _room_aliases(room_name: str) -> Set[str]:
-    lowered = (room_name or "").strip().lower()
-    aliases: Set[str] = {lowered}
-    for identifiers in _room_alias_map().values():
-        if lowered in identifiers:
-            aliases |= identifiers
-            break
-    return aliases
-
-
-def _menu_name_set() -> Set[str]:
-    return {
-        str(entry.get("menu_name") or "").strip().lower()
-        for entry in DINNER_MENU_OPTIONS
-        if entry.get("menu_name")
-    }
-
-
-def _normalise_product_fields(product: Dict[str, Any], *, menu_names: Optional[Set[str]] = None) -> Dict[str, Any]:
-    """Normalize product quantity/unit for pricing and display."""
-
-    menu_names = menu_names or _menu_name_set()
-    normalised = dict(product)
-    name = str(normalised.get("name") or "").strip()
-    unit = normalised.get("unit")
-    if not unit and name.lower() in menu_names:
-        unit = "per_event"
-    try:
-        quantity = float(normalised.get("quantity") or 1)
-    except (TypeError, ValueError):
-        quantity = 1
-    try:
-        unit_price = float(normalised.get("unit_price") or 0.0)
-    except (TypeError, ValueError):
-        unit_price = 0.0
-
-    if unit == "per_event":
-        quantity = 1
-
-    normalised["name"] = name or "Unnamed item"
-    normalised["unit"] = unit
-    normalised["quantity"] = quantity
-    normalised["unit_price"] = unit_price
-    return normalised
+# NOTE: Product operations functions moved to product_ops.py (O1 refactoring):
+# _products_ready, _ensure_products_container, _has_offer_update,
+# _autofill_products_from_preferences, _apply_product_operations, _normalise_products,
+# _normalise_product_names, _upsert_product, _build_product_line_from_record,
+# _summarize_product_line, _build_alternative_suggestions, _infer_participant_count,
+# _product_unavailable_in_room, _room_alias_map, _room_aliases, _menu_name_set,
+# _normalise_product_fields
 
 
 def _rebuild_pricing_inputs(event_entry: Dict[str, Any], user_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -1234,6 +909,9 @@ def _rebuild_pricing_inputs(event_entry: Dict[str, Any], user_info: Dict[str, An
             pricing_inputs.pop("total_amount", None)
     event_entry["pricing_inputs"] = pricing_inputs
     return pricing_inputs
+
+
+# Old product ops functions removed in O1 refactoring - now imported from product_ops.py
 
 
 def _record_offer(
@@ -1927,169 +1605,11 @@ def _present_general_room_qna(
     classification: Dict[str, Any],
     thread_id: Optional[str],
 ) -> GroupResult:
-    """Handle general Q&A at Step 4 using the same pattern as Step 2."""
-    subloop_label = "general_q_a"
-    state.extras["subloop"] = subloop_label
-    resolved_thread_id = thread_id or state.thread_id
-
-    if thread_id:
-        set_subloop(thread_id, subloop_label)
-
-    # Extract fresh from current message (multi-turn Q&A fix)
-    message = state.message
-    subject = (message.subject if message else "") or ""
-    body = (message.body if message else "") or ""
-    message_text = f"{subject}\n{body}".strip() or body or subject
-
-    scan = state.extras.get("general_qna_scan")
-    # Force fresh extraction for multi-turn Q&A
-    ensure_qna_extraction(state, message_text, scan, force_refresh=True)
-    extraction = state.extras.get("qna_extraction")
-
-    # Clear stale qna_cache AFTER extraction
-    if isinstance(event_entry, dict):
-        event_entry.pop("qna_cache", None)
-
-    structured = build_structured_qna_result(state, extraction) if extraction else None
-
-    if structured and structured.handled:
-        rooms = structured.action_payload.get("db_summary", {}).get("rooms", [])
-        date_lookup: Dict[str, str] = {}
-        for entry in rooms:
-            iso_date = entry.get("date") or entry.get("iso_date")
-            if not iso_date:
-                continue
-            try:
-                parsed = datetime.fromisoformat(iso_date)
-            except ValueError:
-                try:
-                    parsed = datetime.strptime(iso_date, "%Y-%m-%d")
-                except ValueError:
-                    continue
-            label = parsed.strftime("%d.%m.%Y")
-            date_lookup.setdefault(label, parsed.date().isoformat())
-
-        candidate_dates = sorted(date_lookup.keys(), key=lambda label: date_lookup[label])[:5]
-        actions = [
-            {
-                "type": "select_date",
-                "label": f"Confirm {label}",
-                "date": label,
-                "iso_date": date_lookup[label],
-            }
-            for label in candidate_dates
-        ]
-
-        body_markdown = (structured.body_markdown or _fallback_structured_body(structured.action_payload)).strip()
-        footer_body = append_footer(
-            body_markdown,
-            step=4,
-            next_step=4,
-            thread_state="Awaiting Client",
-        )
-
-        draft_message = {
-            "body": footer_body,
-            "body_markdown": body_markdown,
-            "step": 4,
-            "next_step": 4,
-            "thread_state": "Awaiting Client",
-            "topic": "general_room_qna",
-            "candidate_dates": candidate_dates,
-            "actions": actions,
-            "subloop": subloop_label,
-            "headers": ["Availability overview"],
-        }
-
-        state.add_draft_message(draft_message)
-        update_event_metadata(
-            event_entry,
-            thread_state="Awaiting Client",
-            current_step=4,
-            candidate_dates=candidate_dates,
-        )
-        state.set_thread_state("Awaiting Client")
-        state.record_subloop(subloop_label)
-        state.intent_detail = "event_intake_with_question"
-        state.extras["persist"] = True
-
-        # Store minimal last_general_qna context for follow-up detection only
-        if extraction and isinstance(event_entry, dict):
-            q_values = extraction.get("q_values") or {}
-            event_entry["last_general_qna"] = {
-                "topic": structured.action_payload.get("qna_subtype"),
-                "date_pattern": q_values.get("date_pattern"),
-                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
-            }
-
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "candidate_dates": candidate_dates,
-            "draft_messages": state.draft_messages,
-            "thread_state": state.thread_state,
-            "context": state.context_snapshot,
-            "persisted": True,
-            "general_qna": True,
-            "structured_qna": structured.handled,
-            "qna_select_result": structured.action_payload,
-            "structured_qna_debug": structured.debug,
-            "actions": actions,
-        }
-        if extraction:
-            payload["qna_extraction"] = extraction
-        return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
-
-    # Fallback if structured Q&A failed
-    fallback_prompt = "[STRUCTURED_QNA_FALLBACK]\nI couldn't load the structured Q&A context for this request. Please review extraction logs."
-    draft_message = {
-        "step": 4,
-        "topic": "general_room_qna",
-        "body": f"{fallback_prompt}\n\n---\nStep: 4 Offer · Next: 4 Offer · State: Awaiting Client",
-        "body_markdown": fallback_prompt,
-        "next_step": 4,
-        "thread_state": "Awaiting Client",
-        "headers": ["Availability overview"],
-        "requires_approval": False,
-        "subloop": subloop_label,
-        "actions": [],
-        "candidate_dates": [],
-    }
-    state.add_draft_message(draft_message)
-    update_event_metadata(
-        event_entry,
-        thread_state="Awaiting Client",
-        current_step=4,
-        candidate_dates=[],
+    """Handle general Q&A at Step 4 - delegates to shared implementation."""
+    return present_general_room_qna(
+        state, event_entry, classification, thread_id,
+        step_number=4, step_name="Offer"
     )
-    state.set_thread_state("Awaiting Client")
-    state.record_subloop(subloop_label)
-    state.intent_detail = "event_intake_with_question"
-    state.extras["structured_qna_fallback"] = True
-    structured_payload = structured.action_payload if structured else {}
-    structured_debug = structured.debug if structured else {"reason": "missing_structured_context"}
-
-    payload = {
-        "client_id": state.client_id,
-        "event_id": event_entry.get("event_id"),
-        "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "candidate_dates": [],
-        "draft_messages": state.draft_messages,
-        "thread_state": state.thread_state,
-        "context": state.context_snapshot,
-        "persisted": True,
-        "general_qna": True,
-        "structured_qna": False,
-        "structured_qna_fallback": True,
-        "qna_select_result": structured_payload,
-        "structured_qna_debug": structured_debug,
-    }
-    if extraction:
-        payload["qna_extraction"] = extraction
-    return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
 
 
 def _append_deferred_general_qna(

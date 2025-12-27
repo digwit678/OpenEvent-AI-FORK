@@ -34,7 +34,6 @@ from backend.workflows.io.database import (
     default_event_record,
     find_event_idx_by_id,
     last_event_for_email,
-    load_rooms,
     tag_message,
     update_event_entry,
     update_event_metadata,
@@ -46,9 +45,8 @@ from ..condition.checks import is_event_request
 import re
 from ..llm.analysis import classify_intent, extract_user_information
 from backend.workflows.nlu.preferences import extract_preferences
-from backend.workflows.steps.step3_room_availability import handle_select_room_action
 from ..billing_flow import handle_billing_capture
-from backend.workflows.common.datetime_parse import parse_first_date, parse_time_range
+from backend.workflows.common.datetime_parse import parse_first_date
 from backend.services.products import list_product_records, merge_product_requests, normalise_product_payload
 from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
 
@@ -59,324 +57,55 @@ from .date_fallback import fallback_year_from_ts as _fallback_year_from_ts
 from .gate_confirmation import looks_like_offer_acceptance as _looks_like_offer_acceptance
 from .gate_confirmation import looks_like_billing_fragment as _looks_like_billing_fragment
 
+# I1 Phase 1: Intent helpers
+from .intent_helpers import (
+    needs_vague_date_confirmation as _needs_vague_date_confirmation,
+    initial_intent_detail as _initial_intent_detail,
+    has_same_turn_shortcut as _has_same_turn_shortcut,
+    resolve_owner_step as _resolve_owner_step,
+)
+
+# I1 Phase 1: Keyword matching
+from .keyword_matching import (
+    PRODUCT_ADD_KEYWORDS as _PRODUCT_ADD_KEYWORDS,
+    PRODUCT_REMOVE_KEYWORDS as _PRODUCT_REMOVE_KEYWORDS,
+    keyword_regex as _keyword_regex,
+    contains_keyword as _contains_keyword,
+    product_token_regex as _product_token_regex,
+    match_product_token as _match_product_token,
+    extract_quantity_from_window as _extract_quantity_from_window,
+    menu_token_candidates as _menu_token_candidates,
+)
+
+# I1 Phase 1: Confirmation parsing
+from .confirmation_parsing import (
+    DATE_TOKEN as _DATE_TOKEN,
+    MONTH_TOKENS as _MONTH_TOKENS,
+    AFFIRMATIVE_TOKENS as _AFFIRMATIVE_TOKENS,
+    extract_confirmation_details as _extract_confirmation_details,
+    looks_like_gate_confirmation as _looks_like_gate_confirmation,
+)
+
+# I1 Phase 2: Room detection
+from .room_detection import detect_room_choice as _detect_room_choice
+
+# I1 Phase 2: Product detection
+from .product_detection import (
+    menu_price_value as _menu_price_value,
+    detect_menu_choice as _detect_menu_choice,
+)
+
+# I1 Phase 2: Entity extraction
+from .entity_extraction import participants_from_event as _participants_from_event
+
 # Dev/test mode helper (I2 refactoring)
 from .dev_test_mode import maybe_show_dev_choice as _maybe_show_dev_choice
 
 __workflow_role__ = "trigger"
 
 
-def _needs_vague_date_confirmation(user_info: Dict[str, Any]) -> bool:
-    explicit_date = bool(user_info.get("event_date") or user_info.get("date"))
-    vague_tokens = any(
-        bool(user_info.get(key))
-        for key in ("range_query_detected", "vague_month", "vague_weekday", "vague_time_of_day")
-    )
-    return vague_tokens and not explicit_date
-
-
-def _initial_intent_detail(intent: IntentLabel) -> str:
-    if intent == IntentLabel.EVENT_REQUEST:
-        return "event_intake"
-    if intent == IntentLabel.NON_EVENT:
-        return "non_event"
-    return intent.value
-
-
-def _has_same_turn_shortcut(user_info: Dict[str, Any]) -> bool:
-    participants = user_info.get("participants") or user_info.get("number_of_participants")
-    date_value = user_info.get("date") or user_info.get("event_date")
-    return bool(participants and date_value)
-
-
-_DATE_TOKEN = re.compile(r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b")
-_MONTH_TOKENS = (
-    "january",
-    "february",
-    "march",
-    "april",
-    "may",
-    "june",
-    "july",
-    "august",
-    "september",
-    "october",
-    "november",
-    "december",
-)
-_AFFIRMATIVE_TOKENS = (
-    "ok",
-    "okay",
-    "great",
-    "sounds good",
-    "lets do",
-    "let's do",
-    "we'll take",
-    "lock",
-    "confirm",
-    "go with",
-    "works",
-    "take",
-)
-
-_PRODUCT_ADD_KEYWORDS = (
-    "add",
-    "include",
-    "plus",
-    "extra",
-    "another",
-    "additional",
-    "also add",
-    "bring",
-    "upgrade",
-)
-_PRODUCT_REMOVE_KEYWORDS = (
-    "remove",
-    "without",
-    "drop",
-    "exclude",
-    "skip",
-    "no ",
-    "minus",
-    "cut",
-)
-
-_KEYWORD_REGEX_CACHE: Dict[str, re.Pattern[str]] = {}
-_PRODUCT_TOKEN_REGEX_CACHE: Dict[str, re.Pattern[str]] = {}
-
-def _menu_price_value(raw: Any) -> Optional[float]:
-    if raw is None:
-        return None
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        text = str(raw).lower().replace("chf", "").replace(" ", "")
-        text = text.replace(",", "").strip()
-        try:
-            return float(text)
-        except (TypeError, ValueError):
-            return None
-
-
-def _detect_menu_choice(message_text: str) -> Optional[Dict[str, Any]]:
-    if not message_text:
-        return None
-    lowered = message_text.lower()
-    for menu in DINNER_MENU_OPTIONS:
-        name = str(menu.get("menu_name") or "")
-        if not name:
-            continue
-        if name.lower() in lowered:
-            price_value = _menu_price_value(menu.get("price"))
-            return {
-                "name": name,
-                "price": price_value,
-                "unit": "per_event",
-                "month": menu.get("available_months"),
-            }
-    return None
-
-def _extract_confirmation_details(text: str, fallback_year: int) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    parsed = parse_first_date(text, fallback_year=fallback_year)
-    iso_date = parsed.isoformat() if parsed else None
-    start, end, _ = parse_time_range(text)
-
-    def _fmt(value: Optional[time]) -> Optional[str]:
-        if not value:
-            return None
-        return f"{value.hour:02d}:{value.minute:02d}"
-
-    return iso_date, _fmt(start), _fmt(end)
-
-def _looks_like_gate_confirmation(message_text: str, linked_event: Optional[Dict[str, Any]]) -> bool:
-    if not linked_event:
-        return False
-    if linked_event.get("current_step") != 2:
-        return False
-    thread_state = (linked_event.get("thread_state") or "").lower()
-    if thread_state not in {"awaiting client", "awaiting client response", "waiting on hil"}:
-        return False
-
-    text = (message_text or "").strip()
-    if not text:
-        return False
-    lowered = text.lower()
-
-    has_date_token = bool(_DATE_TOKEN.search(lowered))
-    if not has_date_token:
-        # handle formats like "07 feb" or "7 february"
-        month_hit = any(token in lowered for token in _MONTH_TOKENS)
-        day_hit = any(str(day) in lowered for day in range(1, 32))
-        has_date_token = month_hit and day_hit
-
-    if not has_date_token:
-        return False
-
-    if any(token in lowered for token in _AFFIRMATIVE_TOKENS):
-        return True
-
-    # plain date replies like "07.02.2026" or "2026-02-07"
-    stripped_digits = lowered.replace(" ", "")
-    if stripped_digits.replace(".", "").replace("-", "").replace("/", "").isdigit():
-        return True
-
-    # short replies with date plus punctuation
-    if len(lowered.split()) <= 6 and has_date_token:
-        return True
-
-    return False
-
-
-def _detect_room_choice(message_text: str, linked_event: Optional[Dict[str, Any]]) -> Optional[str]:
-    if not message_text or not linked_event:
-        return None
-    try:
-        current_step = int(linked_event.get("current_step") or 0)
-    except (TypeError, ValueError):
-        current_step = 0
-    if current_step < 3:
-        return None
-
-    rooms = load_rooms()
-    if not rooms:
-        return None
-
-    text = message_text.strip()
-    if not text:
-        return None
-    lowered = text.lower()
-    condensed = _normalize_room_token(text)
-
-    # direct match against known room labels
-    for room in rooms:
-        room_lower = room.lower()
-        if room_lower in lowered:
-            return room
-        if _normalize_room_token(room) and _normalize_room_token(room) == condensed:
-            return room
-
-    # pattern like "room a" or "room-a"
-    match = re.search(r"\broom\s*([a-z0-9]+)\b", lowered)
-    if match:
-        token = match.group(1)
-        token_norm = _normalize_room_token(token)
-        for room in rooms:
-            room_tokens = room.split()
-            if room_tokens:
-                last_token = _normalize_room_token(room_tokens[-1])
-                if token_norm and token_norm == last_token:
-                    return room
-
-    # single token equals last token of room name (e.g., "A")
-    if len(lowered.split()) == 1:
-        token_norm = condensed
-        if token_norm:
-            for room in rooms:
-                last_token = _normalize_room_token(room.split()[-1])
-                if token_norm == last_token:
-                    return room
-
-    return None
-
-
-def _participants_from_event(event_entry: Optional[Dict[str, Any]]) -> Optional[int]:
-    if not event_entry:
-        return None
-    requirements = event_entry.get("requirements") or {}
-    candidates = [
-        requirements.get("number_of_participants"),
-        (event_entry.get("event_data") or {}).get("Number of Participants"),
-        (event_entry.get("captured") or {}).get("participants"),
-    ]
-    for value in candidates:
-        if value is None:
-            continue
-        try:
-            return int(str(value).strip())
-        except (TypeError, ValueError):
-            continue
-    return None
-
-
-def _keyword_regex(keyword: str) -> re.Pattern[str]:
-    cached = _KEYWORD_REGEX_CACHE.get(keyword)
-    if cached:
-        return cached
-    pattern = re.escape(keyword.strip())
-    pattern = pattern.replace(r"\ ", r"\s+")
-    regex = re.compile(rf"\b{pattern}\b")
-    _KEYWORD_REGEX_CACHE[keyword] = regex
-    return regex
-
-
-def _contains_keyword(window: str, keywords: Tuple[str, ...]) -> bool:
-    normalized = window.lower()
-    for keyword in keywords:
-        token = keyword.strip()
-        if not token:
-            continue
-        if _keyword_regex(token).search(normalized):
-            return True
-    return False
-
-
-def _product_token_regex(token: str) -> re.Pattern[str]:
-    cached = _PRODUCT_TOKEN_REGEX_CACHE.get(token)
-    if cached:
-        return cached
-    parts = re.split(r"[\s\-]+", token.strip())
-    escaped_parts = [re.escape(part) for part in parts if part]
-    if not escaped_parts:
-        pattern = re.escape(token.strip())
-    else:
-        pattern = r"[\s\-]+".join(escaped_parts)
-    regex = re.compile(rf"\b{pattern}\b")
-    _PRODUCT_TOKEN_REGEX_CACHE[token] = regex
-    return regex
-
-
-def _match_product_token(text: str, token: str) -> Optional[int]:
-    regex = _product_token_regex(token)
-    match = regex.search(text)
-    if match:
-        return match.start()
-    return None
-
-
-def _extract_quantity_from_window(window: str, token: str) -> Optional[int]:
-    escaped_token = re.escape(token.strip())
-    pattern = re.compile(
-        rf"(\d{{1,3}})\s*(?:x|times|pcs|pieces|units)?\s*(?:of\s+)?{escaped_token}s?",
-        re.IGNORECASE,
-    )
-    match = pattern.search(window)
-    if not match:
-        return None
-    try:
-        return int(match.group(1))
-    except (TypeError, ValueError):
-        return None
-
-
-def _menu_token_candidates(name: str) -> List[str]:
-    """Return token variants to match a dinner menu mention in free text."""
-
-    tokens: List[str] = []
-    lowered = name.strip().lower()
-    if not lowered:
-        return tokens
-    tokens.append(lowered)
-    if not lowered.endswith("s"):
-        tokens.append(f"{lowered}s")
-    parts = lowered.split()
-    if parts:
-        last = parts[-1]
-        if len(last) >= 3:
-            tokens.append(last)
-            if not last.endswith("s"):
-                tokens.append(f"{last}s")
-    return tokens
-
-
+# NOTE: _detect_product_update_request kept here as it has side effects (mutates user_info)
+# and DB dependencies - candidate for future refactoring to return tuple instead of mutating
 def _detect_product_update_request(
     message_payload: Dict[str, Any],
     user_info: Dict[str, Any],
@@ -530,19 +259,6 @@ def _detect_product_update_request(
         user_info["products_remove"] = combined_removals
 
     return bool(additions or removals or combined_additions or combined_removals or existing_ops)
-
-
-def _resolve_owner_step(step_num: int) -> str:
-    mapping = {
-        1: "Step1_Intake",
-        2: "Step2_Date",
-        3: "Step3_Room",
-        4: "Step4_Offer",
-        5: "Step5_Negotiation",
-        6: "Step6_Transition",
-        7: "Step7_Confirmation",
-    }
-    return mapping.get(step_num, f"Step{step_num}")
 
 
 @trace_step("Step1_Intake")

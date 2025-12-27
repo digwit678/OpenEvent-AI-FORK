@@ -86,76 +86,60 @@ from backend.workflow.state import WorkflowStep, default_subflow, write_stage
 
 from ..condition.decide import is_valid_ddmmyyyy
 
+# D1 refactoring: Types and constants extracted to dedicated modules
+from .types import ConfirmationWindow, WindowHints
+from .constants import (
+    MONTH_NAME_TO_INDEX as _MONTH_NAME_TO_INDEX,
+    WEEKDAY_NAME_TO_INDEX as _WEEKDAY_NAME_TO_INDEX,
+    WEEKDAY_LABELS as _WEEKDAY_LABELS,
+    PLACEHOLDER_NAMES as _PLACEHOLDER_NAMES,
+    AFFIRMATIVE_TOKENS,
+    CONFIRMATION_KEYWORDS,
+    SIGNATURE_MARKERS as _SIGNATURE_MARKERS,
+    TIME_HINT_DEFAULTS as _TIME_HINT_DEFAULTS,
+)
+
+# D2 refactoring: Date parsing utilities extracted to dedicated module
+from .date_parsing import (
+    safe_parse_iso_date as _safe_parse_iso_date,
+    iso_date_is_past as _iso_date_is_past,
+    normalize_iso_candidate as _normalize_iso_candidate,
+    next_matching_date as _next_matching_date,
+    format_display_dates as _format_display_dates,
+    human_join as _human_join,
+    clean_weekdays_hint as _clean_weekdays_hint,
+    parse_weekday_mentions as _parse_weekday_mentions,
+    weekday_indices_from_hint as _weekday_indices_from_hint,
+    normalize_month_token as _normalize_month_token,
+    normalize_weekday_tokens as _normalize_weekday_tokens,
+)
+
+# D3 refactoring: Proposal tracking utilities extracted to dedicated module
+from .proposal_tracking import (
+    increment_date_attempt as _increment_date_attempt,
+    reset_date_attempts as _reset_date_attempts,
+    collect_proposal_history as _collect_proposal_history,
+    proposal_skip_dates as _proposal_skip_dates,
+    update_proposal_history as _update_proposal_history,
+)
+
+# D4 refactoring: Calendar check utilities extracted to dedicated module
+from .calendar_checks import (
+    candidate_is_calendar_free as _candidate_is_calendar_free,
+    future_fridays_in_may_june as _future_fridays_in_may_june,
+    maybe_fuzzy_friday_candidates as _maybe_fuzzy_friday_candidates,
+)
+
 __workflow_role__ = "trigger"
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ConfirmationWindow:
-    """Resolved confirmation payload for the requested event window."""
+# D1: ConfirmationWindow, WindowHints, constants moved to types.py/constants.py
+# D2: Date parsing functions moved to date_parsing.py
+# D3: Proposal tracking functions moved to proposal_tracking.py
+# D4: Calendar check functions moved to calendar_checks.py
 
-    display_date: str
-    iso_date: str
-    start_time: Optional[str]
-    end_time: Optional[str]
-    start_iso: Optional[str]
-    end_iso: Optional[str]
-    inherited_times: bool
-    partial: bool
-    source_message_id: Optional[str]
-
-
-WindowHints = Tuple[Optional[str], Optional[Any], Optional[str]]
-
-_MONTH_NAME_TO_INDEX = {
-    "jan": 1,
-    "january": 1,
-    "feb": 2,
-    "february": 2,
-    "mar": 3,
-    "march": 3,
-    "apr": 4,
-    "april": 4,
-    "may": 5,
-    "jun": 6,
-    "june": 6,
-    "jul": 7,
-    "july": 7,
-    "aug": 8,
-    "august": 8,
-    "sep": 9,
-    "sept": 9,
-    "september": 9,
-    "oct": 10,
-    "october": 10,
-    "nov": 11,
-    "november": 11,
-    "dec": 12,
-    "december": 12,
-}
-
-_WEEKDAY_NAME_TO_INDEX = {
-    "monday": 0,
-    "mon": 0,
-    "tuesday": 1,
-    "tue": 1,
-    "tues": 1,
-    "wednesday": 2,
-    "wed": 2,
-    "thursday": 3,
-    "thu": 3,
-    "thur": 3,
-    "thurs": 3,
-    "friday": 4,
-    "fri": 4,
-    "saturday": 5,
-    "sat": 5,
-    "sunday": 6,
-    "sun": 6,
-}
-
-_PLACEHOLDER_NAMES = {"not", "na", "n/a", "unspecified", "unknown", "client"}
 
 def _thread_id(state: WorkflowState) -> str:
     if state.thread_id:
@@ -168,37 +152,7 @@ def _thread_id(state: WorkflowState) -> str:
     return "unknown-thread"
 
 
-AFFIRMATIVE_TOKENS = {
-    "yes",
-    "yep",
-    "sure",
-    "sounds good",
-    "that works",
-    "works for me",
-    "confirm",
-    "confirmed",
-    "let's do it",
-    "go ahead",
-    "we agree",
-    "all good",
-    "perfect",
-}
-
-CONFIRMATION_KEYWORDS = {
-    "we'll go with",
-    "we will go with",
-    "we'll take",
-    "we will take",
-    "we confirm",
-    "please confirm",
-    "lock in",
-    "book it",
-    "reserve it",
-    "confirm the date",
-    "confirming",
-    "take the",
-    "take ",
-}
+# AFFIRMATIVE_TOKENS, CONFIRMATION_KEYWORDS, _SIGNATURE_MARKERS moved to constants.py (D1 refactoring)
 
 
 def _extract_first_name(raw: Optional[str]) -> Optional[str]:
@@ -212,19 +166,6 @@ def _extract_first_name(raw: Optional[str]) -> Optional[str]:
     if lowered in _PLACEHOLDER_NAMES:
         return None
     return token or None
-
-
-_SIGNATURE_MARKERS = (
-    "best regards",
-    "kind regards",
-    "regards",
-    "many thanks",
-    "thanks",
-    "thank you",
-    "cheers",
-    "beste grüsse",
-    "freundliche grüsse",
-)
 
 
 def _extract_signature_name(text: Optional[str]) -> Optional[str]:
@@ -322,22 +263,7 @@ def _client_requested_dates(state: WorkflowState) -> List[str]:
     return iso_values
 
 
-def _format_display_dates(iso_dates: Sequence[str]) -> List[str]:
-    labels: List[str] = []
-    for iso_value in iso_dates:
-        labels.append(format_iso_date_to_ddmmyyyy(iso_value) or iso_value)
-    return labels
-
-
-def _human_join(values: Sequence[str]) -> str:
-    values = [value for value in values if value]
-    if not values:
-        return ""
-    if len(values) == 1:
-        return values[0]
-    if len(values) == 2:
-        return f"{values[0]} and {values[1]}"
-    return ", ".join(values[:-1]) + f", and {values[-1]}"
+# _format_display_dates, _human_join moved to date_parsing.py (D2 refactoring)
 
 
 def _preface_with_apology(text: Optional[str]) -> Optional[str]:
@@ -356,18 +282,7 @@ def _preface_with_apology(text: Optional[str]) -> Optional[str]:
     return f"Sorry, {softened}"
 
 
-def _clean_weekdays_hint(raw: Any) -> List[int]:
-    cleaned: List[int] = []
-    if not isinstance(raw, (list, tuple, set)):
-        return cleaned
-    for value in raw:
-        try:
-            hint_int = int(value)
-        except (TypeError, ValueError):
-            continue
-        if 1 <= hint_int <= 7:
-            cleaned.append(hint_int)
-    return cleaned
+# _clean_weekdays_hint moved to date_parsing.py (D2 refactoring)
 
 
 def _clear_invalid_weekdays_hint(event_entry: Dict[str, Any]) -> None:
@@ -551,106 +466,10 @@ def _maybe_append_general_qna(
     return result
 
 
-def _parse_weekday_mentions(text: str) -> set[int]:
-    result: set[int] = set()
-    if not text:
-        return result
-    lowered = text.lower()
-    for token, index in _WEEKDAY_NAME_TO_INDEX.items():
-        if token in lowered:
-            result.add(index)
-    return result
-
-
-def _weekday_indices_from_hint(hint: Any) -> set[int]:
-    result: set[int] = set()
-    if hint is None:
-        return result
-    if isinstance(hint, (list, tuple, set)):
-        for item in hint:
-            result.update(_weekday_indices_from_hint(item))
-        return result
-    token = str(hint).strip().lower()
-    if not token:
-        return result
-    if token in _WEEKDAY_NAME_TO_INDEX:
-        result.add(_WEEKDAY_NAME_TO_INDEX[token])
-    return result
-
-
-def _increment_date_attempt(event_entry: dict) -> int:
-    """Increment and persist the count of date proposal attempts."""
-
-    try:
-        current = int(event_entry.get("date_proposal_attempts") or 0)
-    except (TypeError, ValueError):
-        current = 0
-    updated = current + 1
-    event_entry["date_proposal_attempts"] = updated
-    update_event_metadata(event_entry, date_proposal_attempts=updated)
-    return updated
-
-
-def _collect_proposal_history(event_entry: dict) -> List[str]:
-    history = event_entry.get("date_proposal_history")
-    if isinstance(history, list):
-        return [str(entry) for entry in history if entry]
-    return []
-
-
-def _proposal_skip_dates(
-    event_entry: dict,
-    attempt: int,
-    extra: Optional[Sequence[str]] = None,
-) -> set[str]:
-    skip: set[str] = set()
-    if extra:
-        skip.update(str(value) for value in extra if value)
-    if attempt > 1:
-        skip.update(_collect_proposal_history(event_entry))
-    return skip
-
-
-def _update_proposal_history(event_entry: dict, iso_dates: Sequence[str]) -> List[str]:
-    history = _collect_proposal_history(event_entry)
-    for iso_value in iso_dates:
-        if iso_value and iso_value not in history:
-            history.append(iso_value)
-    event_entry["date_proposal_history"] = history
-    update_event_metadata(event_entry, date_proposal_history=list(history))
-    return history
-
-
-def _reset_date_attempts(event_entry: dict) -> None:
-    """Clear attempt counters after a successful confirmation."""
-
-    event_entry["date_proposal_attempts"] = 0
-    event_entry.pop("date_proposal_history", None)
-    update_event_metadata(
-        event_entry,
-        date_proposal_attempts=0,
-        date_proposal_history=[],
-    )
-
-
-def _candidate_is_calendar_free(
-    preferred_room: Optional[str],
-    iso_date: str,
-    start_time: Optional[time],
-    end_time: Optional[time],
-) -> bool:
-    if not preferred_room:
-        return True
-    normalized = preferred_room.strip().lower()
-    if not normalized or normalized == "not specified":
-        return True
-    if not (start_time and end_time):
-        return True
-    try:
-        start_iso, end_iso = build_window_iso(iso_date, start_time, end_time)
-    except ValueError:
-        return True
-    return calendar_free(preferred_room, {"start": start_iso, "end": end_iso})
+# _parse_weekday_mentions, _weekday_indices_from_hint moved to date_parsing.py (D2 refactoring)
+# _increment_date_attempt, _collect_proposal_history, _proposal_skip_dates,
+# _update_proposal_history, _reset_date_attempts moved to proposal_tracking.py (D3 refactoring)
+# _candidate_is_calendar_free moved to calendar_checks.py (D4 refactoring)
 
 
 def _calendar_conflict_reason(event_entry: dict, window: ConfirmationWindow) -> Optional[str]:
@@ -715,41 +534,8 @@ def _with_greeting(state: WorkflowState, body: str) -> str:
     return f"{greeting}\n\n{body}"
 
 
-def _future_fridays_in_may_june(anchor: date, count: int = 4) -> List[str]:
-    results: List[str] = []
-    year = anchor.year
-    while len(results) < count:
-        window_start = date(year, 5, 1)
-        window_end = date(year, 6, 30)
-        cursor = max(anchor, window_start)
-        while cursor <= window_end and len(results) < count:
-            if cursor.weekday() == 4 and cursor >= anchor:
-                results.append(cursor.isoformat())
-            cursor += timedelta(days=1)
-        year += 1
-    return results[:count]
-
-
-def _maybe_fuzzy_friday_candidates(text: str, anchor: date) -> List[str]:
-    lowered = text.lower()
-    if "friday" not in lowered:
-        return []
-    if "late spring" in lowered or ("spring" in lowered and "late" in lowered):
-        return _future_fridays_in_may_june(anchor)
-    return []
-
-
-def _next_matching_date(original: date, reference: date) -> date:
-    candidate_year = max(reference.year, original.year)
-    while True:
-        try:
-            candidate = original.replace(year=candidate_year)
-        except ValueError:
-            clamped_day = min(original.day, 28)
-            candidate = date(candidate_year, original.month, clamped_day)
-        if candidate > reference:
-            return candidate
-        candidate_year += 1
+# _future_fridays_in_may_june, _maybe_fuzzy_friday_candidates moved to calendar_checks.py (D4 refactoring)
+# _next_matching_date moved to date_parsing.py (D2 refactoring)
 
 
 @trace_step("Step2_Date")
@@ -1775,18 +1561,7 @@ def _present_candidate_dates(
     return GroupResult(action="date_options_proposed", payload=payload, halt=True)
 
 
-def _iso_date_is_past(iso_value: str) -> bool:
-    try:
-        return datetime.fromisoformat(iso_value).date() < date.today()
-    except ValueError:
-        return True
-
-
-def _safe_parse_iso_date(iso_value: str) -> Optional[date]:
-    try:
-        return datetime.fromisoformat(iso_value).date()
-    except ValueError:
-        return None
+# _iso_date_is_past, _safe_parse_iso_date moved to date_parsing.py (D2 refactoring)
 
 
 def _window_payload(window: ConfirmationWindow) -> Dict[str, Any]:
@@ -2165,24 +1940,7 @@ def _existing_time_window(event_entry: dict, iso_date: str) -> Optional[Tuple[st
     return None
 
 
-def _normalize_iso_candidate(value: Any) -> Optional[str]:
-    if not value:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    normalized = text.replace("Z", "+00:00")
-    try:
-        return datetime.fromisoformat(normalized).date().isoformat()
-    except ValueError:
-        pass
-    iso_match = re.match(r"(\d{4}-\d{2}-\d{2})", text)
-    if iso_match:
-        return iso_match.group(1)
-    converted = to_iso_date(text)
-    if converted:
-        return converted
-    return None
+# _normalize_iso_candidate moved to date_parsing.py (D2 refactoring)
 
 
 def _candidate_iso_list(event_entry: dict) -> List[str]:
@@ -2854,15 +2612,7 @@ def _format_day_list(iso_dates: Sequence[str]) -> Tuple[str, Optional[int]]:
     return ", ".join(day_labels), year_value
 
 
-_WEEKDAY_LABELS = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-]
+# _WEEKDAY_LABELS moved to constants.py (D1 refactoring)
 
 
 def _weekday_label_from_dates(
@@ -3064,11 +2814,7 @@ def _maybe_general_qa_payload(state: WorkflowState) -> Optional[Dict[str, Any]]:
     return build_menu_payload(message_text, context_month=month_hint)
 
 
-_TIME_HINT_DEFAULTS = {
-    "morning": ("08:00", "12:00"),
-    "afternoon": ("12:00", "17:00"),
-    "evening": ("18:00", "22:00"),
-}
+# _TIME_HINT_DEFAULTS moved to constants.py (D1 refactoring)
 
 
 def _maybe_complete_from_time_hint(
@@ -3103,26 +2849,7 @@ def _maybe_complete_from_time_hint(
     )
 
 
-def _normalize_month_token(value: Optional[str]) -> Optional[int]:
-    if not value:
-        return None
-    token = str(value).strip().lower()
-    return _MONTH_NAME_TO_INDEX.get(token)
-
-
-def _normalize_weekday_tokens(value: Any) -> List[int]:
-    if value in (None, "", [], ()):
-        return []
-    if isinstance(value, (list, tuple, set)):
-        tokens = [str(item).strip().lower() for item in value if str(item).strip()]
-    else:
-        tokens = [str(value).strip().lower()]
-    indices: List[int] = []
-    for token in tokens:
-        idx = _WEEKDAY_NAME_TO_INDEX.get(token)
-        if idx is not None:
-            indices.append(idx)
-    return sorted(set(indices))
+# _normalize_month_token, _normalize_weekday_tokens moved to date_parsing.py (D2 refactoring)
 
 
 def _window_filters(window_hints: WindowHints) -> Tuple[Optional[int], List[int]]:

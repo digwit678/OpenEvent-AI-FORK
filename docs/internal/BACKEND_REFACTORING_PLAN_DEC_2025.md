@@ -4,11 +4,73 @@
 **Status:** Planning only (no code changes made as part of this plan)  
 **Related docs:** `docs/internal/BACKEND_CODE_REVIEW_DEC_2025.md`, `docs/internal/DONE__ARCHITECTURE_FINDINGS_DEC_2025.md`, `docs/internal/DONE__PENDING_REFACTORING_TASKS.md`
 
-This document translates the existing backend review findings into **junior-dev-executable refactoring steps**, with explicit **dependency/import guardrails** so we can refactor “god files” without breaking runtime or tests.
+This document translates the existing backend review findings into **junior-dev-executable refactoring steps**, with explicit **dependency/import guardrails** so we can refactor "god files" without breaking runtime or tests.
 
 ---
 
-## Scope (What We’re Planning)
+## Completed Refactoring ✅
+
+### Q&A Unification (Steps 3/4/5/7) — 2025-12-27
+
+**Summary:** Unified `_present_general_room_qna` across steps 3, 4, 5, 7 into a shared helper function.
+
+| Before | After | Reduction |
+|--------|-------|-----------|
+| 4 × ~171 lines (~684 total) | ~190 shared + 4 × 10-line wrappers | ~75% |
+
+**Changes:**
+- Added `present_general_room_qna(state, event_entry, classification, thread_id, step_number, step_name)` to `backend/workflows/common/general_qna.py`
+- Replaced implementations in step3/4/5/7 handlers with thin wrappers delegating to shared function
+- Step 2 left as-is (has ~354 lines with extra features: range availability, router Q&A)
+
+**Verification:** All 146 tests pass + E2E Playwright test (full flow through site visit)
+
+### I1: Step 1 Pure Helper Extraction — 2025-12-27
+
+**Summary:** Extracted ~260 lines of pure helpers from `step1_handler.py` into 6 focused modules.
+
+**New Modules:**
+- `intent_helpers.py` (4 functions)
+- `keyword_matching.py` (6 functions + constants)
+- `confirmation_parsing.py` (2 functions + constants)
+- `room_detection.py` (1 function)
+- `product_detection.py` (2 functions)
+- `entity_extraction.py` (1 function)
+
+**Verification:** All 146 tests pass + E2E Playwright test
+
+### F1+F2: Step 7 Site-Visit Extraction — 2025-12-27
+
+**Summary:** Extracted ~390 lines from `step7_handler.py` into 4 focused modules (43% reduction).
+
+**New Modules:**
+- `constants.py` (6 keyword tuples)
+- `helpers.py` (5 utility functions)
+- `classification.py` (message classification)
+- `site_visit.py` (9 site-visit functions)
+
+**Result:** `step7_handler.py`: 916 → 524 lines (-392 lines, 43% reduction)
+
+**Verification:** All 146 tests pass + imports verified
+
+---
+
+## Open Refactoring Tasks 🔄
+
+### Step 2 Complex Q&A Implementation
+
+Step 2's `_present_general_room_qna` (~354 lines) was **not** included in the Q&A unification because it has additional features:
+- Range availability checking
+- Router Q&A integration
+- More complex state handling
+
+**Future option:** Refactor Step 2 to call the shared `present_general_room_qna()` function + its extra logic on top. This would complete the Q&A consolidation.
+
+**Related:** D5 in PR Queue below (marked as analysis complete, but Step 2 extraction remains optional)
+
+---
+
+## Scope (What We're Planning)
 
 Primary targets (big/confusing public surfaces + highest blast radius):
 
@@ -1094,8 +1156,8 @@ Estimates are rough (single developer, with tests).
 | W1 | Make `workflow_email.py` explicit facade | `backend/workflow_email.py` | T0 | Medium | 1–2h |
 | W2 | Extract HIL task APIs (keep re-exports) | `backend/workflows/runtime/hil_tasks.py` + facade | W1 | Medium | 1–3h |
 | W3 | Extract router loop (keep `process_msg`) | `backend/workflows/runtime/router.py` + facade | W2 | High | 2–6h |
-| I1 | Extract Step1 pure helpers | step1 trigger submodules | T0 | Low | 1–3h |
-| I2 | Isolate dev/test mode flow | step1 dev helper + tests | I1 | Low | 1–2h |
+| I1 | ✅ Extract Step1 pure helpers | 6 modules extracted (2025-12-27) | - | - | DONE |
+| I2 | ✅ Isolate dev/test mode flow | `dev_test_mode.py` already exists | - | - | DONE |
 | D0 | Restore Step2 compat exports | Step2 trigger `process.py` shims | T0 | Medium | 0.5–2h |
 | D1 | Step2 constants/types extraction | Step2 trigger submodules | D0 | Medium | 2–4h |
 | D2 | Step2 parsing extraction + tests | parsing module + tests | D1 | Medium | 3–6h |
@@ -1104,7 +1166,7 @@ Estimates are rough (single developer, with tests).
 | D5 | Step2 Q&A bridge extraction | general_qna module + shims | D4 | Medium | 2–6h |
 | R0 | Fix Step3 Q&A request crash | step3_handler.py | T0 | Low | 0.25–1h |
 | R1 | Step3 constants/types extraction | Step3 trigger submodules | R0 | Medium | 2–4h |
-| R2 | Step3 Q&A bridge extraction | Step3 general_qna module + shims | R1 | Medium | 2–5h |
+| R2 | ✅ Step3 Q&A bridge extraction | Unified in `common/general_qna.py` (2025-12-27) | - | - | DONE |
 | R3 | Step3 selection action extraction | Step3 selection module + shims | R2 | Medium | 2–5h |
 | O0 | Step4 compat export `_apply_product_operations` | Step4 trigger/process shim | T0 | Low | 0.25–1h |
 | O1 | Step4 product ops extraction | Step4 product_ops module + shims | O0 | Medium | 2–6h |
@@ -1121,7 +1183,7 @@ Estimates are rough (single developer, with tests).
 | B0 | Import boundary enforcement test | tests/gatekeeping/* | T0 | Medium | 2–6h |
 | F1 | Step7 constants/classification extraction | step7 trigger submodules | T0 | Medium | 2–5h |
 | F2 | Step7 site-visit extraction | step7 site_visit module | F1 | High | 4–10h |
-| F3 | Step7 Q&A bridge extraction | step7 general_qna module | F2 | Medium | 2–6h |
+| F3 | ✅ Step7 Q&A bridge extraction | Unified in `common/general_qna.py` (2025-12-27) | - | - | DONE |
 | P1 | Introduce pre-route pipeline module | runtime/pre_route.py + router | W3 | High | 4–10h |
 | P2 | Make guards pure (no metadata writes) | workflow/guards.py + router | P1 | High | 3–8h |
 | DB1 | Remove step-level force-save patterns | Step5 (and any others) | P1 | Medium | 2–6h |
