@@ -39,6 +39,22 @@
 
 ---
 
+### O2: Step4 Billing Gate Consolidation ✅
+
+**Summary:** Verified Step4 billing gate consolidation to shared module is complete.
+
+**Module:** `backend/workflows/common/billing_gate.py` (118 lines) - shared by Step4 and Step5
+
+**Integration in step4_handler.py:**
+- Imports at lines 15-19: `_refresh_billing`, `_flag_billing_accept_pending`, `_billing_prompt_draft`
+- Usage at lines 160, 366, 368, 369
+
+**Note:** No duplicate billing logic remains in step4_handler.py.
+
+**Verification:** All 146 tests pass, E2E billing→deposit→HIL flow working
+
+---
+
 ### N3: Step5 Billing Gate Extraction ✅
 
 **Summary:** Verified Step5 billing gate module extraction is complete.
