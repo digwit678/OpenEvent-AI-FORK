@@ -54,6 +54,13 @@ from backend.debug.trace import set_hil_open
 from backend.utils.profiler import profile_step
 from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
 
+# Classification helpers (N2 refactoring)
+from .classification import (
+    classify_message as _classify_message,
+    collect_detected_intents as _collect_detected_intents,
+    iso_to_ddmmyyyy as _iso_to_ddmmyyyy,
+)
+
 __all__ = ["process"]
 
 MAX_COUNTERS = 3
@@ -576,49 +583,6 @@ def process(state: WorkflowState) -> GroupResult:
     if deferred_general_qna:
         _append_deferred_general_qna(state, event_entry, qna_classification, thread_id)
     return result
-
-
-def _collect_detected_intents(message_text: str) -> List[Tuple[str, float]]:
-    lowered = (message_text or "").lower()
-    intents: List[Tuple[str, float]] = []
-
-    if is_room_selection(lowered):
-        intents.append(("room_selection", 0.85))
-
-    accept, accept_conf, _ = matches_acceptance_pattern(lowered)
-    if accept:
-        intents.append(("accept", accept_conf))
-
-    decline, decline_conf, _ = matches_decline_pattern(lowered)
-    if decline:
-        intents.append(("decline", decline_conf))
-
-    counter, counter_conf, _ = matches_counter_pattern(lowered)
-    if counter:
-        intents.append(("counter", counter_conf))
-
-    if re.search(r"\bchf\s*\d", lowered) or re.search(r"\d+\s*(?:franc|price|total)", lowered):
-        intents.append(("counter", 0.65))
-
-    if "?" in lowered:
-        intents.append(("clarification", 0.6))
-
-    return intents
-
-
-def _classify_message(message_text: str) -> Tuple[str, float]:
-    lowered = (message_text or "").lower()
-    candidates = _collect_detected_intents(lowered)
-
-    if candidates:
-        best = max(candidates, key=lambda item: item[1])
-        if best[1] > 0.4:
-            return best
-
-    if "?" in lowered:
-        return "clarification", 0.6
-
-    return "clarification", 0.3
 
 
 def _ask_classification_clarification(
@@ -1233,16 +1197,6 @@ def _handle_decline(event_entry: Dict[str, Any]) -> Dict[str, Any]:
         "topic": "negotiation_decline",
         "requires_approval": True,
     }
-
-
-def _iso_to_ddmmyyyy(raw: Optional[str]) -> Optional[str]:
-    if not raw:
-        return None
-    match = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", raw.strip())
-    if not match:
-        return None
-    year, month, day = match.groups()
-    return f"{day}.{month}.{year}"
 
 
 def _determine_offer_total(event_entry: Dict[str, Any]) -> float:
