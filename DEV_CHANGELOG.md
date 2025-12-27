@@ -2,6 +2,31 @@
 
 ## 2025-12-27
 
+### N2: Step5 Classification Extraction ✅
+
+**Summary:** Extracted message classification helpers from step5_handler.py (~1489→1440 lines) into dedicated module.
+
+**New File:**
+- `backend/workflows/steps/step5_negotiation/trigger/classification.py` (102 lines) - Classification utilities
+
+**Extracted Functions:**
+- `collect_detected_intents(message_text)` - Detect all possible intents with confidence scores
+- `classify_message(message_text)` - Return single best intent classification
+- `iso_to_ddmmyyyy(raw)` - Convert ISO date format to DD.MM.YYYY
+
+**NOT Extracted (have state dependencies):**
+- `_ask_classification_clarification` - Modifies WorkflowState
+- `_detect_structural_change` - Reads event_entry extensively
+
+**Test File:**
+- `tests/specs/negotiation/test_classification.py` (13 tests) - Characterization tests
+
+**Verification:**
+- All 13 classification tests pass
+- All 146 core tests pass
+
+---
+
 ### N1: Step5 Debug/Log Hygiene ✅
 
 **Summary:** Converted unguarded ERROR prints to proper logging in step5_handler.py.
