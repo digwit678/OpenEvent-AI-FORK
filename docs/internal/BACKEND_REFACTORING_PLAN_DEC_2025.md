@@ -1245,7 +1245,7 @@ Estimates are rough (single developer, with tests).
 | R3 | Step3 selection action extraction | Step3 selection module + shims | R2 | Medium | 2–5h |
 | O0 | ✅ Step4 compat export (verified working) | process.py compat shim intact (2025-12-27) | - | - | DONE |
 | O1 | ✅ Step4 product ops extraction | `product_ops.py` (465 lines) committed 2025-12-27 | O0 | - | DONE |
-| O2 | Step4 billing gate extraction | Step4 billing_gate module | O1 | Medium | 2–6h |
+| O2 | ✅ Step4 billing gate consolidation | `common/billing_gate.py` shared by Step4+5 (2025-12-27) | O1 | - | DONE |
 | N1 | ✅ Step5 debug/log hygiene | Removed WF_DEBUG prints (-27 lines) (2025-12-27) | - | - | DONE |
 | N2 | ✅ Step5 classification extraction | `classification.py` (118 lines) verified 2025-12-27 | N1 | - | DONE |
 | N3 | ✅ Step5 billing gate extraction | `common/billing_gate.py` (118 lines) verified 2025-12-27 | N2 | - | DONE |
