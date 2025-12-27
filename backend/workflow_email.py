@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 import sys
 from pathlib import Path
@@ -31,7 +29,7 @@ from backend.utils.profiler import profile_step
 from backend.workflow.state import stage_payload, WorkflowStep, write_stage
 from backend.debug.lifecycle import close_if_ended
 from backend.debug.settings import is_trace_enabled
-from backend.debug.trace import set_hil_open
+# set_hil_open moved to hil_tasks.py (W2 extraction)
 # evaluate_guards moved to runtime/pre_route.py (P1 extraction)
 from backend.debug.state_store import STATE_STORE
 
@@ -41,6 +39,7 @@ from backend.workflows.runtime.hil_tasks import (
     reject_task_and_send,
     cleanup_tasks,
     list_pending_tasks,
+    enqueue_hil_tasks,
 )
 
 # Import router from runtime module (W3 extraction)
@@ -212,15 +211,7 @@ def _snapshot_step_name(event_entry: Optional[Dict[str, Any]]) -> str:
     return _TRACE_STEP_NAMES.get(value, "intake")
 
 
-def _thread_identifier(state: WorkflowState) -> str:
-    if state.thread_id:
-        return str(state.thread_id)
-    if state.client_id:
-        return str(state.client_id)
-    message = state.message
-    if message and message.msg_id:
-        return str(message.msg_id)
-    return "unknown-thread"
+# _thread_identifier moved to backend.workflows.runtime.hil_tasks (W2 extraction)
 
 
 DB_PATH = Path(__file__).with_name("events_database.json")
@@ -338,131 +329,9 @@ def _flush_and_finalize(result: GroupResult, state: WorkflowState, path: Path, l
     return output
 
 
-def _hil_signature(draft: Dict[str, Any], event_entry: Dict[str, Any]) -> str:
-    base = {
-        "step": draft.get("step"),
-        "topic": draft.get("topic"),
-        "caller": event_entry.get("caller_step"),
-        "requirements_hash": event_entry.get("requirements_hash"),
-        "room_eval_hash": event_entry.get("room_eval_hash"),
-        "body": draft.get("body"),
-    }
-    payload = json.dumps(base, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _enqueue_hil_tasks(state: WorkflowState, event_entry: Dict[str, Any]) -> None:
-    pending_records = event_entry.setdefault("pending_hil_requests", [])
-    seen_signatures = {entry.get("signature") for entry in pending_records if entry.get("signature")}
-    thread_id = _thread_identifier(state)
-
-    for draft in state.draft_messages:
-        if draft.get("requires_approval") is False:
-            continue
-        signature = _hil_signature(draft, event_entry)
-        if signature in seen_signatures:
-            continue
-
-        step_id = draft.get("step")
-        try:
-            step_num = int(step_id)
-        except (TypeError, ValueError):
-            continue
-        if step_num not in {2, 3, 4, 5}:
-            continue
-        # Drop older pending requests for the same step to avoid duplicate reviews.
-        stale_requests = [entry for entry in pending_records if entry.get("step") == step_num]
-        if stale_requests:
-            for stale in stale_requests:
-                task_id = stale.get("task_id")
-                if task_id:
-                    try:
-                        update_task_status(state.db, task_id, TaskStatus.DONE)
-                    except Exception:
-                        pass
-                try:
-                    pending_records.remove(stale)
-                except ValueError:
-                    pass
-            state.extras["persist"] = True
-        if step_num == 5:
-            earlier_steps = [entry for entry in pending_records if (entry.get("step") or 0) < 5]
-            for stale in earlier_steps:
-                task_id = stale.get("task_id")
-                if task_id:
-                    try:
-                        update_task_status(state.db, task_id, TaskStatus.DONE)
-                    except Exception:
-                        pass
-                try:
-                    pending_records.remove(stale)
-                except ValueError:
-                    pass
-            if earlier_steps:
-                state.extras["persist"] = True
-        if step_num == 4:
-            task_type = TaskType.OFFER_MESSAGE
-        elif step_num == 5:
-            task_type = TaskType.OFFER_MESSAGE
-        elif step_num == 3:
-            task_type = TaskType.ROOM_AVAILABILITY_MESSAGE
-        elif step_num == 2:
-            task_type = TaskType.DATE_CONFIRMATION_MESSAGE
-        else:
-            task_type = TaskType.MANUAL_REVIEW
-
-        task_payload = {
-            "step_id": step_num,
-            "intent": state.intent.value if state.intent else None,
-            "event_id": event_entry.get("event_id"),
-            "draft_msg": draft.get("body"),
-            "language": (state.user_info or {}).get("language"),
-            "caller_step": event_entry.get("caller_step"),
-            "requirements_hash": event_entry.get("requirements_hash"),
-            "room_eval_hash": event_entry.get("room_eval_hash"),
-            "thread_id": thread_id,
-        }
-        hil_reason = draft.get("hil_reason")
-        if hil_reason:
-            task_payload["reason"] = hil_reason
-
-        client_id = state.client_id or (state.message.from_email or "unknown@example.com").lower()
-        task_id = enqueue_task(
-            state.db,
-            task_type,
-            client_id,
-            event_entry.get("event_id"),
-            task_payload,
-        )
-        pending_records.append(
-            {
-                "task_id": task_id,
-                "signature": signature,
-                "step": step_num,
-                "draft": dict(draft),
-                "thread_id": thread_id,
-            }
-        )
-        seen_signatures.add(signature)
-        state.extras["persist"] = True
-
-    set_hil_open(thread_id, bool(pending_records))
-
-
-def _hil_action_type_for_step(step_id: Optional[int]) -> Optional[str]:
-    if step_id == 2:
-        return "ask_for_date_enqueued"
-    if step_id == 3:
-        return "room_options_enqueued"
-    if step_id == 4:
-        return "offer_enqueued"
-    if step_id == 5:
-        return "negotiation_enqueued"
-    return None
-
-
-# _compose_hil_decision_reply, approve_task_and_send, reject_task_and_send, cleanup_tasks
-# are now imported from backend.workflows.runtime.hil_tasks
+# _hil_signature, _enqueue_hil_tasks, _hil_action_type_for_step, _compose_hil_decision_reply,
+# approve_task_and_send, reject_task_and_send, cleanup_tasks, enqueue_hil_tasks
+# are now imported from backend.workflows.runtime.hil_tasks (W2 extraction)
 
 
 @profile_step("workflow.router.process_msg")
@@ -662,14 +531,14 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
     actions_out = payload.setdefault("actions", [])
     requires_approval_flags: List[bool] = []
     # Check FIRST if HIL approval is required for ALL LLM replies (toggle)
-    # This must be checked BEFORE _enqueue_hil_tasks to avoid creating duplicate tasks
+    # This must be checked BEFORE enqueue_hil_tasks to avoid creating duplicate tasks
     hil_all_replies_on = is_hil_all_replies_enabled()
     if state.draft_messages:
         payload["draft_messages"] = state.draft_messages
         # ALWAYS create step-specific HIL tasks (offer confirmation, special requests, etc.)
         # These are the original workflow HIL tasks - they work regardless of the AI reply toggle
         if event_entry:
-            _enqueue_hil_tasks(state, event_entry)
+            enqueue_hil_tasks(state, event_entry)
         requires_approval_flags = [draft.get("requires_approval", True) for draft in state.draft_messages]
     else:
         payload.setdefault("draft_messages", [])

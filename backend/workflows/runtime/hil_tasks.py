@@ -12,11 +12,16 @@ Public API:
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from backend.domain import TaskStatus, TaskType
+
+if TYPE_CHECKING:
+    from backend.workflows.common.types import WorkflowState
 from backend.workflows.io import database as db_io
 from backend.workflows.io import tasks as task_io
 from backend.workflows.io.database import update_event_metadata
@@ -26,6 +31,7 @@ from backend.debug.trace import set_hil_open
 # Re-export from task_io for backwards compatibility
 list_pending_tasks = task_io.list_pending_tasks
 update_task_status = task_io.update_task_status
+enqueue_task = task_io.enqueue_task
 
 
 def _get_default_db_path() -> Path:
@@ -572,3 +578,155 @@ def cleanup_tasks(
         ]
 
     return len(removed_ids)
+
+
+# ============================================================================
+# HIL Task Creation (W2 extraction from workflow_email.py)
+# ============================================================================
+
+
+def _thread_identifier(state: "WorkflowState") -> str:
+    """Get a stable thread identifier from state."""
+    if state.thread_id:
+        return str(state.thread_id)
+    if state.client_id:
+        return str(state.client_id)
+    message = state.message
+    if message and message.msg_id:
+        return str(message.msg_id)
+    return "unknown-thread"
+
+
+def _hil_signature(draft: Dict[str, Any], event_entry: Dict[str, Any]) -> str:
+    """Generate a signature to prevent duplicate HIL tasks."""
+    base = {
+        "step": draft.get("step"),
+        "topic": draft.get("topic"),
+        "caller": event_entry.get("caller_step"),
+        "requirements_hash": event_entry.get("requirements_hash"),
+        "room_eval_hash": event_entry.get("room_eval_hash"),
+        "body": draft.get("body"),
+    }
+    payload = json.dumps(base, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _hil_action_type_for_step(step_id: Optional[int]) -> Optional[str]:
+    """Map workflow step to action type string."""
+    if step_id == 2:
+        return "ask_for_date_enqueued"
+    if step_id == 3:
+        return "room_options_enqueued"
+    if step_id == 4:
+        return "offer_enqueued"
+    if step_id == 5:
+        return "negotiation_enqueued"
+    return None
+
+
+def enqueue_hil_tasks(state: "WorkflowState", event_entry: Dict[str, Any]) -> None:
+    """[OpenEvent Action] Create HIL task records from draft messages.
+
+    This function processes draft messages in the state, creates HIL tasks for those
+    requiring approval, and updates the pending_hil_requests list on the event.
+
+    Extracted from workflow_email.py as part of W2 refactoring.
+    """
+    pending_records = event_entry.setdefault("pending_hil_requests", [])
+    seen_signatures = {entry.get("signature") for entry in pending_records if entry.get("signature")}
+    thread_id = _thread_identifier(state)
+
+    for draft in state.draft_messages:
+        if draft.get("requires_approval") is False:
+            continue
+        signature = _hil_signature(draft, event_entry)
+        if signature in seen_signatures:
+            continue
+
+        step_id = draft.get("step")
+        try:
+            step_num = int(step_id)
+        except (TypeError, ValueError):
+            continue
+        if step_num not in {2, 3, 4, 5}:
+            continue
+
+        # Drop older pending requests for the same step to avoid duplicate reviews.
+        stale_requests = [entry for entry in pending_records if entry.get("step") == step_num]
+        if stale_requests:
+            for stale in stale_requests:
+                task_id = stale.get("task_id")
+                if task_id:
+                    try:
+                        update_task_status(state.db, task_id, TaskStatus.DONE)
+                    except Exception:
+                        pass
+                try:
+                    pending_records.remove(stale)
+                except ValueError:
+                    pass
+            state.extras["persist"] = True
+
+        if step_num == 5:
+            earlier_steps = [entry for entry in pending_records if (entry.get("step") or 0) < 5]
+            for stale in earlier_steps:
+                task_id = stale.get("task_id")
+                if task_id:
+                    try:
+                        update_task_status(state.db, task_id, TaskStatus.DONE)
+                    except Exception:
+                        pass
+                try:
+                    pending_records.remove(stale)
+                except ValueError:
+                    pass
+            if earlier_steps:
+                state.extras["persist"] = True
+
+        if step_num == 4:
+            task_type = TaskType.OFFER_MESSAGE
+        elif step_num == 5:
+            task_type = TaskType.OFFER_MESSAGE
+        elif step_num == 3:
+            task_type = TaskType.ROOM_AVAILABILITY_MESSAGE
+        elif step_num == 2:
+            task_type = TaskType.DATE_CONFIRMATION_MESSAGE
+        else:
+            task_type = TaskType.MANUAL_REVIEW
+
+        task_payload = {
+            "step_id": step_num,
+            "intent": state.intent.value if state.intent else None,
+            "event_id": event_entry.get("event_id"),
+            "draft_msg": draft.get("body"),
+            "language": (state.user_info or {}).get("language"),
+            "caller_step": event_entry.get("caller_step"),
+            "requirements_hash": event_entry.get("requirements_hash"),
+            "room_eval_hash": event_entry.get("room_eval_hash"),
+            "thread_id": thread_id,
+        }
+        hil_reason = draft.get("hil_reason")
+        if hil_reason:
+            task_payload["reason"] = hil_reason
+
+        client_id = state.client_id or (state.message.from_email or "unknown@example.com").lower()
+        task_id = enqueue_task(
+            state.db,
+            task_type,
+            client_id,
+            event_entry.get("event_id"),
+            task_payload,
+        )
+        pending_records.append(
+            {
+                "task_id": task_id,
+                "signature": signature,
+                "step": step_num,
+                "draft": dict(draft),
+                "thread_id": thread_id,
+            }
+        )
+        seen_signatures.add(signature)
+        state.extras["persist"] = True
+
+    set_hil_open(thread_id, bool(pending_records))
