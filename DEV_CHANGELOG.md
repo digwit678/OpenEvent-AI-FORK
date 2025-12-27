@@ -18,6 +18,24 @@
 
 ---
 
+### W2 Import Fixes ✅
+
+**Summary:** Fixed missing imports after W2 HIL task extraction.
+
+**Fixes:**
+1. `_thread_identifier` - Was used in `_debug_state()` at line 153
+2. `_hil_action_type_for_step` - Was used in deposit→HIL flow at line 638
+
+**Root Cause:** W2 extraction moved these functions to `hil_tasks.py` but `workflow_email.py` still referenced them directly.
+
+**Symptoms:**
+- `NameError: name '_thread_identifier' is not defined` on startup
+- `NameError: name '_hil_action_type_for_step' is not defined` when paying deposit
+
+**Verification:** Full E2E flow (inquiry→room→offer→accept→billing→deposit→HIL→approve→site visit) works in frontend.
+
+---
+
 ### W2: Complete HIL Task Extraction ✅
 
 **Summary:** Extracted remaining HIL task functions from `workflow_email.py` to `backend/workflows/runtime/hil_tasks.py`.
