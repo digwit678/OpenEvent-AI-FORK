@@ -2,6 +2,41 @@
 
 ## 2025-12-27
 
+### P1: Pre-Route Pipeline Extraction ✅
+
+**Summary:** Extracted pre-routing logic from `workflow_email.py` to `backend/workflows/runtime/pre_route.py`.
+
+**New Module:**
+- `pre_route.py` (207 lines) - `run_pre_route_pipeline()`, `check_duplicate_message()`, `evaluate_pre_route_guards()`, `try_smart_shortcuts()`, `correct_billing_flow_step()`
+
+**Phases extracted:**
+1. Duplicate message detection → early return
+2. Post-intake halt check → early return
+3. Guard evaluation → store candidate dates
+4. Smart shortcuts → early return if fired
+5. Billing flow step correction → fix step number
+
+**Result:** `workflow_email.py`: 850 → 783 lines (-67 lines, ~8% reduction)
+
+**Verification:** All 146 tests pass
+
+---
+
+### W3: Router Loop Extraction ✅
+
+**Summary:** Extracted step routing loop from `workflow_email.py` to `backend/workflows/runtime/router.py`.
+
+**New Module:**
+- `router.py` (110 lines) - `dispatch_step()`, `run_routing_loop()`
+
+**Design:** Uses callback-based approach - router receives `persist_fn`, `debug_fn`, `finalize_fn` from caller to avoid moving tightly-coupled debug infrastructure.
+
+**Result:** `workflow_email.py`: 886 → 850 lines (-36 lines, ~4% reduction)
+
+**Verification:** All 146 tests pass
+
+---
+
 ### D0-D4: Step 2 Date Parsing Extraction ✅
 
 **Summary:** Committed 693 lines of pre-existing extractions (5 modules) for Step 2 date confirmation.

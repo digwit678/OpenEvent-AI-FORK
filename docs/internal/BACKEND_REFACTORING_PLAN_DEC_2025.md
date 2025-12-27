@@ -66,6 +66,37 @@ This document translates the existing backend review findings into **junior-dev-
 
 **Verification:** All 146 tests pass + imports verified
 
+### W3: Router Loop Extraction — 2025-12-27
+
+**Summary:** Extracted step routing loop from `workflow_email.py` to `backend/workflows/runtime/router.py`.
+
+**New Module:**
+- `router.py` (110 lines) - `dispatch_step()`, `run_routing_loop()`
+
+**Result:** `workflow_email.py`: 886 → 850 lines (-36 lines, ~4% reduction)
+
+**Design:** Uses callback-based approach - router receives `persist_fn`, `debug_fn`, `finalize_fn` from caller to avoid moving tightly-coupled debug infrastructure.
+
+**Verification:** All 146 tests pass
+
+### P1: Pre-Route Pipeline Extraction — 2025-12-27
+
+**Summary:** Extracted pre-routing logic from `workflow_email.py` to `backend/workflows/runtime/pre_route.py`.
+
+**New Module:**
+- `pre_route.py` (207 lines) - 5 functions for pre-routing pipeline
+
+**Phases extracted:**
+1. Duplicate message detection
+2. Post-intake halt check
+3. Guard evaluation
+4. Smart shortcuts
+5. Billing flow step correction
+
+**Result:** `workflow_email.py`: 850 → 783 lines (-67 lines, ~8% reduction)
+
+**Verification:** All 146 tests pass
+
 ---
 
 ## Open Refactoring Tasks 🔄
@@ -1168,21 +1199,21 @@ Estimates are rough (single developer, with tests).
 | T0 | Fix pytest collection (compat + stale imports + dup test name) | tests/*, Step2/Step4 compat shims | - | Medium | 2–6h |
 | W1 | Make `workflow_email.py` explicit facade | `backend/workflow_email.py` | T0 | Medium | 1–2h |
 | W2 | Extract HIL task APIs (keep re-exports) | `backend/workflows/runtime/hil_tasks.py` + facade | W1 | Medium | 1–3h |
-| W3 | Extract router loop (keep `process_msg`) | `backend/workflows/runtime/router.py` + facade | W2 | High | 2–6h |
+| W3 | ✅ Extract router loop (keep `process_msg`) | `backend/workflows/runtime/router.py` (2025-12-27) | W2 | - | DONE |
 | I1 | ✅ Extract Step1 pure helpers | 6 modules extracted (2025-12-27) | - | - | DONE |
 | I2 | ✅ Isolate dev/test mode flow | `dev_test_mode.py` already exists | - | - | DONE |
-| D0 | Restore Step2 compat exports | Step2 trigger `process.py` shims | T0 | Medium | 0.5–2h |
-| D1 | Step2 constants/types extraction | Step2 trigger submodules | D0 | Medium | 2–4h |
-| D2 | Step2 parsing extraction + tests | parsing module + tests | D1 | Medium | 3–6h |
-| D3 | Step2 candidate presentation extraction | presentation module + shims | D2 | Medium | 2–5h |
-| D4 | Step2 confirmation resolution extraction | confirmation module + shims | D3 | High | 3–8h |
+| D0 | ✅ Restore Step2 compat exports | Committed 2025-12-27 | - | - | DONE |
+| D1 | ✅ Step2 constants/types extraction | `constants.py`, `types.py` (2025-12-27) | - | - | DONE |
+| D2 | ✅ Step2 parsing extraction + tests | `date_parsing.py` (2025-12-27) | - | - | DONE |
+| D3 | ✅ Step2 candidate presentation extraction | `proposal_tracking.py` (2025-12-27) | - | - | DONE |
+| D4 | ✅ Step2 confirmation resolution extraction | `calendar_checks.py` (2025-12-27) | - | - | DONE |
 | D5 | Step2 Q&A bridge extraction | general_qna module + shims | D4 | Medium | 2–6h |
 | R0 | Fix Step3 Q&A request crash | step3_handler.py | T0 | Low | 0.25–1h |
 | R1 | Step3 constants/types extraction | Step3 trigger submodules | R0 | Medium | 2–4h |
 | R2 | ✅ Step3 Q&A bridge extraction | Unified in `common/general_qna.py` (2025-12-27) | - | - | DONE |
 | R3 | Step3 selection action extraction | Step3 selection module + shims | R2 | Medium | 2–5h |
 | O0 | Step4 compat export `_apply_product_operations` | Step4 trigger/process shim | T0 | Low | 0.25–1h |
-| O1 | Step4 product ops extraction | Step4 product_ops module + shims | O0 | Medium | 2–6h |
+| O1 | ✅ Step4 product ops extraction | `product_ops.py` (465 lines) committed 2025-12-27 | O0 | - | DONE |
 | O2 | Step4 billing gate extraction | Step4 billing_gate module | O1 | Medium | 2–6h |
 | N1 | Step5 debug/log hygiene | step5_handler.py | T0 | Low | 0.5–2h |
 | N2 | Step5 classification extraction | Step5 classification module | N1 | Medium | 2–5h |
@@ -1197,7 +1228,7 @@ Estimates are rough (single developer, with tests).
 | F1 | Step7 constants/classification extraction | step7 trigger submodules | T0 | Medium | 2–5h |
 | F2 | Step7 site-visit extraction | step7 site_visit module | F1 | High | 4–10h |
 | F3 | ✅ Step7 Q&A bridge extraction | Unified in `common/general_qna.py` (2025-12-27) | - | - | DONE |
-| P1 | Introduce pre-route pipeline module | runtime/pre_route.py + router | W3 | High | 4–10h |
+| P1 | ✅ Introduce pre-route pipeline module | `runtime/pre_route.py` (207 lines) 2025-12-27 | W3 | - | DONE |
 | P2 | Make guards pure (no metadata writes) | workflow/guards.py + router | P1 | High | 3–8h |
 | DB1 | Remove step-level force-save patterns | Step5 (and any others) | P1 | Medium | 2–6h |
 | DCON1 | Detection import surface cleanup | tests + optional shims | T0 | Medium | 2–6h |
