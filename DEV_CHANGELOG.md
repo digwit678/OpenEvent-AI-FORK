@@ -2,6 +2,28 @@
 
 ## 2025-12-27
 
+### N3: Step5 Billing Gate Extraction ✅
+
+**Summary:** Extracted billing gate functions from step5_handler.py (1440→1405 lines) into dedicated module.
+
+**New File:**
+- `backend/workflows/steps/step5_negotiation/trigger/billing_gate.py` (100 lines) - Billing gate utilities
+
+**Extracted Functions:**
+- `refresh_billing(event_entry)` - Parse and persist billing details
+- `flag_billing_accept_pending(event_entry, missing_fields)` - Mark event awaiting billing
+- `billing_prompt_draft(missing_fields, step)` - Create billing request draft
+
+**NOT Extracted (HIL dependencies):**
+- `_auto_accept_if_billing_ready` - Calls `_start_hil_acceptance` (keep in handler)
+
+**Note:** Step4 has identical functions - future PR will consolidate.
+
+**Verification:**
+- All 146 core tests pass
+
+---
+
 ### N2: Step5 Classification Extraction ✅
 
 **Summary:** Extracted message classification helpers from step5_handler.py (~1489→1440 lines) into dedicated module.
