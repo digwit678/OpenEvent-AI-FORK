@@ -87,8 +87,43 @@ def check_duplicate_message(
 
 
 def evaluate_pre_route_guards(state: WorkflowState) -> None:
-    """Evaluate guards and store candidate dates if step2 required."""
+    """Evaluate guards and apply metadata decisions.
+
+    P2 refactoring: Guards are now pure - this function applies their decisions.
+    The guard snapshot contains:
+    - forced_step: Step to force if different from current
+    - requirements_hash_changed: Whether requirements_hash was recomputed
+    - deposit_bypass: Whether deposit payment bypass is active (force step 5)
+    - candidate_dates: Dates to suggest for step 2
+    """
     guard_snapshot = evaluate_guards(state)
+
+    if not state.event_entry:
+        return
+
+    event_id = state.event_entry.get("event_id")
+
+    # Apply deposit bypass - force step 5 for deposit flow
+    if guard_snapshot.deposit_bypass and guard_snapshot.forced_step == 5:
+        print(f"[WF][GUARDS] Deposit bypass: forcing step 5 for event {event_id}")
+        state.event_entry["current_step"] = 5
+        state.extras["persist"] = True
+        return  # Skip other guard logic during deposit flow
+
+    # Apply requirements_hash update if changed
+    if guard_snapshot.requirements_hash_changed and guard_snapshot.requirements_hash:
+        print(f"[WF][GUARDS] Requirements hash updated: {guard_snapshot.requirements_hash}")
+        state.event_entry["requirements_hash"] = guard_snapshot.requirements_hash
+        state.extras["persist"] = True
+
+    # Apply forced step if needed (step 2, 3, or 4 guard)
+    if guard_snapshot.forced_step is not None:
+        current = state.event_entry.get("current_step")
+        print(f"[WF][GUARDS] Forcing step from {current} to {guard_snapshot.forced_step}")
+        state.event_entry["current_step"] = guard_snapshot.forced_step
+        state.extras["persist"] = True
+
+    # Store candidate dates for step 2
     if guard_snapshot.step2_required and guard_snapshot.candidate_dates:
         state.extras["guard_candidate_dates"] = list(guard_snapshot.candidate_dates)
 

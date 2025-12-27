@@ -2,6 +2,29 @@
 
 ## 2025-12-27
 
+### P2: Make Guards Pure ✅
+
+**Summary:** Refactored `backend/workflow/guards.py` to be pure - returns decisions without side effects.
+
+**Changes:**
+- Extended `GuardSnapshot` dataclass with new fields:
+  - `forced_step: Optional[int]` - Step to force if different from current
+  - `requirements_hash_changed: bool` - Whether hash was recomputed
+  - `deposit_bypass: bool` - Whether deposit payment bypass is active
+- Refactored `evaluate()` to compute decisions only (no DB writes, no state.extras mutation)
+- Updated `pre_route.py` to apply metadata updates from snapshot
+- Removed unused imports (`WorkflowStep`, `write_stage`, `update_event_metadata`) from guards.py
+
+**Result:** Guards follow functional pattern - caller applies writes explicitly.
+
+**Files Modified:**
+- `backend/workflow/guards.py`
+- `backend/workflows/runtime/pre_route.py`
+
+**Verification:** All 146 tests pass
+
+---
+
 ### P1: Pre-Route Pipeline Extraction ✅
 
 **Summary:** Extracted pre-routing logic from `workflow_email.py` to `backend/workflows/runtime/pre_route.py`.
