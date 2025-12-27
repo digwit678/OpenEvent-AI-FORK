@@ -2,6 +2,22 @@
 
 ## 2025-12-27
 
+### N1: Step5 Debug/Log Hygiene ✅
+
+**Summary:** Removed conditional `WF_DEBUG` debug prints from `step5_handler.py`.
+
+**Changes:**
+- Removed `WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"` flag
+- Removed 11 conditional debug print statements
+- Removed unused `import os`
+- Kept `logger.error` calls (legitimate error logging)
+
+**Result:** `step5_handler.py`: 1252 → 1225 lines (-27 lines)
+
+**Verification:** All 146 tests pass
+
+---
+
 ### W2: Complete HIL Task Extraction ✅
 
 **Summary:** Extracted remaining HIL task functions from `workflow_email.py` to `backend/workflows/runtime/hil_tasks.py`.
