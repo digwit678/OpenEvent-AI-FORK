@@ -1,5 +1,55 @@
 # Development Changelog
 
+## 2025-12-27
+
+### Intent Classification Edge Case Fix ✅
+
+**Summary:** Fixed generic intent classification rescue for event-type messages that LLM incorrectly classifies as "other".
+
+**Problem:** Messages like "Corporate Dinner for 25 guests" were classified as "other" instead of "event_request" because the heuristic override only checked for narrow keywords (workshop/conference/meeting/event).
+
+**Solution:** Added comprehensive `_EVENT_TYPE_TOKENS` and `_PARTICIPANT_TOKENS` tuples covering:
+- Food/catering types: dinner, lunch, breakfast, brunch, banquet, gala, cocktail, reception
+- Event formats: workshop, training, seminar, conference, meeting, presentation
+- Celebrations: wedding, birthday, party, anniversary, corporate/team event
+- German equivalents: abendessen, feier, hochzeit, veranstaltung, tagung, etc.
+- Participant keywords: people, guests, participants, pax (EN + DE)
+
+**Files Changed:**
+- `backend/workflows/llm/adapter.py` - Added `_EVENT_TYPE_TOKENS`, `_PARTICIPANT_TOKENS`, updated `_heuristic_intent_override()`
+
+**Verification:**
+- Unit tests for "Corporate Dinner", German events, weddings, team events all pass
+- Browser E2E: "Corporate Dinner for 25 guests" now correctly → `new_event` workflow
+- All 146 core tests pass
+
+---
+
+### I1: Extract Step1 Pure Helpers ✅
+
+**Summary:** Extracted pure helper functions from step1_handler.py (1494→1407 lines) into dedicated modules.
+
+**New Files:**
+- `backend/workflows/steps/step1_intake/trigger/normalization.py` (34 lines) - Text normalization
+- `backend/workflows/steps/step1_intake/trigger/date_fallback.py` (30 lines) - Date fallback utilities
+- `backend/workflows/steps/step1_intake/trigger/gate_confirmation.py` (106 lines) - Pattern detection
+
+**Extracted Functions:**
+- `normalize_quotes` - Normalize typographic apostrophes/quotes
+- `normalize_room_token` - Normalize room tokens for comparison
+- `fallback_year_from_ts` - Extract year from timestamp for date fallback
+- `looks_like_offer_acceptance` - Detect offer acceptance patterns
+- `looks_like_billing_fragment` - Detect billing address fragments
+
+**NOT Extracted (have state dependencies):**
+- `_looks_like_gate_confirmation` - Depends on linked_event.current_step
+- `_extract_confirmation_details` - Uses fallback_year from context
+- `_detect_room_choice` - Calls load_rooms() (DB access)
+
+**Verification:** All 146 core tests pass.
+
+---
+
 ## 2025-12-26
 
 ### W2: Extract HIL Task APIs ✅

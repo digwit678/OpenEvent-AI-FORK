@@ -52,6 +52,13 @@ from backend.workflows.common.datetime_parse import parse_first_date, parse_time
 from backend.services.products import list_product_records, merge_product_requests, normalise_product_payload
 from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
 
+# Extracted pure helpers (I1 refactoring)
+from .normalization import normalize_quotes as _normalize_quotes
+from .normalization import normalize_room_token as _normalize_room_token
+from .date_fallback import fallback_year_from_ts as _fallback_year_from_ts
+from .gate_confirmation import looks_like_offer_acceptance as _looks_like_offer_acceptance
+from .gate_confirmation import looks_like_billing_fragment as _looks_like_billing_fragment
+
 __workflow_role__ = "trigger"
 
 
@@ -165,15 +172,6 @@ def _detect_menu_choice(message_text: str) -> Optional[Dict[str, Any]]:
             }
     return None
 
-def _fallback_year_from_ts(ts: Optional[str]) -> int:
-    if not ts:
-        return datetime.utcnow().year
-    try:
-        return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).year
-    except ValueError:
-        return datetime.utcnow().year
-
-
 def _extract_confirmation_details(text: str, fallback_year: int) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     parsed = parse_first_date(text, fallback_year=fallback_year)
     iso_date = parsed.isoformat() if parsed else None
@@ -223,10 +221,6 @@ def _looks_like_gate_confirmation(message_text: str, linked_event: Optional[Dict
         return True
 
     return False
-
-
-def _normalize_room_token(value: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", value.lower())
 
 
 def _detect_room_choice(message_text: str, linked_event: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -533,74 +527,6 @@ def _detect_product_update_request(
         user_info["products_remove"] = combined_removals
 
     return bool(additions or removals or combined_additions or combined_removals or existing_ops)
-
-
-def _normalize_quotes(text: str) -> str:
-    """Normalize typographic apostrophes/quotes for downstream keyword checks."""
-
-    if not text:
-        return ""
-    return (
-        text.replace("\u2019", "'")
-        .replace("\u2018", "'")
-        .replace("\u201c", '"')
-        .replace("\u201d", '"')
-        .replace("\u00a0", " ")
-    )
-
-
-def _looks_like_offer_acceptance(text: str) -> bool:
-    """
-    Heuristic: short, declarative acknowledgements without question marks that contain approval verbs.
-    """
-
-    if not text:
-        return False
-    normalized = _normalize_quotes(text).lower()
-    if "?" in normalized:
-        return False
-    if len(normalized) > 200:
-        return False
-
-    accept_re = re.compile(
-        r"\b("
-        r"accept(?:ed)?|"
-        r"approv(?:e|ed|al)|"
-        r"confirm(?:ed)?|"
-        r"proceed|continue|go ahead|"
-        r"send (?:it|to client)|please send|ok to send|"
-        r"all good|looks good|sounds good|good to go|"
-        r"(?:that'?s|thats) fine|fine for me"
-        r")\b"
-    )
-    if accept_re.search(normalized):
-        return True
-
-    # Fallback to legacy tokens for odd phrasing.
-    accept_tokens = (
-        "accept",
-        "accepted",
-        "confirm",
-        "confirmed",
-        "approve",
-        "approved",
-        "continue",
-        "please send",
-        "send it",
-        "send to client",
-        "ok to send",
-        "go ahead",
-        "proceed",
-        "that's fine",
-        "thats fine",
-        "fine for me",
-        "sounds good",
-        "good to go",
-        "ok thats fine",
-        "ok that's fine",
-        "all good",
-    )
-    return any(token in normalized for token in accept_tokens)
 
 
 def _resolve_owner_step(step_num: int) -> str:
@@ -1450,19 +1376,6 @@ def _ensure_event_record(
     )
     update_event_metadata(event_entry, status=event_entry.get("status", "Lead"))
     return event_entry
-
-
-def _looks_like_billing_fragment(text: str) -> bool:
-    if not text:
-        return False
-    lowered = text.lower()
-    if lowered.startswith("room "):
-        return False
-    keywords = ("postal", "postcode", "zip", "street", "avenue", "road", "switzerland", " ch", "city", "country")
-    if any(k in lowered for k in keywords):
-        return True
-    digit_groups = sum(1 for token in lowered.replace(",", " ").split() if token.isdigit() and len(token) >= 3)
-    return digit_groups >= 1
 
 
 def _trace_user_entities(state: WorkflowState, message_payload: Dict[str, Any], user_info: Dict[str, Any], owner_step: str) -> None:
