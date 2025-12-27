@@ -35,7 +35,11 @@ from backend.detection.intent.confidence import (
 )
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
+from backend.workflows.common.general_qna import (
+    append_general_qna_to_primary,
+    present_general_room_qna,
+    _fallback_structured_body,
+)
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
@@ -1224,169 +1228,11 @@ def _present_general_room_qna(
     classification: Dict[str, Any],
     thread_id: Optional[str],
 ) -> GroupResult:
-    """Handle general Q&A at Step 5 using the same pattern as Step 2."""
-    subloop_label = "general_q_a"
-    state.extras["subloop"] = subloop_label
-    resolved_thread_id = thread_id or state.thread_id
-
-    if thread_id:
-        set_subloop(thread_id, subloop_label)
-
-    # Extract fresh from current message (multi-turn Q&A fix)
-    message = state.message
-    subject = (message.subject if message else "") or ""
-    body = (message.body if message else "") or ""
-    message_text = f"{subject}\n{body}".strip() or body or subject
-
-    scan = state.extras.get("general_qna_scan")
-    # Force fresh extraction for multi-turn Q&A
-    ensure_qna_extraction(state, message_text, scan, force_refresh=True)
-    extraction = state.extras.get("qna_extraction")
-
-    # Clear stale qna_cache AFTER extraction
-    if isinstance(event_entry, dict):
-        event_entry.pop("qna_cache", None)
-
-    structured = build_structured_qna_result(state, extraction) if extraction else None
-
-    if structured and structured.handled:
-        rooms = structured.action_payload.get("db_summary", {}).get("rooms", [])
-        date_lookup: Dict[str, str] = {}
-        for entry in rooms:
-            iso_date = entry.get("date") or entry.get("iso_date")
-            if not iso_date:
-                continue
-            try:
-                parsed = datetime.fromisoformat(iso_date)
-            except ValueError:
-                try:
-                    parsed = datetime.strptime(iso_date, "%Y-%m-%d")
-                except ValueError:
-                    continue
-            label = parsed.strftime("%d.%m.%Y")
-            date_lookup.setdefault(label, parsed.date().isoformat())
-
-        candidate_dates = sorted(date_lookup.keys(), key=lambda label: date_lookup[label])[:5]
-        actions = [
-            {
-                "type": "select_date",
-                "label": f"Confirm {label}",
-                "date": label,
-                "iso_date": date_lookup[label],
-            }
-            for label in candidate_dates
-        ]
-
-        body_markdown = (structured.body_markdown or _fallback_structured_body(structured.action_payload)).strip()
-        footer_body = append_footer(
-            body_markdown,
-            step=5,
-            next_step=5,
-            thread_state="Awaiting Client",
-        )
-
-        draft_message = {
-            "body": footer_body,
-            "body_markdown": body_markdown,
-            "step": 5,
-            "next_step": 5,
-            "thread_state": "Awaiting Client",
-            "topic": "general_room_qna",
-            "candidate_dates": candidate_dates,
-            "actions": actions,
-            "subloop": subloop_label,
-            "headers": ["Availability overview"],
-        }
-
-        state.add_draft_message(draft_message)
-        update_event_metadata(
-            event_entry,
-            thread_state="Awaiting Client",
-            current_step=5,
-            candidate_dates=candidate_dates,
-        )
-        state.set_thread_state("Awaiting Client")
-        state.record_subloop(subloop_label)
-        state.intent_detail = "event_intake_with_question"
-        state.extras["persist"] = True
-
-        # Store minimal last_general_qna context for follow-up detection only
-        if extraction and isinstance(event_entry, dict):
-            q_values = extraction.get("q_values") or {}
-            event_entry["last_general_qna"] = {
-                "topic": structured.action_payload.get("qna_subtype"),
-                "date_pattern": q_values.get("date_pattern"),
-                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
-            }
-
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "candidate_dates": candidate_dates,
-            "draft_messages": state.draft_messages,
-            "thread_state": state.thread_state,
-            "context": state.context_snapshot,
-            "persisted": True,
-            "general_qna": True,
-            "structured_qna": structured.handled,
-            "qna_select_result": structured.action_payload,
-            "structured_qna_debug": structured.debug,
-            "actions": actions,
-        }
-        if extraction:
-            payload["qna_extraction"] = extraction
-        return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
-
-    # Fallback if structured Q&A failed
-    fallback_prompt = "[STRUCTURED_QNA_FALLBACK]\nI couldn't load the structured Q&A context for this request. Please review extraction logs."
-    draft_message = {
-        "step": 5,
-        "topic": "general_room_qna",
-        "body": f"{fallback_prompt}\n\n---\nStep: 5 Negotiation · Next: 5 Negotiation · State: Awaiting Client",
-        "body_markdown": fallback_prompt,
-        "next_step": 5,
-        "thread_state": "Awaiting Client",
-        "headers": ["Availability overview"],
-        "requires_approval": False,
-        "subloop": subloop_label,
-        "actions": [],
-        "candidate_dates": [],
-    }
-    state.add_draft_message(draft_message)
-    update_event_metadata(
-        event_entry,
-        thread_state="Awaiting Client",
-        current_step=5,
-        candidate_dates=[],
+    """Handle general Q&A at Step 5 - delegates to shared implementation."""
+    return present_general_room_qna(
+        state, event_entry, classification, thread_id,
+        step_number=5, step_name="Negotiation"
     )
-    state.set_thread_state("Awaiting Client")
-    state.record_subloop(subloop_label)
-    state.intent_detail = "event_intake_with_question"
-    state.extras["structured_qna_fallback"] = True
-    structured_payload = structured.action_payload if structured else {}
-    structured_debug = structured.debug if structured else {"reason": "missing_structured_context"}
-
-    payload = {
-        "client_id": state.client_id,
-        "event_id": event_entry.get("event_id"),
-        "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "candidate_dates": [],
-        "draft_messages": state.draft_messages,
-        "thread_state": state.thread_state,
-        "context": state.context_snapshot,
-        "persisted": True,
-        "general_qna": True,
-        "structured_qna": False,
-        "structured_qna_fallback": True,
-        "qna_select_result": structured_payload,
-        "structured_qna_debug": structured_debug,
-    }
-    if extraction:
-        payload["qna_extraction"] = extraction
-    return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
 
 
 def _append_deferred_general_qna(
