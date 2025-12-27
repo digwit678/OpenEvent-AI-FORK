@@ -1085,6 +1085,24 @@ if locked_room:
 
 **Regression Guard:** Date change with locked room should preserve the room and skip time confirmation. Test by: complete offer flow with Room A → send "change date to X" → verify Room A availability shown on new date (not "Preferred time?" prompt).
 
+### Intent Classification Edge Case - Event Types (Fixed)
+**Symptoms:** Messages with event types like "Corporate Dinner" + participant counts were classified as `other` instead of `event_request`, resulting in fallback messages.
+
+**Root Cause:** The `_heuristic_intent_override()` function only checked for narrow event keywords ("workshop", "conference", "meeting", "event") but missed common event types like "dinner", "party", "wedding", "reception", etc.
+
+**Fix Applied:**
+1. Added comprehensive `_EVENT_TYPE_TOKENS` tuple covering:
+   - Food/catering types: dinner, lunch, breakfast, brunch, banquet, gala, cocktail, reception
+   - Event formats: workshop, training, seminar, conference, meeting, presentation
+   - Celebrations: wedding, birthday, party, anniversary, corporate/team event
+   - German equivalents: abendessen, feier, hochzeit, veranstaltung, tagung, etc.
+2. Added `_PARTICIPANT_TOKENS` tuple with EN+DE participant keywords
+3. Updated heuristic to also detect numeric participant patterns ("25 guests")
+
+**Files:** `backend/workflows/llm/adapter.py` lines 725-800
+
+**Regression Guard:** Any message with event type + participant count should classify as `event_request`, not fall back to manual review.
+
 ---
 
 ## Bug Prevention Guidelines
