@@ -41,6 +41,7 @@ from backend.workflows.runtime.hil_tasks import (
     list_pending_tasks,
     enqueue_hil_tasks,
     _thread_identifier,  # Used by _debug_state
+    _hil_action_type_for_step,  # Used for deposit->HIL flow
 )
 
 # Import router from runtime module (W3 extraction)
