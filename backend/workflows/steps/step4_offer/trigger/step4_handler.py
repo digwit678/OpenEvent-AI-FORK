@@ -11,6 +11,12 @@ from backend.workflows.common.billing import (
     missing_billing_fields,
     update_billing_details,
 )
+# Billing gate helpers (O2 consolidation)
+from backend.workflows.common.billing_gate import (
+    refresh_billing as _refresh_billing,
+    flag_billing_accept_pending as _flag_billing_accept_pending,
+    billing_prompt_draft as _billing_prompt_draft,
+)
 from backend.workflows.common.confirmation_gate import (
     auto_continue_if_ready,
     get_next_prompt,
@@ -1655,31 +1661,6 @@ def _normalize_quotes(text: str) -> str:
     return text
 
 
-def _refresh_billing(event_entry: Dict[str, Any]) -> List[str]:
-    """Parse and persist billing details, returning missing required fields."""
-
-    update_billing_details(event_entry)
-    details = event_entry.get("billing_details") or {}
-    missing = missing_billing_fields(event_entry)
-    has_filled_required = len(missing) < 5
-    display = format_billing_display(details, (event_entry.get("event_data") or {}).get("Billing Address"))
-    if display and has_filled_required:
-        event_entry.setdefault("event_data", {})["Billing Address"] = display
-
-    validation = event_entry.setdefault("billing_validation", {})
-    if missing:
-        validation["missing"] = list(missing)
-    else:
-        validation.pop("missing", None)
-    return missing
-
-
-def _flag_billing_accept_pending(event_entry: Dict[str, Any], missing_fields: List[str]) -> None:
-    gate = event_entry.setdefault("billing_requirements", {})
-    gate["awaiting_billing_for_accept"] = True
-    gate["last_missing"] = list(missing_fields)
-
-
 def _check_deposit_payment_continuation(
     state: WorkflowState,
     event_entry: Dict[str, Any],
@@ -1799,23 +1780,6 @@ def _auto_accept_if_billing_ready(
         audit_label="offer_accept_pending_hil_auto",
         action="offer_accept_pending_hil",
     )
-
-
-def _billing_prompt_draft(missing_fields: List[str], *, step: int) -> Dict[str, Any]:
-    prompt = (
-        "Thanks for confirming — I need the billing address before I can send this for approval.\n"
-        f"{billing_prompt_for_missing_fields(missing_fields)} "
-        "Example: \"Helvetia Labs, Bahnhofstrasse 1, 8001 Zurich, Switzerland\". "
-        "As soon as I have it, I'll forward the offer automatically."
-    )
-    return {
-        "body_markdown": prompt,
-        "step": step,
-        "topic": "billing_details_required",
-        "next_step": "Await billing details",
-        "thread_state": "Awaiting Client",
-        "requires_approval": False,
-    }
 
 
 def _manager_request_detected(state: WorkflowState, event_entry: Dict[str, Any]) -> bool:

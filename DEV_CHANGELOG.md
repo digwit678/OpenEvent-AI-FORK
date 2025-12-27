@@ -2,12 +2,37 @@
 
 ## 2025-12-27
 
+### O2: Step4 Billing Gate Consolidation ✅
+
+**Summary:** Consolidated Step4 and Step5 billing gate functions into shared module.
+
+**Changes:**
+- Moved `billing_gate.py` from `step5_negotiation/trigger/` to `common/`
+- Updated Step5 import to use `backend.workflows.common.billing_gate`
+- Updated Step4 to import from shared module (removed 30 lines of duplicate code)
+- Updated test imports for new location
+
+**Line Count Changes:**
+- `step4_handler.py`: 2144 → 2108 lines (-36 lines, +6 import lines = -30 net)
+
+**Consolidated Functions:**
+- `refresh_billing(event_entry)` - Parse and persist billing details
+- `flag_billing_accept_pending(event_entry, missing_fields)` - Mark event awaiting billing
+- `billing_prompt_draft(missing_fields, step)` - Create billing request draft
+
+**Verification:**
+- All 146 core tests pass
+- All 19 billing-specific tests pass
+
+---
+
 ### N3: Step5 Billing Gate Extraction ✅
 
 **Summary:** Extracted billing gate functions from step5_handler.py (1440→1405 lines) into dedicated module.
 
 **New File:**
-- `backend/workflows/steps/step5_negotiation/trigger/billing_gate.py` (100 lines) - Billing gate utilities
+- `backend/workflows/common/billing_gate.py` (100 lines) - Billing gate utilities
+  *(Originally in step5_negotiation/trigger/, moved to common/ in O2)*
 
 **Extracted Functions:**
 - `refresh_billing(event_entry)` - Parse and persist billing details
@@ -17,7 +42,7 @@
 **NOT Extracted (HIL dependencies):**
 - `_auto_accept_if_billing_ready` - Calls `_start_hil_acceptance` (keep in handler)
 
-**Note:** Step4 has identical functions - future PR will consolidate.
+**Note:** Step4 consolidation completed in O2.
 
 **Verification:**
 - All 146 core tests pass

@@ -61,8 +61,8 @@ from .classification import (
     iso_to_ddmmyyyy as _iso_to_ddmmyyyy,
 )
 
-# Billing gate helpers (N3 refactoring)
-from .billing_gate import (
+# Billing gate helpers (N3 refactoring → O2 consolidated to common)
+from backend.workflows.common.billing_gate import (
     refresh_billing as _refresh_billing,
     flag_billing_accept_pending as _flag_billing_accept_pending,
     billing_prompt_draft as _billing_prompt_draft,
