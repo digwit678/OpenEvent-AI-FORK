@@ -2,6 +2,24 @@
 
 ## 2025-12-27
 
+### D0-D4: Step 2 Date Parsing Extraction ✅
+
+**Summary:** Committed 693 lines of pre-existing extractions (5 modules) for Step 2 date confirmation.
+
+**Modules Committed:**
+
+| Module | Functions | Lines |
+|--------|-----------|-------|
+| `constants.py` | Month/weekday mappings, keyword sets, time defaults | 156 |
+| `types.py` | `ConfirmationWindow`, `WindowHints` dataclasses | 48 |
+| `date_parsing.py` | 10 pure date/weekday parsing functions | 242 |
+| `proposal_tracking.py` | 5 proposal history management functions | 122 |
+| `calendar_checks.py` | 3 calendar availability functions | 125 |
+
+**Verification:** All 146 tests pass + imports verified
+
+---
+
 ### F1+F2: Step 7 Site-Visit Extraction ✅
 
 **Summary:** Extracted ~390 lines from `step7_handler.py` into 4 focused modules (43% reduction).
