@@ -2,6 +2,60 @@
 
 ## 2025-12-28
 
+### Fix: DAG Change Propagation Test Suite (45 tests) ✅
+
+**Summary:** Fixed all 45 failing tests in the DAG change propagation test suite. Tests were failing due to missing test fixtures, incorrect import patterns, and missing `message_text` parameters required by `detect_change_type()`.
+
+**Issues Fixed:**
+
+1. **Import error in test_change_integration_e2e.py:**
+   - Changed `from backend.workflows.steps.step1_intake.trigger import process` (imports module)
+   - To `from backend.workflows.steps.step1_intake import process` (imports function via __init__.py)
+
+2. **Missing fixture fields for event lookup:**
+   - Added `event_data["Email"]` (required by `last_event_for_email()` lookup)
+   - Added `created_at` timestamp (required for event sorting)
+   - Added `profile` to client structure
+
+3. **Test expectation mismatch (V4 behavior):**
+   - Updated test to expect `locked_room_id` preserved on date change (V4 fast-skip rule)
+   - Original test incorrectly expected it to be cleared
+
+4. **Missing message_text parameter:**
+   - `detect_change_type()` requires `message_text` for intent pattern matching
+   - Added `message_text` with appropriate change verbs to all affected tests
+
+5. **Products change detection:**
+   - Changed from `products` key to `products_add` (explicit add signal path)
+
+**Files Modified:**
+- `tests/specs/dag/test_change_integration_e2e.py`
+- `tests/specs/dag/test_change_propagation.py`
+- `tests/specs/dag/test_change_scenarios_e2e.py`
+
+**Verification:** All 45 DAG tests pass + 520 regression tests pass
+
+---
+
+### Refactor: Remove Force-Save Anti-Pattern from Step5 (DB1) ✅
+
+**Summary:** Removed redundant direct `db_io.save_db()` calls from Step5 billing capture flow. Persistence now correctly flows through the router's end-of-turn flush mechanism.
+
+**Background:** Step5 had two force-save calls added to fix a perceived bug where "billing wasn't being persisted." However, the real issue was likely a different root cause, and the force-saves violated the architectural principle of "router persists once at end-of-turn."
+
+**Changes:**
+- Removed 2 force-save calls (lines 184-189, 193-197) from `step5_handler.py`
+- Removed unused `db_io` import
+- Added characterization test `test_billing_persistence_db1.py` proving router flush works
+
+**Files Modified:**
+- `backend/workflows/steps/step5_negotiation/trigger/step5_handler.py` (-11 lines)
+- `backend/tests/regression/test_billing_persistence_db1.py` (new)
+
+**Verification:** All 520 tests pass (detection + regression + flow)
+
+---
+
 ### Refactor: Step 2 Candidate Date Generation (D7) ✅
 
 **Summary:** Created `candidate_dates.py` module with reusable candidate date collection and prioritization functions extracted from `_present_candidate_dates()`.
