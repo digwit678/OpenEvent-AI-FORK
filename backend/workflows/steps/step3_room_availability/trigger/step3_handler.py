@@ -65,6 +65,9 @@ from .constants import (
 # R3 refactoring: Room selection action extracted to dedicated module
 from .selection import handle_select_room_action
 
+# R4 refactoring: Evaluation functions extracted to dedicated module
+from .evaluation import evaluate_room_statuses, render_rooms_response, _flatten_statuses
+
 __workflow_role__ = "trigger"
 
 # Use shared threshold from menu_options; kept as alias for backward compat
@@ -816,48 +819,10 @@ def process(state: WorkflowState) -> GroupResult:
     return result
 
 
-def evaluate_room_statuses(db: Dict[str, Any], target_date: str | None) -> List[Dict[str, str]]:
-    """[Trigger] Evaluate each configured room for the requested event date."""
-
-    rooms = load_rooms()
-    statuses: List[Dict[str, str]] = []
-    for room_name in rooms:
-        status = room_status_on_date(db, target_date, room_name)
-        statuses.append({room_name: status})
-    return statuses
+# R4: evaluate_room_statuses moved to evaluation.py
 
 
-def render_rooms_response(
-    event_id: str,
-    date_iso: str,
-    pax: int,
-    rooms: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    """Render a lightweight room summary for deterministic flow tests."""
-
-    display_date = format_iso_date_to_ddmmyyyy(date_iso) or date_iso
-    headers = [f"Room options for {display_date}"]
-    lines: List[str] = []
-    for room in rooms:
-        matched = ", ".join(room.get("matched") or []) or "None"
-        missing_items = room.get("missing") or []
-        missing = ", ".join(missing_items) if missing_items else "None"
-        capacity = room.get("capacity") or "—"
-        name = room.get("name") or room.get("id") or "Room"
-        lines.append(
-            f"{name} — capacity {capacity} — matched: {matched} — missing: {missing}"
-        )
-    body = "\n".join(lines) if lines else "No rooms available."
-    assistant_draft = {"headers": headers, "body": body}
-    return {
-        "action": "send_reply",
-        "event_id": event_id,
-        "rooms": rooms,
-        "res": {
-            "assistant_draft": assistant_draft,
-            "assistant_draft_text": body,
-        },
-    }
+# R4: render_rooms_response moved to evaluation.py
 
 
 def _detour_to_date(state: WorkflowState, event_entry: dict) -> GroupResult:
@@ -1096,13 +1061,7 @@ def _preferred_room(event_entry: dict, user_requested_room: Optional[str]) -> Op
     return event_entry.get("locked_room_id")
 
 
-def _flatten_statuses(statuses: List[Dict[str, str]]) -> Dict[str, str]:
-    """[Trigger] Convert list of {room: status} mappings into a single dict."""
-
-    result: Dict[str, str] = {}
-    for entry in statuses:
-        result.update(entry)
-    return result
+# R4: _flatten_statuses moved to evaluation.py
 
 
 def _increment_room_attempt(event_entry: dict) -> int:
