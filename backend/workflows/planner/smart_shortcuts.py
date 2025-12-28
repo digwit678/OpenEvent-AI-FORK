@@ -126,6 +126,22 @@ from backend.workflows.planner.preask_handler import (
     maybe_preask_lines as _maybe_preask_lines_impl,
     finalize_preask_state as _finalize_preask_state_impl,
 )
+from backend.workflows.planner.intent_parser import (
+    parse_room_intent as _parse_room_intent_impl,
+    parse_participants_intent as _parse_participants_intent_impl,
+    parse_billing_intent as _parse_billing_intent_impl,
+    can_lock_room as _can_lock_room_impl,
+    add_needs_input as _add_needs_input_impl,
+    defer_intent as _defer_intent_impl,
+    persist_pending_intents as _persist_pending_intents_impl,
+)
+from backend.workflows.planner.intent_executor import (
+    execute_intent as _execute_intent_impl,
+    apply_room_selection as _apply_room_selection_impl,
+    apply_participants_update as _apply_participants_update_impl,
+    select_next_question as _select_next_question_impl,
+    question_for_intent as _question_for_intent_impl,
+)
 
 # Re-export gate function for tests that import it directly
 _shortcuts_allowed = _shortcuts_allowed  # noqa: F811 - intentional re-export
@@ -495,31 +511,15 @@ class _ShortcutPlanner:
     def _parse_date_intent(self) -> None:
         _parse_date_intent_impl(self)
 
+    # S3: Room/participants/billing intent parsing delegated to intent_parser.py
     def _parse_room_intent(self) -> None:
-        room = self.user_info.get("room")
-        if not room:
-            return
-
-        if self._can_lock_room(room):
-            intent = ParsedIntent("room_selection", {"room": room}, verifiable=True)
-            self.verifiable.append(intent)
-        else:
-            self._add_needs_input("availability", {"room": room, "reason": "room_requires_date"}, reason="room_requires_date")
+        _parse_room_intent_impl(self)
 
     def _parse_participants_intent(self) -> None:
-        participants = self.user_info.get("participants")
-        if participants is None:
-            return
-        if isinstance(participants, (int, float)) or str(participants).isdigit():
-            intent = ParsedIntent("participants_update", {"participants": int(participants)}, verifiable=True)
-            self.verifiable.append(intent)
-        else:
-            self._add_needs_input("requirements", {"reason": "participants_unclear"}, reason="participants_unclear")
+        _parse_participants_intent_impl(self)
 
     def _parse_billing_intent(self) -> None:
-        billing = self.user_info.get("billing_address")
-        if billing:
-            self._add_needs_input("billing", {"billing_address": billing, "reason": "billing_after_offer"}, reason="billing_after_offer")
+        _parse_billing_intent_impl(self)
 
     # S3: Product intent parsing delegated to product_handler.py
     def _parse_product_intent(self) -> None:
@@ -567,54 +567,20 @@ class _ShortcutPlanner:
     def _execute_date_room_combo(self) -> bool:
         return _execute_date_room_combo_impl(self)
 
+    # S3: Intent execution delegated to intent_executor.py
     def _execute_intent(self, intent: ParsedIntent) -> bool:
-        if intent.type == "date_confirmation":
-            return self._apply_date_confirmation(intent.data["window"])
-        if intent.type == "room_selection":
-            return self._apply_room_selection(intent.data["room"])
-        if intent.type == "participants_update":
-            return self._apply_participants_update(intent.data["participants"])
-        if intent.type == "product_add":
-            return self._apply_product_add(intent.data.get("items") or [])
-        return False
+        return _execute_intent_impl(self, intent)
 
     # S3: Date confirmation delegated to date_handler.py
     def _apply_date_confirmation(self, window_payload: Dict[str, Any]) -> bool:
         return _apply_date_confirmation_impl(self, window_payload)
 
+    # S3: Room/participants application delegated to intent_executor.py
     def _apply_room_selection(self, requested_room: str) -> bool:
-        pending = self.event.get("room_pending_decision") or {}
-        selected = pending.get("selected_room") or self.event.get("locked_room_id")
-        if not selected or selected.lower() != str(requested_room).strip().lower():
-            return False
-        status = pending.get("selected_status") or "Available"
-        requirements_hash_value = pending.get("requirements_hash") or self.event.get("requirements_hash")
-        update_event_metadata(
-            self.event,
-            locked_room_id=selected,
-            room_eval_hash=requirements_hash_value,
-            current_step=4,
-            thread_state="In Progress",
-            status="Option",  # Room selected → calendar blocked as Option
-        )
-        self.event.pop("room_pending_decision", None)
-        append_audit_entry(self.event, 3, 4, "room_locked_via_shortcut")
-        self.state.current_step = 4
-        self.state.extras["persist"] = True
-        self.telemetry.executed_intents.append("room_selection")
-        self.summary_lines.append(f"• Room locked: {selected} ({status}) → Status: Option")
-        self.room_checked = True
-        return True
+        return _apply_room_selection_impl(self, requested_room)
 
     def _apply_participants_update(self, participants: int) -> bool:
-        requirements = dict(self.event.get("requirements") or {})
-        requirements["number_of_participants"] = participants
-        req_hash = requirements_hash(requirements)
-        update_event_metadata(self.event, requirements=requirements, requirements_hash=req_hash)
-        self.state.extras["persist"] = True
-        self.telemetry.executed_intents.append("participants_update")
-        self.summary_lines.append(f"• Headcount updated: {participants} guests")
-        return True
+        return _apply_participants_update_impl(self, participants)
 
     def _apply_product_add(self, items: List[Dict[str, Any]]) -> bool:
         return _apply_product_add_impl(self, items)
@@ -636,37 +602,17 @@ class _ShortcutPlanner:
     def _manual_window_from_user_info(self) -> Optional[ConfirmationWindow]:
         return _manual_window_from_user_info_impl(self)
 
+    # S3: Room lock check delegated to intent_parser.py
     def _can_lock_room(self, requested_room: str) -> bool:
-        pending = self.event.get("room_pending_decision") or {}
-        selected = pending.get("selected_room")
-        status = pending.get("selected_status")
-        if not selected:
-            return False
-        return selected.lower() == str(requested_room).strip().lower() and status in {"Available", "Option"}
+        return _can_lock_room_impl(self, requested_room)
 
+    # S3: Needs input handling delegated to intent_parser.py
     def _add_needs_input(self, intent_type: str, data: Dict[str, Any], reason: str = "needs_input") -> None:
-        self.needs_input.append(ParsedIntent(intent_type, data, verifiable=False, reason=reason))
-        payload = {
-            "type": intent_type,
-            "entities": data,
-            "confidence": 0.75,
-            "reason_deferred": reason,
-            "ts": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-        }
-        self.telemetry.deferred.append(payload)
-        self.pending_items.append(payload)
+        _add_needs_input_impl(self, intent_type, data, reason)
 
+    # S3: Question selection delegated to intent_executor.py
     def _select_next_question(self) -> Optional[Dict[str, Any]]:
-        if not self.needs_input:
-            return None
-        priority_map = {intent.type: intent for intent in self.needs_input}
-        for candidate in self.priority_order:
-            intent = priority_map.get(candidate)
-            if intent:
-                return {"intent": intent.type, "data": intent.data}
-        # Fall back to first deferred.
-        intent = self.needs_input[0]
-        return {"intent": intent.type, "data": intent.data}
+        return _select_next_question_impl(self)
 
     # S3: Product display methods delegated to product_handler.py
     def _build_product_confirmation_lines(self) -> List[str]:
@@ -765,77 +711,16 @@ class _ShortcutPlanner:
             lines.extend(preask_lines)
         return "\n".join(lines).strip()
 
+    # S3: Question generation delegated to intent_executor.py
     def _question_for_intent(self, intent_type: str, data: Dict[str, Any]) -> str:
-        if intent_type == "time":
-            chosen_date = self.user_info.get("event_date") or format_iso_date_to_ddmmyyyy(self.user_info.get("date"))
-            if chosen_date:
-                return f"What start and end time should we reserve for {chosen_date}? (e.g., 14:00–18:00)"
-            return "What start and end time should we reserve? (e.g., 14:00–18:00)"
-        if intent_type == "availability":
-            room = data.get("room")
-            if room:
-                return f"Should I run availability for {room}? Let me know if you’d prefer a different space."
-            return "Which room would you like me to check availability for?"
-        if intent_type == "site_visit":
-            return "Would you like me to propose a few slots for a site visit?"
-        if intent_type == "date_choice":
-            return "Which date should I check for you? Feel free to share a couple of options."
-        if intent_type == "budget":
-            currency = _budget_default_currency()
-            return f"Could you share a budget cap? For example \"{currency} 60 total\" or \"{currency} 30 per item\"."
-        if intent_type == "offer_hil":
-            items = data.get("items") or []
-            item_names = ", ".join(self._missing_item_display(item) for item in items)
-            budget = data.get("budget") or self.budget_info
-            currency = (budget or {}).get("currency") or _budget_default_currency()
-            if budget:
-                budget_text = budget.get("text") or self._format_money(budget.get("amount"), currency)
-                return (
-                    f"Would you like me to send a request to our manager for {item_names} with budget {budget_text}? "
-                    "You'll receive an email once the manager replies."
-                )
-            if _capture_budget_on_hil():
-                return (
-                    f"Would you like me to send a request to our manager for {item_names}? "
-                    f"If so, let me know a budget cap (e.g., \"{currency} 60 total\" or \"{currency} 30 per item\"). You'll receive an email once the manager replies."
-                )
-            return (
-                f"Would you like me to send a request to our manager for {item_names}? "
-                "You'll receive an email once they reply."
-            )
-        if intent_type == "billing":
-            return "Could you confirm the billing address when you’re ready?"
-        if intent_type == "offer_prepare":
-            return "Should I start drafting the offer next, or is there another detail you'd like me to capture?"
-        if intent_type == "product_followup":
-            items = data.get("items") or []
-            names = ", ".join(item.get("name") or "the item" for item in items) or "the pending item"
-            return (
-                f"I queued {names} for the next update because we already confirmed two items. "
-                "Should I keep that plan, or is there another detail you’d like me to prioritize now?"
-            )
-        return "Let me know the next detail you’d like me to update."
+        return _question_for_intent_impl(self, intent_type, data)
 
+    # S3: Intent deferral delegated to intent_parser.py
     def _defer_intent(self, intent: ParsedIntent, reason: str) -> None:
-        payload = {
-            "type": intent.type,
-            "entities": intent.data,
-            "confidence": 0.95,
-            "reason_deferred": reason,
-            "ts": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-        }
-        self.telemetry.deferred.append(payload)
-        self.pending_items.append(payload)
-        if reason == "combined_limit_reached" and intent.type == "product_add":
-            self.needs_input.append(ParsedIntent("product_followup", intent.data, verifiable=False, reason=reason))
+        _defer_intent_impl(self, intent, reason)
 
     def _persist_pending_intents(self) -> None:
-        if not self.pending_items:
-            return
-        existing = list(self.event.get("pending_intents") or [])
-        existing.extend(self.pending_items)
-        self.event["pending_intents"] = existing
-        self.state.extras["persist"] = True
+        _persist_pending_intents_impl(self)
 
     def _record_telemetry_log(self) -> None:
         logs = self.event.setdefault("logs", [])
