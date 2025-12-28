@@ -19,6 +19,8 @@ from collections import Counter
 from datetime import datetime, time
 from typing import Any, Counter as CounterType, Dict, List, Optional, Sequence, Tuple
 
+from backend.debug.hooks import trace_gate  # D13d
+
 from .constants import (
     AFFIRMATIVE_TOKENS,
     CONFIRMATION_KEYWORDS,
@@ -66,6 +68,55 @@ def _extract_signature_name(text: Optional[str]) -> Optional[str]:
         if 1 <= len(tail.split()) <= 4:
             return tail
     return None
+
+
+def compose_greeting(
+    raw_name: Optional[str],
+    message_body: Optional[str] = None,
+    from_name: Optional[str] = None,
+) -> str:
+    """Compose a greeting from available name sources.
+
+    Extracted from step2_handler.py as part of D13 refactoring.
+
+    Args:
+        raw_name: Pre-extracted name from user_info or client profile
+        message_body: Message body to search for signature name
+        from_name: Fallback from_name from message
+
+    Returns:
+        Greeting string like "Hello Sarah," or "Hello,"
+    """
+    # Try sources in priority order
+    name = raw_name
+    if not name and message_body:
+        name = _extract_signature_name(message_body)
+    if not name:
+        name = from_name
+
+    first = _extract_first_name(name)
+    if not first:
+        return "Hello,"
+    return f"Hello {first},"
+
+
+def with_greeting(greeting: str, body: str) -> str:
+    """Prepend a greeting to a message body if not already present.
+
+    Extracted from step2_handler.py as part of D13 refactoring.
+
+    Args:
+        greeting: The greeting to prepend (e.g., "Hello Sarah,")
+        body: The message body
+
+    Returns:
+        Body with greeting prepended, or just greeting if body is empty
+    """
+    if not body:
+        return greeting
+    if body.startswith(greeting):
+        return body
+    return f"{greeting}\n\n{body}"
 
 
 def _extract_candidate_tokens(text: str) -> str:
@@ -399,6 +450,9 @@ __all__ = [
     "_extract_signature_name",
     "_extract_candidate_tokens",
     "_strip_system_subject",
+    # D13: Greeting helpers
+    "compose_greeting",
+    "with_greeting",
     # String formatting
     "_preface_with_apology",
     "_format_label_text",
@@ -430,6 +484,8 @@ __all__ = [
     "format_room_availability",
     "compact_products_summary",
     "user_requested_products",
+    # D13d: Tracing
+    "trace_candidate_gate",
 ]
 
 
@@ -549,3 +605,29 @@ def user_requested_products(message_text: str, classification: Dict[str, Any]) -
         if parsed.get("products") or parsed.get("catering"):
             return True
     return False
+
+
+# =============================================================================
+# D13d: TRACING UTILITIES (extracted from step2_handler.py)
+# =============================================================================
+
+
+def trace_candidate_gate(thread_id: str, candidates: List[str]) -> None:
+    """Emit a gate trace for candidate count (feasible=0/1/many).
+
+    Extracted from step2_handler.py as part of D13d refactoring.
+
+    Args:
+        thread_id: Thread identifier for tracing
+        candidates: List of candidate ISO date strings
+    """
+    if not thread_id:
+        return
+    count = len([value for value in candidates if value])
+    if count == 0:
+        label = "feasible=0"
+    elif count == 1:
+        label = "feasible=1"
+    else:
+        label = "feasible=many"
+    trace_gate(thread_id, "Step2_Date", label, True, {"count": count})

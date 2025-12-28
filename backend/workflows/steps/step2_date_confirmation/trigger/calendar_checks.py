@@ -21,6 +21,26 @@ from backend.workflows.common.datetime_parse import build_window_iso
 
 
 # -----------------------------------------------------------------------------
+# Room Preference Accessor
+# -----------------------------------------------------------------------------
+
+
+def preferred_room(event_entry: dict) -> str | None:
+    """Extract preferred room from event requirements.
+
+    Extracted from step2_handler.py as part of D13b refactoring.
+
+    Args:
+        event_entry: Event data dict containing requirements
+
+    Returns:
+        Room name if specified, None otherwise
+    """
+    requirements = event_entry.get("requirements") or {}
+    return requirements.get("preferred_room")
+
+
+# -----------------------------------------------------------------------------
 # Calendar Availability
 # -----------------------------------------------------------------------------
 
@@ -122,4 +142,5 @@ __all__ = [
     "candidate_is_calendar_free",
     "future_fridays_in_may_june",
     "maybe_fuzzy_friday_candidates",
+    "preferred_room",  # D13b
 ]
