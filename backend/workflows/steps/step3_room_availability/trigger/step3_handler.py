@@ -53,23 +53,17 @@ from backend.rooms import rank as rank_rooms_profiles, get_max_capacity, any_roo
 
 from ..condition.decide import room_status_on_date
 from ..llm.analysis import summarize_room_statuses
+from .constants import (
+    ROOM_OUTCOME_UNAVAILABLE,
+    ROOM_OUTCOME_AVAILABLE,
+    ROOM_OUTCOME_OPTION,
+    ROOM_OUTCOME_CAPACITY_EXCEEDED,
+    ROOM_SIZE_ORDER,
+    ROOM_PROPOSAL_HIL_THRESHOLD,
+)
 
 __workflow_role__ = "trigger"
 
-
-ROOM_OUTCOME_UNAVAILABLE = "Unavailable"
-ROOM_OUTCOME_AVAILABLE = "Available"
-ROOM_OUTCOME_OPTION = "Option"
-ROOM_OUTCOME_CAPACITY_EXCEEDED = "CapacityExceeded"
-
-ROOM_SIZE_ORDER = {
-    "Room A": 1,
-    "Room B": 2,
-    "Room C": 3,
-    "Punkt.Null": 4,
-}
-
-ROOM_PROPOSAL_HIL_THRESHOLD = 3  # TODO(openevent-team): make this configurable per venue
 # Use shared threshold from menu_options; kept as alias for backward compat
 QNA_SUMMARY_CHAR_THRESHOLD = MENU_CONTENT_CHAR_THRESHOLD
 

@@ -53,7 +53,7 @@ def test_multiturn_override_broader_pattern(monkeypatch, tmp_path):
         Expect DB constraints without weekday filter and dates across the whole February.
     """
     import importlib
-    step2_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
+    step2_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
 
     # Q1: Saturdays in February 2026
     state1 = _create_state(
@@ -138,7 +138,7 @@ def test_multiturn_follow_up_weekday_change(monkeypatch, tmp_path):
         Expect Q2 to use Sundays in February 2026 only (no Saturdays).
     """
     import importlib
-    step2_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
+    step2_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
 
     # Q1: Saturdays in February 2026
     state1 = _create_state(
@@ -209,7 +209,7 @@ def test_multiturn_independent_new_qna(monkeypatch, tmp_path):
     Expect month=April, weekday=Friday; no February/Saturday constraints in this second run.
     """
     import importlib
-    step2_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
+    step2_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
 
     # Q1: Saturdays in February 2026
     state1 = _create_state(
@@ -282,7 +282,7 @@ def test_multiturn_extraction_is_fresh(monkeypatch, tmp_path):
     from unittest.mock import Mock, call
 
     qna_extraction_module = importlib.import_module("backend.workflows.qna.extraction")
-    step2_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
+    step2_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
 
     # Mock ensure_qna_extraction to track calls
     original_ensure = qna_extraction_module.ensure_qna_extraction
@@ -350,7 +350,7 @@ def test_multiturn_no_stale_cache_reuse(monkeypatch, tmp_path):
     preventing reuse of cached extraction from previous turns.
     """
     import importlib
-    step2_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
+    step2_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
 
     # Q1: Set up initial Q&A that might cache extraction
     state1 = _create_state(

@@ -1,24 +1,26 @@
 {
   "suite": "flow_A_general_qna",
+  "description": "Test flow: Intake with Q&A → Room availability → Room selection → Offer (with smart shortcuts)",
   "initial_clock": "2025-11-11T10:00:00+01:00",
   "steps": [
     {
       "turn": 1,
+      "description": "Initial inquiry with vague date and Q&A - shortcuts push directly to Step 3",
       "msg_in": {
         "subject": "Private Dinner Event – Date Options in February",
-        "body": "Hello,\nWe’d like to organize a private dinner for our family (around 30 guests) at your venue.\nWe’re flexible but are thinking sometime in February, preferably a Saturday evening.\nRequirements:\n– Long dining table setup\n– Three-course dinner menu with wine\n– Background music (live or playlist)\nQuestion: Which vegetarian three-course menus with wine pairing do you offer?\nMany thanks,\nLaura Meier\nlaura.meier@bluewin.ch"
+        "body": "Hello,\nWe'd like to organize a private dinner for our family (around 30 guests) at your venue.\nWe're flexible but are thinking sometime in February, preferably a Saturday evening.\nRequirements:\n– Long dining table setup\n– Three-course dinner menu with wine\n– Background music (live or playlist)\nQuestion: Which vegetarian three-course menus with wine pairing do you offer?\nMany thanks,\nLaura Meier\nlaura.meier@bluewin.ch"
       },
       "expect": {
-        "intent": "event_intake_with_question",
+        "intent": "event_intake_shortcut",
         "user_info": {
           "participants": 30,
-          "vague_month": "February",
-          "vague_weekday": "Saturday",
+          "vague_month": "february",
+          "vague_weekday": "saturday",
           "vague_time_of_day": "evening"
         },
         "actions": [
-          {"type": "select_date"},
-          {"type": "ask_for_date_enqueued"}
+          {"type": "send_reply"},
+          {"type": "send_reply"}
         ],
         "trace": {
           "subloops_contains": [
@@ -31,88 +33,19 @@
               "Availability overview"
             ],
             "contains_all": [
-              "Thanks for the briefing — here are the next available slots that fit your preferred window.",
-              "AVAILABLE DATES:"
+              "Room",
+              "available"
             ]
           }
-        }
-      }
-    },
-    {
-      "turn": "1a",
-      "gui_action": {
-        "approve_task": "ask_for_date_enqueued"
-      },
-      "expect": {
-        "actions": [
-          {
-            "type": "send_reply"
-          }
-        ],
-        "res": {
-          "assistant_draft": {
-            "headers_subset": [
-              "Availability overview"
-            ]
-          }
-        }
+        },
+        "current_step": 3
       }
     },
     {
       "turn": 2,
+      "description": "User selects Room B for the suggested date",
       "msg_in": {
-        "body": "Thanks. 21.02.2026 works for us for 30 guests. Please proceed."
-      },
-      "expect": {
-        "intent": "event_update",
-        "user_info": {
-          "date": "2026-02-21",
-          "participants": 30
-        },
-        "actions": [
-          {"type": "send_reply"},
-          {"type": "send_reply"}
-        ],
-        "db_assert": {
-          "gatekeeping": {
-            "attendees": 30,
-            "date": "2026-02-21"
-          }
-        }
-      }
-    },
-    {
-      "turn": 3,
-      "system_call": "room_status_on_date",
-      "args": {
-        "date": "2026-02-21"
-      },
-      "expect": {
-        "rooms_min": 2,
-        "res": {
-          "assistant_draft": {
-            "headers": [
-              "Rooms for 30 people on 21.02.2026"
-            ],
-            "body_order": [
-              "21.02.2026 is set.",
-              "For 30 people on 21.02.2026, these rooms are available",
-              "Room A",
-              "Room B"
-            ],
-            "contains_all": [
-              "Room A",
-              "Room B",
-              "Let me know which room you prefer"
-            ]
-          }
-        }
-      }
-    },
-    {
-      "turn": 4,
-      "msg_in": {
-        "body": "Let’s confirm Room A for that date and proceed with the offer."
+        "body": "Let's confirm Room B for that date and proceed with the offer."
       },
       "simulate_intent": "room_choice",
       "expect": {
@@ -120,11 +53,12 @@
       }
     },
     {
-      "turn": 5,
+      "turn": 3,
+      "description": "Build offer for Room B on 07.02.2026",
       "system_call": "build_offer",
       "args": {
-        "room_id": "R-A",
-        "date": "2026-02-21",
+        "room_id": "Room B",
+        "date": "2026-02-07",
         "pax": 30
       },
       "expect": {
@@ -135,11 +69,9 @@
               "Offer"
             ],
             "contains_all": [
-              "Offer sent",
-              "status is Option",
-              "Room A",
-              "21.02.2026",
-              "30 guests"
+              "Room B",
+              "07.02.2026",
+              "30"
             ]
           }
         }

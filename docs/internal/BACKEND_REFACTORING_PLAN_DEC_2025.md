@@ -1240,7 +1240,7 @@ Estimates are rough (single developer, with tests).
 | D4 | ✅ Step2 confirmation resolution extraction | `calendar_checks.py` (2025-12-27) | - | - | DONE |
 | D5 | Step2 Q&A bridge extraction | general_qna module + shims | D4 | Medium | 2–6h |
 | R0 | ✅ Fix Step3 Q&A request crash | Already fixed (line 1431 init) | T0 | - | DONE |
-| R1 | Step3 constants/types extraction | Step3 trigger submodules | R0 | Medium | 2–4h |
+| R1 | ✅ Step3 constants/types extraction | `trigger/constants.py` (2025-12-28) | R0 | - | DONE |
 | R2 | ✅ Step3 Q&A bridge extraction | Unified in `common/general_qna.py` (2025-12-27) | - | - | DONE |
 | R3 | Step3 selection action extraction | Step3 selection module + shims | R2 | Medium | 2–5h |
 | O0 | ✅ Step4 compat export (verified working) | process.py compat shim intact (2025-12-27) | - | - | DONE |
@@ -1254,10 +1254,10 @@ Estimates are rough (single developer, with tests).
 | S3 | Smart shortcuts planner extraction | planner submodules + facade | S2 | High | 4–10h |
 | C0 | ✅ Conversation manager: lazy OpenAI init | Already fixed (_get_openai_client) | T0 | - | DONE |
 | C1 | Conversation manager session store split | legacy module + route imports | C0 | Medium | 2–6h |
-| G0 | Freeze groups as pure re-export | groups/* + guard test | T0 | Medium | 1–4h |
-| B0 | Import boundary enforcement test | tests/gatekeeping/* | T0 | Medium | 2–6h |
-| F1 | Step7 constants/classification extraction | step7 trigger submodules | T0 | Medium | 2–5h |
-| F2 | Step7 site-visit extraction | step7 site_visit module | F1 | High | 4–10h |
+| G0 | ✅ Freeze groups as pure re-export | All 65 files verified + guard tests (2025-12-28) | T0 | - | DONE |
+| B0 | ✅ Import boundary enforcement test | `test_import_boundaries.py` (2025-12-28) | T0 | - | DONE |
+| F1 | ✅ Step7 constants/classification extraction | `constants.py`, `classification.py`, `helpers.py` (2025-12-27) | T0 | - | DONE |
+| F2 | ✅ Step7 site-visit extraction | `site_visit.py` (370 lines) (2025-12-27) | F1 | - | DONE |
 | F3 | ✅ Step7 Q&A bridge extraction | Unified in `common/general_qna.py` (2025-12-27) | - | - | DONE |
 | P1 | ✅ Introduce pre-route pipeline module | `runtime/pre_route.py` (207 lines) 2025-12-27 | W3 | - | DONE |
 | P2 | ✅ Make guards pure (no metadata writes) | `guards.py` pure + `pre_route.py` applies (2025-12-27) | - | - | DONE |
