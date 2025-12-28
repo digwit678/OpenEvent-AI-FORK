@@ -130,6 +130,13 @@ from .calendar_checks import (
     maybe_fuzzy_friday_candidates as _maybe_fuzzy_friday_candidates,
 )
 
+# D5 refactoring: General Q&A bridge extracted to dedicated module
+# NOTE: Local definitions below will be removed once circular deps are resolved
+# from .general_qna import (
+#     present_general_room_qna as _present_general_room_qna,
+#     _search_range_availability,
+# )
+
 __workflow_role__ = "trigger"
 
 logger = logging.getLogger(__name__)
