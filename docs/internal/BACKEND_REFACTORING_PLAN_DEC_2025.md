@@ -1287,7 +1287,7 @@ Estimates are rough (single developer, with tests).
 | R0 | ✅ Fix Step3 Q&A request crash | Already fixed (line 1431 init) | T0 | - | DONE |
 | R1 | ✅ Step3 constants/types extraction | `trigger/constants.py` (2025-12-28) | R0 | - | DONE |
 | R2 | ✅ Step3 Q&A bridge extraction | Unified in `common/general_qna.py` (2025-12-27) | - | - | DONE |
-| R3 | Step3 selection action extraction | Step3 selection module + shims | R2 | Medium | 2–5h |
+| R3 | ✅ Step3 selection action extraction | `selection.py` (256 lines) + dedup cleanup (2025-12-28) | R2 | - | DONE |
 | O0 | ✅ Step4 compat export (verified working) | process.py compat shim intact (2025-12-27) | - | - | DONE |
 | O1 | ✅ Step4 product ops extraction | `product_ops.py` (465 lines) committed 2025-12-27 | O0 | - | DONE |
 | O2 | ✅ Step4 billing gate consolidation | `common/billing_gate.py` shared by Step4+5 (2025-12-27) | O1 | - | DONE |
@@ -1298,7 +1298,8 @@ Estimates are rough (single developer, with tests).
 | S2 | ✅ Smart shortcuts types/telemetry extraction | `shortcuts_types.py` (153 lines) (2025-12-28) | S1 | - | DONE |
 | S3 | Smart shortcuts planner extraction | planner submodules + facade | S2 | High | 4–10h |
 | C0 | ✅ Conversation manager: lazy OpenAI init | Already fixed (_get_openai_client) | T0 | - | DONE |
-| C1 | Conversation manager session store split | legacy module + route imports | C0 | Medium | 2–6h |
+| C1 | ✅ Conversation manager session store split | `backend/legacy/session_store.py` (175 lines) (2025-12-28) | C0 | - | DONE |
+| C2 | ✅ Conversation manager dead code removal | Removed 694 lines dead code (729→35) (2025-12-28) | C1 | - | DONE |
 | G0 | ✅ Freeze groups as pure re-export | All 65 files verified + guard tests (2025-12-28) | T0 | - | DONE |
 | B0 | ✅ Import boundary enforcement test | `test_import_boundaries.py` (2025-12-28) | T0 | - | DONE |
 | F1 | ✅ Step7 constants/classification extraction | `constants.py`, `classification.py`, `helpers.py` (2025-12-27) | T0 | - | DONE |

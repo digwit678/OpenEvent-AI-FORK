@@ -2,6 +2,23 @@
 
 ## 2025-12-28
 
+### R3: Step3 Selection Action Deduplication ✅
+
+**Summary:** Completed R3 refactoring by removing duplicate helper functions from `step3_handler.py` that already existed in `selection.py`. The selection module was already created; this task cleaned up remaining code duplication.
+
+**Changes:**
+- Updated import in `step3_handler.py` to include `_thread_id`, `_reset_room_attempts`, `_format_display_date` from `selection.py`
+- Removed 3 duplicate function definitions from `step3_handler.py` (-16 lines: 1839→1823)
+- Enhanced `_thread_id()` in `selection.py` to include `state.thread_id` and `state.client_id` fallbacks
+
+**Files Modified:**
+- `backend/workflows/steps/step3_room_availability/trigger/step3_handler.py`
+- `backend/workflows/steps/step3_room_availability/trigger/selection.py`
+
+**Verification:** All 146 core tests pass + E2E Playwright verified (room selection → products prompt)
+
+---
+
 ### C2: Remove Dead Chatbot Code ✅
 
 **Summary:** Removed ~694 lines of unused legacy chatbot code from `conversation_manager.py`, reducing it from ~729 lines to ~35 lines.
