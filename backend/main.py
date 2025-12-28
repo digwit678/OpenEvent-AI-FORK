@@ -36,7 +36,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 # NOTE: domain, conversation_manager imports moved to routes/messages.py
-from backend.conversation_manager import active_conversations  # Used in root endpoint
+from backend.legacy.session_store import active_conversations  # Used in root endpoint
 # NOTE: adapter imports moved to routes/messages.py
 # NOTE: workflow imports moved to routes/messages.py
 from backend.utils import json_io
@@ -122,8 +122,8 @@ else:
         allow_headers=["*"],
     )
 
-# CENTRALIZED EVENTS DATABASE
-EVENTS_FILE = "events_database.json"
+# CENTRALIZED EVENTS DATABASE - use canonical path from workflow_email
+EVENTS_FILE = str(WF_DB_PATH)  # For backwards compat in any string contexts
 FRONTEND_DIR = Path(__file__).resolve().parents[1] / "atelier-ai-frontend"
 FRONTEND_PORT = int(os.getenv("FRONTEND_PORT", "3000"))
 _frontend_process: Optional[subprocess.Popen] = None
@@ -355,14 +355,14 @@ def _open_browser_when_ready() -> None:
 
 def load_events_database():
     """Load all events from the database file"""
-    if Path(EVENTS_FILE).exists():
-        with open(EVENTS_FILE, 'r', encoding='utf-8') as f:
+    if WF_DB_PATH.exists():
+        with open(WF_DB_PATH, 'r', encoding='utf-8') as f:
             return json_io.load(f)
     return {"events": []}
 
 def save_events_database(database):
     """Save all events to the database file"""
-    with open(EVENTS_FILE, 'w', encoding='utf-8') as f:
+    with open(WF_DB_PATH, 'w', encoding='utf-8') as f:
         json_io.dump(database, f, indent=2, ensure_ascii=False)
 
 

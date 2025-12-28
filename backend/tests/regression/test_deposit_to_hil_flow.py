@@ -151,7 +151,7 @@ class TestDepositPaymentTriggersHIL:
         3. Client pays deposit
         4. System should send to HIL
         """
-        from backend.workflows.steps.step5_negotiation.trigger.step5_handler import _refresh_billing
+        from backend.workflows.common.billing_gate import refresh_billing as _refresh_billing
 
         # Create event at step 5 with offer accepted
         event_entry = self._create_event_at_step5_with_offer_accepted()

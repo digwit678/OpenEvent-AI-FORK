@@ -6,7 +6,7 @@ Each test is linked to a specific bug entry.
 
 References:
 - TEST_MATRIX_detection_and_flow.md: REG_* tests
-- docs/TEAM_GUIDE.md: Known Issues & Fixes section
+- docs/guides/TEAM_GUIDE.md: Known Issues & Fixes section
 """
 
 from __future__ import annotations

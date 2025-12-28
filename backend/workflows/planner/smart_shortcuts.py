@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from collections import defaultdict
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -18,206 +18,146 @@ from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.common.datetime_parse import build_window_iso
 import importlib
 from backend.workflows.steps.step1_intake.condition.checks import suggest_dates
-from backend.config.flags import env_flag
 
 date_process_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.process")
 ConfirmationWindow = getattr(date_process_module, "ConfirmationWindow")
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
 from backend.services.products import normalise_product_payload
 
+# Import from extracted modules and re-export for compatibility
+from backend.workflows.planner.shortcuts_flags import (
+    _flag_enabled,
+    _max_combined,
+    _legacy_shortcuts_allowed,
+    _needs_input_priority,
+    _product_flow_enabled,
+    _capture_budget_on_hil,
+    _no_unsolicited_menus,
+    _event_scoped_upsell_enabled,
+    _budget_default_currency,
+    _budget_parse_strict,
+    _max_missing_items_per_hil,
+    atomic_turns_enabled,
+    shortcut_allow_date_room,
+)
+from backend.workflows.planner.shortcuts_gate import (
+    _shortcuts_allowed,
+    _coerce_participants,
+    _debug_shortcut_gate,
+)
+from backend.workflows.planner.shortcuts_types import (
+    ParsedIntent,
+    PlannerTelemetry,
+    AtomicDecision,
+    PlannerResult,
+    _PREASK_CLASS_COPY,
+    _CLASS_KEYWORDS,
+    _ORDINAL_WORDS_BY_LANG,
+)
+
+# S3: Import extracted handler modules
+from backend.workflows.planner.budget_parser import (
+    extract_budget_info as _extract_budget_info_impl,
+    parse_budget_value as _parse_budget_value_impl,
+    parse_budget_text as _parse_budget_text_impl,
+)
+from backend.workflows.planner.dag_guard import (
+    dag_guard as _dag_guard_impl,
+    is_date_confirmed as _is_date_confirmed_impl,
+    is_room_locked as _is_room_locked_impl,
+    can_collect_billing as _can_collect_billing_impl,
+    set_dag_block as _set_dag_block_impl,
+    ensure_prerequisite_prompt as _ensure_prerequisite_prompt_impl,
+)
+from backend.workflows.planner.date_handler import (
+    normalize_time as _normalize_time_impl,
+    time_from_iso as _time_from_iso_impl,
+    window_to_payload as _window_to_payload_impl,
+    window_from_payload as _window_from_payload_impl,
+    infer_times_for_date as _infer_times_for_date_impl,
+    preferred_date_slot as _preferred_date_slot_impl,
+    candidate_date_options as _candidate_date_options_impl,
+    maybe_emit_date_options_answer as _maybe_emit_date_options_answer_impl,
+    resolve_window_from_module as _resolve_window_from_module_impl,
+    manual_window_from_user_info as _manual_window_from_user_info_impl,
+    parse_date_intent as _parse_date_intent_impl,
+    ensure_date_choice_intent as _ensure_date_choice_intent_impl,
+    apply_date_confirmation as _apply_date_confirmation_impl,
+    should_execute_date_room_combo as _should_execute_date_room_combo_impl,
+    execute_date_room_combo as _execute_date_room_combo_impl,
+)
+from backend.workflows.planner.product_handler import (
+    format_money as _format_money_impl,
+    missing_item_display as _missing_item_display_impl,
+    products_state as _products_state_impl,
+    product_lookup as _product_lookup_impl,
+    normalise_products as _normalise_products_impl,
+    current_participant_count as _current_participant_count_impl,
+    infer_quantity as _infer_quantity_impl,
+    format_product_line as _format_product_line_impl,
+    product_subtotal_lines as _product_subtotal_lines_impl,
+    build_product_confirmation_lines as _build_product_confirmation_lines_impl,
+    parse_product_intent as _parse_product_intent_impl,
+    apply_product_add as _apply_product_add_impl,
+    load_catering_names as _load_catering_names_impl,
+)
+from backend.workflows.planner.choice_handler import (
+    load_choice_context as _load_choice_context_impl,
+    maybe_handle_choice_context_reply as _maybe_handle_choice_context_reply_impl,
+    parse_choice_selection as _parse_choice_selection_impl,
+    choice_clarification_prompt as _choice_clarification_prompt_impl,
+    format_choice_item as _format_choice_item_impl,
+    apply_choice_selection as _apply_choice_selection_impl,
+    complete_choice_selection as _complete_choice_selection_impl,
+    handle_choice_selection as _handle_choice_selection_impl,
+)
+from backend.workflows.planner.preask_handler import (
+    preask_feature_enabled as _preask_feature_enabled_impl,
+    menu_preview_lines as _menu_preview_lines_impl,
+    explicit_menu_requested as _explicit_menu_requested_impl,
+    process_preask as _process_preask_impl,
+    maybe_emit_preask_prompt_only as _maybe_emit_preask_prompt_only_impl,
+    handle_preask_responses as _handle_preask_responses_impl,
+    detect_preask_response as _detect_preask_response_impl,
+    single_pending_class as _single_pending_class_impl,
+    prepare_preview_for_requests as _prepare_preview_for_requests_impl,
+    hydrate_preview_from_context as _hydrate_preview_from_context_impl,
+    build_preview_for_class as _build_preview_for_class_impl,
+    maybe_preask_lines as _maybe_preask_lines_impl,
+    finalize_preask_state as _finalize_preask_state_impl,
+)
+from backend.workflows.planner.intent_parser import (
+    parse_room_intent as _parse_room_intent_impl,
+    parse_participants_intent as _parse_participants_intent_impl,
+    parse_billing_intent as _parse_billing_intent_impl,
+    can_lock_room as _can_lock_room_impl,
+    add_needs_input as _add_needs_input_impl,
+    defer_intent as _defer_intent_impl,
+    persist_pending_intents as _persist_pending_intents_impl,
+)
+from backend.workflows.planner.intent_executor import (
+    execute_intent as _execute_intent_impl,
+    apply_room_selection as _apply_room_selection_impl,
+    apply_participants_update as _apply_participants_update_impl,
+    select_next_question as _select_next_question_impl,
+    question_for_intent as _question_for_intent_impl,
+)
+
+# Re-export gate function for tests that import it directly
+_shortcuts_allowed = _shortcuts_allowed  # noqa: F811 - intentional re-export
+
 logger = logging.getLogger(__name__)
 
-# Feature flags ----------------------------------------------------------------
 
-
-def _env_flag(name: str, default: str = "false") -> str:
-    return os.environ.get(name, default)
-
-
-def _flag_enabled() -> bool:
-    return env_flag("SMART_SHORTCUTS", False)
-
-
-def _max_combined() -> int:
-    value = _env_flag("SMART_SHORTCUTS_MAX_COMBINED", os.environ.get("MAX_COMBINED", "3"))
-    try:
-        return max(1, int(value))
-    except (TypeError, ValueError):
-        return 3
-
-
-def _legacy_shortcuts_allowed() -> bool:
-    return env_flag("LEGACY_SHORTCUTS_ALLOWED", False)
-
-
-def _needs_input_priority() -> List[str]:
-    default = ["time", "availability", "site_visit", "offer_hil", "budget", "billing"]
-    raw = os.environ.get("SMART_SHORTCUTS_NEEDS_INPUT")
-    if not raw:
-        return default
-    items = [item.strip() for item in raw.split(",") if item.strip()]
-    return items or default
-
-
-def _product_flow_enabled() -> bool:
-    return env_flag("PRODUCT_FLOW_ENABLED", False)
-
-
-def _capture_budget_on_hil() -> bool:
-    return env_flag("CAPTURE_BUDGET_ON_HIL", False)
-
-
-def _no_unsolicited_menus() -> bool:
-    return env_flag("NO_UNSOLICITED_MENUS", False)
-
-
-def _event_scoped_upsell_enabled() -> bool:
-    return env_flag("EVENT_SCOPED_UPSELL", False)
-
-
-def _budget_default_currency() -> str:
-    return os.environ.get("BUDGET_DEFAULT_CURRENCY", "CHF")
-
-
-def _budget_parse_strict() -> bool:
-    return env_flag("BUDGET_PARSE_STRICT", False)
-
-
-def _max_missing_items_per_hil() -> int:
-    try:
-        return max(1, int(os.environ.get("MAX_MISSING_ITEMS_PER_HIL", "10") or 10))
-    except (TypeError, ValueError):
-        return 10
-
-
-_PREASK_CLASS_COPY = {
-    "catering": "Would you like to see catering options we can provide on-site?",
-    "av": "Would you like to see AV add-ons (e.g., extra mics, adapters)?",
-    "furniture": "Would you like to see furniture layouts or add-ons?",
-}
-
-_CLASS_KEYWORDS = {
-    "catering": {"catering", "food", "menu", "buffet", "lunch", "coffee"},
-    "av": {"av", "audio", "visual", "video", "projector", "sound", "microphone"},
-    "furniture": {"furniture", "chairs", "tables", "layout", "seating"},
-}
-
-_ORDINAL_WORDS_BY_LANG = {
-    "en": {
-        "first": 1,
-        "1st": 1,
-        "one": 1,
-        "second": 2,
-        "2nd": 2,
-        "two": 2,
-        "third": 3,
-        "3rd": 3,
-        "three": 3,
-        "fourth": 4,
-        "4th": 4,
-        "four": 4,
-        "fifth": 5,
-        "5th": 5,
-        "five": 5,
-    },
-    "de": {
-        "erste": 1,
-        "zuerst": 1,
-        "zweite": 2,
-        "zweiter": 2,
-        "dritte": 3,
-        "dritter": 3,
-        "vierte": 4,
-        "vierter": 4,
-        "fuenfte": 5,
-    },
-}
-
-
-
-# Intent structures ------------------------------------------------------------
-
-
-@dataclass
-class ParsedIntent:
-    type: str
-    data: Dict[str, Any]
-    verifiable: bool
-    reason: Optional[str] = None
-
-
-@dataclass
-class PlannerTelemetry:
-    executed_intents: List[str] = field(default_factory=list)
-    combined_confirmation: bool = False
-    needs_input_next: Optional[str] = None
-    deferred: List[Dict[str, Any]] = field(default_factory=list)
-    artifact_match: Optional[str] = None
-    added_items: List[Dict[str, Any]] = field(default_factory=list)
-    missing_items: List[Dict[str, Any]] = field(default_factory=list)
-    offered_hil: bool = False
-    hil_request_created: bool = False
-    budget_provided: bool = False
-    upsell_shown: bool = False
-    room_checked: bool = False
-    menus_included: str = "false"
-    menus_phase: str = "none"
-    product_prices_included: bool = False
-    product_price_missing: bool = False
-    gatekeeper_passed: Optional[bool] = None
-    answered_question_first: Optional[bool] = None
-    delta_availability_used: Optional[bool] = None
-    preask_candidates: List[str] = field(default_factory=list)
-    preask_shown: List[str] = field(default_factory=list)
-    preask_response: Dict[str, str] = field(default_factory=dict)
-    preview_class_shown: str = "none"
-    preview_items_count: int = 0
-    choice_context_active: bool = False
-    selection_method: str = "none"
-    re_prompt_reason: str = "none"
-    legacy_shortcut_invocations: int = 0
-    shortcut_path_used: str = "none"
-
-    def to_log(self, msg_id: Optional[str], event_id: Optional[str]) -> Dict[str, Any]:
-        return {
-            "executed_intents": list(self.executed_intents),
-            "combined_confirmation": bool(self.combined_confirmation),
-            "needs_input_next": self.needs_input_next,
-            "deferred_count": len(self.deferred),
-            "source_msg_id": msg_id,
-            "event_id": event_id,
-            "artifact_match": self.artifact_match,
-            "added_items": self.added_items,
-            "missing_items": self.missing_items,
-            "offered_hil": self.offered_hil,
-            "hil_request_created": self.hil_request_created,
-            "budget_provided": self.budget_provided,
-            "upsell_shown": self.upsell_shown,
-            "room_checked": self.room_checked,
-            "menus_included": self.menus_included,
-            "menus_phase": self.menus_phase,
-            "product_prices_included": self.product_prices_included,
-            "product_price_missing": self.product_price_missing,
-            "gatekeeper_passed": self.gatekeeper_passed,
-            "answered_question_first": self.answered_question_first,
-            "delta_availability_used": self.delta_availability_used,
-            "legacy_shortcut_invocations": self.legacy_shortcut_invocations,
-            "shortcut_path_used": self.shortcut_path_used,
-        }
-
-
-@dataclass
-class AtomicDecision:
-    execute: List[ParsedIntent]
-    deferred: List[Tuple[ParsedIntent, str]]
-    use_combo: bool = False
-    shortcut_path_used: str = "none"
+# NOTE: Constants and dataclasses (ParsedIntent, PlannerTelemetry, AtomicDecision,
+# PlannerResult, _PREASK_CLASS_COPY, _CLASS_KEYWORDS, _ORDINAL_WORDS_BY_LANG)
+# are now imported from shortcuts_types.py (see imports at top of file)
 
 
 class AtomicTurnPolicy:
     def __init__(self) -> None:
-        self.atomic_turns = env_flag("ATOMIC_TURNS", False)
-        self.allow_date_room = env_flag("SHORTCUT_ALLOW_DATE_ROOM", True)
+        self.atomic_turns = atomic_turns_enabled()
+        self.allow_date_room = shortcut_allow_date_room()
 
     def decide(self, planner: "_ShortcutPlanner") -> AtomicDecision:
         if not self.atomic_turns:
@@ -252,20 +192,7 @@ class AtomicTurnPolicy:
         return decision
 
 
-class PlannerResult(dict):
-    """Dictionary-like payload returned by the shortcut planner with a stable accessor."""
-
-    def __init__(self, payload: Dict[str, Any]):
-        super().__init__(payload)
-
-    def merged(self) -> Dict[str, Any]:
-        """Return a shallow copy of the planner payload for external consumers."""
-
-        payload = dict(self)
-        payload.setdefault("message", "")
-        payload.setdefault("telemetry", {})
-        payload.setdefault("state_delta", {})
-        return payload
+# NOTE: PlannerResult is now imported from shortcuts_types.py
 
 
 # Planner execution ------------------------------------------------------------
@@ -307,65 +234,8 @@ def maybe_run_smart_shortcuts(state: WorkflowState) -> Optional[GroupResult]:
     return GroupResult(action="smart_shortcut_processed", payload=result.merged())
 
 
-def _shortcuts_allowed(event_entry: Dict[str, Any]) -> bool:
-    """Gate smart shortcuts on confirmed date + capacity readiness."""
-
-    current_step = event_entry.get("current_step") or 0
-    if current_step and isinstance(current_step, str):
-        try:
-            current_step = int(current_step)
-        except ValueError:
-            current_step = 0
-    if current_step < 3:
-        return False
-
-    # [BILLING FLOW BYPASS] Don't intercept messages during billing capture flow
-    # When offer is accepted and we're awaiting billing, let step 5 handle the message
-    if event_entry.get("offer_accepted"):
-        billing_req = event_entry.get("billing_requirements") or {}
-        if billing_req.get("awaiting_billing_for_accept"):
-            return False
-
-    if event_entry.get("date_confirmed") is not True:
-        return False
-
-    if _coerce_participants(event_entry) is not None:
-        return True
-
-    shortcuts = event_entry.get("shortcuts") or {}
-    return bool(shortcuts.get("capacity_ok"))
-
-
-def _coerce_participants(event_entry: Dict[str, Any]) -> Optional[int]:
-    requirements = event_entry.get("requirements") or {}
-    raw = requirements.get("number_of_participants")
-    if raw in (None, "", "Not specified", "none"):
-        raw = requirements.get("participants")
-    if raw in (None, "", "Not specified", "none"):
-        return None
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        try:
-            return int(str(raw).strip())
-        except (TypeError, ValueError):
-            return None
-
-
-def _debug_shortcut_gate(state: str, event_entry: Dict[str, Any], user_info: Dict[str, Any]) -> None:
-    if os.getenv("WF_DEBUG_STATE") != "1":
-        return
-    info = {
-        "state": state,
-        "step": event_entry.get("current_step"),
-        "date_confirmed": event_entry.get("date_confirmed"),
-        "participants": (event_entry.get("requirements") or {}).get("number_of_participants"),
-        "capacity_shortcut": (event_entry.get("shortcuts") or {}).get("capacity_ok"),
-        "wish_products": (event_entry.get("wish_products") or []),
-        "user_shortcut": (user_info or {}).get("shortcut_capacity_ok"),
-    }
-    formatted = " ".join(f"{key}={value}" for key, value in info.items())
-    print(f"[WF DEBUG][shortcuts] {formatted}")
+# NOTE: _shortcuts_allowed, _coerce_participants, _debug_shortcut_gate
+# are now imported from shortcuts_gate.py (see imports at top of file)
 
 
 class _ShortcutPlanner:
@@ -637,428 +507,83 @@ class _ShortcutPlanner:
         self._parse_product_intent()
         self._ensure_date_choice_intent()
 
+    # S3: Date intent parsing delegated to date_handler.py
     def _parse_date_intent(self) -> None:
-        if not (self.user_info.get("date") or self.user_info.get("event_date")):
-            return
+        _parse_date_intent_impl(self)
 
-        window = self._manual_window_from_user_info()
-        if window is None:
-            window = self._resolve_window_from_module(preview=False)
-        if window is None:
-            self._add_needs_input("time", {"reason": "missing_time"}, reason="missing_time")
-            return
-        if getattr(window, "partial", False):
-            self._add_needs_input("time", {"reason": "missing_time"}, reason="missing_time")
-            return
-        intent = ParsedIntent("date_confirmation", {"window": self._window_to_payload(window)}, verifiable=True)
-        self.verifiable.append(intent)
-
+    # S3: Room/participants/billing intent parsing delegated to intent_parser.py
     def _parse_room_intent(self) -> None:
-        room = self.user_info.get("room")
-        if not room:
-            return
-
-        if self._can_lock_room(room):
-            intent = ParsedIntent("room_selection", {"room": room}, verifiable=True)
-            self.verifiable.append(intent)
-        else:
-            self._add_needs_input("availability", {"room": room, "reason": "room_requires_date"}, reason="room_requires_date")
+        _parse_room_intent_impl(self)
 
     def _parse_participants_intent(self) -> None:
-        participants = self.user_info.get("participants")
-        if participants is None:
-            return
-        if isinstance(participants, (int, float)) or str(participants).isdigit():
-            intent = ParsedIntent("participants_update", {"participants": int(participants)}, verifiable=True)
-            self.verifiable.append(intent)
-        else:
-            self._add_needs_input("requirements", {"reason": "participants_unclear"}, reason="participants_unclear")
+        _parse_participants_intent_impl(self)
 
     def _parse_billing_intent(self) -> None:
-        billing = self.user_info.get("billing_address")
-        if billing:
-            self._add_needs_input("billing", {"billing_address": billing, "reason": "billing_after_offer"}, reason="billing_after_offer")
+        _parse_billing_intent_impl(self)
 
+    # S3: Product intent parsing delegated to product_handler.py
     def _parse_product_intent(self) -> None:
-        if not _product_flow_enabled():
-            return
-        raw_products = self._normalise_products(self.user_info.get("products_add"))
-        if not raw_products:
-            return
-
-        available_map = self._product_lookup("available_items")
-        manager_map = self._product_lookup("manager_added_items")
-
-        matched: List[Dict[str, Any]] = []
-        missing: List[Dict[str, Any]] = []
-
-        for item in raw_products:
-            name_key = item["name"].lower()
-            catalog_entry = available_map.get(name_key) or manager_map.get(name_key)
-            if catalog_entry:
-                merged = dict(catalog_entry)
-                merged.setdefault("name", catalog_entry.get("name") or item["name"])
-                merged["quantity"] = item.get("quantity") or merged.get("quantity") or self._infer_quantity(merged)
-                matched.append(merged)
-            else:
-                missing.append(item)
-
-        if matched:
-            self.pending_product_additions.extend(matched)
-            self.verifiable.append(ParsedIntent("product_add", {"items": matched}, verifiable=True))
-
-        limited_missing = missing[: _max_missing_items_per_hil()]
-
-        if missing:
-            self.pending_missing_products.extend(limited_missing)
-            payload = {
-                "items": limited_missing,
-                "ask_budget": _capture_budget_on_hil(),
-            }
-            if self.budget_info:
-                payload["budget"] = self.budget_info
-                self.telemetry.budget_provided = True
-            self.telemetry.offered_hil = True
-            self._add_needs_input("offer_hil", payload, reason="missing_products")
-            self.product_price_missing = True
-
-        if matched and not missing:
-            if self.telemetry.artifact_match is None:
-                self.telemetry.artifact_match = "all"
-        elif matched and missing:
-            self.telemetry.artifact_match = "partial"
-        elif not matched and missing:
-            if self.telemetry.artifact_match is None:
-                self.telemetry.artifact_match = "none"
-
-        if missing:
-            self.telemetry.missing_items.extend({"name": item.get("name")} for item in limited_missing)
+        _parse_product_intent_impl(self)
 
     def _ensure_date_choice_intent(self) -> None:
-        current_step = self.event.get("current_step")
-        if current_step not in (None, 1, 2):
-            return
-        if self.event.get("chosen_date"):
-            return
-        if any(intent.type == "date_confirmation" for intent in self.verifiable):
-            return
-        if any(intent.type in {"time", "date_choice"} for intent in self.needs_input):
-            return
-        self._add_needs_input("date_choice", {"reason": "date_missing"}, reason="date_missing")
+        _ensure_date_choice_intent_impl(self)
 
     # ------------------------------------------------------------------ execute
+    # S3: DAG guard methods delegated to dag_guard.py
     def _is_date_confirmed(self) -> bool:
-        if self.event.get("date_confirmed") is True:
-            return True
-        requested = self.event.get("requested_window") or {}
-        if requested.get("date_iso") or requested.get("display_date"):
-            return True
-        return False
+        return _is_date_confirmed_impl(self)
 
     def _is_room_locked(self) -> bool:
-        return bool(self.event.get("locked_room_id"))
+        return _is_room_locked_impl(self)
 
     def _can_collect_billing(self) -> bool:
-        current_step = self.event.get("current_step") or 1
-        if current_step >= 6:
-            return True
-        status = str(self.event.get("offer_status") or "").lower()
-        return status in {"sent", "accepted", "finalized", "finalised", "approved", "ready"}
+        return _can_collect_billing_impl(self)
 
     def _set_dag_block(self, reason: Optional[str]) -> None:
-        if not reason:
-            return
-        order = {"room_requires_date": 0, "products_require_room": 1, "billing_after_offer": 2}
-        current_rank = order.get(self._dag_block_reason, 99)
-        next_rank = order.get(reason, 99)
-        if next_rank < current_rank:
-            self._dag_block_reason = reason
-        if reason == self._dag_block_reason:
-            self.telemetry.dag_blocked = self._dag_block_reason
-            self.state.telemetry.dag_blocked = self._dag_block_reason
+        _set_dag_block_impl(self, reason)
 
     def _ensure_prerequisite_prompt(self, reason: Optional[str], intent: Optional[ParsedIntent] = None) -> None:
-        if not reason:
-            return
-        if reason == "room_requires_date":
-            self._ensure_date_choice_intent()
-            return
-        if reason == "products_require_room":
-            if any(item.type == "availability" for item in self.needs_input):
-                return
-            payload: Dict[str, Any] = {"reason": "room_requires_date"}
-            pending = self.event.get("room_pending_decision") or {}
-            room = pending.get("selected_room")
-            if room:
-                payload["room"] = room
-            self._add_needs_input("availability", payload, reason="room_requires_date")
-            return
-        if reason == "billing_after_offer":
-            if any(item.type == "offer_prepare" for item in self.needs_input):
-                return
-            self._add_needs_input("offer_prepare", {}, reason="billing_after_offer")
+        _ensure_prerequisite_prompt_impl(self, reason, intent)
 
     def _dag_guard(self, intent: ParsedIntent) -> Tuple[bool, Optional[str]]:
-        reason: Optional[str] = None
-        if intent.type == "room_selection" and not self._is_date_confirmed():
-            reason = "room_requires_date"
-        elif intent.type == "product_add" and not self._is_room_locked():
-            reason = "products_require_room"
-        elif intent.type == "billing" and not self._can_collect_billing():
-            reason = "billing_after_offer"
-        allowed = reason is None
-        return allowed, reason
+        return _dag_guard_impl(self, intent)
 
+    # S3: Time utilities delegated to date_handler.py
     def _time_from_iso(self, value: Optional[str]) -> Optional[str]:
-        if not value:
-            return None
-        text = str(value)
-        try:
-            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-            return f"{parsed.hour:02d}:{parsed.minute:02d}"
-        except ValueError:
-            pass
-        if len(text) >= 16 and text[13] == ":":
-            candidate = text[11:16]
-            return self._normalize_time(candidate)
-        return self._normalize_time(text)
+        return _time_from_iso_impl(value)
 
     def _preferred_date_slot(self) -> str:
-        start = self._normalize_time(self.user_info.get("start_time"))
-        end = self._normalize_time(self.user_info.get("end_time"))
-
-        requested = self.event.get("requested_window") or {}
-        if not start:
-            start = self._normalize_time(requested.get("start_time")) or self._time_from_iso(requested.get("start"))
-        if not end:
-            end = self._normalize_time(requested.get("end_time")) or self._time_from_iso(requested.get("end"))
-
-        requirements = self.event.get("requirements") or {}
-        duration = requirements.get("event_duration") or {}
-        if not start:
-            start = self._normalize_time(duration.get("start"))
-        if not end:
-            end = self._normalize_time(duration.get("end"))
-
-        start = start or "18:00"
-        end = end or "22:00"
-        if start and end:
-            return f"{start}–{end}"
-        return start or end or "18:00–22:00"
+        return _preferred_date_slot_impl(self)
 
     def _candidate_date_options(self) -> List[str]:
-        requirements = self.event.get("requirements") or {}
-        preferred_room = requirements.get("preferred_room") or ""
-        raw_dates = suggest_dates(
-            self.state.db,
-            preferred_room=preferred_room,
-            start_from_iso=self.state.message.ts,
-            days_ahead=45,
-            max_results=5,
-        )
-        return raw_dates[:5]
+        return _candidate_date_options_impl(self)
 
     def _maybe_emit_date_options_answer(self) -> Optional[PlannerResult]:
-        if self.verifiable:
-            return None
-        date_needed = next((intent for intent in self.needs_input if intent.type == "date_choice"), None)
-        if not date_needed:
-            return None
-
-        slot_label = self._preferred_date_slot()
-        options = self._candidate_date_options()
-        lines: List[str] = [f"AVAILABLE DATES ({slot_label}):"]
-        if options:
-            for idx, option in enumerate(options, start=1):
-                lines.append(f"{idx}) {option}")
-        else:
-            lines.append("No availability in the next 45 days — share another window and I'll check.")
-        lines.append("")
-        option_count = len(options)
-        if option_count == 0:
-            lines.append("Tell me another date/time window and I'll check it right away.")
-        elif option_count == 1:
-            lines.append("Reply with 1, or tell me another date/time window.")
-        else:
-            lines.append(f"Reply with a number (1–{option_count}), or tell me another date/time window.")
-
-        self.telemetry.needs_input_next = "date_choice"
-        self.telemetry.answered_question_first = True
-        self.telemetry.combined_confirmation = False
-        self.telemetry.menus_included = "false"
-        self.telemetry.menus_phase = "none"
-        self.state.telemetry.answered_question_first = True
-        self._set_dag_block("room_requires_date")
-        return self._build_payload(self._with_greeting("\n".join(lines)))
+        return _maybe_emit_date_options_answer_impl(self)
 
     def _should_execute_date_room_combo(self) -> bool:
-        date_intent = next((intent for intent in self.verifiable if intent.type == "date_confirmation"), None)
-        room_intent = next((intent for intent in self.verifiable if intent.type == "room_selection"), None)
-        if not date_intent or not room_intent:
-            return False
-        window = date_intent.data.get("window") or {}
-        if window.get("partial"):
-            return False
-        requested_room = room_intent.data.get("room")
-        if not requested_room or not self._can_lock_room(requested_room):
-            return False
-        return True
+        return _should_execute_date_room_combo_impl(self)
 
     def _execute_date_room_combo(self) -> bool:
-        date_intent = next((intent for intent in self.verifiable if intent.type == "date_confirmation"), None)
-        room_intent = next((intent for intent in self.verifiable if intent.type == "room_selection"), None)
-        if not date_intent or not room_intent:
-            return False
+        return _execute_date_room_combo_impl(self)
 
-        window_payload = date_intent.data.get("window") or {}
-        if not self._apply_date_confirmation(window_payload):
-            return False
-
-        requested_room = room_intent.data.get("room")
-        if not self._apply_room_selection(requested_room):
-            return False
-        return True
-
+    # S3: Intent execution delegated to intent_executor.py
     def _execute_intent(self, intent: ParsedIntent) -> bool:
-        if intent.type == "date_confirmation":
-            return self._apply_date_confirmation(intent.data["window"])
-        if intent.type == "room_selection":
-            return self._apply_room_selection(intent.data["room"])
-        if intent.type == "participants_update":
-            return self._apply_participants_update(intent.data["participants"])
-        if intent.type == "product_add":
-            return self._apply_product_add(intent.data.get("items") or [])
-        return False
+        return _execute_intent_impl(self, intent)
 
+    # S3: Date confirmation delegated to date_handler.py
     def _apply_date_confirmation(self, window_payload: Dict[str, Any]) -> bool:
-        # Reuse Step 2 helpers to finalise confirmation.
-        finalize = getattr(date_process_module, "_finalize_confirmation", None)
-        if not finalize:
-            return False
-        window_obj = self._window_from_payload(window_payload)
-        result = finalize(self.state, self.event, window_obj)
-        # Remove legacy draft message; planner will compose new reply.
-        self.state.draft_messages.clear()
-        self.state.extras["persist"] = True
-        self.telemetry.executed_intents.append("date_confirmation")
-        start = window_payload.get("start_time")
-        end = window_payload.get("end_time")
-        iso = window_payload.get("display_date")
-        tz = window_payload.get("tz", "Europe/Zurich")
-        if start and end:
-            slot = f"{start}–{end}"
-        elif start:
-            slot = start
-        else:
-            slot = "time pending"
-        self.summary_lines.append(f"• Date confirmed: {iso} {slot} ({tz})")
-        return result is not None
+        return _apply_date_confirmation_impl(self, window_payload)
 
+    # S3: Room/participants application delegated to intent_executor.py
     def _apply_room_selection(self, requested_room: str) -> bool:
-        pending = self.event.get("room_pending_decision") or {}
-        selected = pending.get("selected_room") or self.event.get("locked_room_id")
-        if not selected or selected.lower() != str(requested_room).strip().lower():
-            return False
-        status = pending.get("selected_status") or "Available"
-        requirements_hash_value = pending.get("requirements_hash") or self.event.get("requirements_hash")
-        update_event_metadata(
-            self.event,
-            locked_room_id=selected,
-            room_eval_hash=requirements_hash_value,
-            current_step=4,
-            thread_state="In Progress",
-            status="Option",  # Room selected → calendar blocked as Option
-        )
-        self.event.pop("room_pending_decision", None)
-        append_audit_entry(self.event, 3, 4, "room_locked_via_shortcut")
-        self.state.current_step = 4
-        self.state.extras["persist"] = True
-        self.telemetry.executed_intents.append("room_selection")
-        self.summary_lines.append(f"• Room locked: {selected} ({status}) → Status: Option")
-        self.room_checked = True
-        return True
+        return _apply_room_selection_impl(self, requested_room)
 
     def _apply_participants_update(self, participants: int) -> bool:
-        requirements = dict(self.event.get("requirements") or {})
-        requirements["number_of_participants"] = participants
-        req_hash = requirements_hash(requirements)
-        update_event_metadata(self.event, requirements=requirements, requirements_hash=req_hash)
-        self.state.extras["persist"] = True
-        self.telemetry.executed_intents.append("participants_update")
-        self.summary_lines.append(f"• Headcount updated: {participants} guests")
-        return True
+        return _apply_participants_update_impl(self, participants)
 
     def _apply_product_add(self, items: List[Dict[str, Any]]) -> bool:
-        if not items:
-            return False
-        products_list = self.event.setdefault("products", [])
-        line_items = self._products_state().setdefault("line_items", [])
-        currency_default = _budget_default_currency()
-        for item in items:
-            name = item.get("name") or "Unnamed item"
-            quantity = max(1, int(item.get("quantity") or self._infer_quantity(item)))
-            unit_price_raw = item.get("unit_price")
-            currency = item.get("currency") or currency_default
-            unit_price_value: Optional[float] = None
-            if unit_price_raw is not None:
-                try:
-                    unit_price_value = float(unit_price_raw)
-                except (TypeError, ValueError):
-                    unit_price_value = None
-            subtotal: Optional[float] = None
-            if unit_price_value is not None:
-                subtotal = unit_price_value * quantity
-            else:
-                self.product_price_missing = True
-
-            updated = False
-            for existing in products_list:
-                if existing.get("name", "").lower() == name.lower():
-                    existing["quantity"] = quantity
-                    if unit_price_value is not None:
-                        existing["unit_price"] = unit_price_value
-                    updated = True
-                    break
-            if not updated:
-                entry = {"name": name, "quantity": quantity}
-                if unit_price_value is not None:
-                    entry["unit_price"] = unit_price_value
-                products_list.append(entry)
-
-            line_updated = False
-            for existing_line in line_items:
-                if existing_line.get("name", "").lower() == name.lower():
-                    existing_line["quantity"] = quantity
-                    if unit_price_value is not None:
-                        existing_line["unit_price"] = unit_price_value
-                    line_updated = True
-                    break
-            if not line_updated:
-                entry = {"name": name, "quantity": quantity}
-                if unit_price_value is not None:
-                    entry["unit_price"] = unit_price_value
-                line_items.append(entry)
-
-            self.telemetry.added_items.append({"name": name, "quantity": quantity})
-            if subtotal is not None:
-                self.product_currency_totals[currency] = self.product_currency_totals.get(currency, 0.0) + subtotal
-            else:
-                self.product_price_missing = True
-            self.product_line_details.append(
-                {
-                    "name": name,
-                    "quantity": quantity,
-                    "currency": currency,
-                    "unit_price": unit_price_value,
-                    "subtotal": subtotal,
-                    "price_missing": unit_price_value is None,
-                }
-            )
-
-        if items:
-            self.telemetry.executed_intents.append("product_add")
-        self.state.extras["persist"] = True
-        return True
+        return _apply_product_add_impl(self, items)
 
     # ------------------------------------------------------------ utilities
     def _snapshot_event(self) -> Dict[str, Any]:
@@ -1070,135 +595,38 @@ class _ShortcutPlanner:
             "pending_intents": list(event.get("pending_intents") or []),
         }
 
+    # S3: Window resolution delegated to date_handler.py
     def _resolve_window_from_module(self, preview: bool = False):
-        resolver = getattr(date_process_module, "_resolve_confirmation_window", None)
-        if not resolver:
-            return None
-        window = resolver(self.state, self.event)
-        if not window:
-            manual = self._manual_window_from_user_info()
-            return manual
-        if preview and window.partial and not window.start_time:
-            return None
-        return window
+        return _resolve_window_from_module_impl(self, preview)
 
     def _manual_window_from_user_info(self) -> Optional[ConfirmationWindow]:
-        date_iso = self.user_info.get("date")
-        display = self.user_info.get("event_date") or format_iso_date_to_ddmmyyyy(date_iso)
-        start_raw = self.user_info.get("start_time")
-        end_raw = self.user_info.get("end_time")
-        if not (start_raw and end_raw):
-            inferred_start, inferred_end = self._infer_times_for_date(date_iso)
-            start_raw = start_raw or inferred_start
-            end_raw = end_raw or inferred_end
-        if not (date_iso and display and start_raw and end_raw):
-            return None
-        start_norm = self._normalize_time(start_raw)
-        end_norm = self._normalize_time(end_raw)
-        if not (start_norm and end_norm):
-            return None
-        start_time_obj = datetime.strptime(start_norm, "%H:%M").time()
-        end_time_obj = datetime.strptime(end_norm, "%H:%M").time()
-        start_iso, end_iso = build_window_iso(date_iso, start_time_obj, end_time_obj)
-        return ConfirmationWindow(
-            display_date=display,
-            iso_date=date_iso,
-            start_time=start_norm,
-            end_time=end_norm,
-            start_iso=start_iso,
-            end_iso=end_iso,
-            inherited_times=False,
-            partial=False,
-            source_message_id=self.state.message.msg_id,
-        )
+        return _manual_window_from_user_info_impl(self)
 
+    # S3: Room lock check delegated to intent_parser.py
     def _can_lock_room(self, requested_room: str) -> bool:
-        pending = self.event.get("room_pending_decision") or {}
-        selected = pending.get("selected_room")
-        status = pending.get("selected_status")
-        if not selected:
-            return False
-        return selected.lower() == str(requested_room).strip().lower() and status in {"Available", "Option"}
+        return _can_lock_room_impl(self, requested_room)
 
+    # S3: Needs input handling delegated to intent_parser.py
     def _add_needs_input(self, intent_type: str, data: Dict[str, Any], reason: str = "needs_input") -> None:
-        self.needs_input.append(ParsedIntent(intent_type, data, verifiable=False, reason=reason))
-        payload = {
-            "type": intent_type,
-            "entities": data,
-            "confidence": 0.75,
-            "reason_deferred": reason,
-            "ts": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-        }
-        self.telemetry.deferred.append(payload)
-        self.pending_items.append(payload)
+        _add_needs_input_impl(self, intent_type, data, reason)
 
+    # S3: Question selection delegated to intent_executor.py
     def _select_next_question(self) -> Optional[Dict[str, Any]]:
-        if not self.needs_input:
-            return None
-        priority_map = {intent.type: intent for intent in self.needs_input}
-        for candidate in self.priority_order:
-            intent = priority_map.get(candidate)
-            if intent:
-                return {"intent": intent.type, "data": intent.data}
-        # Fall back to first deferred.
-        intent = self.needs_input[0]
-        return {"intent": intent.type, "data": intent.data}
+        return _select_next_question_impl(self)
 
+    # S3: Product display methods delegated to product_handler.py
     def _build_product_confirmation_lines(self) -> List[str]:
-        if not self.product_line_details:
-            self.telemetry.product_prices_included = False
-            self.telemetry.product_price_missing = self.product_price_missing
-            return []
-        lines: List[str] = ["Products added:"]
-        any_missing = False
-        for detail in self.product_line_details:
-            line = self._format_product_line(detail)
-            if detail.get("price_missing"):
-                any_missing = True
-            lines.append(line)
-        subtotal_lines = self._product_subtotal_lines()
-        lines.extend(subtotal_lines)
-        any_priced = any(not detail.get("price_missing") for detail in self.product_line_details)
-        all_priced = all(not detail.get("price_missing") for detail in self.product_line_details)
-        self.telemetry.product_prices_included = all_priced and any_priced
-        self.product_price_missing = self.product_price_missing or any_missing
-        self.telemetry.product_price_missing = self.product_price_missing or any_missing
-        return lines
+        return _build_product_confirmation_lines_impl(self)
 
     def _format_product_line(self, detail: Dict[str, Any]) -> str:
-        name = detail.get("name") or "Unnamed item"
-        quantity = detail.get("quantity") or 1
-        unit_price = detail.get("unit_price")
-        currency = detail.get("currency") or _budget_default_currency()
-        if unit_price is None:
-            return f"• {name} — {quantity} × TBD (price pending)"
-        subtotal = detail.get("subtotal")
-        unit_str = self._format_money(unit_price, currency)
-        subtotal_str = self._format_money(subtotal or 0.0, currency)
-        return f"• {name} — {quantity} × {unit_str} = {subtotal_str}"
+        return _format_product_line_impl(self, detail)
 
     def _product_subtotal_lines(self) -> List[str]:
-        if not self.product_currency_totals:
-            return []
-        if len(self.product_currency_totals) == 1:
-            currency, amount = next(iter(self.product_currency_totals.items()))
-            return [f"Products subtotal: {self._format_money(amount, currency)}"]
-        lines: List[str] = []
-        for currency in sorted(self.product_currency_totals.keys()):
-            amount = self.product_currency_totals[currency]
-            lines.append(f"Products subtotal ({currency}): {self._format_money(amount, currency)}")
-        return lines
+        return _product_subtotal_lines_impl(self)
 
     @staticmethod
     def _format_money(amount: float, currency: str) -> str:
-        if amount is None:
-            return "TBD"
-        rounded = round(amount, 2)
-        if abs(rounded - round(rounded)) < 1e-6:
-            value = str(int(round(rounded)))
-        else:
-            value = f"{rounded:.2f}".rstrip("0").rstrip(".")
-        return f"{currency} {value}"
+        return _format_money_impl(amount, currency)
 
     def _compose_addons_section(self) -> Tuple[Optional[str], List[str]]:
         if self.preview_lines:
@@ -1225,14 +653,9 @@ class _ShortcutPlanner:
                 return "explicit", preview_lines
         return None, []
 
+    # S3: Menu preview delegated to preask_handler.py
     def _menu_preview_lines(self) -> Optional[List[str]]:
-        names = _load_catering_names()
-        if not names:
-            return ["Catering menus will be available once the manager shares the current list."]
-        preview = ", ".join(names[:3])
-        if len(names) > 3:
-            preview += ", ..."
-        return [f"Catering menus: {preview}"]
+        return _menu_preview_lines_impl(self)
 
     def _default_next_question(self) -> Optional[Dict[str, Any]]:
         current = self.event.get("current_step") or 1
@@ -1288,77 +711,16 @@ class _ShortcutPlanner:
             lines.extend(preask_lines)
         return "\n".join(lines).strip()
 
+    # S3: Question generation delegated to intent_executor.py
     def _question_for_intent(self, intent_type: str, data: Dict[str, Any]) -> str:
-        if intent_type == "time":
-            chosen_date = self.user_info.get("event_date") or format_iso_date_to_ddmmyyyy(self.user_info.get("date"))
-            if chosen_date:
-                return f"What start and end time should we reserve for {chosen_date}? (e.g., 14:00–18:00)"
-            return "What start and end time should we reserve? (e.g., 14:00–18:00)"
-        if intent_type == "availability":
-            room = data.get("room")
-            if room:
-                return f"Should I run availability for {room}? Let me know if you’d prefer a different space."
-            return "Which room would you like me to check availability for?"
-        if intent_type == "site_visit":
-            return "Would you like me to propose a few slots for a site visit?"
-        if intent_type == "date_choice":
-            return "Which date should I check for you? Feel free to share a couple of options."
-        if intent_type == "budget":
-            currency = _budget_default_currency()
-            return f"Could you share a budget cap? For example \"{currency} 60 total\" or \"{currency} 30 per item\"."
-        if intent_type == "offer_hil":
-            items = data.get("items") or []
-            item_names = ", ".join(self._missing_item_display(item) for item in items)
-            budget = data.get("budget") or self.budget_info
-            currency = (budget or {}).get("currency") or _budget_default_currency()
-            if budget:
-                budget_text = budget.get("text") or self._format_money(budget.get("amount"), currency)
-                return (
-                    f"Would you like me to send a request to our manager for {item_names} with budget {budget_text}? "
-                    "You'll receive an email once the manager replies."
-                )
-            if _capture_budget_on_hil():
-                return (
-                    f"Would you like me to send a request to our manager for {item_names}? "
-                    f"If so, let me know a budget cap (e.g., \"{currency} 60 total\" or \"{currency} 30 per item\"). You'll receive an email once the manager replies."
-                )
-            return (
-                f"Would you like me to send a request to our manager for {item_names}? "
-                "You'll receive an email once they reply."
-            )
-        if intent_type == "billing":
-            return "Could you confirm the billing address when you’re ready?"
-        if intent_type == "offer_prepare":
-            return "Should I start drafting the offer next, or is there another detail you'd like me to capture?"
-        if intent_type == "product_followup":
-            items = data.get("items") or []
-            names = ", ".join(item.get("name") or "the item" for item in items) or "the pending item"
-            return (
-                f"I queued {names} for the next update because we already confirmed two items. "
-                "Should I keep that plan, or is there another detail you’d like me to prioritize now?"
-            )
-        return "Let me know the next detail you’d like me to update."
+        return _question_for_intent_impl(self, intent_type, data)
 
+    # S3: Intent deferral delegated to intent_parser.py
     def _defer_intent(self, intent: ParsedIntent, reason: str) -> None:
-        payload = {
-            "type": intent.type,
-            "entities": intent.data,
-            "confidence": 0.95,
-            "reason_deferred": reason,
-            "ts": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-        }
-        self.telemetry.deferred.append(payload)
-        self.pending_items.append(payload)
-        if reason == "combined_limit_reached" and intent.type == "product_add":
-            self.needs_input.append(ParsedIntent("product_followup", intent.data, verifiable=False, reason=reason))
+        _defer_intent_impl(self, intent, reason)
 
     def _persist_pending_intents(self) -> None:
-        if not self.pending_items:
-            return
-        existing = list(self.event.get("pending_intents") or [])
-        existing.extend(self.pending_items)
-        self.event["pending_intents"] = existing
-        self.state.extras["persist"] = True
+        _persist_pending_intents_impl(self)
 
     def _record_telemetry_log(self) -> None:
         logs = self.event.setdefault("logs", [])
@@ -1418,202 +780,40 @@ class _ShortcutPlanner:
             self.products_state["manager_catalog_signature"] = normalised_signature
             self.state.extras["persist"] = True
 
+    # S3: Choice context delegated to choice_handler.py
     def _load_choice_context(self) -> Optional[Dict[str, Any]]:
-        context = self.event.get("choice_context")
-        if not context:
-            self.telemetry.choice_context_active = False
-            return None
-        ttl = context.get("ttl_turns")
-        try:
-            ttl_value = int(ttl)
-        except (TypeError, ValueError):
-            ttl_value = 0
-        if ttl_value <= 0:
-            self.event["choice_context"] = None
-            self.state.extras["persist"] = True
-            self.telemetry.choice_context_active = False
-            self.telemetry.re_prompt_reason = "expired"
-            kind = context.get("kind")
-            if kind:
-                self.preview_requests.append((kind, 0))
-            return None
-        refreshed = dict(context)
-        refreshed["ttl_turns"] = ttl_value - 1
-        self.event["choice_context"] = refreshed
-        self.state.extras["persist"] = True
-        self.telemetry.choice_context_active = True
-        return refreshed
+        return _load_choice_context_impl(self)
 
+    # S3: Product state methods delegated to product_handler.py
     def _products_state(self) -> Dict[str, Any]:
-        return self.event.setdefault(
-            "products_state",
-            {
-                "available_items": [],
-                "manager_added_items": [],
-                "line_items": [],
-                "pending_hil_requests": [],
-                "budgets": {},
-            },
-        )
+        return _products_state_impl(self)
 
+    # S3: Preask methods delegated to preask_handler.py
     def _preask_feature_enabled(self) -> bool:
-        return _event_scoped_upsell_enabled() and _no_unsolicited_menus() and bool(self.manager_items_by_class)
+        return _preask_feature_enabled_impl(self)
 
     def _process_preask(self) -> None:
-        self.telemetry.preask_candidates = []
-        self.telemetry.preask_shown = []
-        self.telemetry.preview_class_shown = "none"
-        self.telemetry.preview_items_count = 0
-        self.telemetry.re_prompt_reason = "none"
-        self.telemetry.selection_method = "none"
-        self.telemetry.choice_context_active = bool(self.choice_context)
-        if not self._preask_feature_enabled():
-            return
-        for class_name, status in (self.presented_interest or {}).items():
-            if status == "interested":
-                self.telemetry.preask_response.setdefault(class_name, "yes")
-            elif status == "declined":
-                self.telemetry.preask_response.setdefault(class_name, "no")
-            else:
-                self.telemetry.preask_response.setdefault(class_name, "n/a")
-        message_text = (self.state.message.body or "").strip().lower()
-        if not self._choice_context_handled:
-            self._handle_choice_selection(message_text)
-        self._handle_preask_responses(message_text)
-        self._prepare_preview_for_requests()
-        self._hydrate_preview_from_context()
+        _process_preask_impl(self)
 
+    # S3: Choice reply handling delegated to choice_handler.py
     def _maybe_handle_choice_context_reply(self) -> Optional[PlannerResult]:
-        context = self.choice_context
-        if not context:
-            return None
-        message_text = (self.state.message.body or "").strip()
-        if not message_text:
-            return None
-
-        selection = self._parse_choice_selection(context, message_text)
-        if selection:
-            confirmation, state_delta = self._complete_choice_selection(context, selection)
-            self._choice_context_handled = True
-            self.telemetry.selection_method = selection.get("method") or "label"
-            self.telemetry.re_prompt_reason = "none"
-            self.telemetry.choice_context_active = False
-            return self._build_payload(confirmation, state_delta=state_delta)
-
-        clarification = self._choice_clarification_prompt(context, message_text)
-        if clarification:
-            self._choice_context_handled = True
-            self.telemetry.selection_method = "clarified"
-            self.telemetry.re_prompt_reason = "ambiguous"
-            kind = context.get("kind")
-            if kind:
-                self.telemetry.preask_response[kind] = "clarify"
-            self.telemetry.choice_context_active = True
-            return self._build_payload(clarification)
-
-        return None
+        return _maybe_handle_choice_context_reply_impl(self)
 
     def _choice_clarification_prompt(self, context: Dict[str, Any], text: str) -> Optional[str]:
-        items = context.get("items") or []
-        if not items:
-            return None
-        normalized = text.strip().lower()
-        similarity: List[Tuple[float, Dict[str, Any]]] = []
-        for item in items:
-            label = str(item.get("label") or "").lower()
-            if not label:
-                continue
-            ratio = SequenceMatcher(a=label, b=normalized).ratio()
-            similarity.append((ratio, item))
-        if not similarity:
-            return None
-        similarity.sort(key=lambda pair: pair[0], reverse=True)
-        top_ratio, top_item = similarity[0]
-        second_ratio = similarity[1][0] if len(similarity) > 1 else 0.0
-        if top_ratio < 0.5:
-            return None
-        if len(similarity) > 1 and second_ratio >= 0.5 and abs(top_ratio - second_ratio) < 0.08:
-            ambiguous_items = [item for ratio, item in similarity if abs(top_ratio - ratio) < 0.08]
-            if ambiguous_items:
-                chosen = min(ambiguous_items, key=lambda entry: entry.get("idx") or 0)
-            else:
-                chosen = top_item
-            display = self._format_choice_item(chosen)
-            return f"Do you mean {display}?"
-        return None
+        return _choice_clarification_prompt_impl(self, context, text)
 
     def _complete_choice_selection(
         self,
         context: Dict[str, Any],
         selection: Dict[str, Any],
     ) -> Tuple[str, Dict[str, Any]]:
-        item = selection.get("item") or {}
-        raw_value = dict(item.get("value") or {})
-        class_name = (context.get("kind") or raw_value.get("class") or "product").lower()
-        idx = item.get("idx")
-        manager_items = self.manager_items_by_class.get(class_name, [])
-        if isinstance(idx, int) and 1 <= idx <= len(manager_items):
-            value = dict(manager_items[idx - 1] or {})
-        else:
-            value = raw_value
-        label = item.get("label") or value.get("name") or "this option"
-
-        addition: Dict[str, Any] = {"name": value.get("name") or label}
-        quantity = value.get("quantity") or (value.get("meta") or {}).get("quantity")
-        if quantity is not None:
-            try:
-                addition["quantity"] = max(1, int(quantity))
-            except (TypeError, ValueError):
-                addition["quantity"] = 1
-        else:
-            addition["quantity"] = 1
-        unit_price = value.get("unit_price")
-        if unit_price is None:
-            unit_price = (value.get("meta") or {}).get("unit_price")
-        if unit_price is not None:
-            try:
-                addition["unit_price"] = float(unit_price)
-            except (TypeError, ValueError):
-                pass
-
-        if class_name in {"catering", "av", "furniture", "product"}:
-            self._apply_product_add([addition])
-            self.telemetry.combined_confirmation = True
-        self.presented_interest[class_name] = "interested"
-        self.preask_pending_state[class_name] = False
-        self.telemetry.preask_response[class_name] = self.telemetry.preask_response.get(class_name, "yes")
-        self.choice_context = None
-        self.event["choice_context"] = None
-        self.state.extras["persist"] = True
-
-        confirmation = f"Got it — I'll add {label}."
-        state_delta = {
-            "choice_context": {
-                "kind": class_name,
-                "selected": {
-                    "label": label,
-                    "idx": item.get("idx"),
-                    "key": item.get("key"),
-                },
-            }
-        }
-        return confirmation, state_delta
+        return _complete_choice_selection_impl(self, context, selection)
 
     def _format_choice_item(self, item: Dict[str, Any]) -> str:
-        label = item.get("label") or (item.get("value") or {}).get("name") or "this option"
-        idx = item.get("idx")
-        if idx is not None:
-            return f"{idx}) {label}"
-        return label
+        return _format_choice_item_impl(self, item)
 
     def _maybe_emit_preask_prompt_only(self) -> Optional[PlannerResult]:
-        if not self._preask_feature_enabled():
-            return None
-        lines = self._maybe_preask_lines()
-        if not lines:
-            return None
-        message = "\n".join(lines).strip()
-        return self._build_payload(message or "\u200b")
+        return _maybe_emit_preask_prompt_only_impl(self)
 
     def _maybe_emit_single_followup(self) -> Optional[PlannerResult]:
         if len(self.needs_input) != 1:
@@ -1680,524 +880,85 @@ class _ShortcutPlanner:
         self._record_telemetry_log()
         return PlannerResult(payload)
     def _handle_choice_selection(self, text: str) -> None:
-        if not self.choice_context:
-            return
-        if "show more" in text and self.choice_context.get("kind"):
-            next_offset = self.choice_context.get("next_offset", len(self.choice_context.get("items") or []))
-            self.preview_requests.append((self.choice_context.get("kind"), next_offset))
-            return
-        selection = self._parse_choice_selection(self.choice_context, text)
-        if not selection:
-            class_name = self.choice_context.get("kind")
-            if class_name:
-                keywords = set(_CLASS_KEYWORDS.get(class_name, set())) | {class_name}
-                if any(keyword in text for keyword in keywords):
-                    if class_name not in self.preask_clarifications:
-                        self.preask_clarifications.append(class_name)
-                    self.preask_pending_state[class_name] = True
-                    self.telemetry.re_prompt_reason = "ambiguous"
-                    self.telemetry.preask_response[class_name] = "clarify"
-            return
-        self._apply_choice_selection(self.choice_context, selection)
-        self.choice_context = None
-        self.event["choice_context"] = None
-        self.state.extras["persist"] = True
-        self.telemetry.choice_context_active = False
+        _handle_choice_selection_impl(self, text)
 
     def _parse_choice_selection(self, context: Dict[str, Any], text: str) -> Optional[Dict[str, Any]]:
-        if not text:
-            return None
-        normalized = text.strip().lower()
-        items = context.get("items") or []
-        if not items:
-            return None
-        idx_map = {int(item.get("idx")): item for item in items if item.get("idx") is not None}
-        ordinal_match = re.search(r"(?:^|\s)#?(\d{1,2})\b", normalized)
-        if ordinal_match:
-            try:
-                idx = int(ordinal_match.group(1))
-                if idx in idx_map:
-                    return {"item": idx_map[idx], "method": "ordinal"}
-            except ValueError:
-                pass
-        option_match = re.search(r"option\s+(\d{1,2})", normalized)
-        if option_match:
-            try:
-                idx = int(option_match.group(1))
-                if idx in idx_map:
-                    return {"item": idx_map[idx], "method": "ordinal"}
-            except ValueError:
-                pass
-        lang = str(context.get("lang") or "en").split("-")[0].lower()
-        ordinal_words = _ORDINAL_WORDS_BY_LANG.get(lang, {})
-        fallback_words = _ORDINAL_WORDS_BY_LANG.get("en", {})
-        for raw_token in normalized.replace(".", " ").split():
-            token = raw_token.strip()
-            mapped = ordinal_words.get(token) or fallback_words.get(token)
-            if mapped and mapped in idx_map:
-                return {"item": idx_map[mapped], "method": "ordinal"}
-        direct_matches = []
-        for item in items:
-            label = str(item.get("label") or "").lower()
-            if label and label in normalized:
-                direct_matches.append(item)
-        if len(direct_matches) == 1:
-            return {"item": direct_matches[0], "method": "label"}
-        if len(direct_matches) > 1:
-            return None
-        similarity: List[Tuple[float, Dict[str, Any]]] = []
-        for item in items:
-            label = str(item.get("label") or "").lower()
-            if not label:
-                continue
-            ratio = SequenceMatcher(a=label, b=normalized).ratio()
-            similarity.append((ratio, item))
-        if not similarity:
-            return None
-        similarity.sort(key=lambda pair: pair[0], reverse=True)
-        best_ratio, best_item = similarity[0]
-        second_ratio = similarity[1][0] if len(similarity) > 1 else 0.0
-        # Treat as ambiguous if multiple close matches score similarly high.
-        if len(similarity) > 1 and best_ratio >= 0.5 and second_ratio >= 0.5 and abs(best_ratio - second_ratio) < 0.08:
-            return None
-        if best_ratio >= 0.8:
-            return {"item": best_item, "method": "fuzzy"}
-        return None
+        return _parse_choice_selection_impl(self, context, text)
 
     def _apply_choice_selection(self, context: Dict[str, Any], selection: Dict[str, Any]) -> None:
-        item = selection.get("item") or {}
-        value = item.get("value") or {}
-        class_name = context.get("kind") or value.get("class") or "catering"
-        product_name = value.get("name") or item.get("label")
-        if not product_name:
-            return
-        addition: Dict[str, Any] = {"name": product_name, "quantity": value.get("quantity") or value.get("meta", {}).get("quantity") or 1}
-        unit_price = value.get("unit_price") or value.get("meta", {}).get("unit_price")
-        if unit_price is not None:
-            try:
-                addition["unit_price"] = float(unit_price)
-            except (TypeError, ValueError):
-                pass
-        self._apply_product_add([addition])
-        self.presented_interest[class_name] = "interested"
-        self.preask_pending_state[class_name] = False
-        self.telemetry.selection_method = selection.get("method") or "label"
-        self.telemetry.preask_response[class_name] = self.telemetry.preask_response.get(class_name, "n/a")
+        _apply_choice_selection_impl(self, context, selection)
 
     def _handle_preask_responses(self, text: str) -> None:
-        if not text:
-            return
-        pending_classes = [cls for cls, flag in self.preask_pending_state.items() if flag]
-        for class_name in pending_classes:
-            response = self._detect_preask_response(class_name, text)
-            if not response:
-                continue
-            if response == "yes":
-                self.presented_interest[class_name] = "interested"
-                self.preask_pending_state[class_name] = False
-                self.preview_requests.append((class_name, 0))
-                self.telemetry.preask_response[class_name] = "yes"
-                self.telemetry.re_prompt_reason = "none"
-            elif response == "no":
-                self.presented_interest[class_name] = "declined"
-                self.preask_pending_state[class_name] = False
-                self.telemetry.preask_response[class_name] = "no"
-                self.telemetry.re_prompt_reason = "none"
-                self.preask_ack_lines.append(f"Noted — I'll skip {class_name} options for now.")
-            elif response == "clarify":
-                if class_name not in self.preask_clarifications:
-                    self.preask_clarifications.append(class_name)
-                self.telemetry.preask_response[class_name] = "clarify"
-                self.telemetry.re_prompt_reason = "ambiguous"
-            elif response == "show_more":
-                next_offset = 0
-                if self.choice_context and self.choice_context.get("kind") == class_name:
-                    next_offset = self.choice_context.get("next_offset", len(self.choice_context.get("items") or []))
-                self.preview_requests.append((class_name, next_offset))
-            if response in {"yes", "no"} and class_name in self.preask_clarifications:
-                self.preask_clarifications.remove(class_name)
+        _handle_preask_responses_impl(self, text)
 
     def _detect_preask_response(self, class_name: str, text: str) -> Optional[str]:
-        keywords = set(_CLASS_KEYWORDS.get(class_name, set())) | {class_name}
-        has_keyword = any(keyword in text for keyword in keywords)
-        single_pending = self._single_pending_class(class_name)
-        if "show more" in text and self.choice_context and self.choice_context.get("kind") == class_name:
-            return "show_more"
-        affirmatives = ["yes", "sure", "ok", "okay", "definitely", "sounds good", "go ahead"]
-        negatives = ["no", "not now", "later", "skip", "nope", "don't"]
-        if any(token in text for token in negatives) and (has_keyword or single_pending):
-            return "no"
-        if any(token in text for token in affirmatives) and (has_keyword or single_pending):
-            return "yes"
-        if has_keyword and ("?" in text or "which" in text or "what" in text):
-            return "clarify"
-        return None
+        return _detect_preask_response_impl(self, class_name, text)
 
     def _single_pending_class(self, class_name: str) -> bool:
-        active = [cls for cls, flag in self.preask_pending_state.items() if flag]
-        return len(active) == 1 and class_name in active
+        return _single_pending_class_impl(self, class_name)
 
     def _prepare_preview_for_requests(self) -> None:
-        if not self.preview_requests:
-            return
-        class_name, offset = self.preview_requests[-1]
-        self._build_preview_for_class(class_name, offset)
-        self.preview_requests.clear()
+        _prepare_preview_for_requests_impl(self)
 
     def _hydrate_preview_from_context(self) -> None:
-        if self.preview_lines or not self.choice_context:
-            return
-        items = self.choice_context.get("items") or []
-        if not items:
-            return
-        lines: List[str] = []
-        for item in items:
-            idx = item.get("idx")
-            label = str(item.get("label") or "").strip() or "This option"
-            if idx is not None:
-                lines.append(f"{idx}. {label}")
-            else:
-                lines.append(label)
-        lines.append("Which one (1–3) or \"show more\"?")
-        self.preview_lines = lines
-        class_name = str(self.choice_context.get("kind") or "").strip().lower()
-        if class_name:
-            self.preview_class = class_name
-            self.telemetry.preview_class_shown = class_name
-        self.telemetry.preview_items_count = max(self.telemetry.preview_items_count, len(items))
-        if self.telemetry.menus_phase == "none":
-            self.telemetry.menus_phase = "post_room" if self.room_checked else "explicit_request"
-        if self.telemetry.menus_included == "false":
-            self.telemetry.menus_included = "preview"
-        self.telemetry.choice_context_active = True
+        _hydrate_preview_from_context_impl(self)
 
     def _build_preview_for_class(self, class_name: str, offset: int) -> None:
-        items = self.manager_items_by_class.get(class_name, [])
-        if not items:
-            return
-        subset = items[offset : offset + 3]
-        if not subset:
-            self.preview_lines = [f"That's all available for {class_name}."]
-            self.preview_class = class_name
-            self.choice_context = None
-            self.event["choice_context"] = None
-            self.telemetry.preview_class_shown = class_name
-            self.telemetry.preview_items_count = 0
-            self.state.extras["persist"] = True
-            self.preask_pending_state[class_name] = False
-            if class_name in self.preask_clarifications:
-                self.preask_clarifications.remove(class_name)
-            return
-        lines: List[str] = []
-        context_items: List[Dict[str, Any]] = []
-        for idx, item in enumerate(subset, start=1):
-            name = str(item.get("name") or "").strip()
-            lines.append(f"{idx}. {name}")
-            context_items.append(
-                {
-                    "idx": idx,
-                    "key": f"{class_name}-{offset + idx}",
-                    "label": name,
-                    "value": dict(item),
-                }
-            )
-        lines.append("Which one (1–3) or \"show more\"?")
-        self.preview_lines = lines
-        self.preview_class = class_name
-        context = {
-            "kind": class_name,
-            "presented_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-            "items": context_items,
-            "ttl_turns": 4,
-            "next_offset": offset + len(subset),
-            "lang": "en",
-        }
-        self.choice_context = context
-        self.event["choice_context"] = dict(context)
-        self.state.extras["persist"] = True
-        self.telemetry.preview_class_shown = class_name
-        self.telemetry.preview_items_count = len(subset)
-        self.telemetry.choice_context_active = True
-        if self.telemetry.menus_phase == "none":
-            self.telemetry.menus_phase = "post_room" if self.room_checked else "explicit_request"
-        self.telemetry.menus_included = "preview"
-        self.preask_pending_state[class_name] = False
-        if class_name in self.preask_clarifications:
-            self.preask_clarifications.remove(class_name)
+        _build_preview_for_class_impl(self, class_name, offset)
 
     def _maybe_preask_lines(self) -> List[str]:
-        if not self._preask_feature_enabled():
-            return []
-        lines: List[str] = []
-        unknown_classes = [cls for cls in self.manager_items_by_class if self.presented_interest.get(cls, "unknown") == "unknown"]
-        self.telemetry.preask_candidates = unknown_classes
-        shown: List[str] = []
-        slots = 2
-        for class_name in list(self.preask_clarifications):
-            if slots <= 0:
-                break
-            prompt = f"Do you want to see {class_name} options now? (yes/no)"
-            lines.append(prompt)
-            shown.append(class_name)
-            self.preask_pending_state[class_name] = True
-            self.telemetry.preask_response[class_name] = self.telemetry.preask_response.get(class_name, "clarify")
-            slots -= 1
-        if slots > 0:
-            for class_name in unknown_classes:
-                if slots <= 0:
-                    break
-                if class_name in shown or self.preask_pending_state.get(class_name):
-                    continue
-                prompt = _PREASK_CLASS_COPY.get(class_name, f"Would you like to see {class_name} options we can provide?")
-                lines.append(prompt)
-                shown.append(class_name)
-                self.preask_pending_state[class_name] = True
-                slots -= 1
-        for class_name in shown:
-            self.telemetry.preask_response.setdefault(class_name, "n/a")
-        self.telemetry.preask_shown = shown
-        if lines and self.telemetry.menus_included == "false":
-            self.telemetry.menus_included = "brief_upsell"
-        if lines and self.telemetry.menus_phase == "none" and self.room_checked:
-            self.telemetry.menus_phase = "post_room"
-        return lines
+        return _maybe_preask_lines_impl(self)
 
     def _finalize_preask_state(self) -> None:
-        if not self._preask_feature_enabled():
-            if self.products_state.get("preask_pending"):
-                self.products_state["preask_pending"] = {}
-                self.state.extras["persist"] = True
-            if self.event.get("choice_context"):
-                self.event["choice_context"] = None
-                self.state.extras["persist"] = True
-            self.telemetry.choice_context_active = False
-            return
-        self.products_state["preask_pending"] = {cls: bool(flag) for cls, flag in self.preask_pending_state.items() if flag}
-        self.products_state["presented_interest"] = dict(self.presented_interest)
-        if self.choice_context:
-            self.event["choice_context"] = dict(self.choice_context)
-            self.telemetry.choice_context_active = True
-        elif self.event.get("choice_context"):
-            self.event["choice_context"] = None
-            self.telemetry.choice_context_active = False
-        self.preview_lines = []
-        if not self.preview_class:
-            self.telemetry.preview_class_shown = "none"
-            self.telemetry.preview_items_count = 0
-        self.preview_class = None
-        self.state.extras["persist"] = True
+        _finalize_preask_state_impl(self)
+
+    # S3: Product utility methods delegated to product_handler.py
     def _product_lookup(self, bucket: str) -> Dict[str, Dict[str, Any]]:
-        items = self._products_state().get(bucket) or []
-        lookup: Dict[str, Dict[str, Any]] = {}
-        for entry in items:
-            name = str(entry.get("name") or "").strip()
-            if not name:
-                continue
-            lookup[name.lower()] = dict(entry)
-        return lookup
+        return _product_lookup_impl(self, bucket)
 
     def _normalise_products(self, payload: Any) -> List[Dict[str, Any]]:
-        participant_count = self.user_info.get("participants") if isinstance(self.user_info.get("participants"), int) else None
-        return normalise_product_payload(payload, participant_count=participant_count)
+        return _normalise_products_impl(self, payload)
 
     @staticmethod
     def _missing_item_display(item: Dict[str, Any]) -> str:
-        name = str(item.get("name") or "the item").strip() or "the item"
-        return f"{name} — price pending (via manager)"
+        return _missing_item_display_impl(item)
 
+    # S3: Budget parsing methods delegated to budget_parser.py
     def _extract_budget_info(self) -> Optional[Dict[str, Any]]:
-        candidates = [
-            ("budget_total", "total"),
-            ("budget", "total"),
-            ("budget_cap", "total"),
-            ("budget_per_person", "per_person"),
-        ]
-        for key, scope in candidates:
-            if key not in self.user_info:
-                continue
-            parsed = self._parse_budget_value(self.user_info[key], scope_default=scope)
-            if parsed:
-                return parsed
-        return None
+        return _extract_budget_info_impl(self)
 
     def _parse_budget_value(self, value: Any, scope_default: str) -> Optional[Dict[str, Any]]:
-        if value is None:
-            return None
-        if isinstance(value, dict):
-            amount = value.get("amount")
-            currency = value.get("currency") or _budget_default_currency()
-            scope = value.get("scope") or scope_default
-            text = value.get("text")
-            if amount is None and isinstance(text, str):
-                parsed = self._parse_budget_text(text, scope)
-                if parsed:
-                    return parsed
-            if amount is None:
-                return None
-            try:
-                amount_value = float(amount)
-            except (TypeError, ValueError):
-                return None
-            display = text or f"{currency} {amount_value:g}"
-            return {"amount": amount_value, "currency": currency, "scope": scope, "text": display}
-        if isinstance(value, (int, float)):
-            amount_value = float(value)
-            currency = _budget_default_currency()
-            display = f"{currency} {amount_value:g}"
-            return {"amount": amount_value, "currency": currency, "scope": scope_default, "text": display}
-        if isinstance(value, str):
-            return self._parse_budget_text(value, scope_default)
-        return None
+        return _parse_budget_value_impl(value, scope_default)
 
     @staticmethod
     def _parse_budget_text(value: str, scope_default: str) -> Optional[Dict[str, Any]]:
-        text = (value or "").strip()
-        if not text:
-            return None
-        pattern = re.compile(
-            r"(?P<currency>[A-Za-z]{3})?\s*(?P<amount>\d+(?:[.,]\d{1,2})?)\s*(?P<scope>per\s*(?:person|guest|head)|total|overall)?",
-            re.IGNORECASE,
-        )
-        match = pattern.search(text)
-        if not match:
-            return None
-        currency = match.group("currency") or _budget_default_currency()
-        if not match.group("currency") and _budget_parse_strict():
-            return None
-        try:
-            amount = float(match.group("amount").replace(",", "."))
-        except (TypeError, ValueError):
-            return None
-        scope_token = (match.group("scope") or scope_default or "").lower().strip()
-        if scope_token.startswith("per"):
-            scope = "per_person"
-        elif scope_token in {"total", "overall"}:
-            scope = "total"
-        else:
-            scope = scope_default
-        display = text if match.group("currency") else f"{currency} {amount:g} {scope.replace('_', ' ')}".strip()
-        return {"amount": amount, "currency": currency, "scope": scope, "text": display}
+        return _parse_budget_text_impl(value, scope_default)
 
     def _infer_quantity(self, product_entry: Dict[str, Any]) -> int:
-        qty = product_entry.get("quantity")
-        if isinstance(qty, (int, float)):
-            value = int(qty)
-            return max(1, value)
-        participants = self._current_participant_count()
-        if participants:
-            return max(1, participants)
-        return 1
+        return _infer_quantity_impl(self, product_entry)
 
     def _current_participant_count(self) -> Optional[int]:
-        candidates = [
-            self.user_info.get("participants"),
-            (self.event.get("requirements") or {}).get("number_of_participants"),
-            (self.event.get("event_data") or {}).get("Number of Participants"),
-        ]
-        for value in candidates:
-            if value in (None, "", "Not specified"):
-                continue
-            try:
-                return max(1, int(value))
-            except (TypeError, ValueError):
-                continue
-        return None
+        return _current_participant_count_impl(self)
 
+    # S3: Window conversion and time utilities delegated to date_handler.py
     @staticmethod
     def _window_to_payload(window: ConfirmationWindow) -> Dict[str, Any]:
-        return {
-            "display_date": window.display_date,
-            "iso_date": window.iso_date,
-            "start_time": window.start_time,
-            "end_time": window.end_time,
-            "start_iso": window.start_iso,
-            "end_iso": window.end_iso,
-            "tz": getattr(window, "tz", "Europe/Zurich"),
-            "inherited_times": getattr(window, "inherited_times", False),
-            "partial": getattr(window, "partial", False),
-            "source_message_id": getattr(window, "source_message_id", None),
-        }
+        return _window_to_payload_impl(window)
 
     @staticmethod
     def _window_from_payload(payload: Dict[str, Any]) -> ConfirmationWindow:
-        return ConfirmationWindow(
-            display_date=payload.get("display_date"),
-            iso_date=payload.get("iso_date"),
-            start_time=payload.get("start_time"),
-            end_time=payload.get("end_time"),
-            start_iso=payload.get("start_iso"),
-            end_iso=payload.get("end_iso"),
-            inherited_times=payload.get("inherited_times", False),
-            partial=payload.get("partial", False),
-            source_message_id=payload.get("source_message_id"),
-        )
+        return _window_from_payload_impl(payload)
 
     @staticmethod
     def _normalize_time(value: Any) -> Optional[str]:
-        if value is None:
-            return None
-        text = str(value).strip()
-        if not text:
-            return None
-        text = text.replace(".", ":")
-        if ":" not in text:
-            if text.isdigit():
-                text = f"{int(text) % 24:02d}:00"
-            else:
-                return None
-        try:
-            parsed = datetime.strptime(text, "%H:%M").time()
-        except ValueError:
-            return None
-        return f"{parsed.hour:02d}:{parsed.minute:02d}"
+        return _normalize_time_impl(value)
 
     def _infer_times_for_date(self, iso_date: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
-        if not iso_date:
-            return None, None
-        requested = self.event.get("requested_window") or {}
-        if requested:
-            date_match = requested.get("date_iso") == iso_date
-            display_match = requested.get("display_date") == format_iso_date_to_ddmmyyyy(iso_date)
-            if date_match or display_match:
-                start_time = requested.get("start_time")
-                end_time = requested.get("end_time")
-                if not start_time and requested.get("start"):
-                    start_time = requested.get("start")[11:16]
-                if not end_time and requested.get("end"):
-                    end_time = requested.get("end")[11:16]
-                return start_time, end_time
-        requirements = self.event.get("requirements") or {}
-        duration = requirements.get("event_duration") or {}
-        if duration.get("start") and duration.get("end"):
-            return duration.get("start"), duration.get("end")
-        event_data = self.event.get("event_data") or {}
-        start = event_data.get("Start Time")
-        end = event_data.get("End Time")
-        return start, end
+        return _infer_times_for_date_impl(self, iso_date)
 
     def _explicit_menu_requested(self) -> bool:
-        text = f"{self.state.message.subject or ''}\n{self.state.message.body or ''}".lower()
-        keywords = (
-            "menu",
-            "menus",
-            "catering menu",
-            "catering options",
-            "food options",
-        )
-        return any(keyword in text for keyword in keywords)
+        return _explicit_menu_requested_impl(self)
 
-@lru_cache(maxsize=1)
+# S3: Module-level catering lookup delegated to product_handler.py
 def _load_catering_names() -> List[str]:
-    path = Path(__file__).resolve().parents[2] / "catering_menu.json"
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
-    packages = data.get("catering_packages") or []
-    names: List[str] = []
-    for pkg in packages:
-        name = str(pkg.get("name") or "").strip()
-        if name:
-            names.append(name)
-    return names
+    return _load_catering_names_impl()
