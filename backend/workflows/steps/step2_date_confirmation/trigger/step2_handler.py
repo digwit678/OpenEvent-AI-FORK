@@ -1630,11 +1630,19 @@ def _message_signals_confirmation(text: str) -> bool:
                 continue
             return True
     # Treat bare mentions of supported dates/times as confirmations.
-    tokens = _extract_candidate_tokens(text or "")
-    if tokens:
-        parsed = parse_first_date(tokens, allow_relative=True)
-        if parsed:
-            return True
+    # BUT: Skip this when the message is clearly a Q&A query (question words + "?").
+    # Vague date mentions like "Saturday in February" should not count as confirmations.
+    # Check for question words anywhere in the message (with word boundaries).
+    question_words = ("which", "what", "when", "where", "how", "can", "could", "would", "do you", "is there", "are there")
+    is_question = "?" in normalized and any(
+        re.search(rf"\b{re.escape(word)}\b", normalized) for word in question_words
+    )
+    if not is_question:
+        tokens = _extract_candidate_tokens(text or "")
+        if tokens:
+            parsed = parse_first_date(tokens, allow_relative=True)
+            if parsed:
+                return True
     return False
 
 

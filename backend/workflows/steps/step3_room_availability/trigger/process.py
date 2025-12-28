@@ -10,6 +10,8 @@ from .step3_handler import (
     handle_select_room_action,
     render_rooms_response,
     _flatten_statuses,
+)
+from .constants import (
     ROOM_OUTCOME_AVAILABLE,
     ROOM_OUTCOME_OPTION,
 )
