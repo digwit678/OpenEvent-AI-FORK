@@ -169,6 +169,21 @@ This document translates the existing backend review findings into **junior-dev-
 
 **Verification:** All 146 tests pass + E2E Playwright verified
 
+### C2: Remove Dead Chatbot Code — 2025-12-28
+
+**Summary:** Removed ~694 lines of unused legacy chatbot code from `conversation_manager.py`.
+
+**Removed:**
+- `classify_email()`, `extract_information_incremental()`, `generate_response()`
+- `create_summary()`, `create_offer_summary()`
+- Format/response helpers (`format_room_description()`, `generate_catering_response()`, etc.)
+- `SYSTEM_PROMPT`, `ROOM_INFO`, `CATERING_MENU` constants
+- `load_room_info()`, `load_catering_menu()`
+
+**Result:** `conversation_manager.py`: ~729 → ~35 lines (-694 lines, 95% reduction)
+
+**Verification:** All 146 tests pass + E2E Playwright verified
+
 ---
 
 ## Scope (What We're Planning)
@@ -811,9 +826,12 @@ Then reduce dynamic imports by creating a stable Step 2 helper API (later):
 - Added backward-compatible re-exports in `conversation_manager.py`
 - Verified: All 146 tests pass + E2E Playwright verified
 
-**C2 — Delete/move dead chatbot functions**
-- Remove unused functions (e.g., legacy `generate_response`, `create_summary`, etc.) or move them into `backend/DEPRECATED/`
-- This is mostly to reduce confusion for developers/LLMs
+**C2 — Delete/move dead chatbot functions ✅** (2025-12-28)
+- Removed ~694 lines of unused legacy chatbot code from `conversation_manager.py`
+- Reduced file from ~729 lines to ~35 lines (minimal re-export shim)
+- Deleted: `classify_email`, `extract_information_incremental`, `generate_response`, `create_summary`, `create_offer_summary`, format/response helpers, SYSTEM_PROMPT, ROOM_INFO, CATERING_MENU
+- Historical copy preserved at `backend/DEPRECATED/conversation_manager_v0.py`
+- Verified: All 146 tests pass + E2E Playwright verified
 
 ---
 
