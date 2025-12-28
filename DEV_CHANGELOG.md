@@ -2,6 +2,32 @@
 
 ## 2025-12-28
 
+### S3 Phase 5: Smart Shortcuts Intent Parser/Executor Extraction ✅
+
+**Summary:** Extracted intent parsing/execution methods from `smart_shortcuts.py` into two focused modules (~150 lines, 12 functions).
+
+**New Modules:**
+
+`backend/workflows/planner/intent_parser.py` (~238 lines)
+- Room intent: `parse_room_intent`, `can_lock_room`
+- Participants: `parse_participants_intent`
+- Billing: `parse_billing_intent`
+- Deferral: `add_needs_input`, `defer_intent`, `persist_pending_intents`
+
+`backend/workflows/planner/intent_executor.py` (~319 lines)
+- Dispatch: `execute_intent`
+- Application: `apply_room_selection`, `apply_participants_update`
+- Questions: `select_next_question`, `question_for_intent`
+- Helpers: `missing_item_display`, `format_money` (delegating)
+
+**Pattern:** Thin wrapper delegation - class methods delegate to extracted functions.
+
+**Result:** `smart_shortcuts.py`: 1079 -> 964 lines (-115 lines, ~11% reduction)
+
+**Verification:** All 146 core tests pass + E2E Playwright verified (intake -> room availability)
+
+---
+
 ### S3 Phase 4: Smart Shortcuts Preask/Choice Handler Extraction ✅
 
 **Summary:** Extracted preask/choice methods from `smart_shortcuts.py` into two focused modules (~420 lines, 20 functions).
