@@ -96,7 +96,7 @@ from .constants import (
     AFFIRMATIVE_TOKENS,
     CONFIRMATION_KEYWORDS,
     SIGNATURE_MARKERS as _SIGNATURE_MARKERS,
-    TIME_HINT_DEFAULTS as _TIME_HINT_DEFAULTS,
+    # D11: TIME_HINT_DEFAULTS now used in confirmation.py
 )
 
 # D2 refactoring: Date parsing utilities extracted to dedicated module
@@ -196,6 +196,7 @@ from .confirmation import (
     collect_candidate_iso_list,
     record_confirmation_log,
     set_pending_time_state,
+    complete_from_time_hint,
 )
 
 __workflow_role__ = "trigger"
@@ -776,7 +777,9 @@ def process(state: WorkflowState) -> GroupResult:
         )
 
     if window.partial:
-        filled = _maybe_complete_from_time_hint(window, state, event_entry)
+        # D11: Use extracted complete_from_time_hint with explicit time hint
+        time_hint = (state.user_info or {}).get("vague_time_of_day") or event_entry.get("vague_time_of_day")
+        filled = complete_from_time_hint(window, time_hint)
         if filled:
             window = filled
         else:
@@ -2206,39 +2209,7 @@ def _maybe_general_qa_payload(state: WorkflowState) -> Optional[Dict[str, Any]]:
 
 
 # _TIME_HINT_DEFAULTS moved to constants.py (D1 refactoring)
-
-
-def _maybe_complete_from_time_hint(
-    window: ConfirmationWindow,
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-) -> Optional[ConfirmationWindow]:
-    hint = state.user_info.get("vague_time_of_day") or event_entry.get("vague_time_of_day")
-    if not hint:
-        return None
-    defaults = _TIME_HINT_DEFAULTS.get(str(hint).lower())
-    if not defaults:
-        return None
-    try:
-        start_iso, end_iso = build_window_iso(
-            window.iso_date,
-            _to_time(defaults[0]),
-            _to_time(defaults[1]),
-        )
-    except ValueError:
-        return None
-    return ConfirmationWindow(
-        display_date=window.display_date,
-        iso_date=window.iso_date,
-        start_time=defaults[0],
-        end_time=defaults[1],
-        start_iso=start_iso,
-        end_iso=end_iso,
-        inherited_times=True,
-        partial=False,
-        source_message_id=window.source_message_id,
-    )
-
+# D11: _maybe_complete_from_time_hint moved to confirmation.py as complete_from_time_hint
 
 # _normalize_month_token, _normalize_weekday_tokens moved to date_parsing.py (D2 refactoring)
 
