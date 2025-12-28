@@ -110,6 +110,16 @@ def evaluate_pre_route_guards(state: WorkflowState) -> None:
         state.extras["persist"] = True
         return  # Skip other guard logic during deposit flow
 
+    # [BILLING FLOW BYPASS] Skip guard forcing during billing flow
+    # This follows Pattern 1: Special Flow State Detection from CLAUDE.md
+    in_billing_flow = (
+        state.event_entry.get("offer_accepted")
+        and (state.event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
+    )
+    if in_billing_flow:
+        print(f"[WF][GUARDS] Billing flow active: skipping guard forcing for event {event_id}")
+        return  # Skip guard logic during billing flow - step should remain at 5
+
     # Apply requirements_hash update if changed
     if guard_snapshot.requirements_hash_changed and guard_snapshot.requirements_hash:
         print(f"[WF][GUARDS] Requirements hash updated: {guard_snapshot.requirements_hash}")
