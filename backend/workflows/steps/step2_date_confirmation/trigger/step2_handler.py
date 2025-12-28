@@ -145,6 +145,33 @@ from .general_qna import (
     _search_range_availability,
 )
 
+# D6 refactoring: Pure utilities extracted to step2_utils.py
+from .step2_utils import (
+    _extract_first_name,
+    _extract_signature_name,
+    _extract_candidate_tokens,
+    _strip_system_subject,
+    _preface_with_apology,
+    _format_label_text,
+    _date_header_label,
+    _format_time_label,
+    _format_day_list,
+    _weekday_label_from_dates,
+    _month_label_from_dates,
+    _pluralize_weekday_hint,
+    _describe_constraints,
+    _format_window,
+    _normalize_time_value,
+    _to_time,
+    _window_hash,
+    _is_affirmative_reply,
+    _message_signals_confirmation,
+    _message_mentions_new_date,
+    _is_weekend_token,
+    _window_payload,
+    _window_from_payload,
+)
+
 __workflow_role__ = "trigger"
 
 logger = logging.getLogger(__name__)
@@ -168,37 +195,7 @@ def _thread_id(state: WorkflowState) -> str:
 
 
 # AFFIRMATIVE_TOKENS, CONFIRMATION_KEYWORDS, _SIGNATURE_MARKERS moved to constants.py (D1 refactoring)
-
-
-def _extract_first_name(raw: Optional[str]) -> Optional[str]:
-    if not raw:
-        return None
-    candidate = str(raw).strip()
-    if not candidate:
-        return None
-    token = candidate.split()[0].strip(",. ")
-    lowered = token.lower()
-    if lowered in _PLACEHOLDER_NAMES:
-        return None
-    return token or None
-
-
-def _extract_signature_name(text: Optional[str]) -> Optional[str]:
-    if not text:
-        return None
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    for idx, line in enumerate(lines):
-        lowered = line.lower()
-        if any(marker in lowered for marker in _SIGNATURE_MARKERS):
-            if idx + 1 < len(lines):
-                candidate = lines[idx + 1].strip(", ")
-                if candidate and len(candidate.split()) <= 4:
-                    return candidate
-    if lines:
-        tail = lines[-1]
-        if 1 <= len(tail.split()) <= 4:
-            return tail
-    return None
+# D6: _extract_first_name, _extract_signature_name moved to step2_utils.py
 
 
 def _has_range_tokens(user_info: Dict[str, Any], event_entry: Dict[str, Any]) -> bool:
@@ -279,24 +276,7 @@ def _client_requested_dates(state: WorkflowState) -> List[str]:
 
 
 # _format_display_dates, _human_join moved to date_parsing.py (D2 refactoring)
-
-
-def _preface_with_apology(text: Optional[str]) -> Optional[str]:
-    if not text:
-        return text
-    stripped = text.strip()
-    if not stripped:
-        return text
-    lowered = stripped.lower()
-    if lowered.startswith(("sorry", "unfortunately", "apologies")):
-        return stripped
-    first = stripped[0]
-    softened = stripped
-    if first.isalpha() and first.isupper():
-        softened = first.lower() + stripped[1:]
-    return f"Sorry, {softened}"
-
-
+# D6: _preface_with_apology moved to step2_utils.py
 # _clean_weekdays_hint moved to date_parsing.py (D2 refactoring)
 
 
@@ -1577,95 +1557,8 @@ def _present_candidate_dates(
 
 
 # _iso_date_is_past, _safe_parse_iso_date moved to date_parsing.py (D2 refactoring)
-
-
-def _window_payload(window: ConfirmationWindow) -> Dict[str, Any]:
-    return {
-        "display_date": window.display_date,
-        "iso_date": window.iso_date,
-        "start_time": window.start_time,
-        "end_time": window.end_time,
-        "start_iso": window.start_iso,
-        "end_iso": window.end_iso,
-        "inherited_times": window.inherited_times,
-        "partial": window.partial,
-        "source_message_id": window.source_message_id,
-    }
-
-
-def _window_from_payload(payload: Dict[str, Any]) -> Optional[ConfirmationWindow]:
-    if not isinstance(payload, dict):
-        return None
-    try:
-        return ConfirmationWindow(
-            display_date=payload.get("display_date"),
-            iso_date=payload.get("iso_date"),
-            start_time=payload.get("start_time"),
-            end_time=payload.get("end_time"),
-            start_iso=payload.get("start_iso"),
-            end_iso=payload.get("end_iso"),
-            inherited_times=bool(payload.get("inherited_times")),
-            partial=bool(payload.get("partial")),
-            source_message_id=payload.get("source_message_id"),
-        )
-    except TypeError:
-        return None
-
-
-def _format_window(window: ConfirmationWindow) -> str:
-    if window.start_time and window.end_time:
-        return f"{window.display_date} {window.start_time}–{window.end_time}"
-    return window.display_date
-
-
-def _is_affirmative_reply(text: str) -> bool:
-    normalized = text.strip().lower()
-    if not normalized:
-        return False
-    if normalized in AFFIRMATIVE_TOKENS:
-        return True
-    negative_prefixes = ("can you", "could you", "would you", "please", "may you")
-    for token in AFFIRMATIVE_TOKENS:
-        if token in normalized:
-            if any(prefix in normalized for prefix in negative_prefixes) and "?" in normalized:
-                continue
-            return True
-    return False
-
-
-def _message_signals_confirmation(text: str) -> bool:
-    normalized = text.strip().lower()
-    if not normalized:
-        return False
-    if _is_affirmative_reply(normalized):
-        return True
-    for keyword in CONFIRMATION_KEYWORDS:
-        if keyword in normalized:
-            if "?" in normalized and any(prefix in normalized for prefix in ("can you", "could you")):
-                continue
-            return True
-    # Treat bare mentions of supported dates/times as confirmations.
-    # BUT: Skip this when the message is clearly a Q&A query (question words + "?").
-    # Vague date mentions like "Saturday in February" should not count as confirmations.
-    # Check for question words anywhere in the message (with word boundaries).
-    question_words = ("which", "what", "when", "where", "how", "can", "could", "would", "do you", "is there", "are there")
-    is_question = "?" in normalized and any(
-        re.search(rf"\b{re.escape(word)}\b", normalized) for word in question_words
-    )
-    if not is_question:
-        tokens = _extract_candidate_tokens(text or "")
-        if tokens:
-            parsed = parse_first_date(tokens, allow_relative=True)
-            if parsed:
-                return True
-    return False
-
-
-def _message_mentions_new_date(text: str) -> bool:
-    if not text.strip():
-        return False
-    detected = parse_first_date(text, fallback_year=datetime.utcnow().year)
-    return detected is not None
+# D6: _window_payload, _window_from_payload, _format_window moved to step2_utils.py
+# D6: _is_affirmative_reply, _message_signals_confirmation, _message_mentions_new_date moved to step2_utils.py
 
 
 def _should_auto_accept_first_date(event_entry: dict) -> bool:
@@ -1841,19 +1734,7 @@ def _resolve_confirmation_window(state: WorkflowState, event_entry: dict) -> Opt
         source_message_id=state.message.msg_id,
     )
 
-
-def _strip_system_subject(subject: str) -> str:
-    """Strip system-generated metadata from subject lines.
-
-    The API adds "Client follow-up (YYYY-MM-DD HH:MM)" to follow-up messages.
-    This timestamp should NOT be used for date extraction as it represents
-    when the message was sent, not the requested event date.
-    """
-    import re
-    # Pattern: "Client follow-up (YYYY-MM-DD HH:MM)" or similar system-generated prefixes
-    pattern = r"^Client follow-up\s*\(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\)\s*"
-    return re.sub(pattern, "", subject, flags=re.IGNORECASE).strip()
-
+# D6: _strip_system_subject moved to step2_utils.py
 
 def _determine_date(
     user_info: Dict[str, Optional[str]],
@@ -1905,25 +1786,7 @@ def _determine_date(
             return chosen_date, iso_value
     return None, None
 
-
-def _normalize_time_value(value: Optional[str]) -> Optional[str]:
-    if not value:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    text = text.replace(".", ":")
-    if ":" not in text:
-        if text.isdigit():
-            text = f"{int(text) % 24:02d}:00"
-        else:
-            return None
-    try:
-        parsed = datetime.strptime(text, "%H:%M").time()
-    except ValueError:
-        return None
-    return f"{parsed.hour:02d}:{parsed.minute:02d}"
-
+# D6: _normalize_time_value moved to step2_utils.py
 
 def _existing_time_window(event_entry: dict, iso_date: str) -> Optional[Tuple[str, str]]:
     """Locate the last known window associated with the same date."""
@@ -2380,15 +2243,7 @@ def _record_confirmation_log(
         }
     )
 
-
-def _window_hash(date_iso: str, start_iso: Optional[str], end_iso: Optional[str]) -> str:
-    payload = f"{date_iso}|{start_iso or ''}|{end_iso or ''}"
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _to_time(value: str) -> time:
-    return datetime.strptime(value, "%H:%M").time()
-
+# D6: _window_hash, _to_time moved to step2_utils.py
 
 def _set_pending_time_state(event_entry: dict, window: ConfirmationWindow) -> None:
     event_entry["pending_time_request"] = {
@@ -2436,15 +2291,7 @@ def _build_select_date_action(date_value: dt.date, ddmmyyyy: str, time_label: Op
         "iso_date": date_value.isoformat(),
     }
 
-
-def _format_time_label(raw: Optional[str]) -> Optional[str]:
-    if not raw:
-        return None
-    lowered = raw.strip().lower()
-    if not lowered:
-        return None
-    return lowered.capitalize()
-
+# D6: _format_time_label moved to step2_utils.py
 
 def _format_room_availability(entries: List[Dict[str, Any]]) -> List[str]:
     grouped: Dict[str, List[Tuple[str, str]]] = {}
@@ -2500,18 +2347,7 @@ def _user_requested_products(state: WorkflowState, classification: Dict[str, Any
 
 
 # D5: _resolve_window_hints moved to window_helpers.py or general_qna.py
-
-
-
-def _is_weekend_token(token: Optional[Any]) -> bool:
-    if token is None:
-        return False
-    if isinstance(token, (list, tuple, set)):
-        return any(_is_weekend_token(item) for item in token)
-    normalized = str(token).strip().lower()
-    if not normalized:
-        return False
-    return normalized.startswith("sat") or normalized.startswith("sun") or "weekend" in normalized
+# D6: _is_weekend_token moved to step2_utils.py
 
 
 def _resolve_week_scope(state: WorkflowState, reference_day: date) -> Optional[Dict[str, Any]]:
@@ -2578,75 +2414,9 @@ def _resolve_week_scope(state: WorkflowState, reference_day: date) -> Optional[D
 
 
 # D5: _has_window_constraints moved to window_helpers.py or general_qna.py
-
-
-
-def _format_label_text(label: Optional[Any]) -> str:
-    if label is None:
-        return ""
-    text = str(label).strip()
-    if not text:
-        return ""
-    if text.lower() == text:
-        return text.capitalize()
-    return text
-
-
-def _date_header_label(month_hint: Optional[str], week_label: Optional[str] = None) -> str:
-    if week_label:
-        return f"Date options for {_format_label_text(week_label)}"
-    if month_hint:
-        return f"Date options for {_format_label_text(month_hint)}"
-    return "Date options"
-
-
-def _format_day_list(iso_dates: Sequence[str]) -> Tuple[str, Optional[int]]:
-    if not iso_dates:
-        return "", None
-    day_labels: List[str] = []
-    year_value: Optional[int] = None
-    for iso_value in iso_dates:
-        try:
-            parsed = datetime.fromisoformat(iso_value)
-        except ValueError:
-            continue
-        day_labels.append(parsed.strftime("%d"))
-        year_value = year_value or parsed.year
-    return ", ".join(day_labels), year_value
-
-
-# _WEEKDAY_LABELS moved to constants.py (D1 refactoring)
-
-
-def _weekday_label_from_dates(
-    iso_dates: Sequence[str],
-    fallback: Optional[str] = None,
-) -> Optional[str]:
-    counts: Counter[int] = Counter()
-    for iso_value in iso_dates:
-        try:
-            parsed = datetime.fromisoformat(iso_value)
-        except ValueError:
-            continue
-        counts.update([parsed.weekday()])
-    if counts:
-        weekday_index, _ = counts.most_common(1)[0]
-        base = _WEEKDAY_LABELS[weekday_index]
-        return f"{base}s"
-    return fallback
-
-
-def _month_label_from_dates(
-    iso_dates: Sequence[str],
-    fallback: Optional[str] = None,
-) -> Optional[str]:
-    for iso_value in iso_dates:
-        try:
-            parsed = datetime.fromisoformat(iso_value)
-        except ValueError:
-            continue
-        return parsed.strftime("%B")
-    return fallback
+# D6: _format_label_text, _date_header_label, _format_day_list moved to step2_utils.py
+# D1: _WEEKDAY_LABELS moved to constants.py
+# D6: _weekday_label_from_dates, _month_label_from_dates moved to step2_utils.py
 
 
 def _collect_preferred_weekday_alternatives(
@@ -2799,14 +2569,7 @@ def _preferred_weekday_label(
         return f"{labels[0]} & {labels[1]}"
     return ", ".join(labels[:-1]) + f", & {labels[-1]}"
 
-
-def _pluralize_weekday_hint(weekday_hint: Any) -> Optional[str]:
-    if isinstance(weekday_hint, str):
-        token = weekday_hint.strip()
-        if token:
-            label = token.capitalize()
-            return f"{label}s" if not label.endswith("s") else label
-    return None
+# D6: _pluralize_weekday_hint moved to step2_utils.py
 
 
 def _maybe_general_qa_payload(state: WorkflowState) -> Optional[Dict[str, Any]]:
@@ -2858,28 +2621,7 @@ def _maybe_complete_from_time_hint(
 # D5: _window_filters moved to window_helpers.py or general_qna.py
 
 
-
-def _describe_constraints(
-    month_hint: Optional[str],
-    weekday_hint: Optional[Any],
-    time_of_day: Optional[str],
-) -> str:
-    parts: List[str] = []
-    if weekday_hint:
-        if isinstance(weekday_hint, (list, tuple, set)):
-            tokens = [str(word).capitalize() for word in weekday_hint if str(word).strip()]
-            if tokens:
-                parts.append(", ".join(tokens))
-        else:
-            parts.append(str(weekday_hint).capitalize())
-    if month_hint:
-        parts.append(f"in {str(month_hint).capitalize()}")
-    descriptor = " ".join(parts) if parts else "for your requested window"
-    if time_of_day:
-        descriptor += f" ({str(time_of_day).lower()})"
-    return descriptor
-
-
+# D6: _describe_constraints moved to step2_utils.py
 # D5: _extract_participants_from_state moved to window_helpers.py or general_qna.py
 
 
@@ -2905,16 +2647,4 @@ def _is_hybrid_availability_request(classification: Dict[str, Any], state: Workf
 
 
 # D5: _present_general_room_qna moved to window_helpers.py or general_qna.py
-
-def _extract_candidate_tokens(text: str) -> str:
-    cleaned = text.strip()
-    if not cleaned:
-        return cleaned
-    # Strip greetings or closings when the message is short.
-    parts = cleaned.splitlines()
-    if len(parts) == 1:
-        token = parts[0].strip()
-        return token
-    # Prefer the longest non-empty line (often the date).
-    longest = max((line.strip() for line in parts), key=len, default="")
-    return longest or cleaned
+# D6: _extract_candidate_tokens moved to step2_utils.py
