@@ -86,6 +86,21 @@ from backend.workflows.planner.date_handler import (
     should_execute_date_room_combo as _should_execute_date_room_combo_impl,
     execute_date_room_combo as _execute_date_room_combo_impl,
 )
+from backend.workflows.planner.product_handler import (
+    format_money as _format_money_impl,
+    missing_item_display as _missing_item_display_impl,
+    products_state as _products_state_impl,
+    product_lookup as _product_lookup_impl,
+    normalise_products as _normalise_products_impl,
+    current_participant_count as _current_participant_count_impl,
+    infer_quantity as _infer_quantity_impl,
+    format_product_line as _format_product_line_impl,
+    product_subtotal_lines as _product_subtotal_lines_impl,
+    build_product_confirmation_lines as _build_product_confirmation_lines_impl,
+    parse_product_intent as _parse_product_intent_impl,
+    apply_product_add as _apply_product_add_impl,
+    load_catering_names as _load_catering_names_impl,
+)
 
 # Re-export gate function for tests that import it directly
 _shortcuts_allowed = _shortcuts_allowed  # noqa: F811 - intentional re-export
@@ -481,60 +496,9 @@ class _ShortcutPlanner:
         if billing:
             self._add_needs_input("billing", {"billing_address": billing, "reason": "billing_after_offer"}, reason="billing_after_offer")
 
+    # S3: Product intent parsing delegated to product_handler.py
     def _parse_product_intent(self) -> None:
-        if not _product_flow_enabled():
-            return
-        raw_products = self._normalise_products(self.user_info.get("products_add"))
-        if not raw_products:
-            return
-
-        available_map = self._product_lookup("available_items")
-        manager_map = self._product_lookup("manager_added_items")
-
-        matched: List[Dict[str, Any]] = []
-        missing: List[Dict[str, Any]] = []
-
-        for item in raw_products:
-            name_key = item["name"].lower()
-            catalog_entry = available_map.get(name_key) or manager_map.get(name_key)
-            if catalog_entry:
-                merged = dict(catalog_entry)
-                merged.setdefault("name", catalog_entry.get("name") or item["name"])
-                merged["quantity"] = item.get("quantity") or merged.get("quantity") or self._infer_quantity(merged)
-                matched.append(merged)
-            else:
-                missing.append(item)
-
-        if matched:
-            self.pending_product_additions.extend(matched)
-            self.verifiable.append(ParsedIntent("product_add", {"items": matched}, verifiable=True))
-
-        limited_missing = missing[: _max_missing_items_per_hil()]
-
-        if missing:
-            self.pending_missing_products.extend(limited_missing)
-            payload = {
-                "items": limited_missing,
-                "ask_budget": _capture_budget_on_hil(),
-            }
-            if self.budget_info:
-                payload["budget"] = self.budget_info
-                self.telemetry.budget_provided = True
-            self.telemetry.offered_hil = True
-            self._add_needs_input("offer_hil", payload, reason="missing_products")
-            self.product_price_missing = True
-
-        if matched and not missing:
-            if self.telemetry.artifact_match is None:
-                self.telemetry.artifact_match = "all"
-        elif matched and missing:
-            self.telemetry.artifact_match = "partial"
-        elif not matched and missing:
-            if self.telemetry.artifact_match is None:
-                self.telemetry.artifact_match = "none"
-
-        if missing:
-            self.telemetry.missing_items.extend({"name": item.get("name")} for item in limited_missing)
+        _parse_product_intent_impl(self)
 
     def _ensure_date_choice_intent(self) -> None:
         _ensure_date_choice_intent_impl(self)
@@ -628,76 +592,7 @@ class _ShortcutPlanner:
         return True
 
     def _apply_product_add(self, items: List[Dict[str, Any]]) -> bool:
-        if not items:
-            return False
-        products_list = self.event.setdefault("products", [])
-        line_items = self._products_state().setdefault("line_items", [])
-        currency_default = _budget_default_currency()
-        for item in items:
-            name = item.get("name") or "Unnamed item"
-            quantity = max(1, int(item.get("quantity") or self._infer_quantity(item)))
-            unit_price_raw = item.get("unit_price")
-            currency = item.get("currency") or currency_default
-            unit_price_value: Optional[float] = None
-            if unit_price_raw is not None:
-                try:
-                    unit_price_value = float(unit_price_raw)
-                except (TypeError, ValueError):
-                    unit_price_value = None
-            subtotal: Optional[float] = None
-            if unit_price_value is not None:
-                subtotal = unit_price_value * quantity
-            else:
-                self.product_price_missing = True
-
-            updated = False
-            for existing in products_list:
-                if existing.get("name", "").lower() == name.lower():
-                    existing["quantity"] = quantity
-                    if unit_price_value is not None:
-                        existing["unit_price"] = unit_price_value
-                    updated = True
-                    break
-            if not updated:
-                entry = {"name": name, "quantity": quantity}
-                if unit_price_value is not None:
-                    entry["unit_price"] = unit_price_value
-                products_list.append(entry)
-
-            line_updated = False
-            for existing_line in line_items:
-                if existing_line.get("name", "").lower() == name.lower():
-                    existing_line["quantity"] = quantity
-                    if unit_price_value is not None:
-                        existing_line["unit_price"] = unit_price_value
-                    line_updated = True
-                    break
-            if not line_updated:
-                entry = {"name": name, "quantity": quantity}
-                if unit_price_value is not None:
-                    entry["unit_price"] = unit_price_value
-                line_items.append(entry)
-
-            self.telemetry.added_items.append({"name": name, "quantity": quantity})
-            if subtotal is not None:
-                self.product_currency_totals[currency] = self.product_currency_totals.get(currency, 0.0) + subtotal
-            else:
-                self.product_price_missing = True
-            self.product_line_details.append(
-                {
-                    "name": name,
-                    "quantity": quantity,
-                    "currency": currency,
-                    "unit_price": unit_price_value,
-                    "subtotal": subtotal,
-                    "price_missing": unit_price_value is None,
-                }
-            )
-
-        if items:
-            self.telemetry.executed_intents.append("product_add")
-        self.state.extras["persist"] = True
-        return True
+        return _apply_product_add_impl(self, items)
 
     # ------------------------------------------------------------ utilities
     def _snapshot_event(self) -> Dict[str, Any]:
@@ -748,61 +643,19 @@ class _ShortcutPlanner:
         intent = self.needs_input[0]
         return {"intent": intent.type, "data": intent.data}
 
+    # S3: Product display methods delegated to product_handler.py
     def _build_product_confirmation_lines(self) -> List[str]:
-        if not self.product_line_details:
-            self.telemetry.product_prices_included = False
-            self.telemetry.product_price_missing = self.product_price_missing
-            return []
-        lines: List[str] = ["Products added:"]
-        any_missing = False
-        for detail in self.product_line_details:
-            line = self._format_product_line(detail)
-            if detail.get("price_missing"):
-                any_missing = True
-            lines.append(line)
-        subtotal_lines = self._product_subtotal_lines()
-        lines.extend(subtotal_lines)
-        any_priced = any(not detail.get("price_missing") for detail in self.product_line_details)
-        all_priced = all(not detail.get("price_missing") for detail in self.product_line_details)
-        self.telemetry.product_prices_included = all_priced and any_priced
-        self.product_price_missing = self.product_price_missing or any_missing
-        self.telemetry.product_price_missing = self.product_price_missing or any_missing
-        return lines
+        return _build_product_confirmation_lines_impl(self)
 
     def _format_product_line(self, detail: Dict[str, Any]) -> str:
-        name = detail.get("name") or "Unnamed item"
-        quantity = detail.get("quantity") or 1
-        unit_price = detail.get("unit_price")
-        currency = detail.get("currency") or _budget_default_currency()
-        if unit_price is None:
-            return f"• {name} — {quantity} × TBD (price pending)"
-        subtotal = detail.get("subtotal")
-        unit_str = self._format_money(unit_price, currency)
-        subtotal_str = self._format_money(subtotal or 0.0, currency)
-        return f"• {name} — {quantity} × {unit_str} = {subtotal_str}"
+        return _format_product_line_impl(self, detail)
 
     def _product_subtotal_lines(self) -> List[str]:
-        if not self.product_currency_totals:
-            return []
-        if len(self.product_currency_totals) == 1:
-            currency, amount = next(iter(self.product_currency_totals.items()))
-            return [f"Products subtotal: {self._format_money(amount, currency)}"]
-        lines: List[str] = []
-        for currency in sorted(self.product_currency_totals.keys()):
-            amount = self.product_currency_totals[currency]
-            lines.append(f"Products subtotal ({currency}): {self._format_money(amount, currency)}")
-        return lines
+        return _product_subtotal_lines_impl(self)
 
     @staticmethod
     def _format_money(amount: float, currency: str) -> str:
-        if amount is None:
-            return "TBD"
-        rounded = round(amount, 2)
-        if abs(rounded - round(rounded)) < 1e-6:
-            value = str(int(round(rounded)))
-        else:
-            value = f"{rounded:.2f}".rstrip("0").rstrip(".")
-        return f"{currency} {value}"
+        return _format_money_impl(amount, currency)
 
     def _compose_addons_section(self) -> Tuple[Optional[str], List[str]]:
         if self.preview_lines:
@@ -1048,17 +901,9 @@ class _ShortcutPlanner:
         self.telemetry.choice_context_active = True
         return refreshed
 
+    # S3: Product state methods delegated to product_handler.py
     def _products_state(self) -> Dict[str, Any]:
-        return self.event.setdefault(
-            "products_state",
-            {
-                "available_items": [],
-                "manager_added_items": [],
-                "line_items": [],
-                "pending_hil_requests": [],
-                "budgets": {},
-            },
-        )
+        return _products_state_impl(self)
 
     def _preask_feature_enabled(self) -> bool:
         return _event_scoped_upsell_enabled() and _no_unsolicited_menus() and bool(self.manager_items_by_class)
@@ -1590,24 +1435,17 @@ class _ShortcutPlanner:
             self.telemetry.preview_items_count = 0
         self.preview_class = None
         self.state.extras["persist"] = True
+
+    # S3: Product utility methods delegated to product_handler.py
     def _product_lookup(self, bucket: str) -> Dict[str, Dict[str, Any]]:
-        items = self._products_state().get(bucket) or []
-        lookup: Dict[str, Dict[str, Any]] = {}
-        for entry in items:
-            name = str(entry.get("name") or "").strip()
-            if not name:
-                continue
-            lookup[name.lower()] = dict(entry)
-        return lookup
+        return _product_lookup_impl(self, bucket)
 
     def _normalise_products(self, payload: Any) -> List[Dict[str, Any]]:
-        participant_count = self.user_info.get("participants") if isinstance(self.user_info.get("participants"), int) else None
-        return normalise_product_payload(payload, participant_count=participant_count)
+        return _normalise_products_impl(self, payload)
 
     @staticmethod
     def _missing_item_display(item: Dict[str, Any]) -> str:
-        name = str(item.get("name") or "the item").strip() or "the item"
-        return f"{name} — price pending (via manager)"
+        return _missing_item_display_impl(item)
 
     # S3: Budget parsing methods delegated to budget_parser.py
     def _extract_budget_info(self) -> Optional[Dict[str, Any]]:
@@ -1621,29 +1459,10 @@ class _ShortcutPlanner:
         return _parse_budget_text_impl(value, scope_default)
 
     def _infer_quantity(self, product_entry: Dict[str, Any]) -> int:
-        qty = product_entry.get("quantity")
-        if isinstance(qty, (int, float)):
-            value = int(qty)
-            return max(1, value)
-        participants = self._current_participant_count()
-        if participants:
-            return max(1, participants)
-        return 1
+        return _infer_quantity_impl(self, product_entry)
 
     def _current_participant_count(self) -> Optional[int]:
-        candidates = [
-            self.user_info.get("participants"),
-            (self.event.get("requirements") or {}).get("number_of_participants"),
-            (self.event.get("event_data") or {}).get("Number of Participants"),
-        ]
-        for value in candidates:
-            if value in (None, "", "Not specified"):
-                continue
-            try:
-                return max(1, int(value))
-            except (TypeError, ValueError):
-                continue
-        return None
+        return _current_participant_count_impl(self)
 
     # S3: Window conversion and time utilities delegated to date_handler.py
     @staticmethod
@@ -1672,18 +1491,6 @@ class _ShortcutPlanner:
         )
         return any(keyword in text for keyword in keywords)
 
-@lru_cache(maxsize=1)
+# S3: Module-level catering lookup delegated to product_handler.py
 def _load_catering_names() -> List[str]:
-    path = Path(__file__).resolve().parents[2] / "catering_menu.json"
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
-    packages = data.get("catering_packages") or []
-    names: List[str] = []
-    for pkg in packages:
-        name = str(pkg.get("name") or "").strip()
-        if name:
-            names.append(name)
-    return names
+    return _load_catering_names_impl()
