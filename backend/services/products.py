@@ -21,7 +21,7 @@ class ProductRecord:
 
 @lru_cache(maxsize=1)
 def _load_catalog(path: Optional[Path] = None) -> Dict[str, ProductRecord]:
-    catalog_path = path or Path(__file__).resolve().parents[1] / "data" / "catalog" / "catering.json"
+    catalog_path = path or Path(__file__).resolve().parents[1] / "data" / "products.json"
     if not catalog_path.exists():
         return {}
     with catalog_path.open("r", encoding="utf-8") as handle:

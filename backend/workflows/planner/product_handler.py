@@ -424,20 +424,21 @@ def apply_product_add(planner: "_ShortcutPlanner", items: List[Dict[str, Any]]) 
 
 @lru_cache(maxsize=1)
 def load_catering_names() -> List[str]:
-    """Load catering package names from catering_menu.json.
+    """Load catering/product names from products.json.
 
-    Returns a cached list of catering package names.
+    Returns a cached list of product names (catering category).
     """
-    path = Path(__file__).resolve().parents[2] / "catering_menu.json"
+    path = Path(__file__).resolve().parents[2] / "data" / "products.json"
     try:
         with path.open("r", encoding="utf-8") as handle:
             data = json.load(handle)
     except (FileNotFoundError, json.JSONDecodeError):
         return []
-    packages = data.get("catering_packages") or []
+    products = data.get("products") or []
     names: List[str] = []
-    for pkg in packages:
-        name = str(pkg.get("name") or "").strip()
+    for prod in products:
+        # Include all products (catering, beverages, etc.)
+        name = str(prod.get("name") or "").strip()
         if name:
             names.append(name)
     return names

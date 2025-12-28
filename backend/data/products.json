@@ -1,0 +1,316 @@
+{
+  "products": [
+    {
+      "id": "catering-classic-apero",
+      "name": "Classic Apéro",
+      "category": "Catering",
+      "unit": "per_person",
+      "unit_price": 18.0,
+      "unavailable_in": [],
+      "synonyms": [
+        "classic apero",
+        "finger food",
+        "finger-food",
+        "standing reception",
+        "cocktail bites",
+        "apero classique"
+      ]
+    },
+    {
+      "id": "catering-premium-apero",
+      "name": "Premium Apéro",
+      "category": "Catering",
+      "unit": "per_person",
+      "unit_price": 28.0,
+      "unavailable_in": [],
+      "synonyms": [
+        "premium apero",
+        "gourmet finger food",
+        "finger food deluxe",
+        "standing reception premium",
+        "apero riche"
+      ]
+    },
+    {
+      "id": "beverage-prosecco",
+      "name": "Prosecco Service",
+      "category": "Beverages",
+      "unit": "per_bottle",
+      "unit_price": 35.0,
+      "unavailable_in": [
+        "atelier-room-a"
+      ],
+      "synonyms": [
+        "prosecco",
+        "sparkling wine",
+        "bubbly",
+        "prosecco bar"
+      ]
+    },
+    {
+      "id": "beverage-coffee-bar",
+      "name": "Coffee & Tea Bar",
+      "category": "Beverages",
+      "unit": "per_person",
+      "unit_price": 7.5,
+      "unavailable_in": [],
+      "synonyms": [
+        "coffee service",
+        "coffee bar",
+        "coffee & tea",
+        "coffee station",
+        "beverage station"
+      ]
+    },
+    {
+      "id": "equipment-hybrid-kit",
+      "name": "Hybrid Streaming Kit",
+      "category": "Equipment",
+      "unit": "per_event",
+      "unit_price": 420.0,
+      "unavailable_in": [
+        "atelier-room-d"
+      ],
+      "synonyms": [
+        "hybrid streaming",
+        "streaming kit",
+        "video conference",
+        "hybrid setup"
+      ]
+    },
+    {
+      "id": "equipment-wireless-mics",
+      "name": "Wireless Microphone",
+      "category": "Equipment",
+      "unit": "per_unit",
+      "unit_price": 25.0,
+      "unavailable_in": [],
+      "synonyms": [
+        "wireless mic",
+        "handheld mic",
+        "cordless microphone"
+      ]
+    },
+    {
+      "id": "beverage-cocktail-bar",
+      "name": "Cocktail Bar Setup",
+      "category": "Beverages",
+      "unit": "per_event",
+      "unit_price": 320.0,
+      "unavailable_in": [],
+      "synonyms": [
+        "cocktail setup",
+        "cocktail bar",
+        "mixology station",
+        "bar area",
+        "signature cocktails"
+      ]
+    },
+    {
+      "id": "entertainment-background-music",
+      "name": "Background Music Package",
+      "category": "Entertainment",
+      "unit": "per_event",
+      "unit_price": 180.0,
+      "unavailable_in": [],
+      "synonyms": [
+        "background music",
+        "ambient music",
+        "music package",
+        "sound system",
+        "dj set",
+        "music playlist"
+      ]
+    },
+    {
+      "id": "catering-basic-coffee",
+      "name": "Basic Coffee & Tea Package",
+      "category": "Catering",
+      "unit": "per_person",
+      "unit_price": 8.5,
+      "unavailable_in": [],
+      "synonyms": [],
+      "description": "Perfect for short meetings",
+      "includes": [
+        "Freshly brewed coffee (regular & decaf)",
+        "Selection of teas (black, green, herbal)",
+        "Still & sparkling water",
+        "Sugar, milk, honey"
+      ],
+      "dietary_options": []
+    },
+    {
+      "id": "catering-coffee-snacks",
+      "name": "Coffee & Snacks Package",
+      "category": "Catering",
+      "unit": "per_person",
+      "unit_price": 15.0,
+      "unavailable_in": [],
+      "synonyms": [],
+      "description": "Ideal for half-day workshops",
+      "includes": [
+        "Everything from Basic Package",
+        "Fresh croissants & pastries",
+        "Seasonal fruit platter",
+        "Small cookies"
+      ],
+      "dietary_options": []
+    },
+    {
+      "id": "catering-lunch-package",
+      "name": "Lunch Package",
+      "category": "Catering",
+      "unit": "per_person",
+      "unit_price": 28.0,
+      "unavailable_in": [],
+      "synonyms": [],
+      "description": "Full lunch service",
+      "includes": [
+        "Main course (choice of 2 options)",
+        "Fresh salad bar",
+        "Bread basket",
+        "Dessert",
+        "Coffee & tea"
+      ],
+      "dietary_options": [
+        "Vegetarian",
+        "Vegan",
+        "Gluten-free available"
+      ]
+    },
+    {
+      "id": "catering-premium-lunch",
+      "name": "Premium Lunch Package",
+      "category": "Catering",
+      "unit": "per_person",
+      "unit_price": 42.0,
+      "unavailable_in": [],
+      "synonyms": [],
+      "description": "Elevated dining experience",
+      "includes": [
+        "Three-course meal",
+        "Premium salad bar with international options",
+        "Choice of 3 main courses",
+        "Gourmet dessert selection",
+        "Coffee, tea & soft drinks included"
+      ],
+      "dietary_options": [
+        "All dietary requirements accommodated"
+      ]
+    },
+    {
+      "id": "catering-apero",
+      "name": "Apéro Package",
+      "category": "Catering",
+      "unit": "per_person",
+      "unit_price": 24.0,
+      "unavailable_in": [],
+      "synonyms": [],
+      "description": "Perfect for networking events",
+      "includes": [
+        "Selection of canapés (6 pieces per person)",
+        "Cheese & charcuterie platter",
+        "Vegetable crudités with dips",
+        "Olives & nuts",
+        "Soft drinks & juice"
+      ],
+      "dietary_options": []
+    },
+    {
+      "id": "beverage-soft-drinks",
+      "name": "Soft Drinks",
+      "category": "Beverages",
+      "unit": "per_person",
+      "unit_price": 4.5,
+      "unavailable_in": [],
+      "synonyms": [],
+      "options": [
+        "Coca-Cola",
+        "Sprite",
+        "Fanta",
+        "Rivella"
+      ]
+    },
+    {
+      "id": "beverage-fresh-juices",
+      "name": "Fresh Juices",
+      "category": "Beverages",
+      "unit": "per_person",
+      "unit_price": 5.0,
+      "unavailable_in": [],
+      "synonyms": [],
+      "options": [
+        "Orange",
+        "Apple",
+        "Mixed berry"
+      ]
+    },
+    {
+      "id": "beverage-still-and-sparkling-water",
+      "name": "Still & Sparkling Water",
+      "category": "Beverages",
+      "unit": "per_person",
+      "unit_price": 3.5,
+      "unavailable_in": [],
+      "synonyms": [],
+      "options": []
+    },
+    {
+      "id": "beverage-wine-selection",
+      "name": "Wine Selection",
+      "category": "Beverages",
+      "unit": "per_glass",
+      "unit_price": 8.0,
+      "unavailable_in": [],
+      "synonyms": [],
+      "options": [
+        "Swiss white wine",
+        "Swiss red wine",
+        "International selection"
+      ]
+    },
+    {
+      "id": "beverage-beer-selection",
+      "name": "Beer Selection",
+      "category": "Beverages",
+      "unit": "per_bottle",
+      "unit_price": 6.5,
+      "unavailable_in": [],
+      "synonyms": [],
+      "options": [
+        "Swiss lager",
+        "Local craft beer"
+      ]
+    },
+    {
+      "id": "addon-birthday-cake",
+      "name": "Birthday Cake",
+      "category": "Add-ons",
+      "unit": "per_event",
+      "unit_price": 65.0,
+      "unavailable_in": [],
+      "synonyms": [],
+      "description": "Custom cake for celebrations"
+    },
+    {
+      "id": "addon-chocolate-fountain",
+      "name": "Chocolate Fountain",
+      "category": "Add-ons",
+      "unit": "per_event",
+      "unit_price": 120.0,
+      "unavailable_in": [],
+      "synonyms": [],
+      "description": "With fresh fruit for dipping"
+    },
+    {
+      "id": "addon-barista-service",
+      "name": "Barista Service",
+      "category": "Add-ons",
+      "unit": "per_event",
+      "unit_price": 150.0,
+      "unavailable_in": [],
+      "synonyms": [],
+      "description": "Professional coffee bar with barista"
+    }
+  ]
+}
