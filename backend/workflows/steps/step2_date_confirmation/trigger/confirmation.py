@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # Import from correct locations
 from backend.workflows.conditions.checks import is_valid_ddmmyyyy
-from backend.workflows.common.datetime_parse import parse_first_date, to_iso_date
+from backend.workflows.common.datetime_parse import build_window_iso, parse_first_date, to_iso_date
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.workflows.common.relative_dates import resolve_relative_date
 from backend.workflows.common.types import WorkflowState
@@ -20,7 +20,9 @@ from .date_parsing import normalize_iso_candidate as _normalize_iso_candidate
 from .step2_utils import (
     _normalize_time_value,
     _strip_system_subject,
+    _to_time,
 )
+from .constants import TIME_HINT_DEFAULTS as _TIME_HINT_DEFAULTS
 from .types import ConfirmationWindow
 
 
@@ -218,3 +220,44 @@ def set_pending_time_state(event_entry: dict, window: ConfirmationWindow) -> Non
         "source_message_id": window.source_message_id,
         "created_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
     }
+
+
+def complete_from_time_hint(
+    window: ConfirmationWindow,
+    time_hint: Optional[str],
+) -> Optional[ConfirmationWindow]:
+    """Complete a partial ConfirmationWindow using a time-of-day hint.
+
+    Extracted from step2_handler.py as part of D11 refactoring.
+
+    Args:
+        window: Partial ConfirmationWindow with date but missing times
+        time_hint: Vague time hint like "evening", "afternoon", etc.
+
+    Returns:
+        Complete ConfirmationWindow with times filled in, or None if hint invalid.
+    """
+    if not time_hint:
+        return None
+    defaults = _TIME_HINT_DEFAULTS.get(str(time_hint).lower())
+    if not defaults:
+        return None
+    try:
+        start_iso, end_iso = build_window_iso(
+            window.iso_date,
+            _to_time(defaults[0]),
+            _to_time(defaults[1]),
+        )
+    except ValueError:
+        return None
+    return ConfirmationWindow(
+        display_date=window.display_date,
+        iso_date=window.iso_date,
+        start_time=defaults[0],
+        end_time=defaults[1],
+        start_iso=start_iso,
+        end_iso=end_iso,
+        inherited_times=True,
+        partial=False,
+        source_message_id=window.source_message_id,
+    )
