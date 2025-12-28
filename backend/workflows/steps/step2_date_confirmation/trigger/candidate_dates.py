@@ -30,7 +30,11 @@ from backend.debug.hooks import trace_db_read
 from backend.services.availability import next_five_venue_dates
 from backend.workflows.steps.step1_intake.condition.checks import suggest_dates
 
-from .constants import WEEKDAY_LABELS as _WEEKDAY_LABELS
+from .constants import (
+    WEEKDAY_LABELS as _WEEKDAY_LABELS,
+    MONTH_NAME_TO_INDEX as _MONTH_NAME_TO_INDEX,
+)
+from backend.utils.dates import MONTH_INDEX_TO_NAME, from_hints
 from .date_parsing import (
     iso_date_is_past as _iso_date_is_past,
     safe_parse_iso_date as _safe_parse_iso_date,
@@ -38,6 +42,7 @@ from .date_parsing import (
     human_join as _human_join,
     parse_weekday_mentions as _parse_weekday_mentions,
     weekday_indices_from_hint as _weekday_indices_from_hint,
+    clean_weekdays_hint as _clean_weekdays_hint,
 )
 from .calendar_checks import (
     candidate_is_calendar_free as _candidate_is_calendar_free,
@@ -64,6 +69,8 @@ from .step2_utils import (
     _pluralize_weekday_hint,
     _preface_with_apology,
     _window_payload,
+    _clear_invalid_weekdays_hint,
+    _is_weekend_token,
 )
 from .types import ConfirmationWindow
 
@@ -556,6 +563,148 @@ def build_draft_message(
     return draft_message
 
 
+# =============================================================================
+# WEEK SCOPE RESOLUTION (D10)
+# =============================================================================
+
+def resolve_week_scope(
+    user_info: Dict[str, Any],
+    event_entry: Dict[str, Any],
+    reference_day: date,
+) -> Optional[Dict[str, Any]]:
+    """Resolve week scope from user hints and event data.
+
+    Extracted from step2_handler.py as part of D10 refactoring.
+
+    NOTE: This function modifies event_entry via _clear_invalid_weekdays_hint.
+    Consider calling the cleanup separately if you need a pure function.
+
+    Args:
+        user_info: Current user information dict
+        event_entry: Event entry dict (may be modified)
+        reference_day: Reference date for relative date calculation
+
+    Returns:
+        Dict with dates, week_index, month_label, label, weekdays_hint
+        or None if no valid week scope can be resolved.
+    """
+    _clear_invalid_weekdays_hint(event_entry)
+
+    window_scope: Dict[str, Any] = {}
+    for candidate in (event_entry.get("window_scope"), user_info.get("window")):
+        if isinstance(candidate, dict):
+            window_scope.update(candidate)
+
+    month_hint = (
+        window_scope.get("month")
+        or user_info.get("vague_month")
+        or event_entry.get("vague_month")
+    )
+    week_index = (
+        window_scope.get("week_index")
+        or user_info.get("week_index")
+        or event_entry.get("week_index")
+    )
+    weekdays_hint_raw = (
+        window_scope.get("weekdays_hint")
+        or user_info.get("weekdays_hint")
+        or event_entry.get("weekdays_hint")
+    )
+    weekdays_hint = _clean_weekdays_hint(weekdays_hint_raw)
+    weekday_token = (
+        window_scope.get("weekday")
+        or user_info.get("vague_weekday")
+        or event_entry.get("vague_weekday")
+    )
+
+    if not month_hint or (week_index is None and not weekdays_hint):
+        return None
+
+    include_weekends = _is_weekend_token(weekday_token)
+    dates = from_hints(
+        month=month_hint,
+        week_index=week_index,
+        weekdays_hint=weekdays_hint if isinstance(weekdays_hint, (list, tuple, set)) else None,
+        reference=reference_day,
+        mon_fri_only=not include_weekends,
+    )
+    if not dates:
+        return None
+
+    try:
+        first_day = datetime.fromisoformat(dates[0])
+    except ValueError:
+        return None
+
+    derived_week_index = ((first_day.day - 1) // 7) + 1
+    month_index = _MONTH_NAME_TO_INDEX.get(str(month_hint).strip().lower())
+    if month_index is None:
+        month_index = first_day.month
+    month_label = window_scope.get("month") or MONTH_INDEX_TO_NAME.get(month_index, _format_label_text(month_hint))
+    label = f"Week {derived_week_index} of {month_label}"
+
+    return {
+        "dates": dates,
+        "week_index": derived_week_index,
+        "month_label": month_label,
+        "label": label,
+        "weekdays_hint": list(weekdays_hint) if isinstance(weekdays_hint, (list, tuple, set)) else [],
+    }
+
+
+def preferred_weekday_label(
+    preferred_weekdays: Sequence[int],
+    sample_dates: Sequence[str],
+) -> Optional[str]:
+    """Generate a human-readable label for preferred weekdays.
+
+    Extracted from step2_handler.py as part of D10 refactoring.
+
+    Args:
+        preferred_weekdays: List of weekday indices (0=Mon, 6=Sun)
+        sample_dates: List of ISO date strings to check against
+
+    Returns:
+        Formatted label like "Fridays", "Fridays & Saturdays", or None
+    """
+    if not preferred_weekdays or not sample_dates:
+        return None
+
+    valid_indices = [idx for idx in preferred_weekdays if 0 <= idx <= 6]
+    if not valid_indices:
+        return None
+
+    requested_set = set(valid_indices)
+    sample_set: set[int] = set()
+
+    for iso_value in sample_dates:
+        try:
+            parsed = datetime.fromisoformat(iso_value)
+        except ValueError:
+            continue
+        weekday_idx = parsed.weekday()
+        if weekday_idx in requested_set:
+            sample_set.add(weekday_idx)
+
+    if not sample_set:
+        return None
+    if not sample_set.issubset(requested_set):
+        return None
+
+    ordered_indices = [idx for idx in valid_indices if idx in sample_set]
+    if not ordered_indices:
+        ordered_indices = sorted(sample_set)
+
+    labels = [f"{_WEEKDAY_LABELS[idx]}s" for idx in ordered_indices]
+    if not labels:
+        return None
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) == 2:
+        return f"{labels[0]} & {labels[1]}"
+    return ", ".join(labels[:-1]) + f", & {labels[-1]}"
+
+
 __all__ = [
     # Weekday alternatives (moved from step2_handler.py)
     "_collect_preferred_weekday_alternatives",
@@ -570,4 +719,7 @@ __all__ = [
     # Payload building
     "build_table_and_actions",
     "build_draft_message",
+    # Week scope resolution (D10)
+    "resolve_week_scope",
+    "preferred_weekday_label",
 ]

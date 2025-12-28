@@ -27,6 +27,7 @@ from .constants import (
     WEEKDAY_LABELS,
 )
 from .types import ConfirmationWindow
+from .date_parsing import clean_weekdays_hint as _clean_weekdays_hint
 from backend.workflows.common.datetime_parse import parse_first_date
 
 
@@ -92,6 +93,21 @@ def _strip_system_subject(subject: str) -> str:
     # Pattern: "Client follow-up (YYYY-MM-DD HH:MM)" or similar system-generated prefixes
     pattern = r"^Client follow-up\s*\(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\)\s*"
     return re.sub(pattern, "", subject, flags=re.IGNORECASE).strip()
+
+
+# =============================================================================
+# DATA CLEANUP
+# =============================================================================
+
+def _clear_invalid_weekdays_hint(event_entry: Dict[str, Any]) -> None:
+    """Strip invalid weekday hints that can be polluted by participant counts."""
+    weekdays_hint = event_entry.get("weekdays_hint")
+    cleaned = _clean_weekdays_hint(weekdays_hint)
+    if cleaned != weekdays_hint:
+        if cleaned:
+            event_entry["weekdays_hint"] = cleaned
+        else:
+            event_entry.pop("weekdays_hint", None)
 
 
 # =============================================================================
