@@ -128,20 +128,27 @@ This document translates the existing backend review findings into **junior-dev-
 
 **Verification:** All 146 tests pass + imports verified
 
----
+### D5: Step 2 Q&A Bridge Extraction — 2025-12-28
 
-## Open Refactoring Tasks 🔄
+**Summary:** Resolved circular dependency between `step2_handler.py` and `general_qna.py` via third module pattern.
 
-### Step 2 Complex Q&A Implementation
+**New Modules:**
+- `window_helpers.py` (178 lines) - Shared functions for date constraint handling:
+  - `_reference_date_from_state`
+  - `_resolve_window_hints`
+  - `_has_window_constraints`
+  - `_window_filters`
+  - `_extract_participants_from_state`
+  - `_candidate_dates_for_constraints`
+- `general_qna.py` (484 lines) - Step 2-specific Q&A bridge:
+  - `_search_range_availability`
+  - `_present_general_room_qna`
 
-Step 2's `_present_general_room_qna` (~354 lines) was **not** included in the Q&A unification because it has additional features:
-- Range availability checking
-- Router Q&A integration
-- More complex state handling
+**Result:** `step2_handler.py`: ~3456 → 2920 lines (-536 lines, ~16% reduction)
 
-**Future option:** Refactor Step 2 to call the shared `present_general_room_qna()` function + its extra logic on top. This would complete the Q&A consolidation.
+**Note:** Step 2's Q&A implementation remains separate from the unified `common/general_qna.py` due to its extra features (range availability, router Q&A integration), but circular dependencies are now properly resolved.
 
-**Related:** D5 in PR Queue below (marked as analysis complete, but Step 2 extraction remains optional)
+**Verification:** All 146 tests pass + imports verified
 
 ---
 

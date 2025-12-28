@@ -2,18 +2,26 @@
 
 ## 2025-12-28
 
-### D5: Step2 Q&A Bridge Extraction ✅
+### D5: Step2 Q&A Bridge Extraction (Complete) ✅
 
-**Summary:** Created dedicated `general_qna.py` module for Step 2's Q&A handling.
+**Summary:** Resolved circular dependency between `step2_handler.py` and `general_qna.py` using third module pattern.
 
-**New Module:** `backend/workflows/steps/step2_date_confirmation/trigger/general_qna.py`
-- `present_general_room_qna()` - Main Q&A handler with range availability
-- `_search_range_availability()` - Date range search helper
+**New Modules:**
+1. `backend/workflows/steps/step2_date_confirmation/trigger/window_helpers.py` (178 lines)
+   - `_reference_date_from_state`, `_resolve_window_hints`, `_has_window_constraints`
+   - `_window_filters`, `_extract_participants_from_state`, `_candidate_dates_for_constraints`
 
-**Key Design Decisions:**
-- Uses lazy imports to avoid circular dependencies with step2_handler.py
-- Step 2's Q&A is more complex than other steps (range availability, router integration)
-- Original functions remain in step2_handler.py until full migration is complete
+2. `backend/workflows/steps/step2_date_confirmation/trigger/general_qna.py` (484 lines)
+   - `_present_general_room_qna()` - Main Q&A handler with range availability
+   - `_search_range_availability()` - Date range search helper
+
+**Resolution Pattern:**
+- Created `window_helpers.py` as shared third module that both files can import
+- `general_qna.py` imports from `window_helpers.py` (no lazy imports needed)
+- `step2_handler.py` imports from both `window_helpers.py` and `general_qna.py`
+- Removed 9 duplicate function definitions (~536 lines)
+
+**Result:** `step2_handler.py`: ~3456 → 2920 lines (~16% reduction)
 
 **Verification:** All 146 core tests pass + imports verified
 
