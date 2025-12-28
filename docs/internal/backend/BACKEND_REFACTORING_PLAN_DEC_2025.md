@@ -792,7 +792,7 @@ Then reduce dynamic imports by creating a stable Step 2 helper API (later):
 **S2 — Extract types/telemetry**
 - Move dataclasses and telemetry payload objects into `shortcuts_types.py`
 
-**S3 — Extract planner core** (incremental, Phases 1+2+3+4 complete ✅ 2025-12-28)
+**S3 — Extract planner core** (COMPLETE ✅ All 5 phases done 2025-12-28)
 
 Phase 1 (complete):
 - Created `budget_parser.py` (~120 lines): `extract_budget_info`, `parse_budget_value`, `parse_budget_text`
@@ -811,8 +811,12 @@ Phase 4 (complete):
 - Created `preask_handler.py` (~522 lines, 12 functions): preask_feature_enabled, menu_preview_lines, explicit_menu_requested, process_preask, maybe_emit_preask_prompt_only, handle_preask_responses, detect_preask_response, single_pending_class, prepare_preview_for_requests, hydrate_preview_from_context, build_preview_for_class, maybe_preask_lines, finalize_preask_state
 - Net reduction: ~467 lines from smart_shortcuts.py
 
-Remaining phases (future sessions):
-- Phase 5: `intent_parser.py` + `intent_executor.py` (~280 lines) - dispatch logic
+Phase 5 (complete):
+- Created `intent_parser.py` (~238 lines, 7 functions): parse_room_intent, can_lock_room, parse_participants_intent, parse_billing_intent, add_needs_input, defer_intent, persist_pending_intents
+- Created `intent_executor.py` (~319 lines, 7 functions): execute_intent, apply_room_selection, apply_participants_update, select_next_question, question_for_intent, missing_item_display (delegating), format_money (delegating)
+- Net reduction: ~115 lines from smart_shortcuts.py (1079 -> 964 lines)
+
+**S3 Final Result:** `smart_shortcuts.py` reduced from 1,985 lines to 964 lines (~51% reduction)
 
 ---
 
