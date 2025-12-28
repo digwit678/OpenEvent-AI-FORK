@@ -36,7 +36,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 # NOTE: domain, conversation_manager imports moved to routes/messages.py
-from backend.conversation_manager import active_conversations  # Used in root endpoint
+from backend.legacy.session_store import active_conversations  # Used in root endpoint
 # NOTE: adapter imports moved to routes/messages.py
 # NOTE: workflow imports moved to routes/messages.py
 from backend.utils import json_io
