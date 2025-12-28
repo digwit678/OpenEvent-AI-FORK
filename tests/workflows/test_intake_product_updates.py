@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib
 
-intake_module = importlib.import_module("backend.workflows.groups.intake.trigger.process")
+intake_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
 
 
 def _message(body: str) -> dict:

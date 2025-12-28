@@ -304,9 +304,9 @@ class TestRequirementsChangeWithHashGuard:
 
     def test_requirements_change_hash_mismatch_triggers_step3(self):
         """Requirements change with hash mismatch → detour to Step 3."""
-        # Arrange: Event at Step 4, requirements changed
+        # Arrange: Event at Step 4 with 30 participants, user requests change to 50
         requirements = {
-            "number_of_participants": 50,
+            "number_of_participants": 30,  # Old value
             "seating_layout": "theater",
             "duration": {"start": "14:00", "end": "18:00"},
         }
@@ -315,10 +315,10 @@ class TestRequirementsChangeWithHashGuard:
             "caller_step": None,
             "locked_room_id": "Room A",
             "requirements": requirements,
-            "requirements_hash": requirements_hash(requirements),  # New hash
-            "room_eval_hash": "old_hash_xyz",  # Old hash (mismatch)
+            "requirements_hash": requirements_hash(requirements),  # Old hash
+            "room_eval_hash": "old_hash_xyz",  # Even older hash (mismatch)
         }
-        user_info = {"participants": 50}
+        user_info = {"participants": 50}  # New value
         message_text = "Actually we're 50 people now"
 
         # Act: Detect change

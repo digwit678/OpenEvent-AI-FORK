@@ -10,7 +10,8 @@ import importlib
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 
-room_module = importlib.import_module("backend.workflows.groups.room_availability.trigger.process")
+room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
+selection_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.selection")
 room_process = room_module.process
 handle_select_room_action = room_module.handle_select_room_action
 
@@ -72,7 +73,7 @@ def test_room_marked_selected_only_after_action(monkeypatch: pytest.MonkeyPatch,
         state.event_entry["selected_room_status"] = status
         return state.event_entry
 
-    monkeypatch.setattr(room_module, "update_event_room", fake_update)
+    monkeypatch.setattr(selection_module, "update_event_room", fake_update)
 
     state.draft_messages.clear()
     result = handle_select_room_action(state, room="Room A", status="Option", date="2026-03-10")
