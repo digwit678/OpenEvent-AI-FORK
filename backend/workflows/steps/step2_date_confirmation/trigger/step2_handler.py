@@ -172,6 +172,11 @@ from .step2_utils import (
     _window_from_payload,
 )
 
+# D7 refactoring: Candidate date generation extracted to candidate_dates.py
+from .candidate_dates import (
+    _collect_preferred_weekday_alternatives,
+)
+
 __workflow_role__ = "trigger"
 
 logger = logging.getLogger(__name__)
@@ -2417,45 +2422,7 @@ def _resolve_week_scope(state: WorkflowState, reference_day: date) -> Optional[D
 # D6: _format_label_text, _date_header_label, _format_day_list moved to step2_utils.py
 # D1: _WEEKDAY_LABELS moved to constants.py
 # D6: _weekday_label_from_dates, _month_label_from_dates moved to step2_utils.py
-
-
-def _collect_preferred_weekday_alternatives(
-    *,
-    start_from: date,
-    preferred_weekdays: Sequence[int],
-    preferred_room: Optional[str],
-    start_time: Optional[time],
-    end_time: Optional[time],
-    skip_dates: Sequence[str],
-    existing: set[str],
-    limit: int,
-) -> List[str]:
-    if not preferred_weekdays:
-        return []
-    if limit <= 0:
-        return []
-    skip_lookup = set(skip_dates or [])
-    skip_lookup.update(existing)
-    results: List[str] = []
-    max_days = max(90, limit * 14)
-    for offset in range(max_days):
-        candidate = start_from + timedelta(days=offset)
-        weekday_idx = candidate.weekday()
-        if weekday_idx not in preferred_weekdays:
-            continue
-        iso_value = candidate.isoformat()
-        if iso_value in skip_lookup:
-            continue
-        if _iso_date_is_past(iso_value):
-            continue
-        if not _candidate_is_calendar_free(preferred_room, iso_value, start_time, end_time):
-            skip_lookup.add(iso_value)
-            continue
-        results.append(iso_value)
-        skip_lookup.add(iso_value)
-        if len(results) >= limit:
-            break
-    return results
+# D7: _collect_preferred_weekday_alternatives moved to candidate_dates.py
 
 
 def _clear_step2_hil_tasks(state: WorkflowState, event_entry: dict) -> None:

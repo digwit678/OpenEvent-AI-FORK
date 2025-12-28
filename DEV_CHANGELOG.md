@@ -2,6 +2,26 @@
 
 ## 2025-12-28
 
+### Refactor: Step 2 Candidate Date Generation (D7) ✅
+
+**Summary:** Created `candidate_dates.py` module with reusable candidate date collection and prioritization functions extracted from `_present_candidate_dates()`.
+
+**New Module:** `backend/workflows/steps/step2_date_confirmation/trigger/candidate_dates.py` (573 lines)
+
+**Extracted Functions:**
+- **Weekday alternatives:** `_collect_preferred_weekday_alternatives` (moved from step2_handler.py)
+- **Candidate collection:** `collect_candidates_from_week_scope`, `collect_candidates_from_fuzzy`, `collect_candidates_from_constraints`, `collect_candidates_from_suggestions`, `collect_supplemental_candidates`
+- **Prioritization:** `prioritize_by_weekday`
+- **Payload building:** `build_table_and_actions`, `build_draft_message`
+
+**Line Count Change:** step2_handler.py reduced from 2650 → 2617 lines (-33 lines)
+
+**Note:** The extracted functions are ready for use but `_present_candidate_dates()` still uses inline logic. Full integration would require more invasive refactoring.
+
+**Verification:** All 146 detection/regression/flow tests pass
+
+---
+
 ### Refactor: Step 2 Pure Utilities Extraction (D6) ✅
 
 **Summary:** Extracted 24 pure utility functions from `step2_handler.py` to new `step2_utils.py` module (~300 lines).
