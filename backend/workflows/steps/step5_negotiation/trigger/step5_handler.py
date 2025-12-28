@@ -418,6 +418,11 @@ def process(state: WorkflowState) -> GroupResult:
         return result
 
     if classification == "accept":
+        # Mark offer as accepted - this MUST be set for billing flow bypass to work
+        # (Bug fix: step5 was missing this, causing offer_accepted=None during billing)
+        event_entry["offer_accepted"] = True
+        state.extras["persist"] = True
+
         # ---------------------------------------------------------------------
         # COMBINED ACCEPT + BILLING: Capture billing from same message
         # When client sends "Yes, I accept. Billing: [address]", the billing

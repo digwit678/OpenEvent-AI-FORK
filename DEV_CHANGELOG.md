@@ -2,6 +2,33 @@
 
 ## 2025-12-28
 
+### Fix: Step Corruption During Billing Flow ✅
+
+**Summary:** Fixed critical bug where `current_step` was incorrectly set to 3 instead of 5 after offer acceptance and billing capture, causing deposit payment to fail.
+
+**Root Cause (Two Issues):**
+1. `evaluate_pre_route_guards()` in `pre_route.py` was forcing step changes without checking for billing flow state
+2. `step5_handler.py` was missing `offer_accepted = True` when handling offer acceptance (step4_handler had it, step5 didn't)
+
+**Fixes Applied:**
+
+`backend/workflows/runtime/pre_route.py` (lines 113-121):
+- Added billing flow bypass after deposit bypass in `evaluate_pre_route_guards()`
+- Follows Pattern 1: Special Flow State Detection from CLAUDE.md
+
+`backend/workflows/steps/step5_negotiation/trigger/step5_handler.py` (lines 420-424):
+- Added `event_entry["offer_accepted"] = True` in accept classification block
+- Now matches step4_handler behavior
+
+**Regression Test:** `backend/tests/regression/test_billing_step_preservation.py`
+- `test_billing_flow_bypasses_guard_forcing` - Verifies step stays at 5 during billing
+- `test_normal_flow_allows_guard_forcing` - Verifies normal flows still work
+- `test_billing_flow_without_awaiting_flag_allows_forcing` - Edge case handling
+
+**E2E Verified:** Full flow tested via Playwright: intake → room → preask → offer → accept → billing → deposit → HIL approval → site visit prompt
+
+---
+
 ### S3 Phase 5: Smart Shortcuts Intent Parser/Executor Extraction ✅
 
 **Summary:** Extracted intent parsing/execution methods from `smart_shortcuts.py` into two focused modules (~150 lines, 12 functions).
