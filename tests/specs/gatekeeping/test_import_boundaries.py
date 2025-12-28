@@ -124,6 +124,7 @@ def test_no_runtime_imports_from_deprecated_groups():
             "  - backend.workflows.groups.room_availability → backend.workflows.steps.step3_room_availability",
             "  - backend.workflows.groups.offer → backend.workflows.steps.step4_offer",
             "  - backend.workflows.groups.negotiation_close → backend.workflows.steps.step5_negotiation",
+            "  - backend.workflows.groups.transition → backend.workflows.steps.step6_transition",
             "  - backend.workflows.groups.event_confirmation → backend.workflows.steps.step7_confirmation",
             "=" * 70,
         ])

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from backend.debug.trace import BUS
 from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.steps.step2_date_confirmation.trigger.process import process
+from backend.workflows.steps.step2_date_confirmation.trigger.step2_handler import process
 
 
 def _state(tmp_path: Path) -> WorkflowState:
@@ -126,7 +126,7 @@ def test_general_room_qna_captures_shortcuts(monkeypatch, tmp_path):
         f"{step2_handler}._candidate_dates_for_constraints",
         lambda *_args, **_kwargs: ["2026-02-07", "2026-02-14"],
     )
-    monkeypatch.setattr(f"{step2_handler}.list_free_dates", lambda *_a, **_k: ["07.02.2026", "14.02.2026"])
+    monkeypatch.setattr("backend.workflows.common.catalog.list_free_dates", lambda *_a, **_k: ["07.02.2026", "14.02.2026"])
 
     # Also patch Q&A engine (patch at USE site, not definition site)
     mock_availability = [
@@ -178,7 +178,7 @@ def test_general_room_qna_respects_window_without_fallback(monkeypatch, tmp_path
         fallback_called["flag"] = True
         return ["12.11.2025", "13.11.2025"]
 
-    monkeypatch.setattr(f"{step2_handler}.list_free_dates", _fake_list_free)
+    monkeypatch.setattr("backend.workflows.common.catalog.list_free_dates", _fake_list_free)
 
     # Also patch Q&A engine (patch at USE site, not definition site)
     monkeypatch.setattr(

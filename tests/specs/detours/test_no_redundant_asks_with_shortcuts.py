@@ -6,12 +6,12 @@ from pathlib import Path
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 
-room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.process")
-from backend.workflows.steps.step3_room_availability.trigger.process import process as room_process
+room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
+from backend.workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
 
 
 def _room_state(tmp_path: Path) -> WorkflowState:
-    msg = IncomingMessage(msg_id="shortcut-room", from_name="Client", from_email="client@example.com", subject=None, body=None, ts=None)
+    msg = IncomingMessage(msg_id="shortcut-room", from_name="Client", from_email="client@example.com", subject="Room booking", body="I confirm Room A", ts=None)
     state = WorkflowState(message=msg, db_path=tmp_path / "shortcut-room.json", db={"events": []})
     state.event_id = "EVT-SHORTCUT"
     state.current_step = 3

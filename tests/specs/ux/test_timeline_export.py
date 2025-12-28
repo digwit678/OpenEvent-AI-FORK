@@ -10,9 +10,9 @@ from backend.domain import IntentLabel
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 from backend.workflows.steps import step1_intake as intake
-from backend.workflows.steps.step2_date_confirmation.trigger import process as date_process
-from backend.workflows.steps.step4_offer.trigger.process import process as offer_process
-from backend.workflows.steps.step3_room_availability.trigger import process as room_process
+from backend.workflows.steps.step2_date_confirmation.trigger.step2_handler import process as date_process
+from backend.workflows.steps.step4_offer.trigger.step4_handler import process as offer_process
+from backend.workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
 from backend.debug.lifecycle import close_if_ended
 
 
@@ -22,7 +22,7 @@ def test_debug_trace_contract(tmp_path, monkeypatch):
 
     timeline_module = importlib.import_module("backend.debug.timeline")
     importlib.reload(timeline_module)
-    intake_trigger_module = importlib.import_module("backend.workflows.groups.intake.trigger.process")
+    intake_trigger_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
     monkeypatch.setattr(intake_trigger_module, "classify_intent", lambda _payload: (IntentLabel.EVENT_REQUEST, 0.99))
     monkeypatch.setattr(intake_trigger_module, "extract_user_information", lambda _payload: {"participants": 30, "event_date": None, "vague_month": "February", "vague_weekday": "Saturday", "vague_time_of_day": "evening"})
 
@@ -59,7 +59,7 @@ def test_debug_trace_contract(tmp_path, monkeypatch):
     state.user_info = {}
     state.current_step = 2
     monkeypatch.setattr(
-        "backend.workflows.groups.intake.condition.checks.suggest_dates",
+        "backend.workflows.steps.step1_intake.condition.checks.suggest_dates",
         lambda *_args, **_kwargs: ["10.11.2025", "12.11.2025"],
     )
     date_process(state)
@@ -75,7 +75,7 @@ def test_debug_trace_contract(tmp_path, monkeypatch):
     state.user_info = {"shortcut_capacity_ok": True}
     state.current_step = 3
 
-    room_module = importlib.import_module("backend.workflows.groups.room_availability.trigger.process")
+    room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
     monkeypatch.setattr(room_module, "evaluate_room_statuses", lambda *_: [{"Room A": "Available"}])
     monkeypatch.setattr(room_module, "_needs_better_room_alternatives", lambda *_: False)
 

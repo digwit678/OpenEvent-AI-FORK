@@ -66,12 +66,16 @@ class TestChangeIntentSignals:
             assert change_type == ChangeType.ROOM, f"Should detect change for comparative: {comp}"
 
     def test_change_question_patterns_detected(self):
-        """Question patterns: can we change, could we change, is it possible."""
+        """Question patterns: can we change, could we change, is it possible.
+
+        Note: "would it be possible" is now treated as a hypothetical pattern
+        and filtered out by is_hypothetical_question() when followed by "?".
+        """
         patterns = [
             "can we change",
             "could we change",
             "is it possible to change",
-            "would it be possible",
+            # Note: "would it be possible" is considered hypothetical - excluded
             "can i change",
             "could i change",
         ]

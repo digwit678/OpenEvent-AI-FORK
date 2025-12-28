@@ -7,7 +7,7 @@ import pytest
 
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 
-room_module = importlib.import_module("backend.workflows.groups.room_availability.trigger.process")
+room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
 
 
 def _state(tmp_path: Path) -> WorkflowState:
@@ -16,7 +16,7 @@ def _state(tmp_path: Path) -> WorkflowState:
         from_name="Client",
         from_email="client@example.com",
         subject="Confirm 14 Feb",
-        body="Prefer Saturday 14 February, happy to consider nearby Saturdays if needed.",
+        body="Prefer Saturday 14 February 2026, happy to consider nearby Saturdays if needed.",
         ts="2025-12-10T09:00:00Z",
     )
     return WorkflowState(message=message, db_path=tmp_path / "events.json", db={"events": []})
@@ -71,9 +71,10 @@ def test_step3_lists_alternative_dates_after_confirmation(tmp_path: Path, monkey
     assert result.action == "room_avail_result"
 
     draft = state.draft_messages[-1]
-    body_md = draft.get("body_markdown") or draft["body"]
-    assert "- Room A" in body_md
-    assert "Also available" in body_md
+    rows = draft["table_blocks"][0]["rows"]
+    room_names = {row["room"] for row in rows}
+    assert {"Room A", "Room B"} <= room_names
+    assert any("2026-02-21" in row.get("available_dates", []) for row in rows)
 
     for action in draft["actions"]:
         assert "available_dates" in action

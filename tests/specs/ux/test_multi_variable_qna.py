@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from typing import Any, Dict, List
 
-from backend.llm.intent_classifier import (
+from backend.detection.intent.classifier import (
     QNA_TYPE_TO_STEP,
     spans_multiple_steps,
     get_qna_steps,
