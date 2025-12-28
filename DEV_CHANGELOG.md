@@ -14,11 +14,13 @@
 - **Prioritization:** `prioritize_by_weekday`
 - **Payload building:** `build_table_and_actions`, `build_draft_message`
 
-**Line Count Change:** step2_handler.py reduced from 2650 → 2617 lines (-33 lines)
+**D7 Integration (Phase 2):**
+- Refactored `_present_candidate_dates()` to use `collect_candidates_from_week_scope` and `collect_candidates_from_fuzzy`
+- Replaced inline collection loops with extracted function calls
 
-**Note:** The extracted functions are ready for use but `_present_candidate_dates()` still uses inline logic. Full integration would require more invasive refactoring.
+**Line Count Change:** step2_handler.py: 2650 → 2617 → 2606 lines (-44 lines total)
 
-**Verification:** All 146 detection/regression/flow tests pass
+**Verification:** All 146 tests pass + E2E Playwright (site visit reached)
 
 ---
 
