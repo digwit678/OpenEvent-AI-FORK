@@ -101,6 +101,31 @@ from backend.workflows.planner.product_handler import (
     apply_product_add as _apply_product_add_impl,
     load_catering_names as _load_catering_names_impl,
 )
+from backend.workflows.planner.choice_handler import (
+    load_choice_context as _load_choice_context_impl,
+    maybe_handle_choice_context_reply as _maybe_handle_choice_context_reply_impl,
+    parse_choice_selection as _parse_choice_selection_impl,
+    choice_clarification_prompt as _choice_clarification_prompt_impl,
+    format_choice_item as _format_choice_item_impl,
+    apply_choice_selection as _apply_choice_selection_impl,
+    complete_choice_selection as _complete_choice_selection_impl,
+    handle_choice_selection as _handle_choice_selection_impl,
+)
+from backend.workflows.planner.preask_handler import (
+    preask_feature_enabled as _preask_feature_enabled_impl,
+    menu_preview_lines as _menu_preview_lines_impl,
+    explicit_menu_requested as _explicit_menu_requested_impl,
+    process_preask as _process_preask_impl,
+    maybe_emit_preask_prompt_only as _maybe_emit_preask_prompt_only_impl,
+    handle_preask_responses as _handle_preask_responses_impl,
+    detect_preask_response as _detect_preask_response_impl,
+    single_pending_class as _single_pending_class_impl,
+    prepare_preview_for_requests as _prepare_preview_for_requests_impl,
+    hydrate_preview_from_context as _hydrate_preview_from_context_impl,
+    build_preview_for_class as _build_preview_for_class_impl,
+    maybe_preask_lines as _maybe_preask_lines_impl,
+    finalize_preask_state as _finalize_preask_state_impl,
+)
 
 # Re-export gate function for tests that import it directly
 _shortcuts_allowed = _shortcuts_allowed  # noqa: F811 - intentional re-export
@@ -682,14 +707,9 @@ class _ShortcutPlanner:
                 return "explicit", preview_lines
         return None, []
 
+    # S3: Menu preview delegated to preask_handler.py
     def _menu_preview_lines(self) -> Optional[List[str]]:
-        names = _load_catering_names()
-        if not names:
-            return ["Catering menus will be available once the manager shares the current list."]
-        preview = ", ".join(names[:3])
-        if len(names) > 3:
-            preview += ", ..."
-        return [f"Catering menus: {preview}"]
+        return _menu_preview_lines_impl(self)
 
     def _default_next_question(self) -> Optional[Dict[str, Any]]:
         current = self.event.get("current_step") or 1
@@ -875,194 +895,40 @@ class _ShortcutPlanner:
             self.products_state["manager_catalog_signature"] = normalised_signature
             self.state.extras["persist"] = True
 
+    # S3: Choice context delegated to choice_handler.py
     def _load_choice_context(self) -> Optional[Dict[str, Any]]:
-        context = self.event.get("choice_context")
-        if not context:
-            self.telemetry.choice_context_active = False
-            return None
-        ttl = context.get("ttl_turns")
-        try:
-            ttl_value = int(ttl)
-        except (TypeError, ValueError):
-            ttl_value = 0
-        if ttl_value <= 0:
-            self.event["choice_context"] = None
-            self.state.extras["persist"] = True
-            self.telemetry.choice_context_active = False
-            self.telemetry.re_prompt_reason = "expired"
-            kind = context.get("kind")
-            if kind:
-                self.preview_requests.append((kind, 0))
-            return None
-        refreshed = dict(context)
-        refreshed["ttl_turns"] = ttl_value - 1
-        self.event["choice_context"] = refreshed
-        self.state.extras["persist"] = True
-        self.telemetry.choice_context_active = True
-        return refreshed
+        return _load_choice_context_impl(self)
 
     # S3: Product state methods delegated to product_handler.py
     def _products_state(self) -> Dict[str, Any]:
         return _products_state_impl(self)
 
+    # S3: Preask methods delegated to preask_handler.py
     def _preask_feature_enabled(self) -> bool:
-        return _event_scoped_upsell_enabled() and _no_unsolicited_menus() and bool(self.manager_items_by_class)
+        return _preask_feature_enabled_impl(self)
 
     def _process_preask(self) -> None:
-        self.telemetry.preask_candidates = []
-        self.telemetry.preask_shown = []
-        self.telemetry.preview_class_shown = "none"
-        self.telemetry.preview_items_count = 0
-        self.telemetry.re_prompt_reason = "none"
-        self.telemetry.selection_method = "none"
-        self.telemetry.choice_context_active = bool(self.choice_context)
-        if not self._preask_feature_enabled():
-            return
-        for class_name, status in (self.presented_interest or {}).items():
-            if status == "interested":
-                self.telemetry.preask_response.setdefault(class_name, "yes")
-            elif status == "declined":
-                self.telemetry.preask_response.setdefault(class_name, "no")
-            else:
-                self.telemetry.preask_response.setdefault(class_name, "n/a")
-        message_text = (self.state.message.body or "").strip().lower()
-        if not self._choice_context_handled:
-            self._handle_choice_selection(message_text)
-        self._handle_preask_responses(message_text)
-        self._prepare_preview_for_requests()
-        self._hydrate_preview_from_context()
+        _process_preask_impl(self)
 
+    # S3: Choice reply handling delegated to choice_handler.py
     def _maybe_handle_choice_context_reply(self) -> Optional[PlannerResult]:
-        context = self.choice_context
-        if not context:
-            return None
-        message_text = (self.state.message.body or "").strip()
-        if not message_text:
-            return None
-
-        selection = self._parse_choice_selection(context, message_text)
-        if selection:
-            confirmation, state_delta = self._complete_choice_selection(context, selection)
-            self._choice_context_handled = True
-            self.telemetry.selection_method = selection.get("method") or "label"
-            self.telemetry.re_prompt_reason = "none"
-            self.telemetry.choice_context_active = False
-            return self._build_payload(confirmation, state_delta=state_delta)
-
-        clarification = self._choice_clarification_prompt(context, message_text)
-        if clarification:
-            self._choice_context_handled = True
-            self.telemetry.selection_method = "clarified"
-            self.telemetry.re_prompt_reason = "ambiguous"
-            kind = context.get("kind")
-            if kind:
-                self.telemetry.preask_response[kind] = "clarify"
-            self.telemetry.choice_context_active = True
-            return self._build_payload(clarification)
-
-        return None
+        return _maybe_handle_choice_context_reply_impl(self)
 
     def _choice_clarification_prompt(self, context: Dict[str, Any], text: str) -> Optional[str]:
-        items = context.get("items") or []
-        if not items:
-            return None
-        normalized = text.strip().lower()
-        similarity: List[Tuple[float, Dict[str, Any]]] = []
-        for item in items:
-            label = str(item.get("label") or "").lower()
-            if not label:
-                continue
-            ratio = SequenceMatcher(a=label, b=normalized).ratio()
-            similarity.append((ratio, item))
-        if not similarity:
-            return None
-        similarity.sort(key=lambda pair: pair[0], reverse=True)
-        top_ratio, top_item = similarity[0]
-        second_ratio = similarity[1][0] if len(similarity) > 1 else 0.0
-        if top_ratio < 0.5:
-            return None
-        if len(similarity) > 1 and second_ratio >= 0.5 and abs(top_ratio - second_ratio) < 0.08:
-            ambiguous_items = [item for ratio, item in similarity if abs(top_ratio - ratio) < 0.08]
-            if ambiguous_items:
-                chosen = min(ambiguous_items, key=lambda entry: entry.get("idx") or 0)
-            else:
-                chosen = top_item
-            display = self._format_choice_item(chosen)
-            return f"Do you mean {display}?"
-        return None
+        return _choice_clarification_prompt_impl(self, context, text)
 
     def _complete_choice_selection(
         self,
         context: Dict[str, Any],
         selection: Dict[str, Any],
     ) -> Tuple[str, Dict[str, Any]]:
-        item = selection.get("item") or {}
-        raw_value = dict(item.get("value") or {})
-        class_name = (context.get("kind") or raw_value.get("class") or "product").lower()
-        idx = item.get("idx")
-        manager_items = self.manager_items_by_class.get(class_name, [])
-        if isinstance(idx, int) and 1 <= idx <= len(manager_items):
-            value = dict(manager_items[idx - 1] or {})
-        else:
-            value = raw_value
-        label = item.get("label") or value.get("name") or "this option"
-
-        addition: Dict[str, Any] = {"name": value.get("name") or label}
-        quantity = value.get("quantity") or (value.get("meta") or {}).get("quantity")
-        if quantity is not None:
-            try:
-                addition["quantity"] = max(1, int(quantity))
-            except (TypeError, ValueError):
-                addition["quantity"] = 1
-        else:
-            addition["quantity"] = 1
-        unit_price = value.get("unit_price")
-        if unit_price is None:
-            unit_price = (value.get("meta") or {}).get("unit_price")
-        if unit_price is not None:
-            try:
-                addition["unit_price"] = float(unit_price)
-            except (TypeError, ValueError):
-                pass
-
-        if class_name in {"catering", "av", "furniture", "product"}:
-            self._apply_product_add([addition])
-            self.telemetry.combined_confirmation = True
-        self.presented_interest[class_name] = "interested"
-        self.preask_pending_state[class_name] = False
-        self.telemetry.preask_response[class_name] = self.telemetry.preask_response.get(class_name, "yes")
-        self.choice_context = None
-        self.event["choice_context"] = None
-        self.state.extras["persist"] = True
-
-        confirmation = f"Got it — I'll add {label}."
-        state_delta = {
-            "choice_context": {
-                "kind": class_name,
-                "selected": {
-                    "label": label,
-                    "idx": item.get("idx"),
-                    "key": item.get("key"),
-                },
-            }
-        }
-        return confirmation, state_delta
+        return _complete_choice_selection_impl(self, context, selection)
 
     def _format_choice_item(self, item: Dict[str, Any]) -> str:
-        label = item.get("label") or (item.get("value") or {}).get("name") or "this option"
-        idx = item.get("idx")
-        if idx is not None:
-            return f"{idx}) {label}"
-        return label
+        return _format_choice_item_impl(self, item)
 
     def _maybe_emit_preask_prompt_only(self) -> Optional[PlannerResult]:
-        if not self._preask_feature_enabled():
-            return None
-        lines = self._maybe_preask_lines()
-        if not lines:
-            return None
-        message = "\n".join(lines).strip()
-        return self._build_payload(message or "\u200b")
+        return _maybe_emit_preask_prompt_only_impl(self)
 
     def _maybe_emit_single_followup(self) -> Optional[PlannerResult]:
         if len(self.needs_input) != 1:
@@ -1129,312 +995,37 @@ class _ShortcutPlanner:
         self._record_telemetry_log()
         return PlannerResult(payload)
     def _handle_choice_selection(self, text: str) -> None:
-        if not self.choice_context:
-            return
-        if "show more" in text and self.choice_context.get("kind"):
-            next_offset = self.choice_context.get("next_offset", len(self.choice_context.get("items") or []))
-            self.preview_requests.append((self.choice_context.get("kind"), next_offset))
-            return
-        selection = self._parse_choice_selection(self.choice_context, text)
-        if not selection:
-            class_name = self.choice_context.get("kind")
-            if class_name:
-                keywords = set(_CLASS_KEYWORDS.get(class_name, set())) | {class_name}
-                if any(keyword in text for keyword in keywords):
-                    if class_name not in self.preask_clarifications:
-                        self.preask_clarifications.append(class_name)
-                    self.preask_pending_state[class_name] = True
-                    self.telemetry.re_prompt_reason = "ambiguous"
-                    self.telemetry.preask_response[class_name] = "clarify"
-            return
-        self._apply_choice_selection(self.choice_context, selection)
-        self.choice_context = None
-        self.event["choice_context"] = None
-        self.state.extras["persist"] = True
-        self.telemetry.choice_context_active = False
+        _handle_choice_selection_impl(self, text)
 
     def _parse_choice_selection(self, context: Dict[str, Any], text: str) -> Optional[Dict[str, Any]]:
-        if not text:
-            return None
-        normalized = text.strip().lower()
-        items = context.get("items") or []
-        if not items:
-            return None
-        idx_map = {int(item.get("idx")): item for item in items if item.get("idx") is not None}
-        ordinal_match = re.search(r"(?:^|\s)#?(\d{1,2})\b", normalized)
-        if ordinal_match:
-            try:
-                idx = int(ordinal_match.group(1))
-                if idx in idx_map:
-                    return {"item": idx_map[idx], "method": "ordinal"}
-            except ValueError:
-                pass
-        option_match = re.search(r"option\s+(\d{1,2})", normalized)
-        if option_match:
-            try:
-                idx = int(option_match.group(1))
-                if idx in idx_map:
-                    return {"item": idx_map[idx], "method": "ordinal"}
-            except ValueError:
-                pass
-        lang = str(context.get("lang") or "en").split("-")[0].lower()
-        ordinal_words = _ORDINAL_WORDS_BY_LANG.get(lang, {})
-        fallback_words = _ORDINAL_WORDS_BY_LANG.get("en", {})
-        for raw_token in normalized.replace(".", " ").split():
-            token = raw_token.strip()
-            mapped = ordinal_words.get(token) or fallback_words.get(token)
-            if mapped and mapped in idx_map:
-                return {"item": idx_map[mapped], "method": "ordinal"}
-        direct_matches = []
-        for item in items:
-            label = str(item.get("label") or "").lower()
-            if label and label in normalized:
-                direct_matches.append(item)
-        if len(direct_matches) == 1:
-            return {"item": direct_matches[0], "method": "label"}
-        if len(direct_matches) > 1:
-            return None
-        similarity: List[Tuple[float, Dict[str, Any]]] = []
-        for item in items:
-            label = str(item.get("label") or "").lower()
-            if not label:
-                continue
-            ratio = SequenceMatcher(a=label, b=normalized).ratio()
-            similarity.append((ratio, item))
-        if not similarity:
-            return None
-        similarity.sort(key=lambda pair: pair[0], reverse=True)
-        best_ratio, best_item = similarity[0]
-        second_ratio = similarity[1][0] if len(similarity) > 1 else 0.0
-        # Treat as ambiguous if multiple close matches score similarly high.
-        if len(similarity) > 1 and best_ratio >= 0.5 and second_ratio >= 0.5 and abs(best_ratio - second_ratio) < 0.08:
-            return None
-        if best_ratio >= 0.8:
-            return {"item": best_item, "method": "fuzzy"}
-        return None
+        return _parse_choice_selection_impl(self, context, text)
 
     def _apply_choice_selection(self, context: Dict[str, Any], selection: Dict[str, Any]) -> None:
-        item = selection.get("item") or {}
-        value = item.get("value") or {}
-        class_name = context.get("kind") or value.get("class") or "catering"
-        product_name = value.get("name") or item.get("label")
-        if not product_name:
-            return
-        addition: Dict[str, Any] = {"name": product_name, "quantity": value.get("quantity") or value.get("meta", {}).get("quantity") or 1}
-        unit_price = value.get("unit_price") or value.get("meta", {}).get("unit_price")
-        if unit_price is not None:
-            try:
-                addition["unit_price"] = float(unit_price)
-            except (TypeError, ValueError):
-                pass
-        self._apply_product_add([addition])
-        self.presented_interest[class_name] = "interested"
-        self.preask_pending_state[class_name] = False
-        self.telemetry.selection_method = selection.get("method") or "label"
-        self.telemetry.preask_response[class_name] = self.telemetry.preask_response.get(class_name, "n/a")
+        _apply_choice_selection_impl(self, context, selection)
 
     def _handle_preask_responses(self, text: str) -> None:
-        if not text:
-            return
-        pending_classes = [cls for cls, flag in self.preask_pending_state.items() if flag]
-        for class_name in pending_classes:
-            response = self._detect_preask_response(class_name, text)
-            if not response:
-                continue
-            if response == "yes":
-                self.presented_interest[class_name] = "interested"
-                self.preask_pending_state[class_name] = False
-                self.preview_requests.append((class_name, 0))
-                self.telemetry.preask_response[class_name] = "yes"
-                self.telemetry.re_prompt_reason = "none"
-            elif response == "no":
-                self.presented_interest[class_name] = "declined"
-                self.preask_pending_state[class_name] = False
-                self.telemetry.preask_response[class_name] = "no"
-                self.telemetry.re_prompt_reason = "none"
-                self.preask_ack_lines.append(f"Noted — I'll skip {class_name} options for now.")
-            elif response == "clarify":
-                if class_name not in self.preask_clarifications:
-                    self.preask_clarifications.append(class_name)
-                self.telemetry.preask_response[class_name] = "clarify"
-                self.telemetry.re_prompt_reason = "ambiguous"
-            elif response == "show_more":
-                next_offset = 0
-                if self.choice_context and self.choice_context.get("kind") == class_name:
-                    next_offset = self.choice_context.get("next_offset", len(self.choice_context.get("items") or []))
-                self.preview_requests.append((class_name, next_offset))
-            if response in {"yes", "no"} and class_name in self.preask_clarifications:
-                self.preask_clarifications.remove(class_name)
+        _handle_preask_responses_impl(self, text)
 
     def _detect_preask_response(self, class_name: str, text: str) -> Optional[str]:
-        keywords = set(_CLASS_KEYWORDS.get(class_name, set())) | {class_name}
-        has_keyword = any(keyword in text for keyword in keywords)
-        single_pending = self._single_pending_class(class_name)
-        if "show more" in text and self.choice_context and self.choice_context.get("kind") == class_name:
-            return "show_more"
-        affirmatives = ["yes", "sure", "ok", "okay", "definitely", "sounds good", "go ahead"]
-        negatives = ["no", "not now", "later", "skip", "nope", "don't"]
-        if any(token in text for token in negatives) and (has_keyword or single_pending):
-            return "no"
-        if any(token in text for token in affirmatives) and (has_keyword or single_pending):
-            return "yes"
-        if has_keyword and ("?" in text or "which" in text or "what" in text):
-            return "clarify"
-        return None
+        return _detect_preask_response_impl(self, class_name, text)
 
     def _single_pending_class(self, class_name: str) -> bool:
-        active = [cls for cls, flag in self.preask_pending_state.items() if flag]
-        return len(active) == 1 and class_name in active
+        return _single_pending_class_impl(self, class_name)
 
     def _prepare_preview_for_requests(self) -> None:
-        if not self.preview_requests:
-            return
-        class_name, offset = self.preview_requests[-1]
-        self._build_preview_for_class(class_name, offset)
-        self.preview_requests.clear()
+        _prepare_preview_for_requests_impl(self)
 
     def _hydrate_preview_from_context(self) -> None:
-        if self.preview_lines or not self.choice_context:
-            return
-        items = self.choice_context.get("items") or []
-        if not items:
-            return
-        lines: List[str] = []
-        for item in items:
-            idx = item.get("idx")
-            label = str(item.get("label") or "").strip() or "This option"
-            if idx is not None:
-                lines.append(f"{idx}. {label}")
-            else:
-                lines.append(label)
-        lines.append("Which one (1–3) or \"show more\"?")
-        self.preview_lines = lines
-        class_name = str(self.choice_context.get("kind") or "").strip().lower()
-        if class_name:
-            self.preview_class = class_name
-            self.telemetry.preview_class_shown = class_name
-        self.telemetry.preview_items_count = max(self.telemetry.preview_items_count, len(items))
-        if self.telemetry.menus_phase == "none":
-            self.telemetry.menus_phase = "post_room" if self.room_checked else "explicit_request"
-        if self.telemetry.menus_included == "false":
-            self.telemetry.menus_included = "preview"
-        self.telemetry.choice_context_active = True
+        _hydrate_preview_from_context_impl(self)
 
     def _build_preview_for_class(self, class_name: str, offset: int) -> None:
-        items = self.manager_items_by_class.get(class_name, [])
-        if not items:
-            return
-        subset = items[offset : offset + 3]
-        if not subset:
-            self.preview_lines = [f"That's all available for {class_name}."]
-            self.preview_class = class_name
-            self.choice_context = None
-            self.event["choice_context"] = None
-            self.telemetry.preview_class_shown = class_name
-            self.telemetry.preview_items_count = 0
-            self.state.extras["persist"] = True
-            self.preask_pending_state[class_name] = False
-            if class_name in self.preask_clarifications:
-                self.preask_clarifications.remove(class_name)
-            return
-        lines: List[str] = []
-        context_items: List[Dict[str, Any]] = []
-        for idx, item in enumerate(subset, start=1):
-            name = str(item.get("name") or "").strip()
-            lines.append(f"{idx}. {name}")
-            context_items.append(
-                {
-                    "idx": idx,
-                    "key": f"{class_name}-{offset + idx}",
-                    "label": name,
-                    "value": dict(item),
-                }
-            )
-        lines.append("Which one (1–3) or \"show more\"?")
-        self.preview_lines = lines
-        self.preview_class = class_name
-        context = {
-            "kind": class_name,
-            "presented_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-            "items": context_items,
-            "ttl_turns": 4,
-            "next_offset": offset + len(subset),
-            "lang": "en",
-        }
-        self.choice_context = context
-        self.event["choice_context"] = dict(context)
-        self.state.extras["persist"] = True
-        self.telemetry.preview_class_shown = class_name
-        self.telemetry.preview_items_count = len(subset)
-        self.telemetry.choice_context_active = True
-        if self.telemetry.menus_phase == "none":
-            self.telemetry.menus_phase = "post_room" if self.room_checked else "explicit_request"
-        self.telemetry.menus_included = "preview"
-        self.preask_pending_state[class_name] = False
-        if class_name in self.preask_clarifications:
-            self.preask_clarifications.remove(class_name)
+        _build_preview_for_class_impl(self, class_name, offset)
 
     def _maybe_preask_lines(self) -> List[str]:
-        if not self._preask_feature_enabled():
-            return []
-        lines: List[str] = []
-        unknown_classes = [cls for cls in self.manager_items_by_class if self.presented_interest.get(cls, "unknown") == "unknown"]
-        self.telemetry.preask_candidates = unknown_classes
-        shown: List[str] = []
-        slots = 2
-        for class_name in list(self.preask_clarifications):
-            if slots <= 0:
-                break
-            prompt = f"Do you want to see {class_name} options now? (yes/no)"
-            lines.append(prompt)
-            shown.append(class_name)
-            self.preask_pending_state[class_name] = True
-            self.telemetry.preask_response[class_name] = self.telemetry.preask_response.get(class_name, "clarify")
-            slots -= 1
-        if slots > 0:
-            for class_name in unknown_classes:
-                if slots <= 0:
-                    break
-                if class_name in shown or self.preask_pending_state.get(class_name):
-                    continue
-                prompt = _PREASK_CLASS_COPY.get(class_name, f"Would you like to see {class_name} options we can provide?")
-                lines.append(prompt)
-                shown.append(class_name)
-                self.preask_pending_state[class_name] = True
-                slots -= 1
-        for class_name in shown:
-            self.telemetry.preask_response.setdefault(class_name, "n/a")
-        self.telemetry.preask_shown = shown
-        if lines and self.telemetry.menus_included == "false":
-            self.telemetry.menus_included = "brief_upsell"
-        if lines and self.telemetry.menus_phase == "none" and self.room_checked:
-            self.telemetry.menus_phase = "post_room"
-        return lines
+        return _maybe_preask_lines_impl(self)
 
     def _finalize_preask_state(self) -> None:
-        if not self._preask_feature_enabled():
-            if self.products_state.get("preask_pending"):
-                self.products_state["preask_pending"] = {}
-                self.state.extras["persist"] = True
-            if self.event.get("choice_context"):
-                self.event["choice_context"] = None
-                self.state.extras["persist"] = True
-            self.telemetry.choice_context_active = False
-            return
-        self.products_state["preask_pending"] = {cls: bool(flag) for cls, flag in self.preask_pending_state.items() if flag}
-        self.products_state["presented_interest"] = dict(self.presented_interest)
-        if self.choice_context:
-            self.event["choice_context"] = dict(self.choice_context)
-            self.telemetry.choice_context_active = True
-        elif self.event.get("choice_context"):
-            self.event["choice_context"] = None
-            self.telemetry.choice_context_active = False
-        self.preview_lines = []
-        if not self.preview_class:
-            self.telemetry.preview_class_shown = "none"
-            self.telemetry.preview_items_count = 0
-        self.preview_class = None
-        self.state.extras["persist"] = True
+        _finalize_preask_state_impl(self)
 
     # S3: Product utility methods delegated to product_handler.py
     def _product_lookup(self, bucket: str) -> Dict[str, Dict[str, Any]]:
@@ -1481,15 +1072,7 @@ class _ShortcutPlanner:
         return _infer_times_for_date_impl(self, iso_date)
 
     def _explicit_menu_requested(self) -> bool:
-        text = f"{self.state.message.subject or ''}\n{self.state.message.body or ''}".lower()
-        keywords = (
-            "menu",
-            "menus",
-            "catering menu",
-            "catering options",
-            "food options",
-        )
-        return any(keyword in text for keyword in keywords)
+        return _explicit_menu_requested_impl(self)
 
 # S3: Module-level catering lookup delegated to product_handler.py
 def _load_catering_names() -> List[str]:
