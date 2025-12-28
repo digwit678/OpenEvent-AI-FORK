@@ -175,6 +175,8 @@ from .step2_utils import (
 # D7 refactoring: Candidate date generation extracted to candidate_dates.py
 from .candidate_dates import (
     _collect_preferred_weekday_alternatives,
+    collect_candidates_from_week_scope,
+    collect_candidates_from_fuzzy,
 )
 
 __workflow_role__ = "trigger"
@@ -963,22 +965,15 @@ def _present_candidate_dates(
         limit = min(len(week_scope["dates"]), max(limit, 5))
 
     if week_scope:
-        for iso_value in week_scope["dates"]:
-            if (
-                not iso_value
-                or iso_value in seen_iso
-                or iso_value in skip_set
-                or _iso_date_is_past(iso_value)
-            ):
-                continue
-            candidate_dt = _safe_parse_iso_date(iso_value)
-            if min_requested_date and candidate_dt and candidate_dt < min_requested_date:
-                continue
-            if not _candidate_is_calendar_free(preferred_room, iso_value, start_time_obj, end_time_obj):
-                busy_skipped.add(iso_value)
-                continue
-            seen_iso.add(iso_value)
-            formatted_dates.append(iso_value)
+        # D7: Use extracted collection function
+        formatted_dates, seen_iso, busy_skipped = collect_candidates_from_week_scope(
+            week_scope,
+            skip_set=skip_set,
+            min_requested_date=min_requested_date,
+            preferred_room=preferred_room,
+            start_time_obj=start_time_obj,
+            end_time_obj=end_time_obj,
+        )
         week_label_value = week_scope["label"]
         event_entry["week_index"] = week_scope["week_index"]
         event_entry["weekdays_hint"] = list(week_scope.get("weekdays_hint") or [])
@@ -994,22 +989,16 @@ def _present_candidate_dates(
             window_scope=event_entry["window_scope"],
         )
     elif fuzzy_candidates:
-        for iso_value in fuzzy_candidates:
-            if (
-                not iso_value
-                or iso_value in seen_iso
-                or iso_value in skip_set
-                or _iso_date_is_past(iso_value)
-            ):
-                continue
-            candidate_dt = _safe_parse_iso_date(iso_value)
-            if min_requested_date and candidate_dt and candidate_dt < min_requested_date:
-                continue
-            if not _candidate_is_calendar_free(preferred_room, iso_value, start_time_obj, end_time_obj):
-                busy_skipped.add(iso_value)
-                continue
-            seen_iso.add(iso_value)
-            formatted_dates.append(iso_value)
+        # D7: Use extracted collection function
+        formatted_dates, seen_iso, busy_skipped = collect_candidates_from_fuzzy(
+            fuzzy_candidates,
+            skip_set=skip_set,
+            seen_iso=seen_iso,
+            min_requested_date=min_requested_date,
+            preferred_room=preferred_room,
+            start_time_obj=start_time_obj,
+            end_time_obj=end_time_obj,
+        )
     else:
         constraints_for_window = {
             "vague_month": user_info.get("vague_month") or event_entry.get("vague_month"),
