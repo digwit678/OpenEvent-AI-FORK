@@ -327,7 +327,7 @@ Upstream importers found via ripgrep:
 - API routes: `backend/api/routes/messages.py`, `backend/api/routes/tasks.py`, `backend/api/routes/events.py`, `backend/api/routes/clients.py`, `backend/api/routes/config.py`, `backend/api/routes/test_data.py`, `backend/api/routes/workflow.py`
 - Agents/tools: `backend/agents/openevent_agent.py`, `backend/agents/tools/*.py`, `backend/agents/chatkit_runner.py`
 - Other backend modules: `backend/workflows/advance.py`, `backend/conversation_manager.py`
-- Scripts: `scripts/manual_*`, `scripts/measure_offer_step.py`, `scripts/verify_refactor.py`
+- Scripts: `scripts/manual_*`, `scripts/tools/measure_offer_step.py`, `scripts/tests/verify_refactor.py`
 - Tests: `backend/tests/*`, `tests/flows/run_yaml_flow.py`, plus a few `_legacy` tests
 
 Practical implication:
@@ -792,7 +792,7 @@ Then reduce dynamic imports by creating a stable Step 2 helper API (later):
 **S2 — Extract types/telemetry**
 - Move dataclasses and telemetry payload objects into `shortcuts_types.py`
 
-**S3 — Extract planner core** (incremental, Phases 1+2 complete ✅ 2025-12-28)
+**S3 — Extract planner core** (incremental, Phases 1+2+3+4 complete ✅ 2025-12-28)
 
 Phase 1 (complete):
 - Created `budget_parser.py` (~120 lines): `extract_budget_info`, `parse_budget_value`, `parse_budget_text`
@@ -802,9 +802,16 @@ Phase 2 (complete):
 - Created `date_handler.py` (~320 lines, 16 functions): time utilities, window conversion, date slot/options, window resolution, date intent parsing, date confirmation, combo execution
 - Updated `smart_shortcuts.py` with thin wrapper delegation pattern
 
+Phase 3 (complete):
+- Created `product_handler.py` (~280 lines, 13 functions): format_money, missing_item_display, products_state, product_lookup, normalise_products, infer_quantity, current_participant_count, format_product_line, product_subtotal_lines, build_product_confirmation_lines, parse_product_intent, apply_product_add, load_catering_names
+- Continued thin wrapper delegation pattern
+
+Phase 4 (complete):
+- Created `choice_handler.py` (~470 lines, 8 functions): load_choice_context (TTL-based), parse_choice_selection (ordinal/label/fuzzy), choice_clarification_prompt, format_choice_item, apply_choice_selection, complete_choice_selection, handle_choice_selection, maybe_handle_choice_context_reply
+- Created `preask_handler.py` (~522 lines, 12 functions): preask_feature_enabled, menu_preview_lines, explicit_menu_requested, process_preask, maybe_emit_preask_prompt_only, handle_preask_responses, detect_preask_response, single_pending_class, prepare_preview_for_requests, hydrate_preview_from_context, build_preview_for_class, maybe_preask_lines, finalize_preask_state
+- Net reduction: ~467 lines from smart_shortcuts.py
+
 Remaining phases (future sessions):
-- Phase 3: `product_handler.py` (~250 lines) - add-on management
-- Phase 4: `preask_handler.py` + `choice_handler.py` (~420 lines) - interactive flows
 - Phase 5: `intent_parser.py` + `intent_executor.py` (~280 lines) - dispatch logic
 
 ---

@@ -2,6 +2,49 @@
 
 ## 2025-12-28
 
+### S3 Phase 4: Smart Shortcuts Preask/Choice Handler Extraction ✅
+
+**Summary:** Extracted preask/choice methods from `smart_shortcuts.py` into two focused modules (~420 lines, 20 functions).
+
+**New Modules:**
+
+`backend/workflows/planner/choice_handler.py` (~470 lines)
+- Context management: `load_choice_context` (TTL-based expiry)
+- Selection parsing: `parse_choice_selection` (ordinal, label, fuzzy matching)
+- Clarification: `choice_clarification_prompt`, `format_choice_item`
+- Application: `apply_choice_selection`, `complete_choice_selection`
+- Reply handling: `handle_choice_selection`, `maybe_handle_choice_context_reply`
+
+`backend/workflows/planner/preask_handler.py` (~522 lines)
+- Feature control: `preask_feature_enabled`, `explicit_menu_requested`
+- Core flow: `process_preask`, `maybe_emit_preask_prompt_only`
+- Response handling: `handle_preask_responses`, `detect_preask_response`
+- Preview building: `menu_preview_lines`, `prepare_preview_for_requests`, `build_preview_for_class`
+- State management: `finalize_preask_state`, `hydrate_preview_from_context`
+
+**Pattern:** Thin wrapper delegation - class methods delegate to extracted functions.
+
+**Verification:** All 146 core tests pass + E2E Playwright verified (inquiry → room → products prompt)
+
+---
+
+### S3 Phase 3: Smart Shortcuts Product Handler Extraction ✅
+
+**Summary:** Extracted product-related methods from `smart_shortcuts.py` into `product_handler.py` (~280 lines, 13 functions).
+
+**New Module:** `backend/workflows/planner/product_handler.py`
+- Static utilities: `format_money`, `missing_item_display`
+- Product state: `products_state`, `product_lookup`, `normalise_products`, `infer_quantity`, `current_participant_count`
+- Product display: `format_product_line`, `product_subtotal_lines`, `build_product_confirmation_lines`
+- Product intent: `parse_product_intent`, `apply_product_add`
+- Module-level: `load_catering_names` (cached)
+
+**Pattern:** Thin wrapper delegation - class methods delegate to extracted functions.
+
+**Verification:** All 146 core tests pass + E2E Playwright verified (inquiry → room → products prompt)
+
+---
+
 ### S3 Phase 2: Smart Shortcuts Date Handler Extraction ✅
 
 **Summary:** Extracted date/time processing from `smart_shortcuts.py` into `date_handler.py` (~320 lines, 16 functions).
@@ -1357,11 +1400,11 @@ if message_text:
 
 **Usage:**
 ```bash
-./scripts/dev_server.sh         # Start backend
-./scripts/dev_server.sh stop    # Stop backend
-./scripts/dev_server.sh restart # Restart backend
-./scripts/dev_server.sh status  # Check status
-./scripts/dev_server.sh cleanup # Kill all dev processes
+./scripts/dev/dev_server.sh         # Start backend
+./scripts/dev/dev_server.sh stop    # Stop backend
+./scripts/dev/dev_server.sh restart # Restart backend
+./scripts/dev/dev_server.sh status  # Check status
+./scripts/dev/dev_server.sh cleanup # Kill all dev processes
 ```
 
 **Features:**
