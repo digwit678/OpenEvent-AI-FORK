@@ -170,6 +170,14 @@ from .step2_utils import (
     _is_weekend_token,
     _window_payload,
     _window_from_payload,
+    # D9: Additional utilities
+    has_range_tokens,
+    range_query_pending,
+    get_message_text,
+    build_select_date_action,
+    format_room_availability,
+    compact_products_summary,
+    user_requested_products,
 )
 
 # D7 refactoring: Candidate date generation extracted to candidate_dates.py
@@ -212,34 +220,7 @@ def _thread_id(state: WorkflowState) -> str:
 
 # AFFIRMATIVE_TOKENS, CONFIRMATION_KEYWORDS, _SIGNATURE_MARKERS moved to constants.py (D1 refactoring)
 # D6: _extract_first_name, _extract_signature_name moved to step2_utils.py
-
-
-def _has_range_tokens(user_info: Dict[str, Any], event_entry: Dict[str, Any]) -> bool:
-    return any(
-        (
-            user_info.get("range_query_detected"),
-            event_entry.get("range_query_detected"),
-            user_info.get("vague_month"),
-            event_entry.get("vague_month"),
-            user_info.get("vague_weekday"),
-            event_entry.get("vague_weekday"),
-            user_info.get("vague_time_of_day"),
-            event_entry.get("vague_time_of_day"),
-        )
-    )
-
-
-def _range_query_pending(user_info: Dict[str, Any], event_entry: Dict[str, Any]) -> bool:
-    if not _has_range_tokens(user_info, event_entry):
-        return False
-    if event_entry.get("date_confirmed"):
-        return False
-    if user_info.get("event_date") or user_info.get("date"):
-        return False
-    pending_window = event_entry.get("pending_date_confirmation") or {}
-    if pending_window.get("iso_date"):
-        return False
-    return True
+# D9: _has_range_tokens, _range_query_pending moved to step2_utils.py
 
 
 def _emit_step2_snapshot(
@@ -272,7 +253,9 @@ def _client_requested_dates(state: WorkflowState) -> List[str]:
     if isinstance(cached, list):
         return list(cached)
 
-    text = _message_text(state)
+    # D9: Use extracted function
+    msg = state.message
+    text = get_message_text(msg.subject if msg else None, msg.body if msg else None)
     reference_day = _reference_date_from_state(state)
     explicit_pattern = re.compile(
         r"(\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|may|june|july|august|september|october|november|december)\b)",
@@ -576,7 +559,9 @@ def process(state: WorkflowState) -> GroupResult:
         decision = state.user_info.get("hil_decision") or "approve"
         return _apply_step2_hil_decision(state, event_entry, decision)
 
-    message_text = _message_text(state)
+    # D9: Use extracted function
+    msg = state.message
+    message_text = get_message_text(msg.subject if msg else None, msg.body if msg else None)
 
     # Capture requirements from workflow context (statements only, not questions)
     if message_text and state.user_info:
@@ -778,7 +763,8 @@ def process(state: WorkflowState) -> GroupResult:
     # If the current message contains an explicit date (e.g., "change to 2026-02-28"),
     # skip range_pending check and try to confirm that date directly
     message_has_explicit_date = bool(requested_client_dates)
-    range_pending = False if message_has_explicit_date else _range_query_pending(user_info, event_entry)
+    # D9: Use extracted function
+    range_pending = False if message_has_explicit_date else range_query_pending(user_info, event_entry)
 
     window = None if range_pending else _resolve_confirmation_window(state, event_entry)
     if window is None:
@@ -2122,83 +2108,9 @@ def _trace_candidate_gate(thread_id: str, candidates: List[str]) -> None:
     trace_gate(thread_id, "Step2_Date", label, True, {"count": count})
 
 
-def _message_text(state: WorkflowState) -> str:
-    message = state.message
-    if not message:
-        return ""
-    subject = message.subject or ""
-    body = message.body or ""
-    if subject and body:
-        return f"{subject}\n{body}"
-    return subject or body
-
-
-def _build_select_date_action(date_value: dt.date, ddmmyyyy: str, time_label: Optional[str]) -> Dict[str, Any]:
-    label = date_value.strftime("%a %d %b %Y")
-    if time_label:
-        label = f"{label} · {time_label}"
-    return {
-        "type": "select_date",
-        "label": f"Confirm {label}",
-        "date": ddmmyyyy,
-        "iso_date": date_value.isoformat(),
-    }
-
 # D6: _format_time_label moved to step2_utils.py
-
-def _format_room_availability(entries: List[Dict[str, Any]]) -> List[str]:
-    grouped: Dict[str, List[Tuple[str, str]]] = {}
-    for entry in entries:
-        room = str(entry.get("room") or "Room").strip() or "Room"
-        date_label = entry.get("date_label") or entry.get("iso_date") or ""
-        status = entry.get("status") or "Available"
-        grouped.setdefault(room, []).append((date_label, status))
-
-    lines: List[str] = []
-    for room, values in grouped.items():
-        seen: set[Tuple[str, str]] = set()
-        formatted: List[str] = []
-        for date_label, status in values:
-            if not date_label:
-                continue
-            key = (date_label, status)
-            if key in seen:
-                continue
-            seen.add(key)
-            label = date_label
-            if status and status.lower() not in {"available"}:
-                label = f"{date_label} ({status})"
-            formatted.append(label)
-        if formatted:
-            lines.append(f"{room} — Available on: {', '.join(formatted)}")
-    return lines
-
-
-def _compact_products_summary(preferences: Dict[str, Any]) -> List[str]:
-    lines = ["Products & Catering (summary):"]
-    wish_products = []
-    raw_wishes = preferences.get("wish_products") if isinstance(preferences, dict) else None
-    if isinstance(raw_wishes, (list, tuple)):
-        wish_products = [str(item).strip() for item in raw_wishes if str(item).strip()]
-    if wish_products:
-        highlights = ", ".join(wish_products[:3])
-        lines.append(f"- Highlights: {highlights}.")
-    else:
-        lines.append("- Seasonal menus with flexible wine pairings available.")
-    return lines
-
-
-def _user_requested_products(state: WorkflowState, classification: Dict[str, Any]) -> bool:
-    message_text = (_message_text(state) or "").lower()
-    if any(keyword in message_text for keyword in ("menu", "cater", "product", "wine")):
-        return True
-    parsed = classification.get("parsed") or {}
-    if isinstance(parsed, dict):
-        if parsed.get("products") or parsed.get("catering"):
-            return True
-    return False
-
-
+# D9: _message_text, _build_select_date_action, _format_room_availability,
+#     _compact_products_summary, _user_requested_products moved to step2_utils.py
 # D5: _resolve_window_hints moved to window_helpers.py or general_qna.py
 # D6: _is_weekend_token moved to step2_utils.py
 
@@ -2391,7 +2303,9 @@ def _maybe_general_qa_payload(state: WorkflowState) -> Optional[Dict[str, Any]]:
     event_entry = state.event_entry or {}
     user_info = state.user_info or {}
     month_hint = user_info.get("vague_month") or event_entry.get("vague_month")
-    message_text = _message_text(state)
+    # D9: Use extracted function
+    msg = state.message
+    message_text = get_message_text(msg.subject if msg else None, msg.body if msg else None)
     return build_menu_payload(message_text, context_month=month_hint)
 
 

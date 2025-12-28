@@ -406,4 +406,130 @@ __all__ = [
     # Data conversion
     "_window_payload",
     "_window_from_payload",
+    # D9: Additional utilities
+    "has_range_tokens",
+    "range_query_pending",
+    "get_message_text",
+    "build_select_date_action",
+    "format_room_availability",
+    "compact_products_summary",
+    "user_requested_products",
 ]
+
+
+# =============================================================================
+# D9: ADDITIONAL UTILITIES (extracted from step2_handler.py)
+# =============================================================================
+
+def has_range_tokens(user_info: Dict[str, Any], event_entry: Dict[str, Any]) -> bool:
+    """Check if user_info or event_entry contains range query tokens."""
+    return any(
+        (
+            user_info.get("range_query_detected"),
+            event_entry.get("range_query_detected"),
+            user_info.get("vague_month"),
+            event_entry.get("vague_month"),
+            user_info.get("vague_weekday"),
+            event_entry.get("vague_weekday"),
+            user_info.get("vague_time_of_day"),
+            event_entry.get("vague_time_of_day"),
+        )
+    )
+
+
+def range_query_pending(user_info: Dict[str, Any], event_entry: Dict[str, Any]) -> bool:
+    """Check if a range query is still pending (not yet resolved to a date)."""
+    if not has_range_tokens(user_info, event_entry):
+        return False
+    if event_entry.get("date_confirmed"):
+        return False
+    if user_info.get("event_date") or user_info.get("date"):
+        return False
+    pending_window = event_entry.get("pending_date_confirmation") or {}
+    if pending_window.get("iso_date"):
+        return False
+    return True
+
+
+def get_message_text(subject: Optional[str], body: Optional[str]) -> str:
+    """Combine subject and body into a single message text."""
+    subject = subject or ""
+    body = body or ""
+    if subject and body:
+        return f"{subject}\n{body}"
+    return subject or body
+
+
+def build_select_date_action(
+    date_value: "datetime.date",
+    ddmmyyyy: str,
+    time_label: Optional[str],
+) -> Dict[str, Any]:
+    """Build a select_date action dictionary for the frontend."""
+    # Import here to avoid circular imports
+    from datetime import date as dt_date
+    label = date_value.strftime("%a %d %b %Y")
+    if time_label:
+        label = f"{label} · {time_label}"
+    return {
+        "type": "select_date",
+        "label": f"Confirm {label}",
+        "date": ddmmyyyy,
+        "iso_date": date_value.isoformat(),
+    }
+
+
+def format_room_availability(entries: List[Dict[str, Any]]) -> List[str]:
+    """Format room availability entries into display lines."""
+    grouped: Dict[str, List[Tuple[str, str]]] = {}
+    for entry in entries:
+        room = str(entry.get("room") or "Room").strip() or "Room"
+        date_label = entry.get("date_label") or entry.get("iso_date") or ""
+        status = entry.get("status") or "Available"
+        grouped.setdefault(room, []).append((date_label, status))
+
+    lines: List[str] = []
+    for room, values in grouped.items():
+        seen: set[Tuple[str, str]] = set()
+        formatted: List[str] = []
+        for date_label, status in values:
+            if not date_label:
+                continue
+            key = (date_label, status)
+            if key in seen:
+                continue
+            seen.add(key)
+            label = date_label
+            if status and status.lower() not in {"available"}:
+                label = f"{date_label} ({status})"
+            formatted.append(label)
+        if formatted:
+            lines.append(f"{room} — Available on: {', '.join(formatted)}")
+    return lines
+
+
+def compact_products_summary(preferences: Dict[str, Any]) -> List[str]:
+    """Build a compact products/catering summary."""
+    lines = ["Products & Catering (summary):"]
+    wish_products = []
+    raw_wishes = preferences.get("wish_products") if isinstance(preferences, dict) else None
+    if isinstance(raw_wishes, (list, tuple)):
+        wish_products = [str(item).strip() for item in raw_wishes if str(item).strip()]
+    if wish_products:
+        highlights = ", ".join(wish_products[:3])
+        lines.append(f"- Highlights: {highlights}.")
+    else:
+        lines.append("- Seasonal menus with flexible wine pairings available.")
+    return lines
+
+
+def user_requested_products(message_text: str, classification: Dict[str, Any]) -> bool:
+    """Check if the user requested products/catering in their message."""
+    message_lower = (message_text or "").lower()
+    if any(keyword in message_lower for keyword in ("menu", "cater", "product", "wine")):
+        return True
+    parsed = classification.get("parsed") or {}
+    if isinstance(parsed, dict):
+        if parsed.get("products") or parsed.get("catering"):
+            return True
+    return False
