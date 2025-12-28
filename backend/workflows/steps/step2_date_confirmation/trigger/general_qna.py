@@ -8,8 +8,6 @@ the unified present_general_room_qna in common/general_qna.py due to:
 - Range availability checking
 - Router Q&A integration
 - Complex state handling with window constraints
-
-Note: Uses lazy imports to avoid circular dependencies with step2_handler.py.
 """
 
 from __future__ import annotations
@@ -28,6 +26,15 @@ from backend.workflows.io.database import load_rooms, update_event_metadata
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.qna.router import route_general_qna
+from backend.workflows.steps.step3_room_availability.condition.decide import room_status_on_date
+
+# D5: Import shared helpers from window_helpers (no circular deps)
+from .window_helpers import (
+    _resolve_window_hints,
+    _has_window_constraints,
+    _candidate_dates_for_constraints,
+    _extract_participants_from_state,
+)
 
 
 def _search_range_availability(
@@ -43,14 +50,6 @@ def _search_range_availability(
 
     Returns list of {iso_date, date_label, room, status, hint} entries.
     """
-    # Lazy import to avoid circular dependency
-    from .step2_handler import (
-        _resolve_window_hints,
-        _has_window_constraints,
-        _candidate_dates_for_constraints,
-    )
-    from backend.workflows.steps.step3_room_availability.condition.decide import room_status_on_date
-
     window_hints = _resolve_window_hints(constraints, state)
     strict_window = _has_window_constraints(window_hints)
     iso_dates = _candidate_dates_for_constraints(
@@ -126,9 +125,6 @@ def present_general_room_qna(
 
     Returns GroupResult with action 'general_rooms_qna' or 'general_rooms_qna_fallback'.
     """
-    # Lazy import to avoid circular dependency
-    from .step2_handler import _extract_participants_from_state
-
     subloop_label = "general_q_a"
     state.extras["subloop"] = subloop_label
     resolved_thread_id = thread_id or state.thread_id
