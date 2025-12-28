@@ -2,6 +2,23 @@
 
 ## 2025-12-28
 
+### Refactor: Step 2 Pure Utilities Extraction (D6) ✅
+
+**Summary:** Extracted 24 pure utility functions from `step2_handler.py` to new `step2_utils.py` module (~300 lines).
+
+**Extracted Functions:**
+- **Text extraction:** `_extract_first_name`, `_extract_signature_name`, `_extract_candidate_tokens`, `_strip_system_subject`
+- **String formatting:** `_preface_with_apology`, `_format_label_text`, `_date_header_label`, `_format_time_label`, `_format_day_list`, `_weekday_label_from_dates`, `_month_label_from_dates`, `_pluralize_weekday_hint`, `_describe_constraints`, `_format_window`
+- **Time utilities:** `_normalize_time_value`, `_to_time`, `_window_hash`
+- **Classification:** `_is_affirmative_reply`, `_message_signals_confirmation`, `_message_mentions_new_date`, `_is_weekend_token`
+- **Data conversion:** `_window_payload`, `_window_from_payload`
+
+**Line Count Change:** step2_handler.py reduced from 2920 → 2650 lines (-270 lines)
+
+**Verification:** All 146 detection/regression/flow tests pass
+
+---
+
 ### Fix: WF0.1 Empty Detour Replies Safety Net ✅
 
 **Summary:** Added safety net to prevent empty replies when routing loop completes without any step adding a draft message.
