@@ -401,6 +401,58 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     # Loop completed without halting - finalize and return
     _debug_state("final", state)
     print(f"[WF][FINAL] Returning with action={last_result.action if last_result else 'None'}, halt={last_result.halt if last_result else 'N/A'}")
+
+    # [WF0.1 FIX] Safety net: if routing loop completed without any draft messages,
+    # add a fallback message to prevent empty replies
+    if not state.draft_messages:
+        event_entry = state.event_entry
+        current_step = event_entry.get("current_step") if event_entry else None
+        event_id = event_entry.get("event_id") if event_entry else None
+        action = last_result.action if last_result else "unknown"
+
+        print(f"[WF][EMPTY_REPLY_GUARD] No draft messages after routing loop!")
+        print(f"[WF][EMPTY_REPLY_GUARD] step={current_step}, action={action}, event_id={event_id}")
+
+        # Create a context-aware fallback message
+        fallback_body = (
+            "I'm processing your request. Let me check the details and get back to you shortly."
+        )
+        # If we know the step, give more specific feedback
+        if current_step == 3:
+            fallback_body = (
+                "I'm checking room availability for your event. "
+                "I'll have options ready for you shortly."
+            )
+        elif current_step == 4:
+            fallback_body = (
+                "I'm preparing your offer with the selected options. "
+                "You'll receive it shortly."
+            )
+        elif current_step == 5:
+            fallback_body = (
+                "I'm reviewing your response and will follow up shortly."
+            )
+
+        fallback_draft = {
+            "body_markdown": fallback_body,
+            "step": current_step or 1,
+            "topic": "empty_reply_fallback",
+            "thread_state": "In Progress",
+            "requires_approval": False,
+            "_fallback_reason": f"empty_reply_after_routing_loop_action_{action}",
+        }
+        state.add_draft_message(fallback_draft)
+
+        # Trace this for debugging
+        from backend.debug.hooks import trace_marker
+        trace_marker(
+            state.thread_id,
+            "EMPTY_REPLY_GUARD",
+            detail=f"Fallback added after routing loop completed with action={action}",
+            data={"step": current_step, "action": action, "event_id": event_id},
+            owner_step=f"Step{current_step}" if current_step else "Unknown",
+        )
+
     return _flush_and_finalize(last_result, state, path, lock_path)
 
 
