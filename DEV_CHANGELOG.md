@@ -2,6 +2,81 @@
 
 ## 2025-12-28
 
+### C1: Conversation Manager Session Store Split ✅
+
+**Summary:** Extracted session/cache management functions from `conversation_manager.py` into dedicated `backend/legacy/session_store.py` module. This isolates non-LLM code and enables faster imports for modules that only need session state.
+
+**New Module:** `backend/legacy/session_store.py` (~175 lines)
+- `active_conversations` - In-memory conversation state storage
+- `STEP3_DRAFT_CACHE`, `STEP3_PAYLOAD_CACHE` - Step 3 de-duplication caches
+- `render_step3_reply()` - Workflow-driven Step 3 reply rendering
+- `pop_step3_payload()` - Retrieve and remove cached Step 3 payload
+- `_step3_cache_key()`, `_normalise_step3_draft()`, `_render_step3_from_workflow()` - Internal helpers
+
+**Changes:**
+- Created `backend/legacy/` package with `__init__.py` and `session_store.py`
+- Updated `backend/api/routes/messages.py` to import from `backend.legacy.session_store`
+- Updated `backend/main.py` to import from `backend.legacy.session_store`
+- Added backward-compatible re-exports in `conversation_manager.py`
+
+**Verification:** All 146 core tests pass + E2E Playwright verified
+
+---
+
+### O3: Step4 Offer Compose/Persist Extraction ✅
+
+**Summary:** Extracted offer composition and recording functions from `step4_handler.py` into dedicated `compose.py` module.
+
+**New Module:** `backend/workflows/steps/step4_offer/trigger/compose.py` (~115 lines)
+- `build_offer()` - Render deterministic offer summary for YAML flow harness
+- `_record_offer()` - Create and persist offer record with sequencing
+- `_determine_offer_total()` - Compute total amount from products
+
+**Changes:**
+- Created `trigger/compose.py` with offer composition helpers
+- Updated `step4_handler.py` imports to use compose module
+- Removed ~115 lines from step4_handler.py
+
+**Verification:** All 146 core tests pass + E2E Playwright verified
+
+---
+
+### R4: Step3 Evaluation Extraction ✅
+
+**Summary:** Extracted room evaluation and rendering functions from `step3_handler.py` into `evaluation.py`.
+
+**New Module:** `backend/workflows/steps/step3_room_availability/trigger/evaluation.py` (~50 lines)
+- `evaluate_room_statuses()` - Evaluate room availability for a date
+- `render_rooms_response()` - Format room options for display
+- `_flatten_statuses()` - Convert status list to dict
+
+**Changes:**
+- Created `trigger/evaluation.py` with evaluation helpers
+- Updated `step3_handler.py` imports to use evaluation module
+
+**Verification:** All 146 core tests pass + E2E Playwright verified
+
+---
+
+### R3: Step3 Selection Action Extraction ✅
+
+**Summary:** Extracted room selection action handler from `step3_handler.py` into `selection.py`.
+
+**New Module:** `backend/workflows/steps/step3_room_availability/trigger/selection.py` (~250 lines)
+- `handle_select_room_action()` - Persist client room choice and prompt for products
+- `_thread_id()` - Get thread identifier from state
+- `_reset_room_attempts()` - Reset room proposal counter
+- `_format_display_date()` - Format date for display
+
+**Changes:**
+- Created `trigger/selection.py` with selection handler
+- Updated `step3_handler.py` to import from selection module
+- Updated `process.py` shim to re-export selection functions
+
+**Verification:** All 146 core tests pass + E2E Playwright verified
+
+---
+
 ### N2: Step5 Constants Extraction ✅
 
 **Summary:** Extracted constants from `step5_handler.py` and `classification.py` into dedicated `constants.py` module.

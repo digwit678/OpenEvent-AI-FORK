@@ -150,6 +150,25 @@ This document translates the existing backend review findings into **junior-dev-
 
 **Verification:** All 146 tests pass + imports verified
 
+### C1: Conversation Manager Session Store Split — 2025-12-28
+
+**Summary:** Extracted session/cache management functions from `conversation_manager.py` into dedicated `backend/legacy/session_store.py` module.
+
+**New Module:** `backend/legacy/session_store.py` (~175 lines)
+- `active_conversations` - In-memory conversation state storage
+- `STEP3_DRAFT_CACHE`, `STEP3_PAYLOAD_CACHE` - Step 3 de-duplication caches
+- `render_step3_reply()` - Workflow-driven Step 3 reply rendering
+- `pop_step3_payload()` - Retrieve and remove cached Step 3 payload
+- Internal helpers: `_step3_cache_key()`, `_normalise_step3_draft()`, `_render_step3_from_workflow()`
+
+**Changes:**
+- Created `backend/legacy/` package with `__init__.py` and `session_store.py`
+- Updated `backend/api/routes/messages.py` to import from `backend.legacy.session_store`
+- Updated `backend/main.py` to import from `backend.legacy.session_store`
+- Added backward-compatible re-exports in `conversation_manager.py`
+
+**Verification:** All 146 tests pass + E2E Playwright verified
+
 ---
 
 ## Scope (What We're Planning)
@@ -786,10 +805,11 @@ Then reduce dynamic imports by creating a stable Step 2 helper API (later):
 
 ### PR sequence (C-series)
 
-**C1 — Extract session store**
-- Create `backend/legacy/session_store.py` and move non-LLM functions there
-- Update `backend/api/routes/messages.py` and `backend/main.py` to import from new location
-- Leave `backend/conversation_manager.py` re-exporting to avoid breaking any unknown imports
+**C1 — Extract session store ✅** (2025-12-28)
+- Created `backend/legacy/session_store.py` with ~175 lines: `active_conversations`, Step3 caches, `render_step3_reply`, `pop_step3_payload`
+- Updated `backend/api/routes/messages.py` and `backend/main.py` to import from new location
+- Added backward-compatible re-exports in `conversation_manager.py`
+- Verified: All 146 tests pass + E2E Playwright verified
 
 **C2 — Delete/move dead chatbot functions**
 - Remove unused functions (e.g., legacy `generate_response`, `create_summary`, etc.) or move them into `backend/DEPRECATED/`
