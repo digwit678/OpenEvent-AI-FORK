@@ -2,6 +2,29 @@
 
 ## 2025-12-28
 
+### Fix: WF0.1 Empty Detour Replies Safety Net ✅
+
+**Summary:** Added safety net to prevent empty replies when routing loop completes without any step adding a draft message.
+
+**Root Cause:** When a detour chain (e.g., Step 4 → Step 3 → Step 4) completed with `halt=False` throughout, no fallback was generated if no step added a draft message, resulting in empty client responses.
+
+**Fix Applied:**
+
+`backend/workflow_email.py` (lines 405-455):
+- Added empty reply guard after routing loop completion
+- Generates context-aware fallback message based on current step
+- Traces the fallback for debugging via `EMPTY_REPLY_GUARD` marker
+
+**Fallback Messages by Step:**
+- Step 3: "I'm checking room availability for your event..."
+- Step 4: "I'm preparing your offer with the selected options..."
+- Step 5: "I'm reviewing your response and will follow up shortly."
+- Default: "I'm processing your request..."
+
+**Verification:** All 517 core tests pass
+
+---
+
 ### Fix: Step Corruption During Billing Flow ✅
 
 **Summary:** Fixed critical bug where `current_step` was incorrectly set to 3 instead of 5 after offer acceptance and billing capture, causing deposit payment to fail.

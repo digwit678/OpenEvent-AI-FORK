@@ -19,8 +19,9 @@ This file tracks active implementation goals and planned roadmap items. **Check 
 | 2025-12-24 | **Circular Bug Elimination** | Audit routing loops and special flow guards | **Urgent** |
 | 2025-12-24 | **Integration Completion** | Supabase/Hostinger production readiness | **High** |
 | 2025-12-24 | **Billing Flow Robustness** | Frontend/Backend session sync stability | **High** |
-| 2025-12-27 | **Product Change Mid-Flow** | Adding catering after room selection triggers `change_detour` with no draft (fallback). Step4 line 353 returns `halt=False` but detour target doesn't produce response. | **Medium** |
-| 2025-12-27 | **Billing Address Capture Failure** | When billing address provided ("Billing address: X"), it's not parsed into `billing_details`. Event reverts to step 3, deposit button fails. LLM extraction may not be recognizing the format. | **High** |
+| ~~2025-12-27~~ | ~~**Product Change Mid-Flow (WF0.1)**~~ | ✅ **FIXED 2025-12-28** - Added empty reply safety net in `workflow_email.py` after routing loop. When routing completes with no drafts, a context-aware fallback message is added. | ~~**Medium**~~ |
+| ~~2025-12-27~~ | ~~**Billing Address Capture Failure**~~ | ✅ **FIXED 2025-12-28** - Root cause was step corruption (step=3 instead of step=5) due to missing `offer_accepted=True` in step5_handler + guards forcing step during billing flow. See `test_billing_step_preservation.py`. | ~~**High**~~ |
+| ~~2025-12-28~~ | ~~**WF0.1: Empty Detour Replies**~~ | ✅ **FIXED 2025-12-28** - Same as above: empty reply safety net in `workflow_email.py`. See `DEV_CHANGELOG.md`. | ~~**High**~~ |
 
 ---
 
