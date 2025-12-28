@@ -63,7 +63,12 @@ from .constants import (
 )
 
 # R3 refactoring: Room selection action extracted to dedicated module
-from .selection import handle_select_room_action
+from .selection import (
+    handle_select_room_action,
+    _thread_id,
+    _reset_room_attempts,
+    _format_display_date,
+)
 
 # R4 refactoring: Evaluation functions extracted to dedicated module
 from .evaluation import evaluate_room_statuses, render_rooms_response, _flatten_statuses
@@ -1075,13 +1080,6 @@ def _increment_room_attempt(event_entry: dict) -> int:
     return updated
 
 
-def _reset_room_attempts(event_entry: dict) -> None:
-    if not event_entry.get("room_proposal_attempts"):
-        return
-    event_entry["room_proposal_attempts"] = 0
-    update_event_metadata(event_entry, room_proposal_attempts=0)
-
-
 def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decision: str) -> GroupResult:
     """Handle HIL approval or rejection for the latest room evaluation."""
 
@@ -1222,13 +1220,6 @@ def _needs_better_room_alternatives(
             return True
 
     return False
-
-
-def _format_display_date(chosen_date: Optional[str]) -> str:
-    display = format_iso_date_to_ddmmyyyy(chosen_date)
-    if display:
-        return display
-    return chosen_date or "your requested date"
 
 
 def _has_explicit_preferences(preferences: Optional[Dict[str, Any]]) -> bool:
@@ -1693,18 +1684,11 @@ def _select_room(ranked: List[RankedRoom]) -> Optional[RankedRoom]:
     return ranked[0] if ranked else None
 
 
-def _thread_id(state: WorkflowState) -> str:
-    if state.thread_id:
-        return str(state.thread_id)
-    if state.client_id:
-        return str(state.client_id)
-    message = state.message
-    if message and message.msg_id:
-        return str(message.msg_id)
-    return "unknown-thread"
-
-
-# R3: handle_select_room_action moved to selection.py
+# R3: Functions moved to selection.py:
+# - handle_select_room_action
+# - _thread_id
+# - _reset_room_attempts
+# - _format_display_date
 
 
 

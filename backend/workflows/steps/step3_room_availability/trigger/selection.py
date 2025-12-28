@@ -24,7 +24,11 @@ from backend.workflows.io.database import update_event_metadata, update_event_ro
 
 
 def _thread_id(state: WorkflowState) -> str:
-    """Get thread identifier from state message."""
+    """Get thread identifier from state, preferring thread_id over client_id over message id."""
+    if state.thread_id:
+        return str(state.thread_id)
+    if state.client_id:
+        return str(state.client_id)
     message = state.message
     if message and message.msg_id:
         return str(message.msg_id)
