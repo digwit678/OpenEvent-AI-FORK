@@ -191,71 +191,37 @@ from .confirmation import (
     should_auto_accept_first_date as _should_auto_accept_first_date,
 )
 
+# D15 refactoring: State-dependent helpers extracted to step2_state.py
+from .step2_state import (
+    thread_id as _thread_id_impl,
+    emit_step2_snapshot as _emit_step2_snapshot_impl,
+    client_requested_dates as _client_requested_dates_impl,
+    maybe_general_qa_payload as _maybe_general_qa_payload_impl,
+)
+
 __workflow_role__ = "trigger"
 
 logger = logging.getLogger(__name__)
 
 
+# D15a: Thin wrapper delegating to step2_state.thread_id
 def _thread_id(state: WorkflowState) -> str:
-    if state.thread_id:
-        return str(state.thread_id)
-    if state.client_id:
-        return str(state.client_id)
-    message = state.message
-    if message and message.msg_id:
-        return str(message.msg_id)
-    return "unknown-thread"
+    return _thread_id_impl(state)
 
 
+# D15b: Thin wrapper delegating to step2_state.emit_step2_snapshot
 def _emit_step2_snapshot(
     state: WorkflowState,
     event_entry: dict,
     *,
     extra: Optional[Dict[str, Any]] = None,
 ) -> None:
-    thread_id = _thread_id(state)
-    snapshot: Dict[str, Any] = {
-        "step": 2,
-        "current_step": 2,
-        "thread_state": event_entry.get("thread_state") or state.thread_state,
-        "chosen_date": event_entry.get("chosen_date"),
-        "date_confirmed": event_entry.get("date_confirmed"),
-        "range_query_detected": event_entry.get("range_query_detected"),
-        "vague_month": event_entry.get("vague_month") or (state.user_info or {}).get("vague_month"),
-        "vague_weekday": event_entry.get("vague_weekday") or (state.user_info or {}).get("vague_weekday"),
-    }
-    if extra:
-        snapshot.update(extra)
-    trace_state(thread_id, "Step2_Date", snapshot)
+    _emit_step2_snapshot_impl(state, event_entry, extra=extra)
 
 
+# D15c: Thin wrapper delegating to step2_state.client_requested_dates
 def _client_requested_dates(state: WorkflowState) -> List[str]:
-    """Extract explicit dates mentioned by the client in the current message."""
-
-    cache_key = "_client_requested_dates"
-    cached = state.extras.get(cache_key)
-    if isinstance(cached, list):
-        return list(cached)
-
-    # D9: Use extracted function
-    msg = state.message
-    text = get_message_text(msg.subject if msg else None, msg.body if msg else None)
-    reference_day = _reference_date_from_state(state)
-    explicit_pattern = re.compile(
-        r"(\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|may|june|july|august|september|october|november|december)\b)",
-        re.IGNORECASE,
-    )
-    iso_values: List[str] = []
-    if text and explicit_pattern.search(text):
-        seen: set[str] = set()
-        for value in parse_all_dates(text, fallback_year=reference_day.year):
-            iso = value.isoformat()
-            if iso in seen:
-                continue
-            seen.add(iso)
-            iso_values.append(iso)
-    state.extras[cache_key] = list(iso_values)
-    return iso_values
+    return _client_requested_dates_impl(state)
 
 
 def _append_menu_options_if_requested(state: WorkflowState, message_lines: List[str], month_hint: Optional[str]) -> None:
@@ -2061,11 +2027,6 @@ def _apply_step2_hil_decision(state: WorkflowState, event_entry: dict, decision:
     return _finalize_confirmation(state, event_entry, pending_window)
 
 
+# D15d: Thin wrapper delegating to step2_state.maybe_general_qa_payload
 def _maybe_general_qa_payload(state: WorkflowState) -> Optional[Dict[str, Any]]:
-    """Build Q&A payload for menu/catering requests if detected."""
-    event_entry = state.event_entry or {}
-    user_info = state.user_info or {}
-    month_hint = user_info.get("vague_month") or event_entry.get("vague_month")
-    msg = state.message
-    message_text = get_message_text(msg.subject if msg else None, msg.body if msg else None)
-    return build_menu_payload(message_text, context_month=month_hint)
+    return _maybe_general_qa_payload_impl(state)
