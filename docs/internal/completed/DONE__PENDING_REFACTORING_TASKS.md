@@ -39,7 +39,7 @@ These files were analyzed but deferred due to high risk of breaking functionalit
 | `smart_shortcuts.py` | 2196 | ⏳ Deferred | Shortcut detection - shared state |
 | `general_qna.py` | ~1350 | ✅ Partial | Constants/utils extracted to `qna/` |
 
-**Rationale:** Heavy interdependencies, shared state, conditional logic - splitting risks breaking functionality. See `docs/internal/OPEN_DECISIONS.md` DECISION-006.
+**Rationale:** Heavy interdependencies, shared state, conditional logic - splitting risks breaking functionality. See `docs/internal/planning/OPEN_DECISIONS.md` DECISION-006.
 
 ## Future Refactoring Opportunities
 

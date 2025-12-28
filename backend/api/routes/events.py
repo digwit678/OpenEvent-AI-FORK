@@ -59,7 +59,7 @@ async def pay_deposit(request: DepositPaymentRequest):
     - Deposit must be required (configured by manager)
     - Deposit must not already be paid
 
-    See docs/internal/OPEN_DECISIONS.md DECISION-001 for handling deposit changes after payment.
+    See docs/internal/planning/OPEN_DECISIONS.md DECISION-001 for handling deposit changes after payment.
     """
     try:
         db = wf_load_db()

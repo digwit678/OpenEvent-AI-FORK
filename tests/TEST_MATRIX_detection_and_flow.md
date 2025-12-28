@@ -254,7 +254,7 @@ def assert_no_fallback(response_body: str):
 
 - `tests/TEST_INVENTORY.md` - Current test coverage
 - `tests/TEST_REORG_PLAN.md` - Reorganization plan
-- `docs/TEAM_GUIDE.md` - Known bugs and fixes
+- `docs/guides/TEAM_GUIDE.md` - Known bugs and fixes
 - `backend/llm/intent_classifier.py` - Intent detection
 - `backend/workflows/change_propagation.py` - Change routing
 - `backend/workflows/nlu/general_qna_classifier.py` - Q&A detection

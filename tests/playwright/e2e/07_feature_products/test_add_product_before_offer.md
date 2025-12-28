@@ -1,5 +1,5 @@
 
-⏺ Bash(source scripts/oe_env.sh 2>/dev/null || true                                                             timeout: 30s
+⏺ Bash(source scripts/dev/oe_env.sh 2>/dev/null || true                                                             timeout: 30s
       PYTHONDONTWRITEBYTECODE=1 nohup uvicorn backend.main:app --reload --port 8000 > .dev/backend.log 2>&1 &…)
   ⎿  ==> .dev/backend.log <==                                                                           
      INFO:     Will watch for changes in these directories: ['/Users/nico/PycharmProjects/OpenEvent-AI']

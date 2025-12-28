@@ -25,12 +25,12 @@ Goals for this phase:
 - Act as a senior test- and workflow-focused engineer
 - Keep the system aligned with the management plan "Lindy" and Workflow v3/v4 specifications
 - Prioritize deterministic backend behaviour and strong automated tests over ad-hoc changes
-- Maintain clear documentation of bugs in `docs/TEAM_GUIDE.md` and new features/changes in `DEV_CHANGELOG.md`. **You must automatically update these files without being asked.**
-- **CRITICAL:** Before fixing ANY bug, you **MUST** consult `docs/TEAM_GUIDE.md` to see if it's a known issue or if there are specific handling instructions.
+- Maintain clear documentation of bugs in `docs/guides/TEAM_GUIDE.md` and new features/changes in `DEV_CHANGELOG.md`. **You must automatically update these files without being asked.**
+- **CRITICAL:** Before fixing ANY bug, you **MUST** consult `docs/guides/TEAM_GUIDE.md` to see if it's a known issue or if there are specific handling instructions.
 - **Session Startup:** At the start of EVERY new session, you **MUST** read:
   1. `git log` (last few commits) to understand recent context.
   2. `DEV_CHANGELOG.md` to see high-level changes.
-  3. `docs/TEAM_GUIDE.md` to be aware of current bugs and guidelines.
+  3. `docs/guides/TEAM_GUIDE.md` to be aware of current bugs and guidelines.
   4. `TO_DO_NEXT_SESS.md` - check this file every time to track pending implementation goals and long-term roadmap. Always update this file with new planned tasks before starting work.
   5. Workflow v4 specs in `backend/workflow/specs/` if relevant to the task.
 - For new ideas collected in the chat (often too big to implement in the same task, happy accidents/ideas that happened while fixing another problem) write them to new_features.md in root so we can discuss them later. 
@@ -102,13 +102,13 @@ Goals for this phase:
 
 **Living documents (check frequently):**
 - `DEV_CHANGELOG.md` - Recent changes, fixes, new features (check at session start!)
-- `docs/TEAM_GUIDE.md` - Bugs, open issues, heuristics, prevention patterns
+- `docs/guides/TEAM_GUIDE.md` - Bugs, open issues, heuristics, prevention patterns
 - `backend/workflow/specs/` - V4 workflow specifications (authoritative)
 
 **Architecture & workflow:**
-- `docs/workflow_rules.md` - Core workflow rules
+- `docs/guides/workflow_rules.md` - Core workflow rules
 - Openevent - Workflow v3 TO TEXT (MAIN).pdf - Main workflow reference
-- `docs/internal/step4_step5_requirements.md` - Offer/negotiation requirements
+- `docs/guides/step4_step5_requirements.md` - Offer/negotiation requirements
 
 **Legacy (for context only):**
 - AI-Powered Event Management Platform.pdf
@@ -124,9 +124,9 @@ Goals for this phase:
 **Before running any tests or scripts that call OpenAI:**
 1. Use the dev server script (preferred) or activate manually:
    ```bash
-   ./scripts/dev_server.sh   # Handles everything including API key
+   ./scripts/dev/dev_server.sh   # Handles everything including API key
    # OR manually:
-   source scripts/oe_env.sh
+   source scripts/dev/oe_env.sh
    ```
 
 2. Run tests (API key loaded automatically):
@@ -447,7 +447,7 @@ Add assertions or tests so that such paths are detectable and fail loudly in tes
 **For any non-trivial change to tests or workflow logic:**
 - State the relevant workflow rule or document you are following
 - Outline the tests you will add/update
-- Ensure that running pytest under scripts/oe_env.sh will validate your work
+- Ensure that running pytest under scripts/dev/oe_env.sh will validate your work
 
 ## When in Doubt
 
@@ -468,18 +468,18 @@ OpenEvent is an AI-powered venue booking workflow system for The Atelier. It aut
 
 **Preferred: Use the dev server script (handles cleanup, API keys, PID tracking):**
 ```bash
-./scripts/dev_server.sh         # Start backend (with auto-cleanup)
-./scripts/dev_server.sh stop    # Stop backend
-./scripts/dev_server.sh restart # Restart backend
-./scripts/dev_server.sh status  # Check if running
-./scripts/dev_server.sh cleanup # Kill all dev processes (backend + frontend)
+./scripts/dev/dev_server.sh         # Start backend (with auto-cleanup)
+./scripts/dev/dev_server.sh stop    # Stop backend
+./scripts/dev/dev_server.sh restart # Restart backend
+./scripts/dev/dev_server.sh status  # Check if running
+./scripts/dev/dev_server.sh cleanup # Kill all dev processes (backend + frontend)
 ```
 
 **Manual startup (if dev_server.sh unavailable):**
 ```bash
 # Start backend server (from repo root)
 export PYTHONDONTWRITEBYTECODE=1  # prevents .pyc permission issues on macOS
-source scripts/oe_env.sh  # loads API key from Keychain
+source scripts/dev/oe_env.sh  # loads API key from Keychain
 uvicorn backend.main:app --reload --port 8000
 ```
 
@@ -728,7 +728,7 @@ The workflow uses three distinct LLM roles, each with strict boundaries:
 
 **Detour Recovery:** After detour (e.g., Step 3 → Step 2 for new date → Step 3), system preserves all prior metadata and only re-runs dependent steps.
 
-**Open Decisions:** Write questions which arent clear regarding logic, UX into docs/internal/OPEN_DECISIONS.md and docs/integration_to_frontend_and_database/MANAGER_INTEGRATION_GUIDE.md 
+**Open Decisions:** Write questions which arent clear regarding logic, UX into docs/internal/planning/OPEN_DECISIONS.md and docs/integration/frontend_and_database/guides/MANAGER_INTEGRATION_GUIDE.md 
 
 **Git Commits:** For longer sessions with multiple subtasks, **commit frequently** (more than once per session). Commit after every logical step or fully completed subtask. Do not wait until the very end of a long session to commit. This helps track progress and allows for easier rollbacks. I will push the commits later.
 
@@ -873,6 +873,11 @@ Before deploying to production:
 | Safety sandwich | `backend/ux/verbalizer_safety.py` |
 | Database adapter | `backend/workflows/io/database.py` |
 | Debug traces | `backend/debug/trace.py` |
-| Dev server script | `scripts/dev_server.sh` |
+| Dev server script | `scripts/dev/dev_server.sh` |
 | Test suite | `backend/tests/` |
 | Workflow specs | `backend/workflow/specs/` |
+
+## Plugins and Extensions
+- pyright / LSP  Smart reading glasses for your code
+- for the refactoring MCP plugin can help 
+- for browser e2e testing always use the playwright plugin to verify workflow runs end to end (till site-visit agent reply appears in chat) without fallback messages or errors. 

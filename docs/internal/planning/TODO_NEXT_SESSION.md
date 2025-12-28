@@ -29,7 +29,7 @@
 ## Tests NOT Yet Verified
 
 ### Q&A Flow Testing
-- [ ] General questions (e.g., "What are your opening hours?")
+- [ ] General questions (e.g., "What are your opening hours?") from every step of the workflow 
 - [ ] Catering-specific questions
 - [ ] Room capacity questions mid-flow
 - [ ] Pricing questions during negotiation
@@ -58,7 +58,7 @@
 
 ```bash
 # Start backend
-./scripts/dev_server.sh
+./scripts/dev/dev_server.sh
 
 # Run detection tests
 pytest backend/tests/detection/ -v
