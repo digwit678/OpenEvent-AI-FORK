@@ -107,11 +107,12 @@ from .proposal_tracking import (
 )
 
 # D4 refactoring: Calendar check utilities extracted to dedicated module
-# D13b: preferred_room added
+# D13b: preferred_room added, D14a: calendar_conflict_reason added
 from .calendar_checks import (
     candidate_is_calendar_free as _candidate_is_calendar_free,
     maybe_fuzzy_friday_candidates as _maybe_fuzzy_friday_candidates,
     preferred_room as _preferred_room,
+    calendar_conflict_reason as _calendar_conflict_reason,
 )
 
 # D5 refactoring: General Q&A bridge extracted to dedicated module
@@ -426,40 +427,7 @@ def _maybe_append_general_qna(
     return result
 
 
-def _calendar_conflict_reason(event_entry: dict, window: ConfirmationWindow) -> Optional[str]:
-    preferred_room = _preferred_room(event_entry)
-    if not preferred_room:
-        return None
-    normalized = preferred_room.strip().lower()
-    if not normalized or normalized == "not specified":
-        return None
-    if not (window.start_time and window.end_time):
-        return None
-    start_iso = window.start_iso
-    end_iso = window.end_iso
-    if not (start_iso and end_iso):
-        try:
-            start_obj = _to_time(window.start_time)
-            end_obj = _to_time(window.end_time)
-            start_iso, end_iso = build_window_iso(window.iso_date, start_obj, end_obj)
-        except ValueError:
-            return None
-    is_free = calendar_free(preferred_room, {"start": start_iso, "end": end_iso})
-    if is_free:
-        return None
-    slot_text = f"{window.start_time}–{window.end_time}"
-    conflicts = event_entry.setdefault("calendar_conflicts", [])
-    conflict_record = {
-        "iso_date": window.iso_date,
-        "display_date": window.display_date,
-        "start": start_iso,
-        "end": end_iso,
-        "room": preferred_room,
-    }
-    if conflict_record not in conflicts:
-        conflicts.append(conflict_record)
-    update_event_metadata(event_entry, calendar_conflicts=conflicts)
-    return f"Sorry, {preferred_room} is already booked on {window.display_date} ({slot_text}). Let me look for nearby alternatives right away."
+# D14a: _calendar_conflict_reason moved to calendar_checks.py
 
 
 # D13: Thin wrapper delegating to pure compose_greeting
