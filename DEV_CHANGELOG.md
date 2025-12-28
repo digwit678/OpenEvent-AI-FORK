@@ -2,6 +2,23 @@
 
 ## 2025-12-28
 
+### D5: Step2 Q&A Bridge Extraction ✅
+
+**Summary:** Created dedicated `general_qna.py` module for Step 2's Q&A handling.
+
+**New Module:** `backend/workflows/steps/step2_date_confirmation/trigger/general_qna.py`
+- `present_general_room_qna()` - Main Q&A handler with range availability
+- `_search_range_availability()` - Date range search helper
+
+**Key Design Decisions:**
+- Uses lazy imports to avoid circular dependencies with step2_handler.py
+- Step 2's Q&A is more complex than other steps (range availability, router integration)
+- Original functions remain in step2_handler.py until full migration is complete
+
+**Verification:** All 146 core tests pass + imports verified
+
+---
+
 ### R1: Step3 Constants Extraction ✅
 
 **Summary:** Extracted constants from `step3_handler.py` into dedicated `constants.py` module.

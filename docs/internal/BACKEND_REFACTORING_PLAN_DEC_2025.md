@@ -1238,7 +1238,7 @@ Estimates are rough (single developer, with tests).
 | D2 | ✅ Step2 parsing extraction + tests | `date_parsing.py` (2025-12-27) | - | - | DONE |
 | D3 | ✅ Step2 candidate presentation extraction | `proposal_tracking.py` (2025-12-27) | - | - | DONE |
 | D4 | ✅ Step2 confirmation resolution extraction | `calendar_checks.py` (2025-12-27) | - | - | DONE |
-| D5 | Step2 Q&A bridge extraction | general_qna module + shims | D4 | Medium | 2–6h |
+| D5 | ✅ Step2 Q&A bridge extraction | `general_qna.py` created (2025-12-28) | D4 | - | DONE |
 | R0 | ✅ Fix Step3 Q&A request crash | Already fixed (line 1431 init) | T0 | - | DONE |
 | R1 | ✅ Step3 constants/types extraction | `trigger/constants.py` (2025-12-28) | R0 | - | DONE |
 | R2 | ✅ Step3 Q&A bridge extraction | Unified in `common/general_qna.py` (2025-12-27) | - | - | DONE |
