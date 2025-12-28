@@ -2,6 +2,25 @@
 
 ## 2025-12-28
 
+### N2: Step5 Constants Extraction ✅
+
+**Summary:** Extracted constants from `step5_handler.py` and `classification.py` into dedicated `constants.py` module.
+
+**New Module:** `backend/workflows/steps/step5_negotiation/trigger/constants.py`
+- `MAX_COUNTER_PROPOSALS = 3` - Counter proposal limit
+- `CONFIDENCE_*` thresholds (6 values) - Classification confidence levels
+- `INTENT_*` constants (5 values) - Intent type strings
+- `OFFER_STATUS_*` constants - Accepted/Declined status strings
+- `SITE_VISIT_PROPOSED` - Site visit state constant
+
+**Changes:**
+- Updated `step5_handler.py` to import and use named constants
+- Updated `classification.py` to use threshold and intent constants
+
+**Verification:** All 146 core tests pass
+
+---
+
 ### D5: Step2 Q&A Bridge Extraction (Complete) ✅
 
 **Summary:** Resolved circular dependency between `step2_handler.py` and `general_qna.py` using third module pattern.
