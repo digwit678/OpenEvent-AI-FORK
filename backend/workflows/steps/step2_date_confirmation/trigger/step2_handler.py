@@ -179,6 +179,15 @@ from .candidate_dates import (
     collect_candidates_from_fuzzy,
 )
 
+# D8 refactoring: Pure confirmation helpers extracted to confirmation.py
+from .confirmation import (
+    determine_date,
+    find_existing_time_window,
+    collect_candidate_iso_list,
+    record_confirmation_log,
+    set_pending_time_state,
+)
+
 __workflow_role__ = "trigger"
 
 logger = logging.getLogger(__name__)
@@ -1585,7 +1594,8 @@ def _resolve_confirmation_window(state: WorkflowState, event_entry: dict) -> Opt
     subject_text = state.message.subject or ""
 
     reference_day = _reference_date_from_state(state)
-    display_date, iso_date = _determine_date(
+    # D8: Use extracted function
+    display_date, iso_date = determine_date(
         user_info,
         body_text,
         subject_text,
@@ -1672,7 +1682,8 @@ def _resolve_confirmation_window(state: WorkflowState, event_entry: dict) -> Opt
                 end_obj = chosen_obj
 
     if not (start_time and end_time):
-        fallback = _existing_time_window(event_entry, iso_date)
+        # D8: Use extracted function
+        fallback = find_existing_time_window(event_entry, iso_date)
         if fallback:
             start_time, end_time = fallback
             inherited_times = True
@@ -1729,125 +1740,8 @@ def _resolve_confirmation_window(state: WorkflowState, event_entry: dict) -> Opt
     )
 
 # D6: _strip_system_subject moved to step2_utils.py
-
-def _determine_date(
-    user_info: Dict[str, Optional[str]],
-    body_text: str,
-    subject_text: str,
-    event_entry: dict,
-    reference_day: date,
-) -> Tuple[Optional[str], Optional[str]]:
-    """Determine the DD.MM.YYYY and ISO representations for the confirmed date."""
-
-    user_event_date = user_info.get("event_date")
-    if user_event_date and is_valid_ddmmyyyy(user_event_date):
-        iso_value = to_iso_date(user_event_date)
-        if iso_value:
-            return user_event_date, iso_value
-
-    iso_candidate = user_info.get("date")
-    if iso_candidate:
-        ddmmyyyy = format_iso_date_to_ddmmyyyy(iso_candidate)
-        if ddmmyyyy and is_valid_ddmmyyyy(ddmmyyyy):
-            return ddmmyyyy, iso_candidate
-
-    # BUG FIX: Strip system-generated timestamps from subject before parsing
-    clean_subject = _strip_system_subject(subject_text)
-    parsed = parse_first_date(body_text, reference=reference_day, allow_relative=True) or parse_first_date(
-        clean_subject, reference=reference_day, allow_relative=True
-    )
-    if parsed:
-        return parsed.strftime("%d.%m.%Y"), parsed.isoformat()
-
-    # Also use clean subject for relative date resolution
-    combined_text = " ".join(value for value in (clean_subject, body_text) if value)
-    candidate_isos = _candidate_iso_list(event_entry)
-    relative_candidates = candidate_isos if candidate_isos else None
-    relative_date = resolve_relative_date(combined_text, reference_day, candidates=relative_candidates)
-    if relative_date:
-        relative_iso = relative_date.isoformat()
-        display_value = format_iso_date_to_ddmmyyyy(relative_iso) or relative_iso
-        return display_value, relative_iso
-
-    pending = event_entry.get("pending_time_request") or {}
-    if pending.get("display_date") and pending.get("iso_date"):
-        return pending["display_date"], pending["iso_date"]
-
-    chosen_date = event_entry.get("chosen_date")
-    if chosen_date and is_valid_ddmmyyyy(chosen_date):
-        iso_value = to_iso_date(chosen_date)
-        if iso_value:
-            return chosen_date, iso_value
-    return None, None
-
 # D6: _normalize_time_value moved to step2_utils.py
-
-def _existing_time_window(event_entry: dict, iso_date: str) -> Optional[Tuple[str, str]]:
-    """Locate the last known window associated with the same date."""
-
-    requested = event_entry.get("requested_window") or {}
-    if requested.get("date_iso") == iso_date:
-        start = _normalize_time_value(requested.get("start_time"))
-        end = _normalize_time_value(requested.get("end_time"))
-        if start and end:
-            return start, end
-
-    requirements = event_entry.get("requirements") or {}
-    duration = requirements.get("event_duration") or {}
-    start = _normalize_time_value(duration.get("start"))
-    end = _normalize_time_value(duration.get("end"))
-    if start and end:
-        return start, end
-
-    event_data = event_entry.get("event_data") or {}
-    start = _normalize_time_value(event_data.get("Start Time"))
-    end = _normalize_time_value(event_data.get("End Time"))
-    if start and end:
-        return start, end
-
-    pending = event_entry.get("pending_time_request") or {}
-    if pending.get("iso_date") == iso_date:
-        start = _normalize_time_value(pending.get("start_time"))
-        end = _normalize_time_value(pending.get("end_time"))
-        if start and end:
-            return start, end
-    return None
-
-
-# _normalize_iso_candidate moved to date_parsing.py (D2 refactoring)
-
-
-def _candidate_iso_list(event_entry: dict) -> List[str]:
-    seen: List[str] = []
-
-    def _add(value: Any) -> None:
-        iso = _normalize_iso_candidate(value)
-        if iso and iso not in seen:
-            seen.append(iso)
-
-    for source in (
-        event_entry.get("candidate_dates"),
-        event_entry.get("date_proposal_history"),
-    ):
-        if not source:
-            continue
-        for entry in source:
-            _add(entry)
-
-    pending = event_entry.get("pending_date_confirmation") or {}
-    _add(pending.get("iso_date") or pending.get("date"))
-
-    pending_future = event_entry.get("pending_future_confirmation") or {}
-    _add(pending_future.get("iso_date") or pending_future.get("date"))
-
-    requested = event_entry.get("requested_window") or {}
-    _add(requested.get("date_iso") or requested.get("iso_date"))
-
-    _add(event_entry.get("chosen_date"))
-
-    return seen
-
-
+# D8: _determine_date, _existing_time_window, _candidate_iso_list moved to confirmation.py
 
 
 def _handle_partial_confirmation(
@@ -1860,7 +1754,8 @@ def _handle_partial_confirmation(
     _reset_date_attempts(event_entry)
 
     event_entry.setdefault("event_data", {})["Event Date"] = window.display_date
-    _set_pending_time_state(event_entry, window)
+    # D8: Use extracted function
+    set_pending_time_state(event_entry, window)
 
     state.user_info["event_date"] = window.display_date
     state.user_info["date"] = window.iso_date
@@ -2101,7 +1996,8 @@ def _finalize_confirmation(
     if state.client and state.event_id:
         link_event_to_client(state.client, state.event_id)
 
-    _record_confirmation_log(event_entry, state, window, reuse_previous)
+    # D8: Use extracted function
+    record_confirmation_log(event_entry, state, window, reuse_previous)
 
     state.set_thread_state("In Progress")
     state.current_step = next_step
@@ -2209,45 +2105,8 @@ def _finalize_confirmation(
     return GroupResult(action="date_confirmed", payload=payload, halt=True)
 
 
-def _record_confirmation_log(
-    event_entry: dict,
-    state: WorkflowState,
-    window: ConfirmationWindow,
-    reused: bool,
-) -> None:
-    logs = event_entry.setdefault("logs", [])
-    details = {
-        "intent": state.intent.value if state.intent else None,
-        "requested_window": {
-            "date": window.iso_date,
-            "start": window.start_iso,
-            "end": window.end_iso,
-            "tz": "Europe/Zurich",
-        },
-        "times_inherited": window.inherited_times,
-        "source_message_id": window.source_message_id,
-        "reused": reused,
-    }
-    logs.append(
-        {
-            "ts": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-            "actor": "workflow",
-            "action": "date_confirmed",
-            "details": details,
-        }
-    )
-
 # D6: _window_hash, _to_time moved to step2_utils.py
-
-def _set_pending_time_state(event_entry: dict, window: ConfirmationWindow) -> None:
-    event_entry["pending_time_request"] = {
-        "display_date": window.display_date,
-        "iso_date": window.iso_date,
-        "start_time": window.start_time,
-        "end_time": window.end_time,
-        "source_message_id": window.source_message_id,
-        "created_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-    }
+# D8: _set_pending_time_state, _record_confirmation_log moved to confirmation.py
 
 
 def _trace_candidate_gate(thread_id: str, candidates: List[str]) -> None:
