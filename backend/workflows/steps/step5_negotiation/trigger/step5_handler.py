@@ -54,7 +54,18 @@ from backend.debug.trace import set_hil_open
 from backend.utils.profiler import profile_step
 from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
 
-# Classification helpers (N2 refactoring)
+# N2 refactoring: Constants and classification extracted to dedicated modules
+from .constants import (
+    MAX_COUNTER_PROPOSALS,
+    INTENT_ACCEPT,
+    INTENT_DECLINE,
+    INTENT_COUNTER,
+    INTENT_ROOM_SELECTION,
+    INTENT_CLARIFICATION,
+    OFFER_STATUS_ACCEPTED,
+    OFFER_STATUS_DECLINED,
+    SITE_VISIT_PROPOSED,
+)
 from .classification import (
     classify_message as _classify_message,
     collect_detected_intents as _collect_detected_intents,
@@ -70,7 +81,7 @@ from backend.workflows.common.billing_gate import (
 
 __all__ = ["process"]
 
-MAX_COUNTERS = 3
+# N2: MAX_COUNTERS moved to constants.py as MAX_COUNTER_PROPOSALS
 
 
 def _menu_name_set() -> set[str]:
@@ -476,7 +487,7 @@ def process(state: WorkflowState) -> GroupResult:
 
     if classification == "counter":
         negotiation_state["counter_count"] = int(negotiation_state.get("counter_count") or 0) + 1
-        if negotiation_state["counter_count"] > MAX_COUNTERS:
+        if negotiation_state["counter_count"] > MAX_COUNTER_PROPOSALS:
             manual_id = negotiation_state.get("manual_review_task_id")
             if not manual_id:
                 manual_payload = {
