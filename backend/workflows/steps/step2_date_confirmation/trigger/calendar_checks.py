@@ -18,6 +18,10 @@ from typing import List, Optional
 
 from backend.services.availability import calendar_free
 from backend.workflows.common.datetime_parse import build_window_iso
+from backend.workflows.io.database import update_event_metadata  # D14a
+
+from .types import ConfirmationWindow  # D14a
+from .step2_utils import _to_time  # D14a
 
 
 # -----------------------------------------------------------------------------
@@ -135,6 +139,59 @@ def maybe_fuzzy_friday_candidates(text: str, anchor: date) -> List[str]:
 
 
 # -----------------------------------------------------------------------------
+# Calendar Conflict Detection
+# -----------------------------------------------------------------------------
+
+
+def calendar_conflict_reason(event_entry: dict, window: ConfirmationWindow) -> Optional[str]:
+    """Check if a calendar conflict exists and return a conflict message.
+
+    Extracted from step2_handler.py as part of D14a refactoring.
+
+    Args:
+        event_entry: Event data dict
+        window: ConfirmationWindow with date/time info
+
+    Returns:
+        Conflict message string if room is booked, None if available.
+        Also records the conflict in event_entry if found.
+    """
+    room = preferred_room(event_entry)
+    if not room:
+        return None
+    normalized = room.strip().lower()
+    if not normalized or normalized == "not specified":
+        return None
+    if not (window.start_time and window.end_time):
+        return None
+    start_iso = window.start_iso
+    end_iso = window.end_iso
+    if not (start_iso and end_iso):
+        try:
+            start_obj = _to_time(window.start_time)
+            end_obj = _to_time(window.end_time)
+            start_iso, end_iso = build_window_iso(window.iso_date, start_obj, end_obj)
+        except ValueError:
+            return None
+    is_free = calendar_free(room, {"start": start_iso, "end": end_iso})
+    if is_free:
+        return None
+    slot_text = f"{window.start_time}–{window.end_time}"
+    conflicts = event_entry.setdefault("calendar_conflicts", [])
+    conflict_record = {
+        "iso_date": window.iso_date,
+        "display_date": window.display_date,
+        "start": start_iso,
+        "end": end_iso,
+        "room": room,
+    }
+    if conflict_record not in conflicts:
+        conflicts.append(conflict_record)
+    update_event_metadata(event_entry, calendar_conflicts=conflicts)
+    return f"Sorry, {room} is already booked on {window.display_date} ({slot_text}). Let me look for nearby alternatives right away."
+
+
+# -----------------------------------------------------------------------------
 # Exports
 # -----------------------------------------------------------------------------
 
@@ -143,4 +200,5 @@ __all__ = [
     "future_fridays_in_may_june",
     "maybe_fuzzy_friday_candidates",
     "preferred_room",  # D13b
+    "calendar_conflict_reason",  # D14a
 ]
