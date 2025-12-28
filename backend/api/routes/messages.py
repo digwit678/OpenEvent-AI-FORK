@@ -24,7 +24,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.domain import ConversationState, EventInformation
-from backend.conversation_manager import (
+from backend.legacy.session_store import (
     active_conversations,
     render_step3_reply,
     pop_step3_payload,
