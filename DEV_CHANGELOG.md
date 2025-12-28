@@ -2,6 +2,32 @@
 
 ## 2025-12-28
 
+### S3 Phase 1: Smart Shortcuts Budget/DAG Extraction ✅
+
+**Summary:** Extracted budget parsing and DAG guard logic from `smart_shortcuts.py` (1,985 lines) into focused submodules. This is Phase 1 of the S3 refactoring plan.
+
+**New Modules:**
+- `backend/workflows/planner/budget_parser.py` (~120 lines)
+  - `extract_budget_info()` - Priority-ordered budget extraction from user_info
+  - `parse_budget_value()` - Parse dict/number/string budget values
+  - `parse_budget_text()` - Regex parsing for "CHF 500 per person" style strings
+
+- `backend/workflows/planner/dag_guard.py` (~115 lines)
+  - `dag_guard()` - Check if intent is allowed by workflow DAG
+  - `is_date_confirmed()`, `is_room_locked()`, `can_collect_billing()` - State predicates
+  - `set_dag_block()`, `ensure_prerequisite_prompt()` - Block handling
+
+**Pattern:** Thin wrapper delegation - class methods in `_ShortcutPlanner` delegate to extracted functions, maintaining API compatibility.
+
+**Files Modified:**
+- `backend/workflows/planner/smart_shortcuts.py` (imports + wrapper methods)
+- `backend/workflows/planner/budget_parser.py` (NEW)
+- `backend/workflows/planner/dag_guard.py` (NEW)
+
+**Verification:** All 146 core tests pass + E2E Playwright verified (shortcuts → room → products)
+
+---
+
 ### R3: Step3 Selection Action Deduplication ✅
 
 **Summary:** Completed R3 refactoring by removing duplicate helper functions from `step3_handler.py` that already existed in `selection.py`. The selection module was already created; this task cleaned up remaining code duplication.

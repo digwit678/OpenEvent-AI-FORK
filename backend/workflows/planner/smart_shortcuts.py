@@ -55,6 +55,21 @@ from backend.workflows.planner.shortcuts_types import (
     _ORDINAL_WORDS_BY_LANG,
 )
 
+# S3: Import extracted handler modules
+from backend.workflows.planner.budget_parser import (
+    extract_budget_info as _extract_budget_info_impl,
+    parse_budget_value as _parse_budget_value_impl,
+    parse_budget_text as _parse_budget_text_impl,
+)
+from backend.workflows.planner.dag_guard import (
+    dag_guard as _dag_guard_impl,
+    is_date_confirmed as _is_date_confirmed_impl,
+    is_room_locked as _is_room_locked_impl,
+    can_collect_billing as _can_collect_billing_impl,
+    set_dag_block as _set_dag_block_impl,
+    ensure_prerequisite_prompt as _ensure_prerequisite_prompt_impl,
+)
+
 # Re-export gate function for tests that import it directly
 _shortcuts_allowed = _shortcuts_allowed  # noqa: F811 - intentional re-export
 
@@ -529,67 +544,24 @@ class _ShortcutPlanner:
         self._add_needs_input("date_choice", {"reason": "date_missing"}, reason="date_missing")
 
     # ------------------------------------------------------------------ execute
+    # S3: DAG guard methods delegated to dag_guard.py
     def _is_date_confirmed(self) -> bool:
-        if self.event.get("date_confirmed") is True:
-            return True
-        requested = self.event.get("requested_window") or {}
-        if requested.get("date_iso") or requested.get("display_date"):
-            return True
-        return False
+        return _is_date_confirmed_impl(self)
 
     def _is_room_locked(self) -> bool:
-        return bool(self.event.get("locked_room_id"))
+        return _is_room_locked_impl(self)
 
     def _can_collect_billing(self) -> bool:
-        current_step = self.event.get("current_step") or 1
-        if current_step >= 6:
-            return True
-        status = str(self.event.get("offer_status") or "").lower()
-        return status in {"sent", "accepted", "finalized", "finalised", "approved", "ready"}
+        return _can_collect_billing_impl(self)
 
     def _set_dag_block(self, reason: Optional[str]) -> None:
-        if not reason:
-            return
-        order = {"room_requires_date": 0, "products_require_room": 1, "billing_after_offer": 2}
-        current_rank = order.get(self._dag_block_reason, 99)
-        next_rank = order.get(reason, 99)
-        if next_rank < current_rank:
-            self._dag_block_reason = reason
-        if reason == self._dag_block_reason:
-            self.telemetry.dag_blocked = self._dag_block_reason
-            self.state.telemetry.dag_blocked = self._dag_block_reason
+        _set_dag_block_impl(self, reason)
 
     def _ensure_prerequisite_prompt(self, reason: Optional[str], intent: Optional[ParsedIntent] = None) -> None:
-        if not reason:
-            return
-        if reason == "room_requires_date":
-            self._ensure_date_choice_intent()
-            return
-        if reason == "products_require_room":
-            if any(item.type == "availability" for item in self.needs_input):
-                return
-            payload: Dict[str, Any] = {"reason": "room_requires_date"}
-            pending = self.event.get("room_pending_decision") or {}
-            room = pending.get("selected_room")
-            if room:
-                payload["room"] = room
-            self._add_needs_input("availability", payload, reason="room_requires_date")
-            return
-        if reason == "billing_after_offer":
-            if any(item.type == "offer_prepare" for item in self.needs_input):
-                return
-            self._add_needs_input("offer_prepare", {}, reason="billing_after_offer")
+        _ensure_prerequisite_prompt_impl(self, reason, intent)
 
     def _dag_guard(self, intent: ParsedIntent) -> Tuple[bool, Optional[str]]:
-        reason: Optional[str] = None
-        if intent.type == "room_selection" and not self._is_date_confirmed():
-            reason = "room_requires_date"
-        elif intent.type == "product_add" and not self._is_room_locked():
-            reason = "products_require_room"
-        elif intent.type == "billing" and not self._can_collect_billing():
-            reason = "billing_after_offer"
-        allowed = reason is None
-        return allowed, reason
+        return _dag_guard_impl(self, intent)
 
     def _time_from_iso(self, value: Optional[str]) -> Optional[str]:
         if not value:
@@ -1787,78 +1759,16 @@ class _ShortcutPlanner:
         name = str(item.get("name") or "the item").strip() or "the item"
         return f"{name} — price pending (via manager)"
 
+    # S3: Budget parsing methods delegated to budget_parser.py
     def _extract_budget_info(self) -> Optional[Dict[str, Any]]:
-        candidates = [
-            ("budget_total", "total"),
-            ("budget", "total"),
-            ("budget_cap", "total"),
-            ("budget_per_person", "per_person"),
-        ]
-        for key, scope in candidates:
-            if key not in self.user_info:
-                continue
-            parsed = self._parse_budget_value(self.user_info[key], scope_default=scope)
-            if parsed:
-                return parsed
-        return None
+        return _extract_budget_info_impl(self)
 
     def _parse_budget_value(self, value: Any, scope_default: str) -> Optional[Dict[str, Any]]:
-        if value is None:
-            return None
-        if isinstance(value, dict):
-            amount = value.get("amount")
-            currency = value.get("currency") or _budget_default_currency()
-            scope = value.get("scope") or scope_default
-            text = value.get("text")
-            if amount is None and isinstance(text, str):
-                parsed = self._parse_budget_text(text, scope)
-                if parsed:
-                    return parsed
-            if amount is None:
-                return None
-            try:
-                amount_value = float(amount)
-            except (TypeError, ValueError):
-                return None
-            display = text or f"{currency} {amount_value:g}"
-            return {"amount": amount_value, "currency": currency, "scope": scope, "text": display}
-        if isinstance(value, (int, float)):
-            amount_value = float(value)
-            currency = _budget_default_currency()
-            display = f"{currency} {amount_value:g}"
-            return {"amount": amount_value, "currency": currency, "scope": scope_default, "text": display}
-        if isinstance(value, str):
-            return self._parse_budget_text(value, scope_default)
-        return None
+        return _parse_budget_value_impl(value, scope_default)
 
     @staticmethod
     def _parse_budget_text(value: str, scope_default: str) -> Optional[Dict[str, Any]]:
-        text = (value or "").strip()
-        if not text:
-            return None
-        pattern = re.compile(
-            r"(?P<currency>[A-Za-z]{3})?\s*(?P<amount>\d+(?:[.,]\d{1,2})?)\s*(?P<scope>per\s*(?:person|guest|head)|total|overall)?",
-            re.IGNORECASE,
-        )
-        match = pattern.search(text)
-        if not match:
-            return None
-        currency = match.group("currency") or _budget_default_currency()
-        if not match.group("currency") and _budget_parse_strict():
-            return None
-        try:
-            amount = float(match.group("amount").replace(",", "."))
-        except (TypeError, ValueError):
-            return None
-        scope_token = (match.group("scope") or scope_default or "").lower().strip()
-        if scope_token.startswith("per"):
-            scope = "per_person"
-        elif scope_token in {"total", "overall"}:
-            scope = "total"
-        else:
-            scope = scope_default
-        display = text if match.group("currency") else f"{currency} {amount:g} {scope.replace('_', ' ')}".strip()
-        return {"amount": amount, "currency": currency, "scope": scope, "text": display}
+        return _parse_budget_text_impl(value, scope_default)
 
     def _infer_quantity(self, product_entry: Dict[str, Any]) -> int:
         qty = product_entry.get("quantity")

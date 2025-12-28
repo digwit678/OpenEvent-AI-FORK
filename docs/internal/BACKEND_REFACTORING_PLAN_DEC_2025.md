@@ -792,9 +792,18 @@ Then reduce dynamic imports by creating a stable Step 2 helper API (later):
 **S2 — Extract types/telemetry**
 - Move dataclasses and telemetry payload objects into `shortcuts_types.py`
 
-**S3 — Extract planner core**
-- Move `_ShortcutPlanner` into `shortcuts_planner.py`
-- Keep `maybe_run_smart_shortcuts` in `smart_shortcuts.py` as the stable facade
+**S3 — Extract planner core** (incremental, Phase 1 complete ✅ 2025-12-28)
+
+Phase 1 (complete):
+- Created `budget_parser.py` (~120 lines): `extract_budget_info`, `parse_budget_value`, `parse_budget_text`
+- Created `dag_guard.py` (~115 lines): `dag_guard`, `is_date_confirmed`, `is_room_locked`, `can_collect_billing`, `set_dag_block`, `ensure_prerequisite_prompt`
+- Updated `smart_shortcuts.py` with thin wrapper delegation pattern
+
+Remaining phases (future sessions):
+- Phase 2: `date_handler.py` (~200 lines) - date/time processing
+- Phase 3: `product_handler.py` (~250 lines) - add-on management
+- Phase 4: `preask_handler.py` + `choice_handler.py` (~420 lines) - interactive flows
+- Phase 5: `intent_parser.py` + `intent_executor.py` (~280 lines) - dispatch logic
 
 ---
 
