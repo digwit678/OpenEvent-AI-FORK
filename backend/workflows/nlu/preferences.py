@@ -453,7 +453,7 @@ def _room_catalog() -> Dict[str, Dict[str, Any]]:
 
 @lru_cache(maxsize=1)
 def _load_rooms() -> List[Dict[str, Any]]:
-    path = Path(__file__).resolve().parents[2] / "rooms.json"
+    path = Path(__file__).resolve().parents[2] / "data" / "rooms.json"
     with path.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
     rooms = payload.get("rooms")

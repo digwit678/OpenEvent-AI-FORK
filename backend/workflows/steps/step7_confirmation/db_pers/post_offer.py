@@ -49,7 +49,7 @@ def _backend_root() -> Path:
 
 @lru_cache(maxsize=4)
 def _load_rooms(rooms_path: Optional[str] = None) -> List[Dict[str, Any]]:
-    path = Path(rooms_path) if rooms_path else _backend_root() / "rooms.json"
+    path = Path(rooms_path) if rooms_path else _backend_root() / "data" / "rooms.json"
     with path.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
     rooms = payload.get("rooms") or []

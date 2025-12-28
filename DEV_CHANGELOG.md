@@ -1,5 +1,43 @@
 # Development Changelog
 
+## 2025-12-29
+
+### Refactor: Database Consolidation (DB_CONSOLIDATION) ✅
+
+**Summary:** Consolidated 4 scattered JSON data files into 2 unified files with backwards-compatible schema, eliminating "split brain" data management.
+
+**Files Merged:**
+- `backend/rooms.json` + `backend/room_info.json` → `backend/data/rooms.json`
+- `backend/catering_menu.json` + `backend/data/catalog/catering.json` → `backend/data/products.json`
+
+**Key Changes:**
+1. Created migration script `scripts/migrate_db_files.py`
+2. Unified rooms file with all 6 rooms (A-F), merged capacities, pricing, features, and operations
+3. Unified products file with 21 products (catering, beverages, equipment, add-ons)
+4. Updated 12 adapter files to use new consolidated paths
+5. Preserved backwards compatibility by using flat field names (`capacity_max`, `unit_price`)
+
+**Adapters Updated:**
+- `backend/workflows/io/database.py`
+- `backend/services/rooms.py`
+- `backend/services/products.py`
+- `backend/workflows/nlu/preferences.py`
+- `backend/workflows/steps/step7_confirmation/db_pers/post_offer.py`
+- `backend/workflows/steps/step3_room_availability/db_pers/room_availability_pipeline.py`
+- `backend/services/qna_readonly.py`
+- `backend/workflows/common/capacity.py`
+- `backend/workflows/common/catalog.py`
+- `backend/workflows/common/pricing.py`
+- `backend/workflows/planner/product_handler.py`
+
+**Old Files Archived:** `backend/DEPRECATED/pre_consolidation/`
+
+**Test Fix:** Updated `tests/room/test_rank_rooms_by_prefs.py` to match intentional preferred_room bonus behavior.
+
+**Verification:** 772 tests pass (excluding API-dependent smoke test)
+
+---
+
 ## 2025-12-28
 
 ### Fix: DAG Change Propagation Test Suite (45 tests) ✅

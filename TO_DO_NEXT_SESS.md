@@ -4,7 +4,7 @@ This file tracks active implementation goals and planned roadmap items. **Check 
 
 ## 🎯 Primary Focus for Tomorrow
 1.  **Finalize Phase 1 Stability:** Ensure all 7 steps pass happy-path and edge-case regression tests.
-2.  **Begin Database Consolidation:** Execute the merger of redundant JSON data files.
+2.  ~~**Begin Database Consolidation:**~~ ✅ **DONE** - See `DEV_CHANGELOG.md` for 2025-12-29.
 3.  **Initiate Gemini Strategy:** Start implementing the dual-engine LLM provider.
 
 ---
@@ -19,6 +19,8 @@ This file tracks active implementation goals and planned roadmap items. **Check 
 | 2025-12-24 | **Circular Bug Elimination** | Audit routing loops and special flow guards | **Urgent** |
 | 2025-12-24 | **Integration Completion** | Supabase/Hostinger production readiness | **High** |
 | 2025-12-24 | **Billing Flow Robustness** | Frontend/Backend session sync stability | **High** |
+| ~~2025-12-28~~ | ~~**Documentation Hygiene**~~ | ✅ **DONE 2025-12-28** - Refreshed `tests/TEST_INVENTORY.md`, closed stale checklist items, and updated this roadmap. | ~~**Medium**~~ |
+| ~~2025-12-28~~ | ~~**DCON1 – Detection Import Cleanup**~~ | ✅ **DONE 2025-12-28** - Updated tests to import from stable detection/workflow surfaces; verified pytest collect-only and targeted suites. | ~~**High**~~ |
 | ~~2025-12-27~~ | ~~**Product Change Mid-Flow (WF0.1)**~~ | ✅ **FIXED 2025-12-28** - Added empty reply safety net in `workflow_email.py` after routing loop. When routing completes with no drafts, a context-aware fallback message is added. | ~~**Medium**~~ |
 | ~~2025-12-27~~ | ~~**Billing Address Capture Failure**~~ | ✅ **FIXED 2025-12-28** - Root cause was step corruption (step=3 instead of step=5) due to missing `offer_accepted=True` in step5_handler + guards forcing step during billing flow. See `test_billing_step_preservation.py`. | ~~**High**~~ |
 | ~~2025-12-28~~ | ~~**WF0.1: Empty Detour Replies**~~ | ✅ **FIXED 2025-12-28** - Same as above: empty reply safety net in `workflow_email.py`. See `DEV_CHANGELOG.md`. | ~~**High**~~ |
@@ -30,7 +32,7 @@ This file tracks active implementation goals and planned roadmap items. **Check 
 
 | Date Added | Task / Plan | Reference | Priority |
 | :--- | :--- | :--- | :--- |
-| 2025-12-24 | **Database Consolidation** | `docs/plans/active/DATABASE_CONSOLIDATION_PLAN.md` | Medium |
+| ~~2025-12-24~~ | ~~**Database Consolidation**~~ | ✅ **DONE 2025-12-29** - Merged 4 JSON files into 2 unified files (`backend/data/rooms.json`, `backend/data/products.json`). Updated 12 adapters. See `DEV_CHANGELOG.md`. | ~~Medium~~ |
 | 2025-12-22 | **Dual-Engine (Gemini)** | `docs/plans/active/MIGRATION_TO_GEMINI_STRATEGY.md` | Medium |
 | 2025-12-20 | **Detection Improvement** | `docs/plans/completed/DONE__DETECTION_IMPROVEMENT_PLAN.md` | Medium |
 | 2025-12-18 | **Multi-Variable Q&A** | `docs/plans/active/MULTI_VARIABLE_QNA_PLAN.md` | Medium |

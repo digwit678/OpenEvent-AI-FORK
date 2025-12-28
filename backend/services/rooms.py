@@ -57,7 +57,7 @@ def _normalize_capacity(payload: Any) -> Dict[str, int]:
 def load_room_catalog(path: Optional[Path] = None) -> List[RoomRecord]:
     """Load the detailed room catalog from seed data."""
 
-    rooms_path = path or Path(__file__).resolve().parents[1] / "rooms.json"
+    rooms_path = path or Path(__file__).resolve().parents[1] / "data" / "rooms.json"
     if not rooms_path.exists():
         return []
     with rooms_path.open("r", encoding="utf-8") as handle:
