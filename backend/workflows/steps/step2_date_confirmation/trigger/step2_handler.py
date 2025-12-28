@@ -80,7 +80,7 @@ from backend.workflows.io.database import (
 from backend.workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
 from backend.utils.profiler import profile_step
 from backend.services.availability import calendar_free, next_five_venue_dates, validate_window
-from backend.utils.dates import MONTH_INDEX_TO_NAME, from_hints
+# D10: from_hints, MONTH_INDEX_TO_NAME now used in candidate_dates.py
 from backend.utils.calendar_events import update_calendar_event_status
 from backend.workflow.state import WorkflowStep, default_subflow, write_stage
 
@@ -89,7 +89,7 @@ from ..condition.decide import is_valid_ddmmyyyy
 # D1 refactoring: Types and constants extracted to dedicated modules
 from .types import ConfirmationWindow, WindowHints
 from .constants import (
-    MONTH_NAME_TO_INDEX as _MONTH_NAME_TO_INDEX,
+    # D10: MONTH_NAME_TO_INDEX now used in candidate_dates.py
     WEEKDAY_NAME_TO_INDEX as _WEEKDAY_NAME_TO_INDEX,
     WEEKDAY_LABELS as _WEEKDAY_LABELS,
     PLACEHOLDER_NAMES as _PLACEHOLDER_NAMES,
@@ -107,7 +107,7 @@ from .date_parsing import (
     next_matching_date as _next_matching_date,
     format_display_dates as _format_display_dates,
     human_join as _human_join,
-    clean_weekdays_hint as _clean_weekdays_hint,
+    # D10: clean_weekdays_hint now used in candidate_dates.py and step2_utils.py
     parse_weekday_mentions as _parse_weekday_mentions,
     weekday_indices_from_hint as _weekday_indices_from_hint,
     normalize_month_token as _normalize_month_token,
@@ -167,7 +167,7 @@ from .step2_utils import (
     _is_affirmative_reply,
     _message_signals_confirmation,
     _message_mentions_new_date,
-    _is_weekend_token,
+    # D10: _is_weekend_token now used in candidate_dates.py
     _window_payload,
     _window_from_payload,
     # D9: Additional utilities
@@ -185,6 +185,8 @@ from .candidate_dates import (
     _collect_preferred_weekday_alternatives,
     collect_candidates_from_week_scope,
     collect_candidates_from_fuzzy,
+    resolve_week_scope,
+    preferred_weekday_label,
 )
 
 # D8 refactoring: Pure confirmation helpers extracted to confirmation.py
@@ -277,18 +279,7 @@ def _client_requested_dates(state: WorkflowState) -> List[str]:
 # _format_display_dates, _human_join moved to date_parsing.py (D2 refactoring)
 # D6: _preface_with_apology moved to step2_utils.py
 # _clean_weekdays_hint moved to date_parsing.py (D2 refactoring)
-
-
-def _clear_invalid_weekdays_hint(event_entry: Dict[str, Any]) -> None:
-    """Strip invalid weekday hints that can be polluted by participant counts."""
-
-    weekdays_hint = event_entry.get("weekdays_hint")
-    cleaned = _clean_weekdays_hint(weekdays_hint)
-    if cleaned != weekdays_hint:
-        if cleaned:
-            event_entry["weekdays_hint"] = cleaned
-        else:
-            event_entry.pop("weekdays_hint", None)
+# D10: _clear_invalid_weekdays_hint moved to step2_utils.py
 
 
 def _append_menu_options_if_requested(state: WorkflowState, message_lines: List[str], month_hint: Optional[str]) -> None:
@@ -951,7 +942,8 @@ def _present_candidate_dates(
     collection_cap = limit if not preferred_weekdays else max(limit * 3, limit + 5)
     event_entry.pop("pending_future_confirmation", None)
 
-    week_scope = None if attempt > 1 else _resolve_week_scope(state, reference_day)
+    # D10: Use extracted resolve_week_scope from candidate_dates.py
+    week_scope = None if attempt > 1 else resolve_week_scope(user_info, event_entry, reference_day)
     week_label_value: Optional[str] = None
     if not preferred_weekdays and week_scope:
         preferred_weekdays = _weekday_indices_from_hint(week_scope.get("weekdays_hint"))
@@ -1287,7 +1279,8 @@ def _present_candidate_dates(
     weekday_hint_value = user_info.get("vague_weekday") or event_entry.get("vague_weekday")
     weekday_label = None
     if not week_scope:
-        preferred_label = _preferred_weekday_label(preferred_weekday_list, sample_dates)
+        # D10: Use extracted preferred_weekday_label from candidate_dates.py
+        preferred_label = preferred_weekday_label(preferred_weekday_list, sample_dates)
         if preferred_label:
             weekday_label = preferred_label
         elif len(preferred_weekdays) == 1:
@@ -2113,70 +2106,7 @@ def _trace_candidate_gate(thread_id: str, candidates: List[str]) -> None:
 #     _compact_products_summary, _user_requested_products moved to step2_utils.py
 # D5: _resolve_window_hints moved to window_helpers.py or general_qna.py
 # D6: _is_weekend_token moved to step2_utils.py
-
-
-def _resolve_week_scope(state: WorkflowState, reference_day: date) -> Optional[Dict[str, Any]]:
-    user_info = state.user_info or {}
-    event_entry = state.event_entry or {}
-    _clear_invalid_weekdays_hint(event_entry)
-    window_scope: Dict[str, Any] = {}
-    for candidate in (event_entry.get("window_scope"), user_info.get("window")):
-        if isinstance(candidate, dict):
-            window_scope.update(candidate)
-
-    month_hint = (
-        window_scope.get("month")
-        or user_info.get("vague_month")
-        or event_entry.get("vague_month")
-    )
-    week_index = (
-        window_scope.get("week_index")
-        or user_info.get("week_index")
-        or event_entry.get("week_index")
-    )
-    weekdays_hint_raw = (
-        window_scope.get("weekdays_hint")
-        or user_info.get("weekdays_hint")
-        or event_entry.get("weekdays_hint")
-    )
-    weekdays_hint = _clean_weekdays_hint(weekdays_hint_raw)
-    weekday_token = (
-        window_scope.get("weekday")
-        or user_info.get("vague_weekday")
-        or event_entry.get("vague_weekday")
-    )
-
-    if not month_hint or (week_index is None and not weekdays_hint):
-        return None
-
-    include_weekends = _is_weekend_token(weekday_token)
-    dates = from_hints(
-        month=month_hint,
-        week_index=week_index,
-        weekdays_hint=weekdays_hint if isinstance(weekdays_hint, (list, tuple, set)) else None,
-        reference=reference_day,
-        mon_fri_only=not include_weekends,
-    )
-    if not dates:
-        return None
-    try:
-        first_day = datetime.fromisoformat(dates[0])
-    except ValueError:
-        return None
-    derived_week_index = ((first_day.day - 1) // 7) + 1
-    month_index = _MONTH_NAME_TO_INDEX.get(str(month_hint).strip().lower())
-    if month_index is None:
-        month_index = first_day.month
-    month_label = window_scope.get("month") or MONTH_INDEX_TO_NAME.get(month_index, _format_label_text(month_hint))
-    label = f"Week {derived_week_index} of {month_label}"
-    return {
-        "dates": dates,
-        "week_index": derived_week_index,
-        "month_label": month_label,
-        "label": label,
-        "weekdays_hint": list(weekdays_hint) if isinstance(weekdays_hint, (list, tuple, set)) else [],
-    }
-
+# D10: _resolve_week_scope moved to candidate_dates.py as resolve_week_scope
 
 # D5: _has_window_constraints moved to window_helpers.py or general_qna.py
 # D6: _format_label_text, _date_header_label, _format_day_list moved to step2_utils.py
@@ -2261,41 +2191,7 @@ def _apply_step2_hil_decision(state: WorkflowState, event_entry: dict, decision:
     return _finalize_confirmation(state, event_entry, pending_window)
 
 
-def _preferred_weekday_label(
-    preferred_weekdays: Sequence[int],
-    sample_dates: Sequence[str],
-) -> Optional[str]:
-    if not preferred_weekdays or not sample_dates:
-        return None
-    valid_indices = [idx for idx in preferred_weekdays if 0 <= idx <= 6]
-    if not valid_indices:
-        return None
-    requested_set = set(valid_indices)
-    sample_set: set[int] = set()
-    for iso_value in sample_dates:
-        try:
-            parsed = datetime.fromisoformat(iso_value)
-        except ValueError:
-            continue
-        weekday_idx = parsed.weekday()
-        if weekday_idx in requested_set:
-            sample_set.add(weekday_idx)
-    if not sample_set:
-        return None
-    if not sample_set.issubset(requested_set):
-        return None
-    ordered_indices = [idx for idx in valid_indices if idx in sample_set]
-    if not ordered_indices:
-        ordered_indices = sorted(sample_set)
-    labels = [f"{_WEEKDAY_LABELS[idx]}s" for idx in ordered_indices]
-    if not labels:
-        return None
-    if len(labels) == 1:
-        return labels[0]
-    if len(labels) == 2:
-        return f"{labels[0]} & {labels[1]}"
-    return ", ".join(labels[:-1]) + f", & {labels[-1]}"
-
+# D10: _preferred_weekday_label moved to candidate_dates.py as preferred_weekday_label
 # D6: _pluralize_weekday_hint moved to step2_utils.py
 
 
