@@ -1,11 +1,6 @@
 from __future__ import annotations
-import hashlib
-from dataclasses import dataclass
-from collections import Counter
-from datetime import datetime, time, date, timedelta
-from calendar import monthrange
+from datetime import datetime, time, date
 from typing import Any, Dict, List, Optional, Sequence, Tuple
-import datetime as dt
 import re
 import logging
 
@@ -88,26 +83,15 @@ from ..condition.decide import is_valid_ddmmyyyy
 
 # D1 refactoring: Types and constants extracted to dedicated modules
 from .types import ConfirmationWindow, WindowHints
-from .constants import (
-    # D10: MONTH_NAME_TO_INDEX now used in candidate_dates.py
-    WEEKDAY_NAME_TO_INDEX as _WEEKDAY_NAME_TO_INDEX,
-    WEEKDAY_LABELS as _WEEKDAY_LABELS,
-    PLACEHOLDER_NAMES as _PLACEHOLDER_NAMES,
-    AFFIRMATIVE_TOKENS,
-    CONFIRMATION_KEYWORDS,
-    SIGNATURE_MARKERS as _SIGNATURE_MARKERS,
-    # D11: TIME_HINT_DEFAULTS now used in confirmation.py
-)
+# D12: Constants moved to step2_utils.py and confirmation.py - no longer needed here
 
 # D2 refactoring: Date parsing utilities extracted to dedicated module
 from .date_parsing import (
     safe_parse_iso_date as _safe_parse_iso_date,
     iso_date_is_past as _iso_date_is_past,
-    normalize_iso_candidate as _normalize_iso_candidate,
     next_matching_date as _next_matching_date,
     format_display_dates as _format_display_dates,
     human_join as _human_join,
-    # D10: clean_weekdays_hint now used in candidate_dates.py and step2_utils.py
     parse_weekday_mentions as _parse_weekday_mentions,
     weekday_indices_from_hint as _weekday_indices_from_hint,
     normalize_month_token as _normalize_month_token,
@@ -118,7 +102,6 @@ from .date_parsing import (
 from .proposal_tracking import (
     increment_date_attempt as _increment_date_attempt,
     reset_date_attempts as _reset_date_attempts,
-    collect_proposal_history as _collect_proposal_history,
     proposal_skip_dates as _proposal_skip_dates,
     update_proposal_history as _update_proposal_history,
 )
@@ -126,7 +109,6 @@ from .proposal_tracking import (
 # D4 refactoring: Calendar check utilities extracted to dedicated module
 from .calendar_checks import (
     candidate_is_calendar_free as _candidate_is_calendar_free,
-    future_fridays_in_may_june as _future_fridays_in_may_june,
     maybe_fuzzy_friday_candidates as _maybe_fuzzy_friday_candidates,
 )
 
@@ -204,12 +186,6 @@ __workflow_role__ = "trigger"
 logger = logging.getLogger(__name__)
 
 
-# D1: ConfirmationWindow, WindowHints, constants moved to types.py/constants.py
-# D2: Date parsing functions moved to date_parsing.py
-# D3: Proposal tracking functions moved to proposal_tracking.py
-# D4: Calendar check functions moved to calendar_checks.py
-
-
 def _thread_id(state: WorkflowState) -> str:
     if state.thread_id:
         return str(state.thread_id)
@@ -219,11 +195,6 @@ def _thread_id(state: WorkflowState) -> str:
     if message and message.msg_id:
         return str(message.msg_id)
     return "unknown-thread"
-
-
-# AFFIRMATIVE_TOKENS, CONFIRMATION_KEYWORDS, _SIGNATURE_MARKERS moved to constants.py (D1 refactoring)
-# D6: _extract_first_name, _extract_signature_name moved to step2_utils.py
-# D9: _has_range_tokens, _range_query_pending moved to step2_utils.py
 
 
 def _emit_step2_snapshot(
@@ -275,12 +246,6 @@ def _client_requested_dates(state: WorkflowState) -> List[str]:
             iso_values.append(iso)
     state.extras[cache_key] = list(iso_values)
     return iso_values
-
-
-# _format_display_dates, _human_join moved to date_parsing.py (D2 refactoring)
-# D6: _preface_with_apology moved to step2_utils.py
-# _clean_weekdays_hint moved to date_parsing.py (D2 refactoring)
-# D10: _clear_invalid_weekdays_hint moved to step2_utils.py
 
 
 def _append_menu_options_if_requested(state: WorkflowState, message_lines: List[str], month_hint: Optional[str]) -> None:
@@ -452,12 +417,6 @@ def _maybe_append_general_qna(
     return result
 
 
-# _parse_weekday_mentions, _weekday_indices_from_hint moved to date_parsing.py (D2 refactoring)
-# _increment_date_attempt, _collect_proposal_history, _proposal_skip_dates,
-# _update_proposal_history, _reset_date_attempts moved to proposal_tracking.py (D3 refactoring)
-# _candidate_is_calendar_free moved to calendar_checks.py (D4 refactoring)
-
-
 def _calendar_conflict_reason(event_entry: dict, window: ConfirmationWindow) -> Optional[str]:
     preferred_room = _preferred_room(event_entry)
     if not preferred_room:
@@ -518,10 +477,6 @@ def _with_greeting(state: WorkflowState, body: str) -> str:
     if body.startswith(greeting):
         return body
     return f"{greeting}\n\n{body}"
-
-
-# _future_fridays_in_may_june, _maybe_fuzzy_friday_candidates moved to calendar_checks.py (D4 refactoring)
-# _next_matching_date moved to date_parsing.py (D2 refactoring)
 
 
 @trace_step("Step2_Date")
@@ -1541,11 +1496,6 @@ def _present_candidate_dates(
     return GroupResult(action="date_options_proposed", payload=payload, halt=True)
 
 
-# _iso_date_is_past, _safe_parse_iso_date moved to date_parsing.py (D2 refactoring)
-# D6: _window_payload, _window_from_payload, _format_window moved to step2_utils.py
-# D6: _is_affirmative_reply, _message_signals_confirmation, _message_mentions_new_date moved to step2_utils.py
-
-
 def _should_auto_accept_first_date(event_entry: dict) -> bool:
     requested_window = event_entry.get("requested_window") or {}
     if requested_window.get("hash"):
@@ -1555,10 +1505,6 @@ def _should_auto_accept_first_date(event_entry: dict) -> bool:
     if event_entry.get("chosen_date") and event_entry.get("date_confirmed"):
         return False
     return True
-
-
-# D5: _reference_date_from_state moved to window_helpers.py or general_qna.py
-
 
 
 def _preferred_room(event_entry: dict) -> str | None:
@@ -1720,10 +1666,6 @@ def _resolve_confirmation_window(state: WorkflowState, event_entry: dict) -> Opt
         partial=partial,
         source_message_id=state.message.msg_id,
     )
-
-# D6: _strip_system_subject moved to step2_utils.py
-# D6: _normalize_time_value moved to step2_utils.py
-# D8: _determine_date, _existing_time_window, _candidate_iso_list moved to confirmation.py
 
 
 def _handle_partial_confirmation(
@@ -2087,10 +2029,6 @@ def _finalize_confirmation(
     return GroupResult(action="date_confirmed", payload=payload, halt=True)
 
 
-# D6: _window_hash, _to_time moved to step2_utils.py
-# D8: _set_pending_time_state, _record_confirmation_log moved to confirmation.py
-
-
 def _trace_candidate_gate(thread_id: str, candidates: List[str]) -> None:
     if not thread_id:
         return
@@ -2102,20 +2040,6 @@ def _trace_candidate_gate(thread_id: str, candidates: List[str]) -> None:
     else:
         label = "feasible=many"
     trace_gate(thread_id, "Step2_Date", label, True, {"count": count})
-
-
-# D6: _format_time_label moved to step2_utils.py
-# D9: _message_text, _build_select_date_action, _format_room_availability,
-#     _compact_products_summary, _user_requested_products moved to step2_utils.py
-# D5: _resolve_window_hints moved to window_helpers.py or general_qna.py
-# D6: _is_weekend_token moved to step2_utils.py
-# D10: _resolve_week_scope moved to candidate_dates.py as resolve_week_scope
-
-# D5: _has_window_constraints moved to window_helpers.py or general_qna.py
-# D6: _format_label_text, _date_header_label, _format_day_list moved to step2_utils.py
-# D1: _WEEKDAY_LABELS moved to constants.py
-# D6: _weekday_label_from_dates, _month_label_from_dates moved to step2_utils.py
-# D7: _collect_preferred_weekday_alternatives moved to candidate_dates.py
 
 
 def _clear_step2_hil_tasks(state: WorkflowState, event_entry: dict) -> None:
@@ -2194,53 +2118,11 @@ def _apply_step2_hil_decision(state: WorkflowState, event_entry: dict, decision:
     return _finalize_confirmation(state, event_entry, pending_window)
 
 
-# D10: _preferred_weekday_label moved to candidate_dates.py as preferred_weekday_label
-# D6: _pluralize_weekday_hint moved to step2_utils.py
-
-
 def _maybe_general_qa_payload(state: WorkflowState) -> Optional[Dict[str, Any]]:
+    """Build Q&A payload for menu/catering requests if detected."""
     event_entry = state.event_entry or {}
     user_info = state.user_info or {}
     month_hint = user_info.get("vague_month") or event_entry.get("vague_month")
-    # D9: Use extracted function
     msg = state.message
     message_text = get_message_text(msg.subject if msg else None, msg.body if msg else None)
     return build_menu_payload(message_text, context_month=month_hint)
-
-
-# _TIME_HINT_DEFAULTS moved to constants.py (D1 refactoring)
-# D11: _maybe_complete_from_time_hint moved to confirmation.py as complete_from_time_hint
-
-# _normalize_month_token, _normalize_weekday_tokens moved to date_parsing.py (D2 refactoring)
-
-
-# D5: _window_filters moved to window_helpers.py or general_qna.py
-
-
-# D6: _describe_constraints moved to step2_utils.py
-# D5: _extract_participants_from_state moved to window_helpers.py or general_qna.py
-
-
-
-def _is_hybrid_availability_request(classification: Dict[str, Any], state: WorkflowState) -> bool:
-    constraints = classification.get("constraints") or {}
-    if any(constraints.get(key) for key in ("vague_month", "weekday", "time_of_day")):
-        return True
-    user_info = state.user_info or {}
-    return bool(user_info.get("vague_month") or user_info.get("vague_weekday") or user_info.get("vague_time_of_day"))
-
-
-# D5: _candidate_dates_for_constraints moved to window_helpers.py or general_qna.py
-
-
-
-# D5: _format_general_availability moved to window_helpers.py or general_qna.py
-
-
-
-# D5: _search_range_availability moved to window_helpers.py or general_qna.py
-
-
-
-# D5: _present_general_room_qna moved to window_helpers.py or general_qna.py
-# D6: _extract_candidate_tokens moved to step2_utils.py
