@@ -69,6 +69,23 @@ from backend.workflows.planner.dag_guard import (
     set_dag_block as _set_dag_block_impl,
     ensure_prerequisite_prompt as _ensure_prerequisite_prompt_impl,
 )
+from backend.workflows.planner.date_handler import (
+    normalize_time as _normalize_time_impl,
+    time_from_iso as _time_from_iso_impl,
+    window_to_payload as _window_to_payload_impl,
+    window_from_payload as _window_from_payload_impl,
+    infer_times_for_date as _infer_times_for_date_impl,
+    preferred_date_slot as _preferred_date_slot_impl,
+    candidate_date_options as _candidate_date_options_impl,
+    maybe_emit_date_options_answer as _maybe_emit_date_options_answer_impl,
+    resolve_window_from_module as _resolve_window_from_module_impl,
+    manual_window_from_user_info as _manual_window_from_user_info_impl,
+    parse_date_intent as _parse_date_intent_impl,
+    ensure_date_choice_intent as _ensure_date_choice_intent_impl,
+    apply_date_confirmation as _apply_date_confirmation_impl,
+    should_execute_date_room_combo as _should_execute_date_room_combo_impl,
+    execute_date_room_combo as _execute_date_room_combo_impl,
+)
 
 # Re-export gate function for tests that import it directly
 _shortcuts_allowed = _shortcuts_allowed  # noqa: F811 - intentional re-export
@@ -434,21 +451,9 @@ class _ShortcutPlanner:
         self._parse_product_intent()
         self._ensure_date_choice_intent()
 
+    # S3: Date intent parsing delegated to date_handler.py
     def _parse_date_intent(self) -> None:
-        if not (self.user_info.get("date") or self.user_info.get("event_date")):
-            return
-
-        window = self._manual_window_from_user_info()
-        if window is None:
-            window = self._resolve_window_from_module(preview=False)
-        if window is None:
-            self._add_needs_input("time", {"reason": "missing_time"}, reason="missing_time")
-            return
-        if getattr(window, "partial", False):
-            self._add_needs_input("time", {"reason": "missing_time"}, reason="missing_time")
-            return
-        intent = ParsedIntent("date_confirmation", {"window": self._window_to_payload(window)}, verifiable=True)
-        self.verifiable.append(intent)
+        _parse_date_intent_impl(self)
 
     def _parse_room_intent(self) -> None:
         room = self.user_info.get("room")
@@ -532,16 +537,7 @@ class _ShortcutPlanner:
             self.telemetry.missing_items.extend({"name": item.get("name")} for item in limited_missing)
 
     def _ensure_date_choice_intent(self) -> None:
-        current_step = self.event.get("current_step")
-        if current_step not in (None, 1, 2):
-            return
-        if self.event.get("chosen_date"):
-            return
-        if any(intent.type == "date_confirmation" for intent in self.verifiable):
-            return
-        if any(intent.type in {"time", "date_choice"} for intent in self.needs_input):
-            return
-        self._add_needs_input("date_choice", {"reason": "date_missing"}, reason="date_missing")
+        _ensure_date_choice_intent_impl(self)
 
     # ------------------------------------------------------------------ execute
     # S3: DAG guard methods delegated to dag_guard.py
@@ -563,115 +559,24 @@ class _ShortcutPlanner:
     def _dag_guard(self, intent: ParsedIntent) -> Tuple[bool, Optional[str]]:
         return _dag_guard_impl(self, intent)
 
+    # S3: Time utilities delegated to date_handler.py
     def _time_from_iso(self, value: Optional[str]) -> Optional[str]:
-        if not value:
-            return None
-        text = str(value)
-        try:
-            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-            return f"{parsed.hour:02d}:{parsed.minute:02d}"
-        except ValueError:
-            pass
-        if len(text) >= 16 and text[13] == ":":
-            candidate = text[11:16]
-            return self._normalize_time(candidate)
-        return self._normalize_time(text)
+        return _time_from_iso_impl(value)
 
     def _preferred_date_slot(self) -> str:
-        start = self._normalize_time(self.user_info.get("start_time"))
-        end = self._normalize_time(self.user_info.get("end_time"))
-
-        requested = self.event.get("requested_window") or {}
-        if not start:
-            start = self._normalize_time(requested.get("start_time")) or self._time_from_iso(requested.get("start"))
-        if not end:
-            end = self._normalize_time(requested.get("end_time")) or self._time_from_iso(requested.get("end"))
-
-        requirements = self.event.get("requirements") or {}
-        duration = requirements.get("event_duration") or {}
-        if not start:
-            start = self._normalize_time(duration.get("start"))
-        if not end:
-            end = self._normalize_time(duration.get("end"))
-
-        start = start or "18:00"
-        end = end or "22:00"
-        if start and end:
-            return f"{start}–{end}"
-        return start or end or "18:00–22:00"
+        return _preferred_date_slot_impl(self)
 
     def _candidate_date_options(self) -> List[str]:
-        requirements = self.event.get("requirements") or {}
-        preferred_room = requirements.get("preferred_room") or ""
-        raw_dates = suggest_dates(
-            self.state.db,
-            preferred_room=preferred_room,
-            start_from_iso=self.state.message.ts,
-            days_ahead=45,
-            max_results=5,
-        )
-        return raw_dates[:5]
+        return _candidate_date_options_impl(self)
 
     def _maybe_emit_date_options_answer(self) -> Optional[PlannerResult]:
-        if self.verifiable:
-            return None
-        date_needed = next((intent for intent in self.needs_input if intent.type == "date_choice"), None)
-        if not date_needed:
-            return None
-
-        slot_label = self._preferred_date_slot()
-        options = self._candidate_date_options()
-        lines: List[str] = [f"AVAILABLE DATES ({slot_label}):"]
-        if options:
-            for idx, option in enumerate(options, start=1):
-                lines.append(f"{idx}) {option}")
-        else:
-            lines.append("No availability in the next 45 days — share another window and I'll check.")
-        lines.append("")
-        option_count = len(options)
-        if option_count == 0:
-            lines.append("Tell me another date/time window and I'll check it right away.")
-        elif option_count == 1:
-            lines.append("Reply with 1, or tell me another date/time window.")
-        else:
-            lines.append(f"Reply with a number (1–{option_count}), or tell me another date/time window.")
-
-        self.telemetry.needs_input_next = "date_choice"
-        self.telemetry.answered_question_first = True
-        self.telemetry.combined_confirmation = False
-        self.telemetry.menus_included = "false"
-        self.telemetry.menus_phase = "none"
-        self.state.telemetry.answered_question_first = True
-        self._set_dag_block("room_requires_date")
-        return self._build_payload(self._with_greeting("\n".join(lines)))
+        return _maybe_emit_date_options_answer_impl(self)
 
     def _should_execute_date_room_combo(self) -> bool:
-        date_intent = next((intent for intent in self.verifiable if intent.type == "date_confirmation"), None)
-        room_intent = next((intent for intent in self.verifiable if intent.type == "room_selection"), None)
-        if not date_intent or not room_intent:
-            return False
-        window = date_intent.data.get("window") or {}
-        if window.get("partial"):
-            return False
-        requested_room = room_intent.data.get("room")
-        if not requested_room or not self._can_lock_room(requested_room):
-            return False
-        return True
+        return _should_execute_date_room_combo_impl(self)
 
     def _execute_date_room_combo(self) -> bool:
-        date_intent = next((intent for intent in self.verifiable if intent.type == "date_confirmation"), None)
-        room_intent = next((intent for intent in self.verifiable if intent.type == "room_selection"), None)
-        if not date_intent or not room_intent:
-            return False
-
-        window_payload = date_intent.data.get("window") or {}
-        if not self._apply_date_confirmation(window_payload):
-            return False
-
-        requested_room = room_intent.data.get("room")
-        if not self._apply_room_selection(requested_room):
-            return False
-        return True
+        return _execute_date_room_combo_impl(self)
 
     def _execute_intent(self, intent: ParsedIntent) -> bool:
         if intent.type == "date_confirmation":
@@ -684,29 +589,9 @@ class _ShortcutPlanner:
             return self._apply_product_add(intent.data.get("items") or [])
         return False
 
+    # S3: Date confirmation delegated to date_handler.py
     def _apply_date_confirmation(self, window_payload: Dict[str, Any]) -> bool:
-        # Reuse Step 2 helpers to finalise confirmation.
-        finalize = getattr(date_process_module, "_finalize_confirmation", None)
-        if not finalize:
-            return False
-        window_obj = self._window_from_payload(window_payload)
-        result = finalize(self.state, self.event, window_obj)
-        # Remove legacy draft message; planner will compose new reply.
-        self.state.draft_messages.clear()
-        self.state.extras["persist"] = True
-        self.telemetry.executed_intents.append("date_confirmation")
-        start = window_payload.get("start_time")
-        end = window_payload.get("end_time")
-        iso = window_payload.get("display_date")
-        tz = window_payload.get("tz", "Europe/Zurich")
-        if start and end:
-            slot = f"{start}–{end}"
-        elif start:
-            slot = start
-        else:
-            slot = "time pending"
-        self.summary_lines.append(f"• Date confirmed: {iso} {slot} ({tz})")
-        return result is not None
+        return _apply_date_confirmation_impl(self, window_payload)
 
     def _apply_room_selection(self, requested_room: str) -> bool:
         pending = self.event.get("room_pending_decision") or {}
@@ -824,47 +709,12 @@ class _ShortcutPlanner:
             "pending_intents": list(event.get("pending_intents") or []),
         }
 
+    # S3: Window resolution delegated to date_handler.py
     def _resolve_window_from_module(self, preview: bool = False):
-        resolver = getattr(date_process_module, "_resolve_confirmation_window", None)
-        if not resolver:
-            return None
-        window = resolver(self.state, self.event)
-        if not window:
-            manual = self._manual_window_from_user_info()
-            return manual
-        if preview and window.partial and not window.start_time:
-            return None
-        return window
+        return _resolve_window_from_module_impl(self, preview)
 
     def _manual_window_from_user_info(self) -> Optional[ConfirmationWindow]:
-        date_iso = self.user_info.get("date")
-        display = self.user_info.get("event_date") or format_iso_date_to_ddmmyyyy(date_iso)
-        start_raw = self.user_info.get("start_time")
-        end_raw = self.user_info.get("end_time")
-        if not (start_raw and end_raw):
-            inferred_start, inferred_end = self._infer_times_for_date(date_iso)
-            start_raw = start_raw or inferred_start
-            end_raw = end_raw or inferred_end
-        if not (date_iso and display and start_raw and end_raw):
-            return None
-        start_norm = self._normalize_time(start_raw)
-        end_norm = self._normalize_time(end_raw)
-        if not (start_norm and end_norm):
-            return None
-        start_time_obj = datetime.strptime(start_norm, "%H:%M").time()
-        end_time_obj = datetime.strptime(end_norm, "%H:%M").time()
-        start_iso, end_iso = build_window_iso(date_iso, start_time_obj, end_time_obj)
-        return ConfirmationWindow(
-            display_date=display,
-            iso_date=date_iso,
-            start_time=start_norm,
-            end_time=end_norm,
-            start_iso=start_iso,
-            end_iso=end_iso,
-            inherited_times=False,
-            partial=False,
-            source_message_id=self.state.message.msg_id,
-        )
+        return _manual_window_from_user_info_impl(self)
 
     def _can_lock_room(self, requested_room: str) -> bool:
         pending = self.event.get("room_pending_decision") or {}
@@ -1795,77 +1645,21 @@ class _ShortcutPlanner:
                 continue
         return None
 
+    # S3: Window conversion and time utilities delegated to date_handler.py
     @staticmethod
     def _window_to_payload(window: ConfirmationWindow) -> Dict[str, Any]:
-        return {
-            "display_date": window.display_date,
-            "iso_date": window.iso_date,
-            "start_time": window.start_time,
-            "end_time": window.end_time,
-            "start_iso": window.start_iso,
-            "end_iso": window.end_iso,
-            "tz": getattr(window, "tz", "Europe/Zurich"),
-            "inherited_times": getattr(window, "inherited_times", False),
-            "partial": getattr(window, "partial", False),
-            "source_message_id": getattr(window, "source_message_id", None),
-        }
+        return _window_to_payload_impl(window)
 
     @staticmethod
     def _window_from_payload(payload: Dict[str, Any]) -> ConfirmationWindow:
-        return ConfirmationWindow(
-            display_date=payload.get("display_date"),
-            iso_date=payload.get("iso_date"),
-            start_time=payload.get("start_time"),
-            end_time=payload.get("end_time"),
-            start_iso=payload.get("start_iso"),
-            end_iso=payload.get("end_iso"),
-            inherited_times=payload.get("inherited_times", False),
-            partial=payload.get("partial", False),
-            source_message_id=payload.get("source_message_id"),
-        )
+        return _window_from_payload_impl(payload)
 
     @staticmethod
     def _normalize_time(value: Any) -> Optional[str]:
-        if value is None:
-            return None
-        text = str(value).strip()
-        if not text:
-            return None
-        text = text.replace(".", ":")
-        if ":" not in text:
-            if text.isdigit():
-                text = f"{int(text) % 24:02d}:00"
-            else:
-                return None
-        try:
-            parsed = datetime.strptime(text, "%H:%M").time()
-        except ValueError:
-            return None
-        return f"{parsed.hour:02d}:{parsed.minute:02d}"
+        return _normalize_time_impl(value)
 
     def _infer_times_for_date(self, iso_date: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
-        if not iso_date:
-            return None, None
-        requested = self.event.get("requested_window") or {}
-        if requested:
-            date_match = requested.get("date_iso") == iso_date
-            display_match = requested.get("display_date") == format_iso_date_to_ddmmyyyy(iso_date)
-            if date_match or display_match:
-                start_time = requested.get("start_time")
-                end_time = requested.get("end_time")
-                if not start_time and requested.get("start"):
-                    start_time = requested.get("start")[11:16]
-                if not end_time and requested.get("end"):
-                    end_time = requested.get("end")[11:16]
-                return start_time, end_time
-        requirements = self.event.get("requirements") or {}
-        duration = requirements.get("event_duration") or {}
-        if duration.get("start") and duration.get("end"):
-            return duration.get("start"), duration.get("end")
-        event_data = self.event.get("event_data") or {}
-        start = event_data.get("Start Time")
-        end = event_data.get("End Time")
-        return start, end
+        return _infer_times_for_date_impl(self, iso_date)
 
     def _explicit_menu_requested(self) -> bool:
         text = f"{self.state.message.subject or ''}\n{self.state.message.body or ''}".lower()

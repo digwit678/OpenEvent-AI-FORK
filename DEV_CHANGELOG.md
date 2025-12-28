@@ -2,6 +2,22 @@
 
 ## 2025-12-28
 
+### S3 Phase 2: Smart Shortcuts Date Handler Extraction ✅
+
+**Summary:** Extracted date/time processing from `smart_shortcuts.py` into `date_handler.py` (~320 lines, 16 functions).
+
+**New Module:** `backend/workflows/planner/date_handler.py`
+- Time utilities: `normalize_time`, `time_from_iso`
+- Window conversion: `window_to_payload`, `window_from_payload`
+- Date slot/options: `preferred_date_slot`, `candidate_date_options`, `maybe_emit_date_options_answer`
+- Window resolution: `resolve_window_from_module`, `manual_window_from_user_info`, `infer_times_for_date`
+- Date intent: `parse_date_intent`, `ensure_date_choice_intent`
+- Date confirmation: `apply_date_confirmation`, `should_execute_date_room_combo`, `execute_date_room_combo`
+
+**Verification:** All 146 core tests pass + E2E Playwright verified (date detection → room availability)
+
+---
+
 ### S3 Phase 1: Smart Shortcuts Budget/DAG Extraction ✅
 
 **Summary:** Extracted budget parsing and DAG guard logic from `smart_shortcuts.py` (1,985 lines) into focused submodules. This is Phase 1 of the S3 refactoring plan.
@@ -1828,7 +1844,7 @@ Files analyzed but NOT split:
 - `smart_shortcuts.py` (2196 lines)
 - `general_qna.py` (1490 lines)
 
-**Rationale**: Heavy interdependencies, shared state, conditional logic - splitting risks breaking functionality. See `docs/internal/OPEN_DECISIONS.md` DECISION-006.
+**Rationale**: Heavy interdependencies, shared state, conditional logic - splitting risks breaking functionality. See `docs/internal/planning/OPEN_DECISIONS.md` DECISION-006.
 
 ---
 
@@ -1846,7 +1862,7 @@ Completed migration of all detection logic:
 6. **B.6**: `conflict.py` → `detection/special/room_conflict.py`
 7. **B.7**: `intent_classifier.py` → `detection/intent/classifier.py`
 
-**Pre-existing test failures documented**: See `docs/internal/OPEN_DECISIONS.md` DECISION-005
+**Pre-existing test failures documented**: See `docs/internal/planning/OPEN_DECISIONS.md` DECISION-005
 
 **Tests**: 380 passed, 2 pre-existing failures (unrelated to migration)
 
@@ -1897,14 +1913,14 @@ Created folder structure and documentation for a comprehensive refactoring effor
 3. **`backend/api/routes/`** - Prepared for main.py split
 
 **Documentation Created:**
-- `docs/DEPENDENCY_GRAPH.md` - Maps dependencies between modules
+- `docs/reference/DEPENDENCY_GRAPH.md` - Maps dependencies between modules
 - All `__init__.py` files have detailed module documentation
 
 **Files Created:**
 - `backend/detection/__init__.py` + 6 submodule `__init__.py` files
 - `backend/core/__init__.py`, `errors.py`, `fallback.py`
 - `backend/api/routes/__init__.py`, `middleware/__init__.py`
-- `docs/DEPENDENCY_GRAPH.md`
+- `docs/reference/DEPENDENCY_GRAPH.md`
 
 **Plan Reference:**
 - Full refactoring plan at `/Users/nico/.claude/plans/wild-enchanting-eagle.md`
@@ -2016,7 +2032,7 @@ When both are detected, `is_general` is set to `False` and the workflow proceeds
 - `backend/workflows/groups/date_confirmation/trigger/process.py` - Integrated Step 2→3 detection
 - `backend/workflows/groups/room_availability/trigger/process.py` - Integrated Step 3→4 detection, added classification caching
 - `backend/workflows/groups/offer/trigger/process.py` - Integrated Step 4→5/7 detection
-- `docs/TEAM_GUIDE.md` - Added bug documentation under "Known Issues & Fixes"
+- `docs/guides/TEAM_GUIDE.md` - Added bug documentation under "Known Issues & Fixes"
 
 **Follow-up Fix: Classification Persistence Between Steps**
 
@@ -2109,7 +2125,7 @@ else:
 - `backend/workflows/groups/date_confirmation/trigger/process.py` - Router Q&A integration
 - `backend/workflows/qna/router.py` - Category filtering for packages
 - `backend/workflows/nlu/keyword_buckets.py` - Fixed ACTION_REQUEST_PATTERNS
-- `docs/TEAM_GUIDE.md` - Documented bytecode cache bug and prevention
+- `docs/guides/TEAM_GUIDE.md` - Documented bytecode cache bug and prevention
 
 **Tests Added:**
 - `backend/tests/smoke/test_backend_startup.py` - 14 smoke tests for imports and basic workflow
@@ -2511,7 +2527,7 @@ const draftMsg = task.payload?.draft_body || (task.payload as any)?.draft_msg ||
 
 **Files Modified:**
 - `backend/workflows/groups/date_confirmation/trigger/process.py:1595-1597`
-- `docs/TEAM_GUIDE.md` (added bug documentation)
+- `docs/guides/TEAM_GUIDE.md` (added bug documentation)
 
 ### Fix: Frontend HIL Task Display (Full Messages)
 
@@ -2571,7 +2587,7 @@ Added a toggle that, when enabled, routes ALL AI-generated replies through a sep
 - Client HIL Tasks section (purple, below chat): Always visible when step-specific tasks exist
 
 **Documentation:**
-- Added "HIL Toggle System" section to `docs/TEAM_GUIDE.md`
+- Added "HIL Toggle System" section to `docs/guides/TEAM_GUIDE.md`
 
 ---
 
@@ -3584,4 +3600,4 @@ All 161 detection and flow tests pass:
 
 ## Prior Changes
 
-See `docs/TEAM_GUIDE.md` for historical bug fixes and their corresponding tests.
+See `docs/guides/TEAM_GUIDE.md` for historical bug fixes and their corresponding tests.
