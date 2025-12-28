@@ -2,6 +2,26 @@
 
 ## 2025-12-28
 
+### C2: Remove Dead Chatbot Code ✅
+
+**Summary:** Removed ~694 lines of unused legacy chatbot code from `conversation_manager.py`, reducing it from ~729 lines to ~35 lines.
+
+**Removed Functions:**
+- `classify_email()`, `extract_information_incremental()`
+- `generate_response()`, `create_summary()`, `create_offer_summary()`
+- `format_room_description()`, `format_catering_options()`
+- `format_detailed_catering_info()`, `get_non_veg_catering_options()`
+- `generate_catering_response()`, `generate_room_response()`
+- `get_room_details()`, `_ensure_greeting()`
+- `SYSTEM_PROMPT`, `ROOM_INFO`, `CATERING_MENU` constants
+- `load_room_info()`, `load_catering_menu()`
+
+**Result:** Module now only re-exports session store functions from `backend.legacy.session_store`
+
+**Verification:** All 146 core tests pass + E2E Playwright verified
+
+---
+
 ### C1: Conversation Manager Session Store Split ✅
 
 **Summary:** Extracted session/cache management functions from `conversation_manager.py` into dedicated `backend/legacy/session_store.py` module. This isolates non-LLM code and enables faster imports for modules that only need session state.
