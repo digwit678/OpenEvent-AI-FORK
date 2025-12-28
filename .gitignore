@@ -3,9 +3,16 @@
 *.env
 backend/.env
 
+# Local runtime databases
+backend/events_database.json
+
 # OS files
 .DS_Store
 **/.DS_Store
+
+# Local dev runtime artifacts
+.dev/*.pid
+.dev/*.log
 
 # Temporary and debug files
 .tmp*

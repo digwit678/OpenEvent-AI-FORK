@@ -742,7 +742,7 @@ The workflow uses three distinct LLM roles, each with strict boundaries:
 4. **Hash Mismatches:** If `room_eval_hash` doesn't match `requirements_hash`, Step 3 blocks until re-approved
 5. **Pytest Test Selection:** Default runs `v4` tests only; use `-m "v4 or legacy"` to include all
 6. **LLM Stub vs Live:** Tests in `tests/stubs/` use stubbed LLM responses; always validate critical flows with live OpenAI key mimicking real client interactions from workflow start to end (offer confirmation).
-7. **Dont forget one full real E2E (up to site visit agent reply) on the frontend using playwright to test after debugging, new feature integration that the workflow still runs as expected till the end.**
+7. **BEFORE EACH GIT COMMIT: Dont forget one full real E2E (up to site visit agent reply) on the frontend using playwright to test after debugging, new feature integration that the workflow still runs as expected till the end.**
 8. **Dont forget to update TEAM_GUIDE.md and DEV_CHANGELOG.md when fixing bugs or adding features**
 ## General Techniques for Resilient Code
 
