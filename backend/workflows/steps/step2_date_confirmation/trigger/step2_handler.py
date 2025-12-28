@@ -107,9 +107,11 @@ from .proposal_tracking import (
 )
 
 # D4 refactoring: Calendar check utilities extracted to dedicated module
+# D13b: preferred_room added
 from .calendar_checks import (
     candidate_is_calendar_free as _candidate_is_calendar_free,
     maybe_fuzzy_friday_candidates as _maybe_fuzzy_friday_candidates,
+    preferred_room as _preferred_room,
 )
 
 # D5 refactoring: General Q&A bridge extracted to dedicated module
@@ -128,9 +130,12 @@ from .general_qna import (
 )
 
 # D6 refactoring: Pure utilities extracted to step2_utils.py
+# D13: compose_greeting, with_greeting added
 from .step2_utils import (
     _extract_first_name,
     _extract_signature_name,
+    compose_greeting,
+    with_greeting,
     _extract_candidate_tokens,
     _strip_system_subject,
     _preface_with_apology,
@@ -160,6 +165,8 @@ from .step2_utils import (
     format_room_availability,
     compact_products_summary,
     user_requested_products,
+    # D13d: Tracing
+    trace_candidate_gate as _trace_candidate_gate,
 )
 
 # D7 refactoring: Candidate date generation extracted to candidate_dates.py
@@ -172,6 +179,7 @@ from .candidate_dates import (
 )
 
 # D8 refactoring: Pure confirmation helpers extracted to confirmation.py
+# D13c: should_auto_accept_first_date added
 from .confirmation import (
     determine_date,
     find_existing_time_window,
@@ -179,6 +187,7 @@ from .confirmation import (
     record_confirmation_log,
     set_pending_time_state,
     complete_from_time_hint,
+    should_auto_accept_first_date as _should_auto_accept_first_date,
 )
 
 __workflow_role__ = "trigger"
@@ -453,30 +462,20 @@ def _calendar_conflict_reason(event_entry: dict, window: ConfirmationWindow) -> 
     return f"Sorry, {preferred_room} is already booked on {window.display_date} ({slot_text}). Let me look for nearby alternatives right away."
 
 
+# D13: Thin wrapper delegating to pure compose_greeting
 def _compose_greeting(state: WorkflowState) -> str:
     profile = (state.client or {}).get("profile", {}) if state.client else {}
     user_info_name = None
     if state.user_info:
         user_info_name = state.user_info.get("name") or state.user_info.get("company_contact")
-    raw_name = (
-        user_info_name
-        or profile.get("name")
-        or _extract_signature_name(state.message.body)
-        or state.message.from_name
-    )
-    first = _extract_first_name(raw_name)
-    if not first:
-        return "Hello,"
-    return f"Hello {first},"
+    raw_name = user_info_name or profile.get("name")
+    msg = state.message
+    return compose_greeting(raw_name, msg.body if msg else None, msg.from_name if msg else None)
 
 
+# D13: Thin wrapper delegating to pure with_greeting
 def _with_greeting(state: WorkflowState, body: str) -> str:
-    greeting = _compose_greeting(state)
-    if not body:
-        return greeting
-    if body.startswith(greeting):
-        return body
-    return f"{greeting}\n\n{body}"
+    return with_greeting(_compose_greeting(state), body)
 
 
 @trace_step("Step2_Date")
@@ -1496,22 +1495,8 @@ def _present_candidate_dates(
     return GroupResult(action="date_options_proposed", payload=payload, halt=True)
 
 
-def _should_auto_accept_first_date(event_entry: dict) -> bool:
-    requested_window = event_entry.get("requested_window") or {}
-    if requested_window.get("hash"):
-        return False
-    if event_entry.get("pending_date_confirmation"):
-        return False
-    if event_entry.get("chosen_date") and event_entry.get("date_confirmed"):
-        return False
-    return True
-
-
-def _preferred_room(event_entry: dict) -> str | None:
-    """[Trigger] Helper to extract preferred room from requirements."""
-
-    requirements = event_entry.get("requirements") or {}
-    return requirements.get("preferred_room")
+# D13c: _should_auto_accept_first_date moved to confirmation.py
+# D13b: _preferred_room moved to calendar_checks.py
 
 
 def _resolve_confirmation_window(state: WorkflowState, event_entry: dict) -> Optional[ConfirmationWindow]:
@@ -2029,17 +2014,7 @@ def _finalize_confirmation(
     return GroupResult(action="date_confirmed", payload=payload, halt=True)
 
 
-def _trace_candidate_gate(thread_id: str, candidates: List[str]) -> None:
-    if not thread_id:
-        return
-    count = len([value for value in candidates if value])
-    if count == 0:
-        label = "feasible=0"
-    elif count == 1:
-        label = "feasible=1"
-    else:
-        label = "feasible=many"
-    trace_gate(thread_id, "Step2_Date", label, True, {"count": count})
+# D13d: _trace_candidate_gate moved to step2_utils.py
 
 
 def _clear_step2_hil_tasks(state: WorkflowState, event_entry: dict) -> None:

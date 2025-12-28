@@ -261,3 +261,29 @@ def complete_from_time_hint(
         partial=False,
         source_message_id=window.source_message_id,
     )
+
+
+def should_auto_accept_first_date(event_entry: dict) -> bool:
+    """Determine if the first date should be auto-accepted.
+
+    Extracted from step2_handler.py as part of D13c refactoring.
+
+    Returns True only when:
+    - No hash exists on requested_window
+    - No pending date confirmation
+    - No already-confirmed date
+
+    Args:
+        event_entry: Event data dict
+
+    Returns:
+        True if first date can be auto-accepted
+    """
+    requested_window = event_entry.get("requested_window") or {}
+    if requested_window.get("hash"):
+        return False
+    if event_entry.get("pending_date_confirmation"):
+        return False
+    if event_entry.get("chosen_date") and event_entry.get("date_confirmed"):
+        return False
+    return True
