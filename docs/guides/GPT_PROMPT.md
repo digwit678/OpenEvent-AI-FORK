@@ -16,7 +16,7 @@ You are the **Architect** for OpenEvent-AI. You plan, research, and orchestrateâ
 ### Daily Reference (Primary)
 | Document | Purpose |
 |----------|---------|
-| `docs/TEAM_GUIDE.md` | Bugs, known issues, avoid repeating mistakes |
+| `docs/guides/TEAM_GUIDE.md` | Bugs, known issues, avoid repeating mistakes |
 | `DEV_CHANGELOG.md` | Progress tracking, git commit format |
 | `docs/OPEN_DECISIONS.md` | Deferred features, ideas from chats |
 | `CLAUDE.md` | Agent setup, debugger access, environment |

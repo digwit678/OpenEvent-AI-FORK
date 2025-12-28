@@ -1,12 +1,12 @@
-#!/usr/bin/env bash
+nbo#!/usr/bin/env bash
 #
 # PERMANENT FIX for port 8000 issues
 # This script ALWAYS cleans up before starting the backend
 #
 # Usage:
-#   ./scripts/dev_server.sh         # Start backend
-#   ./scripts/dev_server.sh stop    # Stop backend
-#   ./scripts/dev_server.sh restart # Restart backend
+#   ./scripts/dev/dev_server.sh         # Start backend
+#   ./scripts/dev/dev_server.sh stop    # Stop backend
+#   ./scripts/dev/dev_server.sh restart # Restart backend
 #
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"

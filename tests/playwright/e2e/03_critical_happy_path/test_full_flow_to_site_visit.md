@@ -9,7 +9,7 @@
 
 ## Prerequisites
 
-- Backend running: `./scripts/dev_server.sh`
+- Backend running: `./scripts/dev/dev_server.sh`
 - Frontend running: `cd atelier-ai-frontend && npm run dev`
 - Fresh client (use Reset Client or unique email)
 

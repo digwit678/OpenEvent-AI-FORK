@@ -1,6 +1,6 @@
 #!/bin/sh
 # Source this script to load the OpenEvent-AI dev environment.
-# Usage: . scripts/oe_env.sh
+# Usage: . scripts/dev/oe_env.sh
 
 export PYTHONPATH="$(pwd -P)"
 export OPENAI_API_KEY="$(security find-generic-password -a "$USER" -s 'openevent-api-test-key' -w 2>/dev/null || true)"

@@ -2,7 +2,7 @@
 
 Date: 2025-12-24
 Scope: `backend/` (FastAPI API layer + workflow engine + detection + adapters + debug tooling)
-Context: Builds on `docs/internal/ARCHITECTURE_FINDINGS_DEC_2025.md` (major cleanup already done). Another agent may be actively editing core workflow behavior; line numbers below reflect the repo state at the time of this review.
+Context: Builds on `docs/internal/completed/DONE__ARCHITECTURE_FINDINGS_DEC_2025.md` (major cleanup already done). Another agent may be actively editing core workflow behavior; line numbers below reflect the repo state at the time of this review.
 
 Note on "deprecated" code:
 - `backend/DEPRECATED/` appears **not imported by runtime backend code** (no `backend.DEPRECATED` references outside that folder). It can be ignored for application behavior as long as that remains true.

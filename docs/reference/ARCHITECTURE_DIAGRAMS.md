@@ -1,7 +1,7 @@
 # OpenEvent AI Architecture Diagrams
 
 > **Note:** These diagrams are generated using Mermaid.js. They reflect the current architecture as of December 2025.
-> Consult `docs/DEPENDENCY_GRAPH.md` for detailed file mapping.
+> Consult `docs/reference/DEPENDENCY_GRAPH.md` for detailed file mapping.
 
 ## 1. System Context & High-Level Architecture
 

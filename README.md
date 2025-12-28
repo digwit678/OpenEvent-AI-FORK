@@ -132,10 +132,10 @@ pip install -r requirements-dev.txt
 
 # Option A: Use the dev server script (RECOMMENDED)
 # Automatically handles port cleanup, PID tracking, and API key loading
-./scripts/dev_server.sh
+./scripts/dev/dev_server.sh
 
 # Option B: Use the environment script + manual uvicorn
-source scripts/oe_env.sh
+source scripts/dev/oe_env.sh
 uvicorn backend.main:app --reload --port 8000
 
 # Option C: Fully manual setup
@@ -146,11 +146,11 @@ uvicorn backend.main:app --reload --port 8000
 
 **Dev Server Script Commands:**
 ```bash
-./scripts/dev_server.sh         # Start backend (with auto-cleanup)
-./scripts/dev_server.sh stop    # Stop backend
-./scripts/dev_server.sh restart # Restart backend
-./scripts/dev_server.sh status  # Check if backend is running
-./scripts/dev_server.sh cleanup # Kill all dev processes (backend + frontend)
+./scripts/dev/dev_server.sh         # Start backend (with auto-cleanup)
+./scripts/dev/dev_server.sh stop    # Stop backend
+./scripts/dev/dev_server.sh restart # Restart backend
+./scripts/dev/dev_server.sh status  # Check if backend is running
+./scripts/dev/dev_server.sh cleanup # Kill all dev processes (backend + frontend)
 ```
 
 **Storing API Key in macOS Keychain (optional):**
@@ -277,11 +277,25 @@ Navigate to `http://localhost:3000/admin/prompts`
 
 ## 📚 Documentation
 For deeper dives into specific subsystems:
-- **[Workflow Rules](docs/workflow_rules.md)**: The "Constitution" of the booking logic.
-- **[Architecture Diagrams](docs/ARCHITECTURE_DIAGRAMS.md)**: Visual guide to the system architecture, workflow stages, and detection logic.
-- **[Team Guide](docs/TEAM_GUIDE.md)**: Best practices and troubleshooting.
-- **[Integration Guide](docs/integration_to_frontend_and_database/INTEGRATION_PREPARATION_GUIDE.md)**: How to deploy and connect to real infrastructure.
+- **[Workflow Rules](docs/guides/workflow_rules.md)**: The "Constitution" of the booking logic.
+- **[Architecture Diagrams](docs/reference/ARCHITECTURE_DIAGRAMS.md)**: Visual guide to the system architecture, workflow stages, and detection logic.
+- **[Team Guide](docs/guides/TEAM_GUIDE.md)**: Best practices and troubleshooting.
+- **[Integration Guide](docs/integration/frontend_and_database/guides/INTEGRATION_PREPARATION_GUIDE.md)**: How to deploy and connect to real infrastructure.
 - **[Dev Changelog](DEV_CHANGELOG.md)**: Day-by-day summary of new features, fixes, and experiments.
-- **[Open Decisions](docs/internal/OPEN_DECISIONS.md)**: Documented architecture choices and the reasoning behind them.
-- **[Change Propagation Readme](docs/internal/CHANGE_PROPAGATION_README.md)**: How updates move through the repo and what to touch when.
+- **[Open Decisions](docs/internal/planning/OPEN_DECISIONS.md)**: Documented architecture choices and the reasoning behind them.
+- **[Change Propagation Readme](docs/internal/backend/CHANGE_PROPAGATION_README.md)**: How updates move through the repo and what to touch when.
 - **[Implementation Plans](docs/plans/)**: Deep-dive project plans (multi-tenant rollout, detection revamp, calendar integration, etc.).
+
+Docs layout (top-level subfolders):
+- `docs/guides/`: Team Guide, Workflow Rules, GPT prompt, Step 4/5 requirements, and other playbooks.
+- `docs/manual_ux/`: Deterministic/manual UX transcripts and validation reports.
+- `docs/reference/`: Architecture diagrams, dependency graph, and structural maps.
+- `docs/integration/frontend_and_database/`: Integration + Supabase contract docs split into `guides/`, `specs/`, `security/`, and `status/`.
+- `docs/internal/`: Private notes grouped into `backend/`, `planning/`, `completed/`, and `research/`.
+- `docs/plans/`: Roadmaps split into `active/` (in-flight plans) and `completed/` (DONE__ records); `docs/reports/` + `docs/archive/` hold historical reports and backups.
+
+Scripts layout:
+- `scripts/dev/`: Local dev helpers (`dev_server.sh`, env setup, run_all, ports utilities).
+- `scripts/tests/`: CI and smoke/test lanes (`test-smoke.sh`, `test-all.sh`, regression helpers).
+- `scripts/manual_ux/`: Deterministic/manual UX flows and validators.
+- `scripts/tools/`: One-off utilities (calendar generation, measurement helpers).

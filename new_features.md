@@ -30,3 +30,27 @@ Ideas collected during development sessions for future implementation.
 
 ---
 
+## Billing Address Extraction at Every Step (Dec 27, 2025)
+
+**Context:** During E2E testing, noticed billing is only captured after offer confirmation (Step 5).
+
+**Current Behavior:**
+- Billing address extraction only triggers in Step 5 when `awaiting_billing_for_accept=True`
+- If client proactively provides billing earlier (Step 1-4), it's ignored
+- Client may need to repeat billing info after accepting offer
+
+**Proposed Solution:**
+1. **Early Billing Detection:** Add billing address regex/NLU to entity extraction in Step 1
+2. **Opportunistic Capture:** If billing detected in any step, store to `billing_details` immediately
+3. **Skip Prompt:** When reaching Step 5 billing gate, check if `billing_details` already complete
+4. **UX Improvement:** Acknowledge early billing: "Thanks for the billing info, I'll use it when we finalize"
+
+**Files to modify:**
+- `backend/workflows/steps/step1_intake/trigger/step1_handler.py` - Add billing detection
+- `backend/workflows/common/billing.py` - Add `try_capture_billing(message_text, event_entry)`
+- `backend/workflows/steps/step5_negotiation/trigger/step5_handler.py` - Check pre-captured billing
+
+**Priority:** Low - nice-to-have UX improvement
+
+---
+

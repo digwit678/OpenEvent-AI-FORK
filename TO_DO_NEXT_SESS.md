@@ -29,13 +29,13 @@ This file tracks active implementation goals and planned roadmap items. **Check 
 
 | Date Added | Task / Plan | Reference | Priority |
 | :--- | :--- | :--- | :--- |
-| 2025-12-24 | **Database Consolidation** | `docs/plans/DATABASE_CONSOLIDATION_PLAN.md` | Medium |
-| 2025-12-22 | **Dual-Engine (Gemini)** | `docs/plans/MIGRATION_TO_GEMINI_STRATEGY.md` | Medium |
-| 2025-12-20 | **Detection Improvement** | `docs/plans/DETECTION_IMPROVEMENT_PLAN.md` | Medium |
-| 2025-12-18 | **Multi-Variable Q&A** | `docs/plans/MULTI_VARIABLE_QNA_PLAN.md` | Medium |
-| 2025-12-15 | **Site Visit Sub-flow** | `docs/plans/site_visit_implementation_plan.md` | Medium |
-| 2025-12-12 | **Junior Dev Links** | `docs/plans/JUNIOR_DEV_LINKS_IMPLEMENTATION_GUIDE.md` | Low |
-| 2025-12-10 | **Multi-Tenant Expansion** | `docs/plans/MULTI_TENANT_EXPANSION_PLAN.md` | Low |
-| 2025-12-08 | **Test Pages/Links** | `docs/plans/test_pages_and_links_integration.md` | Low |
-| 2025-12-05 | **Pseudo-links Calendar** | `docs/plans/pseudolinks_calendar_integration.md` | Low |
-| 2025-12-01 | **Hostinger Logic Update** | `docs/plans/HOSTINGER_UPDATE_PLAN.md` | Medium |
+| 2025-12-24 | **Database Consolidation** | `docs/plans/active/DATABASE_CONSOLIDATION_PLAN.md` | Medium |
+| 2025-12-22 | **Dual-Engine (Gemini)** | `docs/plans/active/MIGRATION_TO_GEMINI_STRATEGY.md` | Medium |
+| 2025-12-20 | **Detection Improvement** | `docs/plans/completed/DONE__DETECTION_IMPROVEMENT_PLAN.md` | Medium |
+| 2025-12-18 | **Multi-Variable Q&A** | `docs/plans/active/MULTI_VARIABLE_QNA_PLAN.md` | Medium |
+| 2025-12-15 | **Site Visit Sub-flow** | `docs/plans/active/site_visit_implementation_plan.md` | Medium |
+| 2025-12-12 | **Junior Dev Links** | `docs/plans/completed/DONE__JUNIOR_DEV_LINKS_IMPLEMENTATION_GUIDE.md` | Low |
+| 2025-12-10 | **Multi-Tenant Expansion** | `docs/plans/active/MULTI_TENANT_EXPANSION_PLAN.md` | Low |
+| 2025-12-08 | **Test Pages/Links** | `docs/plans/active/test_pages_and_links_integration.md` | Low |
+| 2025-12-05 | **Pseudo-links Calendar** | `docs/plans/active/pseudolinks_calendar_integration.md` | Low |
+| 2025-12-01 | **Hostinger Logic Update** | `docs/plans/active/HOSTINGER_UPDATE_PLAN.md` | Medium |

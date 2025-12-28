@@ -407,10 +407,10 @@ WHERE schemaname = 'public';
 All integration code is in: `backend/workflows/io/integration/`
 
 Documentation:
-- `docs/integration_to_frontend_and_database/EMAIL_WORKFLOW_INTEGRATION_REQUIREMENTS.md`
-- `docs/integration_to_frontend_and_database/FRONTEND_REFERENCE.md`
-- `docs/integration_to_frontend_and_database/SUPABASE_CREDENTIALS_NEEDED.md`
-- `docs/integration_to_frontend_and_database/INTEGRATION_STATUS.md` (this file)
+- `docs/integration/frontend_and_database/specs/EMAIL_WORKFLOW_INTEGRATION_REQUIREMENTS.md`
+- `docs/integration/frontend_and_database/specs/FRONTEND_REFERENCE.md`
+- `docs/integration/frontend_and_database/security/SUPABASE_CREDENTIALS_NEEDED.md`
+- `docs/integration/frontend_and_database/status/INTEGRATION_STATUS.md` (this file)
 
 ---
 

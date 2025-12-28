@@ -310,7 +310,7 @@ All tests marked with `pytest.mark.legacy` and `xfail`. These are v3 workflow te
 ```bash
 # Activate environment first
 cd /Users/nico/PycharmProjects/OpenEvent-AI
-source scripts/oe_env.sh
+source scripts/dev/oe_env.sh
 
 # Run all v4 tests (default)
 pytest
