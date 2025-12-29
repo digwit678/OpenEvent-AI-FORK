@@ -148,12 +148,44 @@ def process(state: WorkflowState) -> GroupResult:
     # Clear stale HIL requests from earlier steps (e.g., outdated offer drafts).
     _clear_stale_hil_requests(state, event_entry, keep_steps={5})
 
+    # -------------------------------------------------------------------------
+    # BILLING FLOW CAPTURE: Must run BEFORE pending HIL check!
+    # When awaiting_billing_for_accept=True, the client's message contains
+    # their billing address. We must capture it before any early returns.
+    # -------------------------------------------------------------------------
+    billing_req = event_entry.get("billing_requirements") or {}
+    in_billing_capture_mode = billing_req.get("awaiting_billing_for_accept", False)
+
+    if in_billing_capture_mode:
+        # Skip billing capture for synthetic deposit payment messages
+        # (their body is "I have paid the deposit." which would corrupt billing)
+        is_deposit_signal = (state.message.extras or {}).get("deposit_just_paid", False)
+        if not is_deposit_signal:
+            message_text = (state.message.body or "").strip()
+            if message_text:
+                event_entry.setdefault("event_data", {})["Billing Address"] = message_text
+                state.extras["persist"] = True
+                print(f"[BILLING_CAPTURE] Stored billing address from message: {message_text[:80]}...")
+
+    # Refresh billing details (parses event_data["Billing Address"] into structured fields)
+    billing_missing = _refresh_billing(event_entry)
+    state.extras["persist"] = True
+
+    # Clear awaiting_billing_for_accept once billing is complete
+    if not billing_missing and billing_req.get("awaiting_billing_for_accept"):
+        billing_req["awaiting_billing_for_accept"] = False
+        billing_req["last_missing"] = []
+        state.extras["persist"] = True
+        print(f"[BILLING_CAPTURE] Billing complete - cleared awaiting_billing_for_accept")
+
     # If a manager decision is already pending, keep waiting instead of spamming duplicates.
+    # BUT: Skip this check during billing flow - we need to continue to confirmation gate.
     pending_decision = event_entry.get("negotiation_pending_decision")
     pending_hil = [
         req for req in (event_entry.get("pending_hil_requests") or []) if req.get("step") == 5
     ]
-    if pending_decision or pending_hil:
+    if (pending_decision or pending_hil) and not event_entry.get("offer_accepted"):
+        # Only block on pending HIL if NOT in offer acceptance flow
         state.set_thread_state("Waiting on HIL")
         set_hil_open(thread_id, True)
         payload = {
@@ -168,26 +200,6 @@ def process(state: WorkflowState) -> GroupResult:
         return GroupResult(action="negotiation_hil_waiting", payload=payload, halt=True)
 
     if merge_client_profile(event_entry, state.user_info or {}):
-        state.extras["persist"] = True
-
-    billing_req = event_entry.get("billing_requirements") or {}
-    if billing_req.get("awaiting_billing_for_accept"):
-        # Skip billing capture for synthetic deposit payment messages
-        # (their body is "I have paid the deposit." which would corrupt billing)
-        is_deposit_signal = (state.message.extras or {}).get("deposit_just_paid", False)
-        if not is_deposit_signal:
-            message_text = (state.message.body or "").strip()
-            if message_text:
-                event_entry.setdefault("event_data", {})["Billing Address"] = message_text
-                state.extras["persist"] = True
-
-    billing_missing = _refresh_billing(event_entry)
-    state.extras["persist"] = True
-
-    # Clear awaiting_billing_for_accept once billing is complete
-    if not billing_missing and billing_req.get("awaiting_billing_for_accept"):
-        billing_req["awaiting_billing_for_accept"] = False
-        billing_req["last_missing"] = []
         state.extras["persist"] = True
 
     # -------------------------------------------------------------------------
@@ -497,8 +509,8 @@ def process(state: WorkflowState) -> GroupResult:
                 negotiation_state["manual_review_task_id"] = manual_id
             draft = {
                 "body": append_footer(
-                    "Thanks for the suggestions — I’ve escalated this to our manager to review pricing. "
-                    "We’ll get back to you shortly.",
+                    "Thanks for the suggestions. I've escalated this to our manager to review pricing. "
+                    "We'll get back to you shortly.",
                     step=5,
                     next_step=5,
                     thread_state="Awaiting Client Response",
@@ -550,7 +562,7 @@ def process(state: WorkflowState) -> GroupResult:
     # Clarification by default.
     clarification = {
         "body": append_footer(
-            "Happy to clarify any part of the proposal — let me know which detail you’d like more information on.",
+            "Happy to clarify any part of the proposal. Let me know which detail you'd like more information on.",
             step=5,
             next_step=5,
             thread_state="Awaiting Client Response",
@@ -929,7 +941,7 @@ def _offer_summary_lines(event_entry: Dict[str, Any], *, include_cta: bool = Tru
     intro_date = chosen_date if chosen_date != "Date TBD" else "your requested date"
     lines: list[str] = []
     if manager_requested:
-        lines.append(f"Great — {intro_room} on {intro_date} is ready for manager review.")
+        lines.append(f"Great, {intro_room} on {intro_date} is ready for manager review.")
     lines.append(f"Offer draft for {chosen_date} · {room}")
     lines.append("")
 
@@ -1113,7 +1125,7 @@ def _handle_decline(event_entry: Dict[str, Any]) -> Dict[str, Any]:
     event_entry["offer_status"] = "Declined"
     return {
         "body": append_footer(
-            "Thank you for letting me know. I’ve noted the cancellation — we’d be happy to help with future events anytime.",
+            "Thank you for letting me know. I've noted the cancellation. We'd be happy to help with future events anytime.",
             step=5,
             next_step=7,
             thread_state="In Progress",

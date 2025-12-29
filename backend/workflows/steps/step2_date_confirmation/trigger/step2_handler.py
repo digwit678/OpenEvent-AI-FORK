@@ -467,6 +467,8 @@ def process(state: WorkflowState) -> GroupResult:
             append_audit_entry(event_entry, 2, decision.next_step, f"{change_type.value}_change_detected")
 
             # Skip Q&A: return detour signal
+            # CRITICAL: Update event_entry BEFORE state.current_step so routing loop sees the change
+            update_event_metadata(event_entry, current_step=decision.next_step)
             state.current_step = decision.next_step
             state.set_thread_state("In Progress")
             state.extras["persist"] = True
@@ -1031,27 +1033,26 @@ def _present_candidate_dates(
             source_message_id=state.message.msg_id,
         )
         event_entry["pending_future_confirmation"] = _window_payload(pending_window)
-        message_lines.append("Thanks for the briefing — here are the next available slots that fit your preferred window.")
+        # Don't add redundant phrases - the date suggestion above is sufficient
     elif reason:
+        # Simplified: just state the issue briefly, then move to suggestions
         message_lines.append(_preface_with_apology(reason) or reason)
-        message_lines.append("I know that makes planning trickier—I'm checking a wider range of dates for you now.")
-        if attempt > 1:
-            message_lines.append("I've widened the search to include a broader range of upcoming dates as well.")
-        message_lines.append("Thanks for the briefing — here are the next available slots that fit your preferred window.")
+        message_lines.append("Here are some alternatives that might work:")
     else:
         if attempt > 1:
-            message_lines.append("I've expanded the search window so you get a fresh set of date options that might work better.")
+            message_lines.append("Let me show you some fresh options:")
         else:
-            message_lines.append("Thanks for the briefing — here are the next available slots that fit your preferred window.")
+            message_lines.append("Here are some available dates:")
 
     if unavailable_requested:
         unavailable_display = _format_display_dates(unavailable_requested)
         joined = _human_join(unavailable_display)
-        message_lines.append(f"Sorry, we don't have free rooms on {joined}.")
-        message_lines.append("What about one of the nearby options below?")
+        # More natural phrasing
+        message_lines.append(f"Unfortunately {joined} {'is' if len(unavailable_requested) == 1 else 'are'} not available.")
+        message_lines.append("Would any of these work instead?")
     if weekday_shortfall and formatted_dates:
         message_lines.append(
-            "I couldn't find a free Thursday or Friday in that range—these are the closest available slots right now."
+            "I couldn't find a free Thursday or Friday in that range. These are the closest available slots right now."
         )
 
     if future_suggestion:
@@ -1113,21 +1114,22 @@ def _present_candidate_dates(
 
     _append_menu_options_if_requested(state, message_lines, month_hint_value or month_for_line)
 
-    message_lines.extend(["", "AVAILABLE DATES:"])
-    if not formatted_dates:
-        message_lines.append("Sorry, none of the nearby slots are free at the moment—here's the broader set I'm monitoring:")
+    # Show available dates in a friendly format
     if formatted_dates:
+        message_lines.append("")
+        message_lines.append("Here are some dates that work:")
         for iso_value in formatted_dates[:5]:
             message_lines.append(f"- {iso_value} {slot_text}")
     else:
-        message_lines.append("- No suitable slots within the next 60 days, but I'm continuing to expand the search.")
+        message_lines.append("")
+        message_lines.append("I couldn't find suitable slots within the next 60 days, but I'm still looking.")
 
-    next_step_lines = ["", "NEXT STEP:"]
+    # Next step guidance - conversational
+    message_lines.append("")
     if future_display:
-        next_step_lines.append(f"Say yes if {future_display} works, or share another option you'd like me to check.")
-    next_step_lines.append("- Tell me which date works best so I can move to Room Availability.")
-    next_step_lines.append("- Or share another day/time and I'll check availability.")
-    message_lines.extend(next_step_lines)
+        message_lines.append(f"Would **{future_display}** work for you? Or let me know another date you'd prefer.")
+    else:
+        message_lines.append("Just let me know which date works best and I'll check room availability for you.")
     prompt = "\n".join(message_lines)
 
     weekday_hint = weekday_hint_value
@@ -1508,7 +1510,7 @@ def _handle_partial_confirmation(
 
     prompt = _with_greeting(
         state,
-        f"Noted {window.display_date}. Preferred time? Examples: 14–18, 18–22.",
+        f"Great, I've noted **{window.display_date}**. What time works best for you? For example, 14:00–18:00 or 18:00–22:00.",
     )
     state.add_draft_message({"body": prompt, "step": 2, "topic": "date_time_clarification"})
 
@@ -1558,15 +1560,10 @@ def _prompt_confirmation(
     window: ConfirmationWindow,
 ) -> GroupResult:
     formatted_window = _format_window(window)
-    lines = [
-        "INFO:",
-        f"- {formatted_window} is available on our side. Shall I continue?",
-        "",
-        "NEXT STEP:",
-        "- Reply \"yes\" to continue with Room Availability.",
-        "- Or share another day/time and I'll check again.",
-    ]
-    prompt = _with_greeting(state, "\n".join(lines))
+    prompt = _with_greeting(
+        state,
+        f"**{formatted_window}** works on our end! Should I check room availability for this time? Just say yes, or let me know if you'd prefer a different date or time.",
+    )
 
     draft_message = {
         "body": prompt,
@@ -1818,11 +1815,11 @@ def _finalize_confirmation(
 
     participants = _extract_participants_from_state(state)
     noted_line = (
-        f"Noted: {participants} guests and {window.display_date}."
+        f"Perfect! I've locked in **{window.display_date}** for **{participants} guests**."
         if participants
-        else f"Noted: {window.display_date} is confirmed."
+        else f"Perfect! **{window.display_date}** is confirmed."
     )
-    follow_up_line = "I'll move straight into Room Availability and send the best-fitting rooms."
+    follow_up_line = "Let me find the best rooms for you now."
     ack_body, ack_headers = format_sections_with_headers(
         [("Next step", [noted_line, follow_up_line])]
     )
@@ -1892,7 +1889,7 @@ def _apply_step2_hil_decision(state: WorkflowState, event_entry: dict, decision:
         event_entry.pop("pending_future_confirmation", None)
         _clear_step2_hil_tasks(state, event_entry)
         draft_message = {
-            "body": "Manual review declined — please advise which alternative dates to offer next.",
+            "body": "Manual review declined. Please advise which alternative dates to offer next.",
             "step": 2,
             "topic": "date_hil_reject",
             "requires_approval": True,

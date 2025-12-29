@@ -1,0 +1,30 @@
+{
+  "servers": {
+    "python": {
+      "command": "pyright-langserver",
+      "args": ["--stdio"],
+      "extensions": [".py"],
+      "projects": [
+        {
+          "name": "OpenEvent-AI",
+          "description": "OpenEvent AI backend",
+          "path": "/Users/nico/PycharmProjects/OpenEvent-AI",
+          "patterns": {
+            "exclude": ["**/.git/**", "**/.venv/**", "**/venv/**", "**/node_modules/**", "**/tmp-*/**", "**/tmp/**"]
+          }
+        }
+      ],
+      "configuration": {
+        "settings": {
+          "python": {
+            "analysis": {
+              "autoSearchPaths": true,
+              "diagnosticMode": "workspace"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

@@ -1,0 +1,11 @@
+[mcp_servers.filesystem]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem@2025.12.18", "."]
+env = { npm_config_cache = "/tmp/codex-npm-cache" }
+
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp@1.0.33", "--transport", "stdio"]
+env = { npm_config_cache = "/tmp/codex-npm-cache" }
+env_vars = ["CONTEXT7_API_KEY"]
+
