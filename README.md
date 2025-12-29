@@ -201,6 +201,29 @@ Key environment variables (create a `.env` file):
 | `WF_DEBUG_STATE` | `0` | Set to `1` for verbose workflow logging |
 | `VERBALIZER_TONE` | `professional` | Message tone: `professional` or `plain` |
 
+### LLM Provider Settings
+
+The system supports multiple LLM providers with per-operation granularity:
+
+| Variable | Options | Default | Description |
+|----------|---------|---------|-------------|
+| `AGENT_MODE` | `openai`, `gemini`, `stub` | `openai` | Main LLM provider mode |
+| `PROVIDER` | `openai`, `gemini` | `openai` | Provider registry selection |
+| `INTENT_PROVIDER` | `openai`, `gemini` | (AGENT_MODE) | Intent classification provider |
+| `ENTITY_PROVIDER` | `openai`, `gemini` | (AGENT_MODE) | Entity extraction provider |
+| `VERBALIZER_PROVIDER` | `openai`, `gemini` | `openai` | Draft verbalization provider |
+| `GOOGLE_API_KEY` | - | (required for Gemini) | Google AI API key |
+
+**Cost Optimization Strategy:**
+- Use `AGENT_MODE=gemini` for intent/entity extraction (75% cheaper than OpenAI)
+- Keep `VERBALIZER_PROVIDER=openai` for client-facing message quality
+- Use `VERBALIZER_TONE=plain` to disable LLM verbalization entirely (testing only)
+- Use `AGENT_MODE=stub` for deterministic heuristics (no LLM cost, lower quality)
+
+**Admin UI Toggle:**
+- **Global Deposit**: Configure at runtime via admin panel → Deposit Settings
+- **LLM Provider**: Configure at runtime via admin panel → LLM Settings (planned)
+
 ### Dev Test Mode (Continue/Reset Choice)
 
 When testing with an existing event, the system offers a choice to continue at the current step or reset to a new event. This is useful during development to avoid resetting the database between tests.

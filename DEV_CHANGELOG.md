@@ -38,6 +38,57 @@
 
 ---
 
+### Fix: Deposit Display Formatting ✅
+
+**Summary:** Improved deposit display in offers - amount and due date now on separate lines with human-readable date format.
+
+**Changes:**
+- Deposit amount and due date on separate paragraphs for better readability
+- Date formatted as "12 January 2026" instead of "2026-01-12"
+- Calculation verified: `today + deposit_deadline_days = due_date`
+
+**Files Modified:**
+- `backend/workflows/steps/step4_offer/trigger/step4_handler.py`
+
+**Verification:** E2E Playwright test passed, screenshot at `.playwright-mcp/deposit-formatting-fixed.png`
+
+---
+
+### Fix: Flow Spec Test Updates (Smart Shortcut Alignment) ✅
+
+**Summary:** Updated 7 YAML flow spec tests to match smart shortcut behavior. Tests expected old HIL flow with `select_date` actions, but smart shortcuts now bypass date selection when date+participants are known.
+
+**Key Changes:**
+- Changed expected intent from `event_intake` to `event_intake_shortcut` where applicable
+- Removed `gui_action` steps that depended on non-existent HIL tasks
+- Updated `current_step` expectations (Step 3 for shortcuts, Step 2 for vague dates)
+
+**Files Modified:**
+- `tests/specs/flows/test_C_normal_step1_to_step4.yaml`
+- `tests/specs/flows/test_E_past_date_step1_to_step4.yaml`
+- `tests/specs/flows/test_E_week2_december_workshop.yaml`
+- `tests/specs/flows/test_F_february_saturday_availability.yaml`
+- `tests/specs/flows/test_GUARD_coffee_only_no_lunch.yaml`
+- `tests/specs/flows/test_GUARD_no_billing_before_room.yaml`
+- `tests/specs/flows/test_GUARD_no_rooms_before_date.yaml`
+
+**Verification:** All 146 backend tests pass, 10/10 flow spec tests pass
+
+---
+
+### Recommended Next Actions
+
+1. **Gemini Integration (Cost Optimization)**
+   - Hybrid approach: Gemini Flash for intent/entity extraction (75% cheaper), OpenAI for verbalization (quality)
+   - Add admin UI toggle for provider selection
+   - Implementation plan documented in `/Users/nico/.claude/plans/encapsulated-foraging-kay.md`
+
+2. **Production Readiness**
+   - Continue E2E testing for edge cases
+   - Monitor for fallback messages in production
+
+---
+
 ## 2025-12-28
 
 ### Fix: DAG Change Propagation Test Suite (45 tests) ✅
