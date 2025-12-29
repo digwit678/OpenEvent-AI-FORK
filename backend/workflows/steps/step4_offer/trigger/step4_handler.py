@@ -1037,10 +1037,17 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, sta
 
     # Add deposit info on separate lines after total (if enabled)
     if deposit_required and deposit_amount:
-        lines.append("---")  # Separator between total and deposit
-        lines.append(f"Deposit to reserve: CHF {deposit_amount:,.2f} (required before confirmation)")
+        lines.append("")  # Blank line before deposit section
+        lines.append(f"**Deposit to reserve: CHF {deposit_amount:,.2f}** (required before confirmation)")
         if deposit_due_date:
-            lines.append(f"Deposit due by: {deposit_due_date}")
+            # Format date nicely (e.g., "12 January 2026" instead of "2026-01-12")
+            try:
+                due_dt = datetime.strptime(deposit_due_date, "%Y-%m-%d")
+                formatted_due_date = due_dt.strftime("%d %B %Y")
+            except (ValueError, TypeError):
+                formatted_due_date = deposit_due_date
+            lines.append("")  # Blank line to force new paragraph
+            lines.append(f"**Deposit due by:** {formatted_due_date}")
 
     lines.extend([
         "---",
