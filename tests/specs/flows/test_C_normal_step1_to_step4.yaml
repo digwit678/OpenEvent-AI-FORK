@@ -1,67 +1,34 @@
 {
   "suite": "flow_C_normal",
+  "description": "Normal flow with vague date that triggers smart shortcuts to Step 3 room availability",
   "initial_clock": "2025-11-11T10:00:00+01:00",
   "steps": [
     {
       "turn": 1,
       "msg_in": {
         "subject": "Family dinner in February",
-        "body": "Hello, we’re planning a family dinner event for about 30 people. Prefer a Saturday evening in February. Please advise on availability for this booking."
+        "body": "Hello, we're planning a family dinner event for about 30 people. Prefer a Saturday evening in February. Please advise on availability for this booking."
       },
       "expect": {
-        "intent": "event_intake_with_question",
+        "intent": "event_intake_shortcut",
         "user_info": {
           "participants": 30,
-          "vague_month": "February",
-          "vague_weekday": "Saturday"
+          "vague_month": "february",
+          "vague_weekday": "saturday"
         },
         "actions": [
-          {"type": "select_date"},
-          {"type": "select_date"},
-          {"type": "select_date"},
-          {"type": "select_date"},
-          {
-            "type": "ask_for_date_enqueued",
-            "payload": {
-              "suggested_dates": [
-                "2026-02-07",
-                "2026-02-14",
-                "2026-02-21",
-                "2026-02-28"
-              ]
-            }
-          }
+          {"type": "send_reply"},
+          {"type": "send_reply"}
         ],
+        "current_step": 3,
         "res": {
           "assistant_draft": {
             "headers_subset": [
               "Availability overview"
             ],
-            "contains_all": [
-              "Thanks for the briefing — here are the next available slots that fit your preferred window.",
-              "Saturdays available in February 2026",
-              "AVAILABLE DATES:",
-              "Let me know which date works best so I can lock it in and shortlist the best rooms."
-            ]
-          }
-        }
-      }
-    },
-    {
-      "turn": "1a",
-      "gui_action": {
-        "approve_task": "ask_for_date_enqueued"
-      },
-      "expect": {
-        "actions": [
-          {
-            "type": "send_reply"
-          }
-        ],
-        "res": {
-          "assistant_draft": {
-            "headers_subset": [
-              "Availability overview"
+            "body_contains": [
+              "Room A",
+              "available"
             ]
           }
         }
@@ -69,54 +36,6 @@
     },
     {
       "turn": 2,
-      "msg_in": {
-        "body": "07.02.2026 works for us."
-      },
-      "expect": {
-        "intent": "event_update",
-        "user_info": {
-          "date": "2026-02-07"
-        },
-        "actions": [
-          {"type": "send_reply"},
-          {"type": "send_reply"}
-        ],
-        "db_assert": {
-          "gatekeeping": {
-            "date": "2026-02-07"
-          }
-        }
-      }
-    },
-    {
-      "turn": 3,
-      "system_call": "room_status_on_date",
-      "args": {
-        "date": "2026-02-07"
-      },
-      "expect": {
-        "rooms_min": 2,
-        "res": {
-          "assistant_draft": {
-            "headers": [
-              "Rooms for 30 people on 07.02.2026"
-            ],
-            "body_order": [
-              "07.02.2026 is set.",
-              "For 30 people on 07.02.2026, these rooms are available",
-              "Room A",
-              "Room D"
-            ],
-            "contains_all": [
-              "Room A — Coffee ✓ · U-shape ~ · Projector ✓ · Capacity ✓ (max 40)",
-              "Room D — Coffee ✓ · U-shape ✗ · Projector ✓ · Capacity ✓ (max 50)"
-            ]
-          }
-        }
-      }
-    },
-    {
-      "turn": 4,
       "msg_in": {
         "body": "Room A, please. Send an offer."
       },
@@ -126,7 +45,7 @@
       }
     },
     {
-      "turn": 5,
+      "turn": 3,
       "system_call": "build_offer",
       "args": {
         "room_id": "R-A",
