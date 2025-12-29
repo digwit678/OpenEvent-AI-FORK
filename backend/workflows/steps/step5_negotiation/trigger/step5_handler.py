@@ -39,7 +39,6 @@ from backend.workflows.common.general_qna import (
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
-from backend.workflows.io import database as db_io
 from backend.workflows.io.tasks import enqueue_task, update_task_status
 from backend.workflows.nlu import detect_general_room_query
 # MIGRATED: from backend.workflows.nlu.semantic_matchers -> backend.detection.response.matchers
@@ -181,20 +180,9 @@ def process(state: WorkflowState) -> GroupResult:
             if message_text:
                 event_entry.setdefault("event_data", {})["Billing Address"] = message_text
                 state.extras["persist"] = True
-                # FORCE SAVE: Ensure billing is persisted immediately
-                # This fixes the bug where deferred persistence wasn't saving billing
-                try:
-                    db_io.save_db(state.db, state.db_path)
-                except Exception as save_err:
-                    logger.error("Failed to force save billing: %s", save_err)
 
     billing_missing = _refresh_billing(event_entry)
     state.extras["persist"] = True
-    # FORCE SAVE after billing refresh to ensure billing_details is persisted
-    try:
-        db_io.save_db(state.db, state.db_path)
-    except Exception as save_err:
-        logger.error("Failed to save after billing refresh: %s", save_err)
 
     # Clear awaiting_billing_for_accept once billing is complete
     if not billing_missing and billing_req.get("awaiting_billing_for_accept"):

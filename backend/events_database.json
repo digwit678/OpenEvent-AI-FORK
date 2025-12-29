@@ -48760,52 +48760,6 @@
         }
       ],
       "event_ids": []
-    },
-    "apitest@test.com": {
-      "profile": {
-        "name": "Not specified",
-        "org": null,
-        "phone": null
-      },
-      "history": [
-        {
-          "msg_id": "b8a68600-e138-4dee-8472-6cced5e553ca",
-          "ts": "2025-12-28T22:17:12.124888Z",
-          "subject": "API Test",
-          "body_preview": "API Test",
-          "intent": "other",
-          "confidence": 0.2,
-          "user_info": {
-            "date": null,
-            "start_time": null,
-            "end_time": null,
-            "city": null,
-            "participants": null,
-            "room": null,
-            "layout": null,
-            "name": null,
-            "email": null,
-            "type": null,
-            "catering": null,
-            "phone": null,
-            "company": null,
-            "language": null,
-            "notes": null,
-            "billing_address": null,
-            "hil_approve_step": null,
-            "hil_decision": null,
-            "products_add": null,
-            "products_remove": null,
-            "room_feedback": null,
-            "shortcut_capacity_ok": null,
-            "week_index": null,
-            "weekdays_hint": null,
-            "window": null,
-            "event_date": null
-          }
-        }
-      ],
-      "event_ids": []
     }
   },
   "tasks": [
@@ -49780,22 +49734,6 @@
         "requirements_hash": "cb5f733fdb5c422d32fc36c3cf3430d3fd422388a879b42ab7bfe63d8b6a8a3b",
         "room_eval_hash": "cb5f733fdb5c422d32fc36c3cf3430d3fd422388a879b42ab7bfe63d8b6a8a3b",
         "thread_id": "a964083d-d085-4509-a338-157edfaa0795"
-      },
-      "notes": ""
-    },
-    {
-      "task_id": "5d4bc596-21f2-477e-a169-9926b8f2fa22",
-      "created_at": "2025-12-28T22:17:12.182695",
-      "type": "manual_review",
-      "status": "pending",
-      "client_id": "apitest@test.com",
-      "event_id": null,
-      "payload": {
-        "subject": "API Test",
-        "snippet": "API Test",
-        "ts": "2025-12-28T22:17:12.124888Z",
-        "reason": "manual_review_required",
-        "thread_id": "ce6fd182-7987-4597-b28c-56e093ff8380"
       },
       "notes": ""
     }

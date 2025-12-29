@@ -606,7 +606,7 @@ def _load_rooms_cached(resolved_path: str) -> List[str]:
 def load_rooms(path: Optional[Path] = None) -> List[str]:
     """[OpenEvent Database] Load room names from the canonical configuration file."""
 
-    rooms_path = path or Path(__file__).resolve().parents[2] / "rooms.json"
+    rooms_path = path or Path(__file__).resolve().parents[2] / "data" / "rooms.json"
     resolved = str(rooms_path.resolve())
     return list(_load_rooms_cached(resolved))
 

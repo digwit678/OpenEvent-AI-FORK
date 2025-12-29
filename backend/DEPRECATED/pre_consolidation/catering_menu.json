@@ -1,0 +1,150 @@
+{
+  "catering_packages": [
+    {
+      "id": "basic_coffee",
+      "name": "Basic Coffee & Tea Package",
+      "price_per_person": 8.50,
+      "description": "Perfect for short meetings",
+      "includes": [
+        "Freshly brewed coffee (regular & decaf)",
+        "Selection of teas (black, green, herbal)",
+        "Still & sparkling water",
+        "Sugar, milk, honey"
+      ]
+    },
+    {
+      "id": "coffee_snacks",
+      "name": "Coffee & Snacks Package",
+      "price_per_person": 15.00,
+      "description": "Ideal for half-day workshops",
+      "includes": [
+        "Everything from Basic Package",
+        "Fresh croissants & pastries",
+        "Seasonal fruit platter",
+        "Small cookies"
+      ]
+    },
+    {
+      "id": "lunch_package",
+      "name": "Lunch Package",
+      "price_per_person": 28.00,
+      "description": "Full lunch service",
+      "dietary_options": ["Vegetarian", "Vegan", "Gluten-free available"],
+      "includes": [
+        "Main course (choice of 2 options)",
+        "Fresh salad bar",
+        "Bread basket",
+        "Dessert",
+        "Coffee & tea"
+      ],
+      "main_course_options": [
+        "Grilled chicken with seasonal vegetables",
+        "Vegetarian pasta with Mediterranean sauce",
+        "Swiss-style quiche with side salad",
+        "Asian stir-fry with rice"
+      ]
+    },
+    {
+      "id": "premium_lunch",
+      "name": "Premium Lunch Package",
+      "price_per_person": 42.00,
+      "description": "Elevated dining experience",
+      "dietary_options": ["All dietary requirements accommodated"],
+      "includes": [
+        "Three-course meal",
+        "Premium salad bar with international options",
+        "Choice of 3 main courses",
+        "Gourmet dessert selection",
+        "Coffee, tea & soft drinks included"
+      ]
+    },
+    {
+      "id": "apero",
+      "name": "Apéro Package",
+      "price_per_person": 24.00,
+      "description": "Perfect for networking events",
+      "includes": [
+        "Selection of canapés (6 pieces per person)",
+        "Cheese & charcuterie platter",
+        "Vegetable crudités with dips",
+        "Olives & nuts",
+        "Soft drinks & juice"
+      ]
+    },
+    {
+      "id": "premium_apero",
+      "name": "Premium Apéro with Bar",
+      "price_per_person": 38.00,
+      "description": "Elevated networking with beverages",
+      "includes": [
+        "Everything from standard Apéro",
+        "2 glasses of wine per person (red/white)",
+        "2 glasses of prosecco per person",
+        "Premium canapés (8 pieces per person)",
+        "Sushi platter"
+      ]
+    }
+  ],
+  "beverages": {
+    "non_alcoholic": [
+      {
+        "name": "Soft Drinks",
+        "options": ["Coca-Cola", "Sprite", "Fanta", "Rivella"],
+        "price_per_person": 4.50
+      },
+      {
+        "name": "Fresh Juices",
+        "options": ["Orange", "Apple", "Mixed berry"],
+        "price_per_person": 5.00
+      },
+      {
+        "name": "Still & Sparkling Water",
+        "price_per_person": 3.50
+      }
+    ],
+    "alcoholic": [
+      {
+        "name": "Wine Selection",
+        "options": ["Swiss white wine", "Swiss red wine", "International selection"],
+        "price_per_glass": 8.00,
+        "price_per_bottle": 35.00
+      },
+      {
+        "name": "Prosecco",
+        "price_per_glass": 9.00,
+        "price_per_bottle": 40.00
+      },
+      {
+        "name": "Beer Selection",
+        "options": ["Swiss lager", "Local craft beer"],
+        "price_per_bottle": 6.50
+      }
+    ]
+  },
+  "add_ons": [
+    {
+      "name": "Birthday Cake",
+      "description": "Custom cake for celebrations",
+      "price": 65.00
+    },
+    {
+      "name": "Chocolate Fountain",
+      "description": "With fresh fruit for dipping",
+      "price": 120.00
+    },
+    {
+      "name": "Barista Service",
+      "description": "Professional coffee bar with barista",
+      "price": 150.00
+    }
+  ],
+  "dietary_accommodations": [
+    "Vegetarian",
+    "Vegan",
+    "Gluten-free",
+    "Lactose-free",
+    "Nut allergies",
+    "Halal (with advance notice)",
+    "Kosher (with advance notice)"
+  ]
+}

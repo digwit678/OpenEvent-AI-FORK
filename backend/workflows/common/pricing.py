@@ -246,7 +246,7 @@ def _room_name_from_event(event_entry: Dict[str, Any]) -> Optional[str]:
 @lru_cache(maxsize=1)
 def _room_rate_map() -> Dict[str, float]:
     mapping: Dict[str, float] = {}
-    info_path = Path(__file__).resolve().parents[3] / "room_info.json"
+    info_path = Path(__file__).resolve().parents[3] / "data" / "rooms.json"
     if info_path.exists():
         try:
             with info_path.open("r", encoding="utf-8") as handle:
