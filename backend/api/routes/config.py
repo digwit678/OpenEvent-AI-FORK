@@ -32,7 +32,10 @@ DEPENDS ON:
     - backend/workflow_email.py  # Database operations
 """
 
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -208,7 +211,7 @@ async def set_global_deposit_config(config: GlobalDepositConfig):
             "updated_at": _now_iso(),
         }
         wf_save_db(db)
-        print(f"[Config] Global deposit updated: enabled={config.deposit_enabled} type={config.deposit_type}")
+        logger.info("Global deposit updated: enabled=%s type=%s", config.deposit_enabled, config.deposit_type)
         return {"status": "ok", "config": db["config"]["global_deposit"]}
     except Exception as exc:
         raise HTTPException(
@@ -299,7 +302,8 @@ async def set_hil_mode(config: HILModeConfig):
         refresh_hil_setting()
 
         status = "enabled" if config.enabled else "disabled"
-        print(f"[Config] HIL mode {status} - all AI replies {'require' if config.enabled else 'do not require'} manager approval")
+        logger.info("HIL mode %s - all AI replies %s manager approval",
+                    status, "require" if config.enabled else "do not require")
 
         return {
             "status": "ok",
@@ -436,7 +440,8 @@ async def set_llm_provider_config(config: LLMProviderConfig):
         reset_agent_adapter()
         clear_provider_cache()
 
-        print(f"[Config] LLM providers updated: intent={config.intent_provider} entity={config.entity_provider} verbalization={config.verbalization_provider}")
+        logger.info("LLM providers updated: intent=%s entity=%s verbalization=%s",
+                    config.intent_provider, config.entity_provider, config.verbalization_provider)
 
         return {
             "status": "ok",
@@ -557,7 +562,7 @@ async def set_pre_filter_config(config: PreFilterConfig):
         # Update environment variable for current process
         os.environ["PRE_FILTER_MODE"] = config.mode.lower()
 
-        print(f"[Config] Pre-filter mode updated: {config.mode}")
+        logger.info("Pre-filter mode updated: %s", config.mode)
 
         return {
             "status": "ok",
@@ -664,7 +669,7 @@ async def set_detection_mode_config(config: DetectionModeConfig):
         # Update environment variable for current process
         os.environ["DETECTION_MODE"] = config.mode.lower()
 
-        print(f"[Config] Detection mode updated: {config.mode}")
+        logger.info("Detection mode updated: %s", config.mode)
 
         return {
             "status": "ok",
@@ -710,7 +715,7 @@ async def get_prompts_config():
             "step_prompts": merged_steps
         }
     except Exception as exc:
-        print(f"[Config][ERROR] Failed to load prompts: {exc}")
+        logger.error("Failed to load prompts: %s", exc)
         # Fallback to dynamic defaults on error
         return {
             "system_prompt": build_dynamic_system_prompt(),
@@ -747,7 +752,7 @@ async def set_prompts_config(config: PromptConfig):
             "updated_at": _now_iso()
         }
         wf_save_db(db)
-        print("[Config] Prompts updated and persisted.")
+        logger.info("Prompts updated and persisted")
         return {"status": "ok"}
     except Exception as exc:
         raise HTTPException(
@@ -803,7 +808,7 @@ async def revert_prompts_config(index: int):
         db["config"]["prompts_history"] = history[:50]
         
         wf_save_db(db)
-        print(f"[Config] Reverted prompts to version from {target_entry.get('ts')}")
+        logger.info("Reverted prompts to version from %s", target_entry.get('ts'))
         return {"status": "ok"}
     except HTTPException:
         raise
@@ -880,7 +885,7 @@ async def revert_prompts_config(index: int):
 #             "updated_at": _now_iso(),
 #         }
 #         wf_save_db(db)
-#         print(f"[Config] Room deposit updated: room={room_id} required={deposit_required} percent={deposit_percent}")
+#         logger.info("Room deposit updated: room={room_id} required={deposit_required} percent={deposit_percent}")
 #         return {"status": "ok", "room_id": room_id, "config": db["config"]["room_deposits"][room_id]}
 #     except Exception as exc:
 #         raise HTTPException(
@@ -987,7 +992,7 @@ async def set_hil_email_config(config: HILEmailConfig):
         wf_save_db(db)
 
         status = "enabled" if config.enabled else "disabled"
-        print(f"[Config] HIL email {status} - notifications to {config.manager_email}")
+        logger.info("HIL email %s - notifications to %s", status, config.manager_email)
 
         return {
             "status": "ok",
@@ -1165,7 +1170,7 @@ async def set_venue_config(config: VenueConfig):
         db["config"]["venue"] = current
         wf_save_db(db)
 
-        print(f"[Config] Venue updated: name={current.get('name')} city={current.get('city')}")
+        logger.info("Venue updated: name=%s city=%s", current.get('name'), current.get('city'))
 
         return {
             "status": "ok",
@@ -1258,7 +1263,8 @@ async def set_site_visit_config(config: SiteVisitConfig):
         db["config"]["site_visit"] = current
         wf_save_db(db)
 
-        print(f"[Config] Site visit updated: slots={current.get('default_slots')} weekdays_only={current.get('weekdays_only')}")
+        logger.info("Site visit updated: slots=%s weekdays_only=%s",
+                    current.get('default_slots'), current.get('weekdays_only'))
 
         return {
             "status": "ok",
@@ -1331,7 +1337,7 @@ async def set_manager_config(config: ManagerConfig):
         db["config"]["managers"] = current
         wf_save_db(db)
 
-        print(f"[Config] Managers updated: names={current.get('names')}")
+        logger.info("Managers updated: names=%s", current.get('names'))
 
         return {
             "status": "ok",
@@ -1413,7 +1419,7 @@ async def set_product_config(config: ProductConfig):
         db["config"]["products"] = current
         wf_save_db(db)
 
-        print(f"[Config] Products updated: autofill_min_score={current.get('autofill_min_score')}")
+        logger.info("Products updated: autofill_min_score=%s", current.get('autofill_min_score'))
 
         return {
             "status": "ok",
@@ -1534,7 +1540,7 @@ async def set_menus_config(config: MenusConfig):
         wf_save_db(db)
 
         count = len(current.get("dinner_options", []))
-        print(f"[Config] Menus updated: {count} dinner options")
+        logger.info("Menus updated: %d dinner options", count)
 
         return {
             "status": "ok",
@@ -1629,7 +1635,7 @@ async def set_catalog_config(config: CatalogConfig):
         wf_save_db(db)
 
         count = len(current.get("product_room_map", []))
-        print(f"[Config] Catalog updated: {count} product-room mappings")
+        logger.info("Catalog updated: %d product-room mappings", count)
 
         return {
             "status": "ok",
@@ -1729,7 +1735,7 @@ async def set_faq_config(config: FAQConfig):
         wf_save_db(db)
 
         count = len(current.get("items", []))
-        print(f"[Config] FAQ updated: {count} items")
+        logger.info("FAQ updated: %d items", count)
 
         return {
             "status": "ok",

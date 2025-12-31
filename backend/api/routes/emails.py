@@ -17,10 +17,13 @@ In production, these integrate with:
 - Event manager's email account
 """
 
+import logging
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from backend.workflow_email import load_db as wf_load_db
 from backend.workflows.io.config_store import get_venue_name
@@ -282,7 +285,7 @@ def _log_sent_email(
     In production with Supabase, this would insert into the emails table.
     For now, we just log to console and could add to event history.
     """
-    print(f"[EMAIL_SENT] To: {to_email}, Subject: {subject}")
+    logger.info("Email sent: to=%s subject=%s", to_email, subject)
 
     if event_id:
         try:
@@ -300,4 +303,4 @@ def _log_sent_email(
                     save_db(db)
                     break
         except Exception as e:
-            print(f"[EMAIL_LOG] Failed to log to event: {e}")
+            logger.warning("Failed to log email to event: %s", e)
