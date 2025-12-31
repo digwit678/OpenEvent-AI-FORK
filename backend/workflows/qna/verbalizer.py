@@ -4,11 +4,7 @@ import json
 import os
 from typing import Any, Dict, Optional
 
-try:  # pragma: no cover - optional dependency
-    from openai import OpenAI  # type: ignore
-except Exception:  # pragma: no cover - dependency may be missing in tests
-    OpenAI = None  # type: ignore
-from backend.utils.openai_key import load_openai_api_key
+from backend.llm.client import get_openai_client, is_llm_available
 from backend.workflows.common.fallback_reason import (
     FallbackReason,
     append_fallback_diagnostic,
@@ -18,7 +14,6 @@ from backend.workflows.common.fallback_reason import (
 )
 
 MODEL_NAME = os.getenv("OPEN_EVENT_QNA_VERBALIZER_MODEL", "gpt-4.1-mini")
-_LLM_ENABLED = bool(load_openai_api_key(required=False) and OpenAI is not None)
 
 SYSTEM_PROMPT = """You are OpenEvent's professional event manager. Your task is to provide concise, factual answers to client questions based on provided data.
 
@@ -43,7 +38,7 @@ def render_qna_answer(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     fallback_reason: Optional[FallbackReason] = None
 
-    if _LLM_ENABLED:
+    if is_llm_available():
         try:
             return _call_llm(payload)
         except Exception as exc:  # pragma: no cover - defensive guard
@@ -55,8 +50,7 @@ def render_qna_answer(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _call_llm(payload: Dict[str, Any]) -> Dict[str, Any]:
-    api_key = load_openai_api_key()
-    client = OpenAI(api_key=api_key)
+    client = get_openai_client()
     response = client.chat.completions.create(
         model=MODEL_NAME,
         temperature=0,

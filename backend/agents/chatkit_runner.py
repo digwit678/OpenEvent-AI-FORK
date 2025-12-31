@@ -773,13 +773,9 @@ async def run_streamed(thread_id: str, message: Dict[str, Any], state: Dict[str,
         return
 
     try:  # pragma: no cover - SDK path exercised only in integration runs
-        from openai import OpenAI  # type: ignore
+        from backend.llm.client import get_openai_client
 
-        api_key = load_openai_api_key(required=False)
-        if not api_key:
-            raise RuntimeError(f"Environment variable '{SECRET_NAME}' is required for streamed agent mode.")
-
-        client = OpenAI(api_key=api_key)
+        client = get_openai_client()
         allowed_tools = [{"type": "function", "function": {"name": tool}} for tool in policy.allowed_tools]
         stop_tools = [{"type": "function", "function": {"name": tool}} for tool in CLIENT_STOP_AT_TOOLS]
         venue_name = get_venue_name()

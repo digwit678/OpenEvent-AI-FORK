@@ -6,7 +6,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.utils.openai_key import load_openai_api_key
+from backend.llm.client import get_openai_client, is_llm_available
 from backend.ux.verb_rubric import enforce as enforce_rubric
 from backend.workflows.io.config_store import get_currency_code
 
@@ -217,13 +217,8 @@ def _build_prompt_payload(
 def _call_verbalizer(payload: Dict[str, Any]) -> str:
     deterministic = os.getenv("OPENAI_TEST_MODE") == "1"
     temperature = 0.0 if deterministic else 0.2
-    try:
-        from openai import OpenAI  # type: ignore
-    except Exception as exc:  # pragma: no cover - import guard
-        raise RuntimeError(f"OpenAI SDK unavailable: {exc}") from exc
 
-    api_key = load_openai_api_key()
-    client = OpenAI(api_key=api_key)
+    client = get_openai_client()
     response = client.responses.create(
         model=os.getenv("OPENAI_VERBALIZER_MODEL", "gpt-4o-mini"),
         input=[
@@ -291,9 +286,8 @@ def verbalize_room_offer(
         return fallback_text
 
     # Check if LLM is available
-    api_key = load_openai_api_key(required=False)
-    if not api_key:
-        logger.debug("verbalize_room_offer: no API key, using fallback")
+    if not is_llm_available():
+        logger.debug("verbalize_room_offer: LLM not available, using fallback")
         return fallback_text
 
     try:

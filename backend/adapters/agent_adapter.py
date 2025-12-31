@@ -12,12 +12,7 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.domain import IntentLabel
-from backend.utils.openai_key import load_openai_api_key
-
-try:  # pragma: no cover - optional dependency resolved at runtime
-    from openai import OpenAI  # type: ignore
-except Exception:  # pragma: no cover - library may be unavailable in tests
-    OpenAI = None  # type: ignore
+from backend.llm.client import get_openai_client
 
 try:  # pragma: no cover - optional dependency resolved at runtime
     import google.generativeai as genai  # type: ignore
@@ -418,10 +413,7 @@ class OpenAIAgentAdapter(AgentAdapter):
     ]
 
     def __init__(self) -> None:
-        if OpenAI is None:
-            raise RuntimeError("openai package is required when AGENT_MODE=openai")
-        api_key = load_openai_api_key()
-        self._client = OpenAI(api_key=api_key)
+        self._client = get_openai_client()
         # TODO: Consider changing default from o3-mini to gpt-4o-mini
         # o3-mini is a reasoning model that sometimes returns malformed JSON
         # gpt-4o-mini is 7x cheaper and more reliable for JSON extraction
