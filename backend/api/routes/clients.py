@@ -59,7 +59,7 @@ async def reset_client_data(request: ClientResetRequest):
     """
     # Production guard - enabled by default in development (when running main.py directly)
     # Disabled in production unless explicitly enabled
-    is_dev = os.getenv("ENABLE_DANGEROUS_ENDPOINTS", "true").lower() == "true"
+    is_dev = os.getenv("ENABLE_DANGEROUS_ENDPOINTS", "false").lower() == "true"
     if not is_dev:
         raise HTTPException(
             status_code=403,
@@ -161,7 +161,7 @@ async def continue_workflow(request: ClientContinueRequest):
     SECURITY: This endpoint is disabled by default.
     Set ENABLE_DANGEROUS_ENDPOINTS=true to enable (development only).
     """
-    is_dev = os.getenv("ENABLE_DANGEROUS_ENDPOINTS", "true").lower() == "true"
+    is_dev = os.getenv("ENABLE_DANGEROUS_ENDPOINTS", "false").lower() == "true"
     if not is_dev:
         raise HTTPException(
             status_code=403,

@@ -13,8 +13,8 @@ from typing import Any, Dict, List, Optional
 
 
 # Environment variable to control diagnostic output
-# Default: True for dev/staging, set OE_FALLBACK_DIAGNOSTICS=false in production
-SHOW_FALLBACK_DIAGNOSTICS = os.getenv("OE_FALLBACK_DIAGNOSTICS", "true").lower() == "true"
+# Default: False for production safety. Set OE_FALLBACK_DIAGNOSTICS=true for dev/staging.
+SHOW_FALLBACK_DIAGNOSTICS = os.getenv("OE_FALLBACK_DIAGNOSTICS", "false").lower() == "true"
 
 
 @dataclass
