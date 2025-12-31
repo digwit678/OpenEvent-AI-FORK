@@ -201,6 +201,21 @@ Key environment variables (create a `.env` file):
 | `WF_DEBUG_STATE` | `0` | Set to `1` for verbose workflow logging |
 | `VERBALIZER_TONE` | `professional` | Message tone: `professional` or `plain` |
 
+#### Local Development Options
+
+These options are **OFF by default** for production safety. Enable them in your `.env` for local dev:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_DANGEROUS_ENDPOINTS` | `false` | Enable `/api/client/reset` and `/api/client/continue` test endpoints |
+| `OE_FALLBACK_DIAGNOSTICS` | `false` | Show internal fallback diagnostics in responses (debugging) |
+
+```bash
+# Example .env additions for local development
+ENABLE_DANGEROUS_ENDPOINTS=true
+OE_FALLBACK_DIAGNOSTICS=true
+```
+
 ### LLM Provider Settings
 
 The system supports multiple LLM providers with per-operation granularity:
