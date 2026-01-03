@@ -123,30 +123,74 @@ if _IS_DEV:
 
 ---
 
+### ✅ Task 4: Upload Size Limits (Completed 2026-01-03)
+
+**Problem**: The upload endpoint in `backend/api/agent_router.py` read entire file contents into memory with no size limits:
+
+```python
+content = await file.read()  # Entire file loaded into memory - no limit!
+```
+
+A malicious actor could upload a multi-GB file and exhaust server memory.
+
+**Solution Implemented**:
+
+1. **Added configurable size limit** (default 10MB):
+   ```python
+   MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "10"))
+   MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+   ```
+
+2. **Added content-type allowlist**:
+   ```python
+   ALLOWED_UPLOAD_TYPES = {
+       "image/jpeg", "image/png", "image/gif", "image/webp",
+       "application/pdf",
+       "text/plain", "text/csv",
+       "application/json",
+   }
+   ```
+
+3. **Streaming validation** - reads in 64KB chunks, rejects before loading huge files:
+   ```python
+   chunk_size = 64 * 1024  # 64KB chunks
+   while True:
+       chunk = await file.read(chunk_size)
+       if not chunk:
+           break
+       total_size += len(chunk)
+       if total_size > MAX_UPLOAD_SIZE:
+           raise HTTPException(status_code=413, detail=f"File too large...")
+   ```
+
+**HTTP Status Codes**:
+- `413 Payload Too Large` - File exceeds size limit
+- `415 Unsupported Media Type` - Content type not in allowlist
+
+**Files Modified**:
+- `backend/api/agent_router.py`: Added `_validate_content_type()`, streaming size check, constants
+
+**Why This Approach**:
+1. **Memory protection**: Streaming validation means only 64KB in memory before rejection
+2. **Configurable**: `MAX_UPLOAD_SIZE_MB` env var for different deployment needs
+3. **Security**: Allowlist prevents uploading executables or unexpected file types
+4. **Non-breaking**: Endpoint not currently mounted - changes are future-ready
+
+**Note**: The agent router (`/api/agent/*`) is defined but not mounted in `backend/main.py`. These protections will be active when the router is integrated.
+
+---
+
 ## Tasks (Remaining - Must Address Before Production)
 
 1) Add authentication/authorization to API routes that mutate config or drive workflows.
    - Target: `backend/api/routes/config.py`, `backend/api/agent_router.py`, `backend/api/routes/messages.py`, `backend/api/routes/tasks.py`, `backend/api/routes/events.py`
    - Rationale: These routes are currently exposed without auth and can be used to mutate state.
 
-2) Add request size limits and streaming upload handling for file uploads.
-   - Target: `backend/api/agent_router.py`
-   - Rationale: Current upload path reads full content into memory with no size limits.
-
 ## Proposed Solutions (Backend-Only, Hostinger, Supabase, Multi-Tenancy Pending)
 1) Authentication/authorization for state-mutating APIs
    - Add API key/JWT middleware at the FastAPI layer.
    - Enforce auth on config/task/event/agent/message routes.
    - Add per-route role checks (e.g., manager vs. system).
-
-2) Upload safety and limits
-   - Add request size limits (FastAPI + reverse proxy).
-   - Stream uploads to disk or object storage (avoid full in-memory reads).
-   - Validate content type and enforce allowlists.
-
-5) Production entrypoint hygiene
-   - Do not use `python backend/main.py` in production; use `uvicorn`/ASGI.
-   - Gate `_ensure_backend_port_free` and auto browser launch behind `DEV_MODE=1`.
 
 6) Supabase integration readiness
    - Enable `OE_INTEGRATION_MODE=supabase` and validate required env vars.
