@@ -192,15 +192,37 @@ class JSONDatabaseAdapter(DatabaseAdapter):
         self._initialized = True
         logger.info("JSON database adapter initialized: %s", self._db_path)
 
+    def _resolve_db_path(self) -> "Path":
+        """Resolve the actual database path for the current request.
+
+        Returns per-team path when team_id is set, otherwise default path.
+        Pattern: events_{team_id}.json or events_database.json (default)
+        """
+        from .config import get_team_id
+
+        self.initialize()  # Ensure _db_path is set
+
+        team_id = get_team_id()
+        if team_id:
+            # Per-team file: same directory, different filename
+            per_team_path = self._db_path.parent / f"events_{team_id}.json"
+            logger.debug("Using per-team DB path: %s", per_team_path)
+            return per_team_path
+
+        # Default: original path (events_database.json)
+        return self._db_path
+
     def _load(self) -> Dict[str, Any]:
-        """Load database from disk."""
+        """Load database from disk (team-scoped when team_id is set)."""
         self.initialize()
-        return self._db_module.load_db(self._db_path)
+        actual_path = self._resolve_db_path()
+        return self._db_module.load_db(actual_path)
 
     def _save(self, db: Dict[str, Any]) -> None:
-        """Save database to disk."""
+        """Save database to disk (team-scoped when team_id is set)."""
         self.initialize()
-        self._db_module.save_db(db, self._db_path)
+        actual_path = self._resolve_db_path()
+        self._db_module.save_db(db, actual_path)
 
     def upsert_client(
         self,

@@ -39,9 +39,29 @@ Connected the request-scoped contextvars to the config layer.
 - When `TENANT_HEADER_ENABLED=1` and headers are set: contextvar takes priority
 - All 9 Supabase adapter functions using `get_team_id()` automatically respect the contextvar
 
-**Next Steps (Phase 2B)**:
-- Route JSON DB to per-team files (`events_{team_id}.json`)
-- Requires adapter changes to resolve path per-call
+---
+
+### ✅ Phase 2B: JSON DB Per-Team File Routing (Completed 2026-01-03)
+
+Route JSON database reads/writes to per-team files when team_id is set.
+
+**What Was Implemented**:
+- Added `_resolve_db_path()` helper in `JSONDatabaseAdapter`
+- Updated `_load()` and `_save()` to use dynamic path resolution
+- Pattern: `events_{team_id}.json` when team_id set, else `events_database.json`
+
+**Behavior**:
+- Singleton adapter preserved - path resolved per-call
+- Backwards compatible: No team_id → uses default path
+- Each team gets isolated JSON file
+
+**Files Modified**:
+- `backend/workflows/io/integration/adapter.py`
+- `backend/tests/api/test_tenant_context.py` (+4 routing tests)
+
+**Next Steps (Phase 3)**:
+- Supabase RLS enforcement (production security)
+- Add `team_id` field to event records in JSON
 
 ---
 

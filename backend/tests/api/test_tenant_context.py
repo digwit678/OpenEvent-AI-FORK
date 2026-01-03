@@ -145,3 +145,77 @@ class TestConfigIntegration:
             assert result == "header-team-id"
         finally:
             CURRENT_TEAM_ID.set(None)
+
+
+class TestJSONDBRouting:
+    """Test that JSON adapter routes to per-team files (Phase 2B)."""
+
+    def test_adapter_uses_default_path_when_no_team_id(self):
+        """Adapter should use default path when team_id is None."""
+        from backend.workflows.io.integration.adapter import JSONDatabaseAdapter
+
+        CURRENT_TEAM_ID.set(None)
+        adapter = JSONDatabaseAdapter()
+        adapter.initialize()
+
+        resolved = adapter._resolve_db_path()
+        assert resolved.name == "events_database.json"
+
+    def test_adapter_uses_team_path_when_team_id_set(self):
+        """Adapter should use per-team path when team_id is set."""
+        from backend.workflows.io.integration.adapter import JSONDatabaseAdapter
+
+        CURRENT_TEAM_ID.set("test-team-123")
+        try:
+            adapter = JSONDatabaseAdapter()
+            adapter.initialize()
+
+            resolved = adapter._resolve_db_path()
+            assert resolved.name == "events_test-team-123.json"
+        finally:
+            CURRENT_TEAM_ID.set(None)
+
+    def test_adapter_path_changes_with_contextvar(self):
+        """Path should change dynamically as contextvar changes."""
+        from backend.workflows.io.integration.adapter import JSONDatabaseAdapter
+
+        adapter = JSONDatabaseAdapter()
+        adapter.initialize()
+
+        # No team - default path
+        CURRENT_TEAM_ID.set(None)
+        assert adapter._resolve_db_path().name == "events_database.json"
+
+        # Team A
+        CURRENT_TEAM_ID.set("team-a")
+        assert adapter._resolve_db_path().name == "events_team-a.json"
+
+        # Team B
+        CURRENT_TEAM_ID.set("team-b")
+        assert adapter._resolve_db_path().name == "events_team-b.json"
+
+        # Clean up
+        CURRENT_TEAM_ID.set(None)
+
+    def test_same_adapter_instance_different_paths(self):
+        """Same adapter instance should resolve different paths per team."""
+        from backend.workflows.io.integration.adapter import JSONDatabaseAdapter
+
+        adapter = JSONDatabaseAdapter()
+        adapter.initialize()
+
+        # Simulate request for Team A
+        CURRENT_TEAM_ID.set("venue-alpha")
+        path_a = adapter._resolve_db_path()
+
+        # Simulate request for Team B (same adapter instance)
+        CURRENT_TEAM_ID.set("venue-beta")
+        path_b = adapter._resolve_db_path()
+
+        # Paths should be different
+        assert path_a.name == "events_venue-alpha.json"
+        assert path_b.name == "events_venue-beta.json"
+        assert path_a != path_b
+
+        # Clean up
+        CURRENT_TEAM_ID.set(None)
