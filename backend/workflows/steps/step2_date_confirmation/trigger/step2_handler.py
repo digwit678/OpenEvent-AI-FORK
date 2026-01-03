@@ -1479,7 +1479,8 @@ def _resolve_confirmation_window(state: WorkflowState, event_entry: dict) -> Opt
             end_dt = start_dt + timedelta(hours=default_duration_hours)
             end_obj = end_dt.time()
             end_time = f"{end_obj.hour:02d}:{end_obj.minute:02d}"
-            print(f"[Step2][TIME_INFER] Single time {start_time} detected, inferring end_time={end_time} (4-hour default)")
+            logger.debug("[Step2][TIME_INFER] Single time %s detected, inferring end_time=%s (4-hour default)",
+                        start_time, end_time)
 
     if start_time:
         user_info["start_time"] = start_time
@@ -1522,7 +1523,8 @@ def _handle_partial_confirmation(
         time_request_count = pending.get("_request_count", 0) + 1
         if time_request_count >= 2:
             # Already asked twice - use default time window
-            print(f"[Step2][LOOP_BREAK] Time request loop detected for {window.display_date}, using default window")
+            logger.debug("[Step2][LOOP_BREAK] Time request loop detected for %s, using default window",
+                        window.display_date)
             window = ConfirmationWindow(
                 display_date=window.display_date,
                 iso_date=window.iso_date,

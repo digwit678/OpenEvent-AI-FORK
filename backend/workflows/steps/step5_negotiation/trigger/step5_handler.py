@@ -165,7 +165,7 @@ def process(state: WorkflowState) -> GroupResult:
             if message_text:
                 event_entry.setdefault("event_data", {})["Billing Address"] = message_text
                 state.extras["persist"] = True
-                print(f"[BILLING_CAPTURE] Stored billing address from message: {message_text[:80]}...")
+                logger.debug("[BILLING_CAPTURE] Stored billing address from message: %s...", message_text[:80])
 
     # Refresh billing details (parses event_data["Billing Address"] into structured fields)
     billing_missing = _refresh_billing(event_entry)
@@ -176,7 +176,7 @@ def process(state: WorkflowState) -> GroupResult:
         billing_req["awaiting_billing_for_accept"] = False
         billing_req["last_missing"] = []
         state.extras["persist"] = True
-        print(f"[BILLING_CAPTURE] Billing complete - cleared awaiting_billing_for_accept")
+        logger.debug("[BILLING_CAPTURE] Billing complete - cleared awaiting_billing_for_accept")
 
     # If a manager decision is already pending, keep waiting instead of spamming duplicates.
     # BUT: Skip this check during billing flow - we need to continue to confirmation gate.

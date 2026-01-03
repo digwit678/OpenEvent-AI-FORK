@@ -32,9 +32,12 @@ import signal
 import time
 import webbrowser
 import threading
+import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 # NOTE: domain, conversation_manager imports moved to routes/messages.py
 from backend.legacy.session_store import active_conversations  # Used in root endpoint
 # NOTE: adapter imports moved to routes/messages.py
@@ -78,7 +81,7 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
     if cleared:
-        print(f"[Backend] Startup: cleared {cleared} __pycache__ directories")
+        logger.info("[Backend] Startup: cleared %d __pycache__ directories", cleared)
     
     yield
     # --- Shutdown logic (if any) can go here ---
@@ -207,7 +210,7 @@ def _ensure_backend_port_free(port: int) -> None:
         raise RuntimeError(
             f"Port {port} is already in use, but no PID could be discovered (missing lsof?)."
         )
-    print(f"[Backend][WARN] Port {port} is in use; terminating listeners: {', '.join(map(str, pids))}")
+    logger.warning("[Backend] Port %s is in use; terminating listeners: %s", port, ', '.join(map(str, pids)))
     for pid in pids:
         _terminate_pid(pid)
     deadline = time.time() + 5.0
@@ -226,7 +229,7 @@ def _write_pidfile(path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"{os.getpid()}\n", encoding="utf-8")
     except Exception as exc:  # pragma: no cover - best effort
-        print(f"[Backend][WARN] Failed to write pidfile {path}: {exc}")
+        logger.warning("[Backend] Failed to write pidfile %s: %s", path, exc)
 
 
 def _cleanup_pidfile(path: Path) -> None:
@@ -258,7 +261,7 @@ def _is_frontend_healthy(port: int, timeout: float = 2.0) -> bool:
 def _kill_unhealthy_frontend() -> None:
     """Kill any existing frontend processes and clear cache."""
     import shutil
-    print("[Frontend] Killing unhealthy frontend and clearing cache...")
+    logger.info("[Frontend] Killing unhealthy frontend and clearing cache...")
     # Kill next dev processes
     subprocess.run(["pkill", "-f", "next dev"], capture_output=True)
     time.sleep(0.5)
@@ -267,9 +270,9 @@ def _kill_unhealthy_frontend() -> None:
     if next_cache.exists():
         try:
             shutil.rmtree(next_cache)
-            print("[Frontend] Cleared .next cache")
+            logger.info("[Frontend] Cleared .next cache")
         except Exception as e:
-            print(f"[Frontend][WARN] Could not clear .next cache: {e}")
+            logger.warning("[Frontend] Could not clear .next cache: %s", e)
     time.sleep(0.5)
 
 
@@ -287,9 +290,8 @@ def _launch_frontend() -> Optional[subprocess.Popen]:
                 and _is_port_in_use(FRONTEND_PORT)
                 and _is_frontend_healthy(FRONTEND_PORT)
             ):
-                print(
-                    f"[Frontend] Reusing existing frontend process (pid={existing_pid}) on http://localhost:{FRONTEND_PORT}"
-                )
+                logger.info("[Frontend] Reusing existing frontend process (pid=%s) on http://localhost:%s",
+                           existing_pid, FRONTEND_PORT)
                 return None
             frontend_pidfile.unlink(missing_ok=True)
     except Exception:
@@ -297,22 +299,22 @@ def _launch_frontend() -> Optional[subprocess.Popen]:
     if _is_port_in_use(FRONTEND_PORT):
         # Port is in use - check if it's actually healthy
         if _is_frontend_healthy(FRONTEND_PORT):
-            print(f"[Frontend] Port {FRONTEND_PORT} already in use – frontend is healthy.")
+            logger.info("[Frontend] Port %s already in use – frontend is healthy.", FRONTEND_PORT)
             return None
         else:
-            print(f"[Frontend][WARN] Port {FRONTEND_PORT} in use but returning errors!")
+            logger.warning("[Frontend] Port %s in use but returning errors!", FRONTEND_PORT)
             if os.getenv("AUTO_FIX_FRONTEND", "1") == "1":
                 _kill_unhealthy_frontend()
                 # Now port should be free, continue to launch
             else:
-                print(f"[Frontend][WARN] Set AUTO_FIX_FRONTEND=1 to auto-fix, or run:")
-                print(f"[Frontend][WARN]   pkill -f 'next dev' && rm -rf atelier-ai-frontend/.next")
+                logger.warning("[Frontend] Set AUTO_FIX_FRONTEND=1 to auto-fix, or run:")
+                logger.warning("[Frontend]   pkill -f 'next dev' && rm -rf atelier-ai-frontend/.next")
                 return None
     if not FRONTEND_DIR.exists():
-        print(f"[Frontend][WARN] Directory {FRONTEND_DIR} not found; skipping auto-launch.")
+        logger.warning("[Frontend] Directory %s not found; skipping auto-launch.", FRONTEND_DIR)
         return None
     if not (FRONTEND_DIR / "package.json").exists():
-        print(f"[Frontend][WARN] No package.json in {FRONTEND_DIR}; skipping auto-launch.")
+        logger.warning("[Frontend] No package.json in %s; skipping auto-launch.", FRONTEND_DIR)
         return None
     cmd = ["npm", "run", "dev", "--", "--hostname", "0.0.0.0", "--port", str(FRONTEND_PORT)]
     try:
@@ -324,12 +326,12 @@ def _launch_frontend() -> Optional[subprocess.Popen]:
             frontend_pidfile.write_text(f"{proc.pid}\n", encoding="utf-8")
         except Exception:
             pass
-        print(f"[Frontend] npm dev server starting on http://localhost:{FRONTEND_PORT}")
+        logger.info("[Frontend] npm dev server starting on http://localhost:%s", FRONTEND_PORT)
         return proc
     except FileNotFoundError:
-        print("[Frontend][WARN] npm not found on PATH; skipping auto-launch.")
+        logger.warning("[Frontend] npm not found on PATH; skipping auto-launch.")
     except Exception as exc:
-        print(f"[Frontend][ERROR] Failed to launch npm dev server: {exc}")
+        logger.error("[Frontend] Failed to launch npm dev server: %s", exc)
     return None
 
 
@@ -345,14 +347,14 @@ def _open_browser_when_ready() -> None:
                 if os.getenv("AUTO_OPEN_DEBUG_PANEL", "1") == "1":
                     webbrowser.open_new_tab(debug_url)
             except Exception as exc:  # pragma: no cover - environment dependent
-                print(f"[Frontend][WARN] Unable to open browser automatically: {exc}")
+                logger.warning("[Frontend] Unable to open browser automatically: %s", exc)
             else:
-                print(f"[Frontend] Opened browser window at {target_url}")
+                logger.info("[Frontend] Opened browser window at %s", target_url)
                 if os.getenv("AUTO_OPEN_DEBUG_PANEL", "1") == "1":
-                    print(f"[Frontend] Opened debug panel at {debug_url}")
+                    logger.info("[Frontend] Opened debug panel at %s", debug_url)
             return
         time.sleep(0.5)
-    print(f"[Frontend][WARN] Frontend not reachable on {target_url} after waiting 60s; skipping auto-open.")
+    logger.warning("[Frontend] Frontend not reachable on %s after waiting 60s; skipping auto-open.", target_url)
 
 
 def load_events_database():
@@ -427,13 +429,13 @@ def _persist_debug_reports() -> None:
     try:
         thread_ids = BUS.list_threads()
     except Exception as exc:  # pragma: no cover - defensive guard
-        print(f"[Debug][WARN] Unable to enumerate trace threads: {exc}")
+        logger.warning("[Debug] Unable to enumerate trace threads: %s", exc)
         return
     for thread_id in thread_ids:
         try:
             debug_generate_report(thread_id, persist=True)
         except Exception as exc:
-            print(f"[Debug][WARN] Failed to persist debug report for {thread_id}: {exc}")
+            logger.warning("[Debug] Failed to persist debug report for %s: %s", thread_id, exc)
 
 
 if os.getenv("DEBUG_TRACE_PERSIST_ON_EXIT", "0") == "1":
@@ -452,7 +454,7 @@ def _clear_python_cache() -> None:
         except Exception:
             pass
     if cleared:
-        print(f"[Backend] Cleared {cleared} __pycache__ directories")
+        logger.info("[Backend] Cleared %d __pycache__ directories", cleared)
 
 
 if __name__ == "__main__":

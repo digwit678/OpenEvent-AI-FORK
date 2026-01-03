@@ -1,4 +1,4 @@
-nbo#!/usr/bin/env bash
+#!/usr/bin/env bash
 #
 # PERMANENT FIX for port 8000 issues
 # This script ALWAYS cleans up before starting the backend
@@ -90,6 +90,10 @@ start_backend() {
     export PYTHONPATH="$(pwd)"
     export PYTHONDONTWRITEBYTECODE=1
     export TZ=Europe/Zurich
+    # Default to openai mode (never stub for dev/playwright tests)
+    export AGENT_MODE="${AGENT_MODE:-openai}"
+    # Fallback diagnostics: off by default (set to 1 for debugging)
+    export OE_FALLBACK_DIAGNOSTICS="${OE_FALLBACK_DIAGNOSTICS:-0}"
 
     log_info "Starting backend on port $PORT..."
 

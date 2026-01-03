@@ -19,10 +19,13 @@ Toggle: Use DETECTION_MODE environment variable or admin UI:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 from backend.domain.vocabulary import IntentLabel
 
@@ -292,12 +295,12 @@ def run_unified_detection(
         return result
 
     except json.JSONDecodeError as e:
-        print(f"[UNIFIED_DETECTION] JSON parse error with {intent_provider}: {e}")
+        logger.warning("[UNIFIED_DETECTION] JSON parse error with %s: %s", intent_provider, e)
         # Try fallback providers on JSON parse failure
         from backend.llm.provider_config import get_fallback_providers
         for fallback in get_fallback_providers(intent_provider):
             try:
-                print(f"[UNIFIED_DETECTION] Trying fallback provider: {fallback}")
+                logger.info("[UNIFIED_DETECTION] Trying fallback provider: %s", fallback)
                 fallback_adapter = get_adapter_for_provider(fallback)
                 response_text = fallback_adapter.complete(
                     prompt=prompt,
@@ -338,7 +341,7 @@ def run_unified_detection(
                     raw_response=data,
                 )
             except Exception as fallback_err:
-                print(f"[UNIFIED_DETECTION] Fallback {fallback} also failed: {fallback_err}")
+                logger.warning("[UNIFIED_DETECTION] Fallback %s also failed: %s", fallback, fallback_err)
                 continue
         # All providers failed - return minimal result
         return UnifiedDetectionResult(
@@ -346,12 +349,12 @@ def run_unified_detection(
             intent_confidence=0.3,
         )
     except Exception as e:
-        print(f"[UNIFIED_DETECTION] Error with {intent_provider}: {e}")
+        logger.warning("[UNIFIED_DETECTION] Error with %s: %s", intent_provider, e)
         # Try fallback on any error
         from backend.llm.provider_config import get_fallback_providers
         for fallback in get_fallback_providers(intent_provider):
             try:
-                print(f"[UNIFIED_DETECTION] Trying fallback provider: {fallback}")
+                logger.info("[UNIFIED_DETECTION] Trying fallback provider: %s", fallback)
                 fallback_adapter = get_adapter_for_provider(fallback)
                 response_text = fallback_adapter.complete(
                     prompt=prompt,

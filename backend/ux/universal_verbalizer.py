@@ -454,19 +454,24 @@ def verbalize_message(
     # These are already processed by qna/verbalizer.py and contain structured data
     # that must be preserved exactly (tables, NEXT STEP blocks, etc.)
     if _contains_structured_content(fallback_text):
-        logger.debug(
-            f"universal_verbalizer: skipping structured content for step={context.step}, topic={context.topic}"
+        logger.warning(
+            f"[VERBALIZER_BYPASS] Skipping structured content: step={context.step}, topic={context.topic}"
         )
+        # Make bypass visible in dev mode
+        if os.getenv("OE_FALLBACK_DIAGNOSTICS", "").lower() in ("1", "true", "yes"):
+            return f"[VERBALIZER_BYPASS: structured_content] {fallback_text}"
         return fallback_text
 
     tone = _resolve_tone()
     if tone == "plain":
-        logger.debug(f"universal_verbalizer: plain tone, step={context.step}, topic={context.topic}")
+        logger.warning(f"[VERBALIZER_BYPASS] Plain tone mode: step={context.step}, topic={context.topic}")
+        if os.getenv("OE_FALLBACK_DIAGNOSTICS", "").lower() in ("1", "true", "yes"):
+            return f"[VERBALIZER_BYPASS: plain_tone] {fallback_text}"
         return fallback_text
 
     # Check if LLM is available
     from backend.utils.openai_key import load_openai_api_key
-    from backend.utils.fallback import create_fallback_context, wrap_fallback
+    from backend.core.fallback import create_fallback_context, wrap_fallback
 
     api_key = load_openai_api_key(required=False)
     if not api_key:

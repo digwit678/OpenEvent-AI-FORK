@@ -403,12 +403,8 @@ class OpenEventAgent:
                 or draft.get("prompt")
                 or ""
             )
-            print(
-                "[WF][DEBUG][EmailCompose] body_chosen=",
-                chosen_field or "none",
-                "| len=",
-                len(source_value),
-            )
+            logger.debug("[WF][DEBUG][EmailCompose] body_chosen=%s | len=%d",
+                        chosen_field or "none", len(source_value))
             body_markdown = draft.get("body_markdown") or draft.get("body_md")
             footer = draft.get("footer") or ""
             body_text = None

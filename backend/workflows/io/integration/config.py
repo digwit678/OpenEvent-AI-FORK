@@ -24,9 +24,12 @@ Environment Variables:
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -139,7 +142,7 @@ def _get_hil_setting_from_db() -> Optional[bool]:
             return hil_config["enabled"]
     except Exception as exc:
         # Database not available or error - fall back to env var
-        print(f"[Config][WARN] Could not read HIL setting from DB: {exc}")
+        logger.warning("[Config] Could not read HIL setting from DB: %s", exc)
     return None
 
 

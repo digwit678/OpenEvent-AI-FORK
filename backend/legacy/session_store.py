@@ -19,10 +19,13 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from backend.domain import ConversationState, IntentLabel
 from backend.workflow_email import DB_PATH as WF_DB_PATH, load_db as wf_load_db, save_db as wf_save_db
@@ -103,7 +106,7 @@ def _render_step3_from_workflow(state: ConversationState) -> Optional[Dict[str, 
     try:
         db = wf_load_db()
     except Exception as exc:
-        print(f"[WF][WARN] Step-3 render skipped (load failed): {exc}")
+        logger.warning("[WF] Step-3 render skipped (load failed): %s", exc)
         return None
 
     events = db.get("events") or []
@@ -144,14 +147,14 @@ def _render_step3_from_workflow(state: ConversationState) -> Optional[Dict[str, 
     try:
         step3_process(wf_state)
     except Exception as exc:
-        print(f"[WF][ERROR] Step-3 workflow failed: {exc}")
+        logger.error("[WF] Step-3 workflow failed: %s", exc)
         return None
 
     if wf_state.extras.get("persist"):
         try:
             wf_save_db(db)
         except Exception as exc:
-            print(f"[WF][WARN] Step-3 persist failed: {exc}")
+            logger.warning("[WF] Step-3 persist failed: %s", exc)
 
     return _normalise_step3_draft(state.session_id, wf_state.draft_messages)
 

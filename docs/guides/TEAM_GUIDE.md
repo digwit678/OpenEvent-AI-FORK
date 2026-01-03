@@ -1204,6 +1204,32 @@ if locked_room:
 
 **Regression Guard:** Any message with event type + participant count should classify as `event_request`, not fall back to manual review.
 
+### LLM Client Migration - Missing Import (Fixed - 2026-01-03)
+**Symptoms:** After migrating to centralized LLM client singleton, backend crashed with `NameError: name '_LLM_ENABLED' is not defined` in `backend/workflows/qna/extraction.py:183`.
+
+**Root Cause:** During the LLM client migration (consolidating OpenAI client usage to singleton in `backend/llm/client.py`), the `_LLM_ENABLED` module-level constant was removed but one reference in `_extract_with_llm()` was missed. The migration replaced `_LLM_ENABLED` checks with `is_llm_available()` function calls, but line 183 still used the old constant.
+
+**Fix Applied:**
+```python
+# Line 183 - Changed from:
+"model": QNA_EXTRACTION_MODEL if _LLM_ENABLED else "fallback",
+# To:
+"model": QNA_EXTRACTION_MODEL if is_llm_available() else "fallback",
+```
+【F:backend/workflows/qna/extraction.py†L183】
+
+**Migration Checklist (for future reference):**
+When migrating LLM client code, search for ALL usages of:
+- `_LLM_ENABLED` → replace with `is_llm_available()`
+- `_openai_client` / `openai.OpenAI()` → replace with `get_openai_client()`
+- Module-level client instantiation → use singleton from `backend/llm/client.py`
+
+**Files in centralized LLM client:**
+- `backend/llm/client.py` - Singleton client with `get_openai_client()`, `is_llm_available()`
+- `backend/llm/__init__.py` - Exports for easy import
+
+**Regression Guard:** After any LLM-related refactoring, run `grep -r "_LLM_ENABLED\|_openai_client" backend/` to catch any missed references.
+
 ---
 
 ## Bug Prevention Guidelines
@@ -1327,10 +1353,27 @@ Q&A path expectations appear outdated; fixtures need update.
 
 ### Next Steps
 
-1. **Fix change propagation tests** — These cover core v4 functionality (date/room/requirements detours)
-2. **Update Q&A test expectations** — Align with current behavior
-3. **Add missing coverage** — Steps 5-7 have limited unit tests
-4. **Consolidate structure** — Consider merging `tests/workflows/` into `tests/specs/` per reorganization plan
+**Completed — Backend Refactoring (2026-01-03)**
+
+1. ✅ **LLM Client Centralization** — All files now use `backend/llm/client.py` singleton. Use `get_openai_client()` and `is_llm_available()`.
+
+2. ✅ **Fallback System Consolidation** — Canonical module: `backend/core/fallback.py`. Deprecated `backend/utils/fallback.py` (re-exports with warning).
+
+3. ✅ **Print → Logging Conversion** — Core workflow files converted to use `logging` module. Remaining prints are in:
+   - Tests (intentional pytest output)
+   - CLI tools (`room_availability_pipeline.py`, `workflow_email.py` CLI portions)
+
+4. ✅ **Clean Up DEPRECATED Folder** — Removed `backend/DEPRECATED/` (13 Python stubs + pre_consolidation JSON). Verified zero active imports.
+
+**Priority 1 — Test Suite**
+
+5. **Fix change propagation tests** — These cover core v4 functionality (date/room/requirements detours)
+6. **Update Q&A test expectations** — Align with current behavior
+7. **Add missing coverage** — Steps 5-7 have limited unit tests
+
+**Priority 2 — Structure**
+
+8. **Consolidate test structure** — Consider merging `tests/workflows/` into `tests/specs/` per reorganization plan
 
 ### Running Tests
 

@@ -700,13 +700,13 @@ def load_default_db_for_tools() -> Dict[str, Any]:
         return get_default_db()
     except Exception as exc:
         # Return a db with error flag so tools can surface the issue
-        from backend.utils.fallback import create_fallback_context
+        from backend.core.fallback import create_fallback_context
         ctx = create_fallback_context(
             source="agents.chatkit_runner.load_db",
             trigger="db_load_failed",
             error=exc,
         )
-        print(f"[FALLBACK] {ctx.source} | {ctx.trigger} | {exc}")
+        logger.warning("[FALLBACK] %s | %s | %s", ctx.source, ctx.trigger, exc)
         return {
             "events": [],
             "tasks": [],
@@ -740,14 +740,14 @@ async def _fallback_stream(
             "message": f"[Streaming mode unavailable: {fallback_reason}] Switching to workflow mode.",
         }
         yield f"data: {json.dumps(diagnostic)}\n\n"
-        from backend.utils.fallback import create_fallback_context
+        from backend.core.fallback import create_fallback_context
         ctx = create_fallback_context(
             source="agents.chatkit_runner.stream",
             trigger="sdk_unavailable",
             thread_id=thread_id,
             error=Exception(fallback_reason),
         )
-        print(f"[FALLBACK] {ctx.source} | {ctx.trigger} | {fallback_reason}")
+        logger.warning("[FALLBACK] %s | %s | %s", ctx.source, ctx.trigger, fallback_reason)
 
     agent = OpenEventAgent()
     session = agent.create_session(thread_id)

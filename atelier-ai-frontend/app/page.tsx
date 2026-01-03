@@ -535,8 +535,14 @@ function EmailThreadUIContent() {
         `Client reset complete:\n- Events deleted: ${result.events_deleted}\n- Tasks deleted: ${result.tasks_deleted}`
       );
     } catch (error) {
-      console.error('Error resetting client:', error);
-      alert('Error resetting client data. Please try again.');
+      const msg = error instanceof Error ? error.message : String(error);
+      // Handle disabled endpoint gracefully (production security feature)
+      if (msg.includes('endpoint is disabled') || msg.includes('ENABLE_DANGEROUS_ENDPOINTS')) {
+        alert('Reset is disabled in this environment.\n\nTo enable: set ENABLE_DANGEROUS_ENDPOINTS=true');
+      } else {
+        console.error('Error resetting client:', error);
+        alert('Error resetting client data. Please try again.');
+      }
     } finally {
       setResetClientLoading(false);
     }

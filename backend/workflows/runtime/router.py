@@ -5,7 +5,10 @@ Contains the main step dispatching loop that routes messages through Steps 2-7.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from backend.detection.unified import UnifiedDetectionResult
@@ -89,11 +92,11 @@ def run_routing_loop(
     for iteration in range(max_iterations):
         event_entry = state.event_entry
         if not event_entry:
-            print(f"[WF][ROUTE][{iteration}] No event_entry, breaking")
+            logger.debug("[WF][ROUTE][%d] No event_entry, breaking", iteration)
             break
 
         step = event_entry.get("current_step")
-        print(f"[WF][ROUTE][{iteration}] current_step={step}")
+        logger.debug("[WF][ROUTE][%d] current_step=%s", iteration, step)
 
         # =================================================================
         # SITE VISIT INTERCEPT: Handle site visit requests at ANY step
@@ -113,7 +116,7 @@ def run_routing_loop(
         step_result = dispatch_step(state, step)
 
         if step_result is None:
-            print(f"[WF][ROUTE] No handler for step {step}, breaking")
+            logger.debug("[WF][ROUTE] No handler for step %s, breaking", step)
             break
 
         last_result = step_result
@@ -152,7 +155,8 @@ def _check_site_visit_intercept(
     # Check if this is a new site visit request
     detection = _get_detection_result(state)
     if is_site_visit_intent(detection):
-        print(f"[WF][SITE_VISIT] New site visit request detected at step {event_entry.get('current_step')}")
+        logger.debug("[WF][SITE_VISIT] New site visit request detected at step %s",
+                    event_entry.get('current_step'))
         return handle_site_visit_request(state, event_entry, detection)
 
     return None

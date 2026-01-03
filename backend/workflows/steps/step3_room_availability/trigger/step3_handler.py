@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+logger = logging.getLogger(__name__)
 
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.menu_options import (
@@ -608,7 +611,8 @@ def process(state: WorkflowState) -> GroupResult:
         if not any_room_fits_capacity(participants):
             capacity_exceeded = True
             max_venue_capacity = get_max_capacity()
-            print(f"[Step3][CAPACITY_EXCEEDED] Requested {participants} guests, max venue capacity is {max_venue_capacity}")
+            logger.debug("[Step3][CAPACITY_EXCEEDED] Requested %d guests, max venue capacity is %d",
+                        participants, max_venue_capacity)
 
     # If capacity exceeds all rooms, handle it specially
     if capacity_exceeded:
@@ -1160,7 +1164,8 @@ def _handle_capacity_exceeded(
         "requested": participants,
         "max_available": max_capacity,
     })
-    print(f"[Step3][CAPACITY_EXCEEDED] Generated response for {participants} guests (max: {max_capacity})")
+    logger.debug("[Step3][CAPACITY_EXCEEDED] Generated response for %d guests (max: %d)",
+                participants, max_capacity)
 
     # Update state - stay at Step 3 awaiting client response
     state.extras["persist"] = True

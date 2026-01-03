@@ -1,12 +1,15 @@
 """Gate functions for smart shortcuts eligibility.
 
 This module handles the decision logic for whether smart shortcuts
-should be allowed to run. Pure functions (no side effects except debug prints).
+should be allowed to run.
 """
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def shortcuts_allowed(event_entry: Dict[str, Any]) -> bool:
@@ -81,7 +84,7 @@ def debug_shortcut_gate(
         "user_shortcut": (user_info or {}).get("shortcut_capacity_ok"),
     }
     formatted = " ".join(f"{key}={value}" for key, value in info.items())
-    print(f"[WF DEBUG][shortcuts] {formatted}")
+    logger.debug("[WF DEBUG][shortcuts] %s", formatted)
 
 
 # Compatibility aliases for internal use (underscore prefix convention)

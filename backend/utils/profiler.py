@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from functools import wraps
 from time import perf_counter
 from typing import Any, Callable, TypeVar, cast
+
+logger = logging.getLogger(__name__)
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -27,7 +30,7 @@ def profile_step(name: str) -> Callable[[F], F]:
                 return fn(*args, **kwargs)
             finally:
                 duration_ms = (perf_counter() - start) * 1000.0
-                print(f"[PERF] {name}: {duration_ms:.1f} ms")
+                logger.info("[PERF] %s: %.1f ms", name, duration_ms)
 
         return cast(F, wrapper)
 

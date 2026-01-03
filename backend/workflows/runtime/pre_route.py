@@ -11,7 +11,10 @@ Contains pre-routing checks that run after intake but before the step router:
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from backend.workflows.common.types import GroupResult, WorkflowState
@@ -133,13 +136,17 @@ def run_unified_pre_filter(
         # Store unified detection result
         state.extras["unified_detection"] = unified_result.to_dict()
 
-        print(f"[UNIFIED_DETECTION] intent={unified_result.intent}, manager={unified_result.is_manager_request}, conf={unified_result.is_confirmation}, qna_types={unified_result.qna_types}")
+        logger.debug(
+            "[UNIFIED_DETECTION] intent=%s, manager=%s, conf=%s, qna_types=%s",
+            unified_result.intent, unified_result.is_manager_request,
+            unified_result.is_confirmation, unified_result.qna_types
+        )
 
     # Log in enhanced mode
     if is_enhanced_mode() and pre_result.matched_patterns:
-        print(f"[PRE_FILTER] Mode=enhanced, signals={pre_result.matched_patterns[:5]}")
+        logger.debug("[PRE_FILTER] Mode=enhanced, signals=%s", pre_result.matched_patterns[:5])
         if pre_result.can_skip_intent_llm:
-            print(f"[PRE_FILTER] Can skip intent LLM (pure confirmation)")
+            logger.debug("[PRE_FILTER] Can skip intent LLM (pure confirmation)")
 
     return pre_result, unified_result
 
@@ -181,7 +188,8 @@ def is_out_of_context(
 
     # Intent has step restrictions - check if current step is valid
     if current_step not in valid_steps:
-        print(f"[OUT_OF_CONTEXT] Intent '{intent}' is only valid at steps {valid_steps}, but current step is {current_step}")
+        logger.warning("[OUT_OF_CONTEXT] Intent '%s' is only valid at steps %s, but current step is %s",
+                      intent, valid_steps, current_step)
         return True
 
     return False
@@ -211,14 +219,14 @@ def check_out_of_context(
 
     current_step = state.event_entry.get("current_step")
     intent = unified_result.intent if unified_result else None
-    print(f"[OOC_CHECK] intent={intent}, current_step={current_step}")
+    logger.debug("[OOC_CHECK] intent=%s, current_step=%s", intent, current_step)
 
     if not is_out_of_context(unified_result, current_step):
         return None
 
     # Log the out-of-context detection
     intent = unified_result.intent if unified_result else "unknown"
-    print(f"[PRE_ROUTE] Out-of-context message detected - no response")
+    logger.warning("[PRE_ROUTE] Out-of-context message detected - no response")
 
     from backend.debug.hooks import trace_marker
     trace_marker(
@@ -278,7 +286,7 @@ def handle_manager_escalation(
     if not unified_result.is_manager_request:
         return None
 
-    print(f"[PRE_ROUTE] Manager escalation detected - creating HIL task")
+    logger.info("[PRE_ROUTE] Manager escalation detected - creating HIL task")
 
     # Get client and event info
     client_id = state.client_id or "unknown"
@@ -317,7 +325,7 @@ def handle_manager_escalation(
     # Save the updated database
     save_db(state.db, state.db_path, lock_path_for(state.db_path))
 
-    print(f"[PRE_ROUTE] Created manager escalation task: {task_id}")
+    logger.info("[PRE_ROUTE] Created manager escalation task: %s", task_id)
 
     # Set flag on event for downstream handlers
     if state.event_entry:
@@ -440,7 +448,7 @@ def evaluate_pre_route_guards(state: WorkflowState) -> None:
 
     # Apply deposit bypass - force step 5 for deposit flow
     if guard_snapshot.deposit_bypass and guard_snapshot.forced_step == 5:
-        print(f"[WF][GUARDS] Deposit bypass: forcing step 5 for event {event_id}")
+        logger.debug("[WF][GUARDS] Deposit bypass: forcing step 5 for event %s", event_id)
         state.event_entry["current_step"] = 5
         state.extras["persist"] = True
         return  # Skip other guard logic during deposit flow
@@ -452,19 +460,19 @@ def evaluate_pre_route_guards(state: WorkflowState) -> None:
         and (state.event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
     )
     if in_billing_flow:
-        print(f"[WF][GUARDS] Billing flow active: skipping guard forcing for event {event_id}")
+        logger.debug("[WF][GUARDS] Billing flow active: skipping guard forcing for event %s", event_id)
         return  # Skip guard logic during billing flow - step should remain at 5
 
     # Apply requirements_hash update if changed
     if guard_snapshot.requirements_hash_changed and guard_snapshot.requirements_hash:
-        print(f"[WF][GUARDS] Requirements hash updated: {guard_snapshot.requirements_hash}")
+        logger.debug("[WF][GUARDS] Requirements hash updated: %s", guard_snapshot.requirements_hash)
         state.event_entry["requirements_hash"] = guard_snapshot.requirements_hash
         state.extras["persist"] = True
 
     # Apply forced step if needed (step 2, 3, or 4 guard)
     if guard_snapshot.forced_step is not None:
         current = state.event_entry.get("current_step")
-        print(f"[WF][GUARDS] Forcing step from {current} to {guard_snapshot.forced_step}")
+        logger.debug("[WF][GUARDS] Forcing step from %s to %s", current, guard_snapshot.forced_step)
         state.event_entry["current_step"] = guard_snapshot.forced_step
         state.extras["persist"] = True
 
@@ -512,11 +520,11 @@ def correct_billing_flow_step(state: WorkflowState) -> None:
     stored_step = state.event_entry.get("current_step")
 
     if in_billing_flow and stored_step != 5:
-        print(f"[WF][BILLING_FIX] Correcting step from {stored_step} to 5 for billing flow")
+        logger.debug("[WF][BILLING_FIX] Correcting step from %s to 5 for billing flow", stored_step)
         state.event_entry["current_step"] = 5
         state.extras["persist"] = True
     elif in_billing_flow:
-        print(f"[WF][BILLING_FLOW] Already at step 5, proceeding with billing flow")
+        logger.debug("[WF][BILLING_FLOW] Already at step 5, proceeding with billing flow")
 
 
 def run_pre_route_pipeline(
@@ -605,9 +613,11 @@ def run_pre_route_pipeline(
     correct_billing_flow_step(state)
 
     # Pre-route debug logging
-    print(f"[WF][PRE_ROUTE] About to enter routing loop, event_entry exists={state.event_entry is not None}")
+    logger.debug("[WF][PRE_ROUTE] About to enter routing loop, event_entry exists=%s",
+                state.event_entry is not None)
     if state.event_entry:
-        print(f"[WF][PRE_ROUTE] current_step={state.event_entry.get('current_step')}, offer_accepted={state.event_entry.get('offer_accepted')}")
+        logger.debug("[WF][PRE_ROUTE] current_step=%s, offer_accepted=%s",
+                    state.event_entry.get('current_step'), state.event_entry.get('offer_accepted'))
 
     # Continue to router
     return None, intake_result

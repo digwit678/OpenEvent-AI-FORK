@@ -180,7 +180,7 @@ def ensure_qna_extraction(
 
     normalized = _normalize_qna_extraction(extraction)
     meta = {
-        "model": QNA_EXTRACTION_MODEL if _LLM_ENABLED else "fallback",
+        "model": QNA_EXTRACTION_MODEL if is_llm_available() else "fallback",
         "trigger": "borderline" if borderline and not likely_general else "general",
     }
     state.extras["qna_extraction"] = normalized

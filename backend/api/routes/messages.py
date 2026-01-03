@@ -276,7 +276,7 @@ def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> Opt
     Returns:
         Error message if something failed, None if successful.
     """
-    from backend.utils.fallback import create_fallback_context
+    # Note: create_fallback_context imported at module level from backend.core.fallback
 
     if not event_id:
         ctx = create_fallback_context(
@@ -354,7 +354,7 @@ def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> Opt
 
 def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: str) -> Dict[str, Any]:
     """Persist confirmed date and trigger availability workflow."""
-    from backend.utils.fallback import create_fallback_context
+    # Note: create_fallback_context imported at module level from backend.core.fallback
 
     conversation_state.event_info.event_date = chosen_date
     conversation_state.event_info.status = "Date Confirmed"

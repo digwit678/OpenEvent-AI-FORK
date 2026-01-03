@@ -147,7 +147,7 @@ def _debug_state(stage: str, state: WorkflowState, extra: Optional[Dict[str, Any
         info.update(extra)
     if WF_DEBUG:
         serialized = " ".join(f"{key}={value}" for key, value in info.items())
-        print(f"[WF DEBUG][state] {serialized}")
+        logger.debug("[WF DEBUG][state] %s", serialized)
 
     if not debug_trace_enabled:
         return
@@ -400,7 +400,9 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
 
     # Loop completed without halting - finalize and return
     _debug_state("final", state)
-    print(f"[WF][FINAL] Returning with action={last_result.action if last_result else 'None'}, halt={last_result.halt if last_result else 'N/A'}")
+    logger.debug("[WF][FINAL] Returning with action=%s, halt=%s",
+                last_result.action if last_result else 'None',
+                last_result.halt if last_result else 'N/A')
 
     # [WF0.1 FIX] Safety net: if routing loop completed without any draft messages,
     # add a fallback message to prevent empty replies
@@ -410,8 +412,9 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         event_id = event_entry.get("event_id") if event_entry else None
         action = last_result.action if last_result else "unknown"
 
-        print(f"[WF][EMPTY_REPLY_GUARD] No draft messages after routing loop!")
-        print(f"[WF][EMPTY_REPLY_GUARD] step={current_step}, action={action}, event_id={event_id}")
+        logger.warning("[WF][EMPTY_REPLY_GUARD] No draft messages after routing loop!")
+        logger.warning("[WF][EMPTY_REPLY_GUARD] step=%s, action=%s, event_id=%s",
+                      current_step, action, event_id)
 
         # Create a context-aware fallback message
         fallback_body = (

@@ -6,10 +6,13 @@ Tests can call `reset_agent_adapter()` to clear the shared singleton between run
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 from backend.domain import IntentLabel
 from backend.llm.client import get_openai_client
@@ -524,7 +527,7 @@ class OpenAIAgentAdapter(AgentAdapter):
             response = self._client.chat.completions.create(**kwargs)
             return response.choices[0].message.content or "{}"
         except Exception as e:
-            print(f"[OpenAIAgentAdapter] complete error: {e}")
+            logger.warning("[OpenAIAgentAdapter] complete error: %s", e)
             return self._fallback.complete(prompt, system_prompt=system_prompt, json_mode=json_mode)
 
 

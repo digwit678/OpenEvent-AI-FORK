@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
+logger = logging.getLogger(__name__)
 
 from backend.workflows.common.requirements import merge_client_profile, requirements_hash
 from backend.workflows.common.billing import (
@@ -188,8 +191,8 @@ def process(state: WorkflowState) -> GroupResult:
 
         if gate_status.ready_for_hil:
             # All prerequisites met - continue to HIL
-            print(f"[Step4] Confirmation gate passed: billing_complete={gate_status.billing_complete}, "
-                  f"deposit_required={gate_status.deposit_required}, deposit_paid={gate_status.deposit_paid}")
+            logger.debug("[Step4] Confirmation gate passed: billing_complete=%s, deposit_required=%s, deposit_paid=%s",
+                        gate_status.billing_complete, gate_status.deposit_required, gate_status.deposit_paid)
             return _start_hil_acceptance_flow(
                 state,
                 event_entry,
@@ -512,7 +515,7 @@ def process(state: WorkflowState) -> GroupResult:
         )
         if any(phrase in message_body for phrase in skip_phrases):
             state.user_info["skip_products"] = True
-            print(f"[Step4] Detected skip products phrase in message")
+            logger.debug("[Step4] Detected skip products phrase in message")
     products_changed = _apply_product_operations(event_entry, state.user_info or {})
     if products_changed:
         state.extras["persist"] = True

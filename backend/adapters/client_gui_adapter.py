@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Dict
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_body_source(message: Dict[str, Any]) -> tuple[str, str]:
@@ -36,7 +39,7 @@ def adapt_message(message: Dict[str, Any]) -> Dict[str, Any]:
     body_md = message.get("body_markdown") or message.get("body_md") or message.get("body") or ""
     rendered = body_md or _render_plain(message, resolved)
     adapted["render_body"] = rendered
-    print(f"[WF][DEBUG][Adapter] body_chosen={field}")
+    logger.debug("[WF][DEBUG][Adapter] body_chosen=%s", field)
     return adapted
 
 
@@ -51,5 +54,5 @@ class ClientGUIAdapter:
         idempotency_key: str,
     ) -> None:
         payload = adapt_message(payload)
-        print(f"[GUI] upsert_card event={event_id} card={card_type} id={idempotency_key}")
-        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        logger.debug("[GUI] upsert_card event=%s card=%s id=%s", event_id, card_type, idempotency_key)
+        logger.debug("Payload: %s", json.dumps(payload, indent=2, ensure_ascii=False))
