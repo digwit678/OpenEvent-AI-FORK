@@ -17,11 +17,31 @@ Added request-scoped tenant context middleware as foundation for multi-tenancy.
 **Behavior**:
 - Middleware only active when `TENANT_HEADER_ENABLED=1` (default: `"0"`)
 - No behavior change to existing code - this is pure infrastructure
-- Headers are parsed and stored in contextvars, but nothing consumes them yet
+- Headers are parsed and stored in contextvars
 
-**Next Steps (Phase 2)**:
-- Update `get_team_id()` in `backend/workflows/io/integration/config.py` to check contextvar first
+---
+
+### ✅ Phase 2A: Connect Contextvar to Config (Completed 2026-01-03)
+
+Connected the request-scoped contextvars to the config layer.
+
+**What Was Implemented**:
+- Updated `get_team_id()` in `backend/workflows/io/integration/config.py`:
+  - Checks contextvar first (set by middleware)
+  - Falls back to env var `OE_TEAM_ID` if not set
+- Updated `get_system_user_id()` with same pattern:
+  - Checks contextvar first
+  - Falls back to env var `OE_SYSTEM_USER_ID`
+- Added 5 integration tests in `backend/tests/api/test_tenant_context.py`
+
+**Behavior**:
+- **Zero change for existing code** - contextvar defaults to `None`, so falls back to env var
+- When `TENANT_HEADER_ENABLED=1` and headers are set: contextvar takes priority
+- All 9 Supabase adapter functions using `get_team_id()` automatically respect the contextvar
+
+**Next Steps (Phase 2B)**:
 - Route JSON DB to per-team files (`events_{team_id}.json`)
+- Requires adapter changes to resolve path per-call
 
 ---
 

@@ -82,3 +82,66 @@ class TestContextvarHelpers:
         # Clean up
         CURRENT_TEAM_ID.set(None)
         CURRENT_MANAGER_ID.set(None)
+
+
+class TestConfigIntegration:
+    """Test that config.py respects contextvar (Phase 2A)."""
+
+    def test_get_team_id_uses_contextvar_when_set(self):
+        """get_team_id() should return contextvar value when set."""
+        from backend.workflows.io.integration.config import get_team_id
+
+        # Set contextvar
+        CURRENT_TEAM_ID.set("test-team-from-header")
+        try:
+            result = get_team_id()
+            assert result == "test-team-from-header"
+        finally:
+            CURRENT_TEAM_ID.set(None)
+
+    def test_get_team_id_falls_back_to_env_when_contextvar_none(self):
+        """get_team_id() should fall back to env var when contextvar is None."""
+        from backend.workflows.io.integration.config import (
+            get_team_id,
+            INTEGRATION_CONFIG,
+        )
+
+        CURRENT_TEAM_ID.set(None)
+        result = get_team_id()
+        # Should return env var value (or None if not set)
+        assert result == INTEGRATION_CONFIG.team_id
+
+    def test_get_system_user_id_uses_contextvar_when_set(self):
+        """get_system_user_id() should return contextvar value when set."""
+        from backend.workflows.io.integration.config import get_system_user_id
+
+        CURRENT_MANAGER_ID.set("test-manager-from-header")
+        try:
+            result = get_system_user_id()
+            assert result == "test-manager-from-header"
+        finally:
+            CURRENT_MANAGER_ID.set(None)
+
+    def test_get_system_user_id_falls_back_to_env_when_contextvar_none(self):
+        """get_system_user_id() should fall back to env var when contextvar is None."""
+        from backend.workflows.io.integration.config import (
+            get_system_user_id,
+            INTEGRATION_CONFIG,
+        )
+
+        CURRENT_MANAGER_ID.set(None)
+        result = get_system_user_id()
+        # Should return env var value (or None if not set)
+        assert result == INTEGRATION_CONFIG.system_user_id
+
+    def test_contextvar_takes_priority_over_env_var(self):
+        """Contextvar should take priority even when env var is set."""
+        from backend.workflows.io.integration.config import get_team_id
+
+        # Even if env var has a value, contextvar should win
+        CURRENT_TEAM_ID.set("header-team-id")
+        try:
+            result = get_team_id()
+            assert result == "header-team-id"
+        finally:
+            CURRENT_TEAM_ID.set(None)

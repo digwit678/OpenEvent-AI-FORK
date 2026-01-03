@@ -113,12 +113,44 @@ def is_integration_mode() -> bool:
 
 
 def get_team_id() -> Optional[str]:
-    """Get the configured team_id for multi-tenant operations."""
+    """Get the team_id for multi-tenant operations.
+
+    Resolution order:
+    1. Request-scoped contextvar (if set via X-Team-Id header)
+    2. Environment variable OE_TEAM_ID (static fallback)
+    """
+    # Try request context first (set by TenantContextMiddleware)
+    try:
+        from backend.api.middleware.tenant_context import get_request_team_id
+
+        request_team_id = get_request_team_id()
+        if request_team_id is not None:
+            return request_team_id
+    except ImportError:
+        pass  # Middleware not available (e.g., in standalone scripts)
+
+    # Fall back to static environment config
     return INTEGRATION_CONFIG.team_id
 
 
 def get_system_user_id() -> Optional[str]:
-    """Get the configured system_user_id for automated writes."""
+    """Get the system_user_id for automated writes.
+
+    Resolution order:
+    1. Request-scoped contextvar (if set via X-Manager-Id header)
+    2. Environment variable OE_SYSTEM_USER_ID (static fallback)
+    """
+    # Try request context first (set by TenantContextMiddleware)
+    try:
+        from backend.api.middleware.tenant_context import get_request_manager_id
+
+        request_manager_id = get_request_manager_id()
+        if request_manager_id is not None:
+            return request_manager_id
+    except ImportError:
+        pass  # Middleware not available (e.g., in standalone scripts)
+
+    # Fall back to static environment config
     return INTEGRATION_CONFIG.system_user_id
 
 
