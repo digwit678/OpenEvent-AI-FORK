@@ -44,6 +44,11 @@ from backend.legacy.session_store import active_conversations  # Used in root en
 # NOTE: workflow imports moved to routes/messages.py
 from backend.utils import json_io
 
+# Environment mode detection: dev vs prod
+# In dev mode, auto-launch/kill conveniences are enabled by default
+# In prod mode, they are disabled for safety (can still be explicitly enabled)
+_IS_DEV = os.getenv("ENV", "dev").lower() in ("dev", "development", "local")
+
 os.environ.setdefault("AGENT_MODE", os.environ.get("AGENT_MODE_DEFAULT", "openai"))
 
 from backend.workflow_email import DB_PATH as WF_DB_PATH
@@ -201,7 +206,7 @@ def _terminate_pid(pid: int, timeout_s: float = 3.0) -> None:
 def _ensure_backend_port_free(port: int) -> None:
     if not _is_port_in_use(port):
         return
-    if os.getenv("AUTO_FREE_BACKEND_PORT", "1") != "1":
+    if os.getenv("AUTO_FREE_BACKEND_PORT", "1" if _IS_DEV else "0") != "1":
         raise RuntimeError(
             f"Port {port} is already in use. Stop the existing process or set AUTO_FREE_BACKEND_PORT=1."
         )
@@ -277,7 +282,7 @@ def _kill_unhealthy_frontend() -> None:
 
 
 def _launch_frontend() -> Optional[subprocess.Popen]:
-    if os.getenv("AUTO_LAUNCH_FRONTEND", "1") != "1":
+    if os.getenv("AUTO_LAUNCH_FRONTEND", "1" if _IS_DEV else "0") != "1":
         return None
     frontend_pidfile = DEV_DIR / "frontend.pid"
     try:
@@ -303,7 +308,7 @@ def _launch_frontend() -> Optional[subprocess.Popen]:
             return None
         else:
             logger.warning("[Frontend] Port %s in use but returning errors!", FRONTEND_PORT)
-            if os.getenv("AUTO_FIX_FRONTEND", "1") == "1":
+            if os.getenv("AUTO_FIX_FRONTEND", "1" if _IS_DEV else "0") == "1":
                 _kill_unhealthy_frontend()
                 # Now port should be free, continue to launch
             else:
@@ -336,7 +341,7 @@ def _launch_frontend() -> Optional[subprocess.Popen]:
 
 
 def _open_browser_when_ready() -> None:
-    if os.getenv("AUTO_OPEN_FRONTEND", "1") != "1":
+    if os.getenv("AUTO_OPEN_FRONTEND", "1" if _IS_DEV else "0") != "1":
         return
     target_url = f"http://localhost:{FRONTEND_PORT}"
     debug_url = f"{target_url}/debug"
@@ -344,13 +349,13 @@ def _open_browser_when_ready() -> None:
         if _is_port_in_use(FRONTEND_PORT):
             try:
                 webbrowser.open_new(target_url)
-                if os.getenv("AUTO_OPEN_DEBUG_PANEL", "1") == "1":
+                if os.getenv("AUTO_OPEN_DEBUG_PANEL", "1" if _IS_DEV else "0") == "1":
                     webbrowser.open_new_tab(debug_url)
             except Exception as exc:  # pragma: no cover - environment dependent
                 logger.warning("[Frontend] Unable to open browser automatically: %s", exc)
             else:
                 logger.info("[Frontend] Opened browser window at %s", target_url)
-                if os.getenv("AUTO_OPEN_DEBUG_PANEL", "1") == "1":
+                if os.getenv("AUTO_OPEN_DEBUG_PANEL", "1" if _IS_DEV else "0") == "1":
                     logger.info("[Frontend] Opened debug panel at %s", debug_url)
             return
         time.sleep(0.5)
@@ -459,6 +464,13 @@ def _clear_python_cache() -> None:
 
 if __name__ == "__main__":
     import uvicorn
+
+    # Log environment mode
+    _mode = "DEV" if _IS_DEV else "PROD"
+    logger.info("[Backend] Starting in %s mode (ENV=%s)", _mode, os.getenv("ENV", "dev"))
+    if not _IS_DEV:
+        logger.info("[Backend] Production mode: auto-launch/kill behaviors disabled by default")
+
     # Clear Python cache to prevent stale bytecode issues (e.g., missing dataclass fields)
     _clear_python_cache()
 

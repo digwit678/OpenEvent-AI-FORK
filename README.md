@@ -201,6 +201,32 @@ Key environment variables (create a `.env` file):
 | `WF_DEBUG_STATE` | `0` | Set to `1` for verbose workflow logging |
 | `VERBALIZER_TONE` | `professional` | Message tone: `professional` or `plain` |
 
+#### Environment Mode (DEV vs PROD)
+
+The `ENV` variable controls whether developer conveniences are enabled:
+
+| ENV Value | Behavior | Use Case |
+|-----------|----------|----------|
+| `dev` (default) | All auto-launch/kill features enabled | Local development |
+| `prod` | All auto-launch/kill features disabled | Production (Hostinger) |
+
+**What gets disabled in PROD mode:**
+- `AUTO_FREE_BACKEND_PORT`: Won't auto-kill processes on port 8000
+- `AUTO_LAUNCH_FRONTEND`: Won't spawn `npm run dev`
+- `AUTO_FIX_FRONTEND`: Won't kill/reset unhealthy frontend
+- `AUTO_OPEN_FRONTEND`: Won't open browser automatically
+- `AUTO_OPEN_DEBUG_PANEL`: Won't open debug panel tab
+
+```bash
+# Development (default) - all conveniences enabled
+./scripts/dev/dev_server.sh
+
+# Production - all conveniences disabled
+ENV=prod uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
+
+**Note:** You can still override individual behaviors with explicit env vars (e.g., `AUTO_FREE_BACKEND_PORT=1` even in prod mode).
+
 #### Local Development Options
 
 These options are **OFF by default** for production safety. Enable them in your `.env` for local dev:
