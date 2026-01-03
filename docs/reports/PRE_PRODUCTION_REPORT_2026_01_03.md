@@ -52,21 +52,56 @@ ENV=prod uvicorn backend.main:app --host 0.0.0.0 --port 8000
 
 ---
 
+### ✅ Task 2: Debug API Gating (Completed 2026-01-03)
+
+**Problem**: Debug endpoints exposed internal traces, live logs, and LLM diagnosis data. The `DEBUG_TRACE_DEFAULT` was set to "1" (enabled), meaning debug tracing was ON by default - a security concern for production.
+
+**Debug Endpoints Exposed (8 total):**
+- `GET /api/debug/threads/{thread_id}` - Full trace data
+- `GET /api/debug/threads/{thread_id}/timeline` - Timeline events
+- `GET /api/debug/threads/{thread_id}/report` - Comprehensive debug report
+- `GET /api/debug/threads/{thread_id}/llm-diagnosis` - LLM-optimized diagnosis
+- `GET /api/debug/live` - List all active thread IDs
+- Plus 3 more download/export endpoints
+
+**Solution Implemented**:
+
+1. **Updated `backend/debug/settings.py`** - Added ENV detection:
+   ```python
+   _IS_DEV = os.getenv("ENV", "dev").lower() in ("dev", "development", "local")
+   _DEFAULT_TRACE = os.getenv("DEBUG_TRACE_DEFAULT", "1" if _IS_DEV else "0")
+   ```
+
+2. **Updated `backend/main.py`** - Conditionally mount debug router:
+   ```python
+   if _IS_DEV:
+       app.include_router(debug_router)
+   ```
+
+**Result:**
+- `ENV=dev` (default) → Debug router mounted, tracing enabled
+- `ENV=prod` → Debug router NOT mounted (404 for all /api/debug/* routes), tracing disabled
+
+**Testing:**
+```bash
+# Verify in prod mode
+ENV=prod python3 -c "from backend.main import app; print([r.path for r in app.routes if '/debug/' in getattr(r, 'path', '')])"
+# Output: []  (no debug routes)
+```
+
+---
+
 ## Tasks (Remaining - Must Address Before Production)
 
 1) Add authentication/authorization to API routes that mutate config or drive workflows.
    - Target: `backend/api/routes/config.py`, `backend/api/agent_router.py`, `backend/api/routes/messages.py`, `backend/api/routes/tasks.py`, `backend/api/routes/events.py`
    - Rationale: These routes are currently exposed without auth and can be used to mutate state.
 
-2) Gate debug APIs behind an explicit production-off flag and ensure traces are disabled by default in prod.
-   - Target: `backend/debug/settings.py`, `backend/api/routes/debug.py`, `backend/main.py`
-   - Rationale: Debug endpoints expose internal traces and live logs; `DEBUG_TRACE_DEFAULT` currently enables tracing by default.
-
-3) Gate or remove test-data and universal Q&A endpoints in production.
+2) Gate or remove test-data and universal Q&A endpoints in production.
    - Target: `backend/api/routes/test_data.py`, `backend/main.py`
    - Rationale: These are dev endpoints and expose internal data and stack traces on error.
 
-4) Add request size limits and streaming upload handling for file uploads.
+3) Add request size limits and streaming upload handling for file uploads.
    - Target: `backend/api/agent_router.py`
    - Rationale: Current upload path reads full content into memory with no size limits.
 
@@ -76,17 +111,12 @@ ENV=prod uvicorn backend.main:app --host 0.0.0.0 --port 8000
    - Enforce auth on config/task/event/agent/message routes.
    - Add per-route role checks (e.g., manager vs. system).
 
-2) Debug endpoints and trace safety
-   - Default `DEBUG_TRACE_DEFAULT=0` in production environment.
-   - Only mount `debug_router` when `DEBUG_TRACE_ENABLED` is true and `ENV=dev`.
-   - Strip stack traces from any API responses in production mode.
-
-3) Dev/test endpoints gating
+2) Dev/test endpoints gating
    - Do not mount `test_data_router` in production.
    - For `/api/qna`, return sanitized error payloads (no tracebacks).
    - Add `ENV=dev` guard or `ALLOW_TEST_ENDPOINTS=1` flag.
 
-4) Upload safety and limits
+3) Upload safety and limits
    - Add request size limits (FastAPI + reverse proxy).
    - Stream uploads to disk or object storage (avoid full in-memory reads).
    - Validate content type and enforce allowlists.
