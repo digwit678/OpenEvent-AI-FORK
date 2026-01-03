@@ -106,9 +106,40 @@ Added manager selector dropdown to frontend for switching between event managers
 - ✅ Workflow progresses correctly with tenant context
 - Screenshot saved: `.playwright-mcp/multi-tenancy-e2e-test.png`
 
-**Next Steps (Phase 3)**:
-- Supabase RLS enforcement (production security)
-- Add `team_id` field to event records in JSON
+---
+
+### ✅ Phase 3: Supabase RLS + Record-Level team_id (Completed 2026-01-03)
+
+Added production-ready security: RLS policies + explicit team_id in all records.
+
+**Part A - JSON DB team_id in Records**:
+- Added `team_id` field to `create_event_entry()` in `database.py`
+- Added `team_id` to `ensure_event_defaults()` for backwards compatibility
+- Each event record now explicitly stores its owning team
+
+**Part B - Supabase Adapter Fixes**:
+Fixed 4 missing team_id filters:
+- `upsert_client()` UPDATE - now includes `.eq("team_id", team_id)`
+- `update_event_metadata()` - now filters by team_id on update
+- `get_room_by_id()` - now filters rooms by team_id
+- `create_offer()` - now includes team_id in offers and offer_line_items
+
+**Part C - RLS SQL Migration**:
+- Created `supabase/migrations/20260103000000_enable_rls_team_isolation.sql`
+- Enables RLS on 8 tables: clients, events, tasks, emails, rooms, products, offers, offer_line_items
+- Creates team isolation policies using `current_setting('app.team_id')`
+- Creates service_role bypass policies for backend operations
+- Adds team_id indexes for query performance
+
+**Files Modified**:
+- `backend/workflows/io/database.py` - Added team_id to event creation
+- `backend/workflows/io/integration/supabase_adapter.py` - Fixed 4 team_id gaps
+- `supabase/migrations/20260103000000_enable_rls_team_isolation.sql` - NEW: RLS policies
+
+**Deployment Notes**:
+- RLS migration should be run during maintenance window
+- Backend uses service_role, so no code changes needed for RLS
+- For non-service-role connections: `SET LOCAL app.team_id = 'uuid'`
 
 ---
 

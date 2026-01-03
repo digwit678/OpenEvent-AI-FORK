@@ -244,9 +244,13 @@ def find_event_idx_by_id(db: Dict[str, Any], event_id: str) -> Optional[int]:
 def create_event_entry(db: Dict[str, Any], event_data: Dict[str, Any]) -> str:
     """[OpenEvent Database] Insert a new event entry and return its identifier."""
 
+    # Import here to avoid circular dependency
+    from backend.workflows.io.integration.config import get_team_id
+
     event_id = str(uuid.uuid4())
     entry = {
         "event_id": event_id,
+        "team_id": get_team_id(),  # Multi-tenancy: store owning team
         "created_at": datetime.utcnow().isoformat(),
         "status": EventStatus.LEAD.value,
         "current_step": 1,
@@ -318,6 +322,7 @@ def update_event_entry(db: Dict[str, Any], idx: int, new_data: Dict[str, Any]) -
 def ensure_event_defaults(event: Dict[str, Any]) -> None:
     """[OpenEvent Database] Backfill workflow fields on legacy event records."""
 
+    event.setdefault("team_id", None)  # Multi-tenancy: None for legacy records
     event.setdefault("status", EventStatus.LEAD.value)
     event.setdefault("current_step", 1)
     event.setdefault("current_step_stage", "step_1")

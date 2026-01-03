@@ -2,6 +2,39 @@
 
 ## 2026-01-03
 
+### Multi-Tenancy Phase 3: Supabase RLS + Record-Level team_id
+
+**Summary:** Completed multi-tenancy implementation with production-ready security.
+
+**What Was Implemented:**
+
+1. **JSON DB team_id in Records**
+   - Added `team_id` field to event creation in `database.py`
+   - Each event record now explicitly stores its owning team
+   - Backwards compatible: `ensure_event_defaults()` sets `team_id=None` for legacy records
+
+2. **Supabase Adapter Security Fixes**
+   - Fixed `upsert_client()` UPDATE - now includes team_id filter
+   - Fixed `update_event_metadata()` - now filters by team_id
+   - Fixed `get_room_by_id()` - now filters rooms by team_id
+   - Fixed `create_offer()` - now includes team_id in offers and line items
+
+3. **RLS SQL Migration**
+   - Created `supabase/migrations/20260103000000_enable_rls_team_isolation.sql`
+   - Enables RLS on 8 tables: clients, events, tasks, emails, rooms, products, offers, offer_line_items
+   - Team isolation policies using `current_setting('app.team_id')`
+   - Service role bypass for backend operations
+   - Performance indexes on team_id columns
+
+**Files Modified:**
+- `backend/workflows/io/database.py` - Added team_id to event creation
+- `backend/workflows/io/integration/supabase_adapter.py` - Fixed 4 team_id gaps
+- `supabase/migrations/20260103000000_enable_rls_team_isolation.sql` - NEW
+
+**Security Coverage:** All 16 Supabase adapter operations now include team_id filtering.
+
+---
+
 ### Multi-Tenancy Frontend Manager Selector (Phase 2C)
 
 **Summary:** Added frontend manager selector for multi-tenancy testing, completing the per-request tenant isolation feature.
