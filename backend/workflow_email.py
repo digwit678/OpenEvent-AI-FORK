@@ -293,10 +293,29 @@ def _ensure_general_qna_classification(state: WorkflowState, message_text: str) 
     return classification
 
 
+def _resolve_tenant_db_path(base_path: Path) -> Path:
+    """Resolve tenant-aware database path.
+
+    When TENANT_HEADER_ENABLED=1 and X-Team-Id header is set,
+    routes to per-team file: events_{team_id}.json
+    Otherwise uses the default path.
+    """
+    try:
+        from backend.workflows.io.integration.config import get_team_id
+
+        team_id = get_team_id()
+        if team_id:
+            per_team_path = base_path.parent / f"events_{team_id}.json"
+            return per_team_path
+    except ImportError:
+        pass  # Config not available
+    return base_path
+
+
 def load_db(path: Path = DB_PATH) -> Dict[str, Any]:
     """[OpenEvent Database] Load the workflow database with locking safeguards."""
 
-    path = Path(path)
+    path = _resolve_tenant_db_path(Path(path))
     lock_path = _resolve_lock_path(path)
     return db_io.load_db(path, lock_path=lock_path)
 
@@ -304,7 +323,7 @@ def load_db(path: Path = DB_PATH) -> Dict[str, Any]:
 def save_db(db: Dict[str, Any], path: Path = DB_PATH) -> None:
     """[OpenEvent Database] Persist the workflow database atomically."""
 
-    path = Path(path)
+    path = _resolve_tenant_db_path(Path(path))
     lock_path = _resolve_lock_path(path)
     db_io.save_db(db, path, lock_path=lock_path)
 
@@ -340,7 +359,8 @@ def _flush_and_finalize(result: GroupResult, state: WorkflowState, path: Path, l
 def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     """[Trigger] Process an inbound message through workflow groups A–C."""
 
-    path = Path(db_path)
+    # Resolve tenant-aware path (uses X-Team-Id header when TENANT_HEADER_ENABLED=1)
+    path = _resolve_tenant_db_path(Path(db_path))
     lock_path = _resolve_lock_path(path)
     db = db_io.load_db(path, lock_path=lock_path)
 

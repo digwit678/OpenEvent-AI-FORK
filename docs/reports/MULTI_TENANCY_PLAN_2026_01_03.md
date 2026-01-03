@@ -48,16 +48,63 @@ Route JSON database reads/writes to per-team files when team_id is set.
 **What Was Implemented**:
 - Added `_resolve_db_path()` helper in `JSONDatabaseAdapter`
 - Updated `_load()` and `_save()` to use dynamic path resolution
+- Added `_resolve_tenant_db_path()` in `workflow_email.py` for workflow-level routing
+- Updated `process_msg()`, `load_db()`, `save_db()` to use tenant-aware paths
 - Pattern: `events_{team_id}.json` when team_id set, else `events_database.json`
 
 **Behavior**:
 - Singleton adapter preserved - path resolved per-call
 - Backwards compatible: No team_id → uses default path
 - Each team gets isolated JSON file
+- **Verified**: API requests with `X-Team-Id` header create separate database files
+- **Tested**: Team A cannot see Team B's clients (full isolation)
 
 **Files Modified**:
 - `backend/workflows/io/integration/adapter.py`
+- `backend/workflow_email.py` (added tenant path resolution)
 - `backend/tests/api/test_tenant_context.py` (+4 routing tests)
+- `scripts/dev/dev_server.sh` (enabled TENANT_HEADER_ENABLED by default for dev)
+
+**To Enable in Dev**:
+```bash
+# Automatic in dev (scripts/dev/dev_server.sh sets TENANT_HEADER_ENABLED=1)
+# Send headers with API requests:
+curl -H "X-Team-Id: my-team" -H "X-Manager-Id: manager-1" ...
+```
+
+---
+
+### ✅ Phase 2C: Frontend Manager Selector (Completed 2026-01-03)
+
+Added manager selector dropdown to frontend for switching between event managers in test environment.
+
+**What Was Implemented**:
+- Added `Manager` interface and `AVAILABLE_MANAGERS` list with 3 test managers (Shami, Alex, Jordan)
+- Created `setTenantHeaders()` function to set global tenant headers
+- Modified `requestJSON()` to include `X-Team-Id` and `X-Manager-Id` headers
+- Modified `fetchWorkflowReply()` to include tenant headers
+- Added `handleManagerSwitch()` callback that:
+  - Updates tenant headers
+  - Resets all conversation state (session, messages, tasks, debugger)
+  - Refreshes tasks for the new manager's team
+- Added dropdown UI in header with team ID display
+
+**Files Modified**:
+- `atelier-ai-frontend/app/page.tsx`
+
+**UI Features**:
+- Manager name displayed in header with dropdown icon
+- Dropdown shows all available managers with current selection highlighted
+- Team ID shown in dropdown footer
+- Switching managers resets entire conversation state
+
+**E2E Test Results** (Verified 2026-01-03):
+- ✅ Manager selector UI works correctly
+- ✅ State reset on manager switch works
+- ✅ Per-team JSON files created (`events_team-shami.json`, `events_team-alex.json`)
+- ✅ Full client isolation - Shami's clients not visible to Alex
+- ✅ Workflow progresses correctly with tenant context
+- Screenshot saved: `.playwright-mcp/multi-tenancy-e2e-test.png`
 
 **Next Steps (Phase 3)**:
 - Supabase RLS enforcement (production security)

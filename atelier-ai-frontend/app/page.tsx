@@ -2,9 +2,22 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { Send, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Send, CheckCircle, XCircle, Loader2, User, ChevronDown } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
+
+// Manager/tenant configuration for multi-tenancy testing
+interface Manager {
+  id: string;
+  name: string;
+  teamId: string;
+}
+
+const AVAILABLE_MANAGERS: Manager[] = [
+  { id: 'shami', name: 'Shami', teamId: 'team-shami' },
+  { id: 'alex', name: 'Alex', teamId: 'team-alex' },
+  { id: 'jordan', name: 'Jordan', teamId: 'team-jordan' },
+];
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import DebugPanel from './components/DebugPanel';
@@ -104,12 +117,30 @@ function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
   };
 }
 
+// Tenant headers for multi-tenancy - set by manager selector
+let currentTenantHeaders: Record<string, string> = {};
+
+function setTenantHeaders(manager: Manager | null) {
+  if (manager) {
+    currentTenantHeaders = {
+      'X-Team-Id': manager.teamId,
+      'X-Manager-Id': manager.id,
+    };
+  } else {
+    currentTenantHeaders = {};
+  }
+}
+
 async function requestJSON<T>(url: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers || {});
   headers.set('Accept', 'application/json');
   if (init.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
+  // Add tenant headers for multi-tenancy
+  Object.entries(currentTenantHeaders).forEach(([key, value]) => {
+    headers.set(key, value);
+  });
   const response = await fetch(url, { ...init, headers });
   if (!response.ok) {
     const text = await response.text();
@@ -127,6 +158,8 @@ async function fetchWorkflowReply(url: string, payload: unknown): Promise<Workfl
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json',
+      // Add tenant headers for multi-tenancy
+      ...currentTenantHeaders,
     },
     body: JSON.stringify(payload),
   });
@@ -299,6 +332,27 @@ function EmailThreadUIContent() {
   const threadRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const searchParams = useSearchParams();
+
+  // Manager selector state for multi-tenancy
+  const [currentManager, setCurrentManager] = useState<Manager>(AVAILABLE_MANAGERS[0]);
+  const [managerDropdownOpen, setManagerDropdownOpen] = useState(false);
+  const managerDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Initialize tenant headers on mount with the default manager
+  useEffect(() => {
+    setTenantHeaders(currentManager);
+  }, []); // Run once on mount
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (managerDropdownRef.current && !managerDropdownRef.current.contains(event.target as Node)) {
+        setManagerDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [workflowType, setWorkflowType] = useState<string | null>(null);
@@ -485,6 +539,37 @@ function EmailThreadUIContent() {
       }
     }
   }, []);
+
+  // Handler to switch manager - resets all conversation state
+  const handleManagerSwitch = useCallback((newManager: Manager) => {
+    if (newManager.id === currentManager.id) {
+      setManagerDropdownOpen(false);
+      return;
+    }
+
+    // Update tenant headers for API calls
+    setTenantHeaders(newManager);
+    setCurrentManager(newManager);
+    setManagerDropdownOpen(false);
+
+    // Reset all conversation state
+    setSessionId(null);
+    setWorkflowType(null);
+    setMessages([]);
+    setDraftInput('');
+    setInputText('');
+    setIsComplete(false);
+    setEventInfo(null);
+    setTasks([]);
+    setTaskNotes({});
+    setTaskEditedMessages({});
+    setClientEmail(null);
+    setHasStarted(false);
+    setSessionDepositInfo(null);
+
+    // Refresh tasks for the new manager's team
+    refreshTasks().catch(() => undefined);
+  }, [currentManager.id, refreshTasks]);
 
   const clearResolvedTasks = useCallback(async () => {
     setCleanupLoading(true);
@@ -989,14 +1074,57 @@ function EmailThreadUIContent() {
       {/* Header */}
       <div className="mx-auto max-w-[1800px] mb-4">
         <div className="rounded-2xl shadow-xl p-4 border border-[#c4dafc] bg-[#edf4ff]">
-          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
-            🎭 OpenEvent - AI Event Manager
-          </h1>
-          <p className="text-gray-600 mt-1 text-sm">
-            {!hasStarted
-              ? 'Paste a client email below to start the conversation'
-              : 'Conversation in progress with Shami, Event Manager'}
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
+                🎭 OpenEvent - AI Event Manager
+              </h1>
+              <p className="text-gray-600 mt-1 text-sm">
+                {!hasStarted
+                  ? 'Paste a client email below to start the conversation'
+                  : `Conversation in progress with ${currentManager.name}, Event Manager`}
+              </p>
+            </div>
+
+            {/* Manager Selector Dropdown */}
+            <div className="relative" ref={managerDropdownRef}>
+              <button
+                onClick={() => setManagerDropdownOpen(!managerDropdownOpen)}
+                className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-300 rounded-xl shadow-md hover:bg-blue-50 transition"
+              >
+                <User className="w-5 h-5 text-blue-600" />
+                <span className="font-semibold text-gray-800">{currentManager.name}</span>
+                <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${managerDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {managerDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                  <div className="px-3 py-2 bg-gray-50 border-b border-gray-200">
+                    <span className="text-xs font-semibold text-gray-500 uppercase">Switch Manager</span>
+                  </div>
+                  {AVAILABLE_MANAGERS.map((manager) => (
+                    <button
+                      key={manager.id}
+                      onClick={() => handleManagerSwitch(manager)}
+                      className={`w-full text-left px-4 py-2 hover:bg-blue-50 transition flex items-center gap-2 ${
+                        manager.id === currentManager.id ? 'bg-blue-100 text-blue-700' : 'text-gray-700'
+                      }`}
+                    >
+                      <User className="w-4 h-4" />
+                      <span className="font-medium">{manager.name}</span>
+                      {manager.id === currentManager.id && (
+                        <CheckCircle className="w-4 h-4 ml-auto text-blue-600" />
+                      )}
+                    </button>
+                  ))}
+                  <div className="px-3 py-2 bg-gray-50 border-t border-gray-200">
+                    <span className="text-xs text-gray-400">Team: {currentManager.teamId}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           {workflowType && (
             <span className="mt-2 inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
               Workflow: {workflowType}
@@ -1042,7 +1170,7 @@ function EmailThreadUIContent() {
                         msg.role === 'user' ? 'text-right text-blue-600' : 'text-left text-gray-600'
                       }`}
                     >
-                      {msg.role === 'user' ? '👤 Client' : '🎭 Shami'}
+                      {msg.role === 'user' ? '👤 Client' : `🎭 ${currentManager.name}`}
                     </div>
                     <div
                       className={`rounded-2xl px-4 py-3 shadow-sm ${
@@ -1083,7 +1211,7 @@ function EmailThreadUIContent() {
           <div className="bg-[#eaf1ff] rounded-2xl px-4 py-3 border border-[#cddfff]">
                     <div className="flex items-center gap-2 text-gray-600">
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span className="text-sm">Shami is typing...</span>
+                      <span className="text-sm">{currentManager.name} is typing...</span>
                     </div>
                   </div>
                 </div>

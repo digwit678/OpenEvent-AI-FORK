@@ -387,12 +387,16 @@ class OpenAIAgentAdapter(AgentAdapter):
     _ENTITY_PROMPT_TEMPLATE = (
         "Today is {today}. Extract booking details from the email. "
         "Return JSON with keys: date (YYYY-MM-DD or null), "
-        "start_time, end_time, city, participants, room, name, email, type, catering, phone, company, "
-        "language, notes, billing_address, products_add (array of {{name, quantity}} for items to add), "
+        "start_time, end_time, city, participants, room, name, email, "
+        "type (event type like wedding/workshop/dinner - NOT room descriptors), "
+        "room_type_hint (room descriptor like 'conference room', 'meeting room', 'training room' - null if not mentioned), "
+        "catering, phone, company, language, notes, billing_address, "
+        "products_add (array of {{name, quantity}} for items to add), "
         "products_remove (array of product names to remove). Use null when unknown. "
         "IMPORTANT: When a year is explicitly mentioned (e.g., '2026'), use that exact year. "
         "For vague dates like 'late spring' or 'next month', return null for date. "
-        "For 'add another X' or 'one more X', include {{\"name\": \"X\", \"quantity\": 1}} in products_add."
+        "For 'add another X' or 'one more X', include {{\"name\": \"X\", \"quantity\": 1}} in products_add. "
+        "IMPORTANT: room_type_hint is for room descriptors only, NOT equipment like 'video conferencing'."
     )
 
     _ENTITY_KEYS = [
@@ -405,6 +409,7 @@ class OpenAIAgentAdapter(AgentAdapter):
         "name",
         "email",
         "type",
+        "room_type_hint",
         "catering",
         "phone",
         "company",
@@ -548,16 +553,19 @@ class GeminiAgentAdapter(AgentAdapter):
         "Today is {today}. Extract booking details from this email. "
         "Return ONLY a JSON object with these keys (use null when unknown): "
         "date (YYYY-MM-DD), start_time, end_time, city, participants (integer), "
-        "room, name, email, type, catering, phone, company, language, notes, "
+        "room, name, email, type (event type like wedding/workshop - NOT room descriptors), "
+        "room_type_hint (room descriptor like 'conference room', 'meeting room' - null if not mentioned), "
+        "catering, phone, company, language, notes, "
         "billing_address, products_add (array of {{name, quantity}}), "
         "products_remove (array of product names). "
         "IMPORTANT: Use the exact year mentioned (e.g., '2026'). "
-        "For vague dates like 'late spring', return null for date."
+        "For vague dates like 'late spring', return null for date. "
+        "room_type_hint is for room descriptors only, NOT equipment like 'video conferencing'."
     )
 
     _ENTITY_KEYS = [
         "date", "start_time", "end_time", "city", "participants", "room",
-        "name", "email", "type", "catering", "phone", "company", "language",
+        "name", "email", "type", "room_type_hint", "catering", "phone", "company", "language",
         "notes", "billing_address", "products_add", "products_remove",
     ]
 

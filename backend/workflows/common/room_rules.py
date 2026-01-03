@@ -45,6 +45,7 @@ USER_INFO_KEYS = [
     "hil_decision",
     "products_add",
     "products_remove",
+    "room_type_hint",
     "room_feedback",
     "shortcut_capacity_ok",
     "week_index",

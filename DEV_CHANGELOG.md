@@ -1,5 +1,65 @@
 # Development Changelog
 
+## 2026-01-03
+
+### Multi-Tenancy Frontend Manager Selector (Phase 2C)
+
+**Summary:** Added frontend manager selector for multi-tenancy testing, completing the per-request tenant isolation feature.
+
+**What Was Implemented:**
+
+1. **Frontend Manager Selector UI**
+   - Dropdown in header to switch between managers (Shami, Alex, Jordan)
+   - Shows current manager name and team ID
+   - State reset on manager switch (session, messages, tasks, debugger)
+
+2. **Tenant Header Injection**
+   - All API calls now include `X-Team-Id` and `X-Manager-Id` headers
+   - `setTenantHeaders()` function sets global headers
+   - `requestJSON()` and `fetchWorkflowReply()` modified to include headers
+
+3. **Backend Fixes (from previous session)**
+   - Fixed `workflow_email.py` to use tenant-aware database paths
+   - Added `_resolve_tenant_db_path()` function
+   - Enabled `TENANT_HEADER_ENABLED=1` in dev server by default
+
+**Files Modified:**
+- `atelier-ai-frontend/app/page.tsx` - Manager selector and tenant headers
+- `backend/workflow_email.py` - Tenant-aware database path resolution
+- `scripts/dev/dev_server.sh` - Enable TENANT_HEADER_ENABLED=1
+- `docs/reports/MULTI_TENANCY_PLAN_2026_01_03.md` - Updated with Phase 2C
+
+**E2E Test Results:**
+- Manager selector UI works correctly
+- State reset on manager switch works
+- Per-team JSON files created (`events_team-shami.json`, `events_team-alex.json`)
+- Full client isolation verified (Shami's clients not visible to Alex)
+- Screenshot: `.playwright-mcp/multi-tenancy-e2e-test.png`
+
+---
+
+### Room Type Hint Fix (Product Matching Bug)
+
+**Summary:** Fixed bug where "conference room" was incorrectly matched to "Hybrid Streaming Kit".
+
+**Root Cause:**
+- LLM extracted `type: "conference"` from "conference room"
+- `_collect_wish_products()` added `type` and `layout` to product wishes
+- Product matching found "conference" in "video conference" (Hybrid Streaming Kit synonym)
+- Substring matching gave false positive
+
+**Fix:**
+- Added `room_type_hint` to LLM entity extraction prompt (separate field for room descriptors)
+- Added `room_type_hint` to `USER_INFO_KEYS` in `room_rules.py` for pass-through
+- Room descriptors now matched against room features, not products
+
+**Files Modified:**
+- `backend/adapters/agent_adapter.py` - Added `room_type_hint` to entity prompt
+- `backend/workflows/common/room_rules.py` - Added `room_type_hint` to USER_INFO_KEYS
+- `backend/workflows/nlu/preferences.py` - Updated to use room_type_hint
+
+---
+
 ## 2025-12-29
 
 ### Deposit Flow Fix: Synthetic Message Creating New Event (Session 6.3)

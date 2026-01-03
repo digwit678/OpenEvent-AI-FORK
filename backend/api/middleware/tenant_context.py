@@ -34,6 +34,11 @@ def get_request_manager_id() -> Optional[str]:
     return CURRENT_MANAGER_ID.get()
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 class TenantContextMiddleware(BaseHTTPMiddleware):
     """
     Middleware to extract tenant context from request headers.
@@ -50,6 +55,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
 
             if team_id:
                 CURRENT_TEAM_ID.set(team_id)
+                logger.debug("Set team_id=%s for request %s", team_id, request.url.path)
             if manager_id:
                 CURRENT_MANAGER_ID.set(manager_id)
 

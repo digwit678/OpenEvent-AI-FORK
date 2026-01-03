@@ -94,6 +94,10 @@ start_backend() {
     export AGENT_MODE="${AGENT_MODE:-openai}"
     # Fallback diagnostics: off by default (set to 1 for debugging)
     export OE_FALLBACK_DIAGNOSTICS="${OE_FALLBACK_DIAGNOSTICS:-0}"
+    # Enable dangerous endpoints for dev/testing (reset client, clear tasks, etc.)
+    export ENABLE_DANGEROUS_ENDPOINTS="${ENABLE_DANGEROUS_ENDPOINTS:-true}"
+    # Enable tenant header switching for multi-tenancy testing
+    export TENANT_HEADER_ENABLED="${TENANT_HEADER_ENABLED:-1}"
 
     log_info "Starting backend on port $PORT..."
 
