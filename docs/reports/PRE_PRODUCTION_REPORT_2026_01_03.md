@@ -91,17 +91,45 @@ ENV=prod python3 -c "from backend.main import app; print([r.path for r in app.ro
 
 ---
 
+### ✅ Task 3: Test-Data Endpoints Gating (Completed 2026-01-03)
+
+**Problem**: Test-data and Q&A endpoints exposed internal data and **full stack traces on error**:
+
+**Endpoints Exposed (5 total):**
+- `GET /api/test-data/rooms` - Room availability data
+- `GET /api/test-data/catering` - Catering menus catalog
+- `GET /api/test-data/catering/{slug}` - Specific menu details
+- `GET /api/test-data/qna` - Legacy Q&A endpoint
+- `GET /api/qna` - Universal Q&A endpoint (**returns traceback on error!**)
+
+**Security Issue**: The `/api/qna` endpoint returned full Python tracebacks:
+```python
+return {
+    "error": str(e),
+    "traceback": traceback.format_exc(),  # Exposes internal code paths!
+}
+```
+
+**Solution Implemented** - Updated `backend/main.py`:
+```python
+# Test-data router only mounted in dev mode (exposes internal data and tracebacks)
+if _IS_DEV:
+    app.include_router(test_data_router)
+```
+
+**Result:**
+- `ENV=dev` (default) → Test-data router mounted (all 5 endpoints)
+- `ENV=prod` → Test-data router NOT mounted (404 for all endpoints)
+
+---
+
 ## Tasks (Remaining - Must Address Before Production)
 
 1) Add authentication/authorization to API routes that mutate config or drive workflows.
    - Target: `backend/api/routes/config.py`, `backend/api/agent_router.py`, `backend/api/routes/messages.py`, `backend/api/routes/tasks.py`, `backend/api/routes/events.py`
    - Rationale: These routes are currently exposed without auth and can be used to mutate state.
 
-2) Gate or remove test-data and universal Q&A endpoints in production.
-   - Target: `backend/api/routes/test_data.py`, `backend/main.py`
-   - Rationale: These are dev endpoints and expose internal data and stack traces on error.
-
-3) Add request size limits and streaming upload handling for file uploads.
+2) Add request size limits and streaming upload handling for file uploads.
    - Target: `backend/api/agent_router.py`
    - Rationale: Current upload path reads full content into memory with no size limits.
 
@@ -111,12 +139,7 @@ ENV=prod python3 -c "from backend.main import app; print([r.path for r in app.ro
    - Enforce auth on config/task/event/agent/message routes.
    - Add per-route role checks (e.g., manager vs. system).
 
-2) Dev/test endpoints gating
-   - Do not mount `test_data_router` in production.
-   - For `/api/qna`, return sanitized error payloads (no tracebacks).
-   - Add `ENV=dev` guard or `ALLOW_TEST_ENDPOINTS=1` flag.
-
-3) Upload safety and limits
+2) Upload safety and limits
    - Add request size limits (FastAPI + reverse proxy).
    - Stream uploads to disk or object storage (avoid full in-memory reads).
    - Validate content type and enforce allowlists.

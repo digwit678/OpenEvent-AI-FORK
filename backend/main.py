@@ -102,7 +102,9 @@ app.include_router(clients_router)
 if _IS_DEV:
     app.include_router(debug_router)
 app.include_router(snapshots_router)
-app.include_router(test_data_router)
+# Test-data router only mounted in dev mode (exposes internal data and tracebacks)
+if _IS_DEV:
+    app.include_router(test_data_router)
 app.include_router(workflow_router)
 app.include_router(messages_router)
 app.include_router(emails_router)
