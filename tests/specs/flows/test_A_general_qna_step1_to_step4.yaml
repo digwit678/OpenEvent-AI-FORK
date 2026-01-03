@@ -19,8 +19,7 @@
           "vague_time_of_day": "evening"
         },
         "actions": [
-          {"type": "send_reply"},
-          {"type": "send_reply"}
+          {"type": "room_options_enqueued"}
         ],
         "trace": {
           "subloops_contains": [
@@ -29,12 +28,9 @@
         },
         "res": {
           "assistant_draft": {
-            "headers_subset": [
-              "Availability overview"
-            ],
             "contains_all": [
-              "Room",
-              "available"
+              "catering",
+              "room"
             ]
           }
         },

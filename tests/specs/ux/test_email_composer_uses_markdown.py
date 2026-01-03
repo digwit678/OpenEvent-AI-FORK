@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
+
 from backend.agents.openevent_agent import OpenEventAgent
 
 
-def test_email_composer_prefers_body_markdown(capsys):
+def test_email_composer_prefers_body_markdown(caplog):
     workflow_result = {
         "draft_messages": [
             {
@@ -13,10 +15,10 @@ def test_email_composer_prefers_body_markdown(capsys):
         ]
     }
 
-    reply = OpenEventAgent._compose_reply(workflow_result)
-    captured = capsys.readouterr().out
+    with caplog.at_level(logging.DEBUG):
+        reply = OpenEventAgent._compose_reply(workflow_result)
 
     assert "Room C — Available" in reply
     assert "Alternative dates (closest)" in reply
     assert "01.02." in reply
-    assert "body_chosen=" in captured
+    assert "body_chosen=" in caplog.text

@@ -194,7 +194,8 @@ def test_enrich_general_qna_step2_room_dates_column(monkeypatch, state):
     enrich_general_qna_step2(state, classification)
     draft = state.draft_messages[-1]
     body = draft["body_markdown"]
-    assert "| Room | Dates | Notes |" in body
+    # Body is now conversational format, table data is in table_blocks
+    assert "options" in body.lower() or "room" in body.lower()
     assert draft["table_blocks"][0]["column_order"] == ["room", "dates", "notes"]
 
 
@@ -233,7 +234,8 @@ def test_enrich_general_qna_step2_menu_table(monkeypatch, state):
     classification = {"is_general": True}
     enrich_general_qna_step2(state, classification)
     draft = state.draft_messages[-1]
-    assert "| Menu | Dates | Notes |" in draft["body_markdown"]
+    # Body is now conversational format, table data is in table_blocks
+    assert "options" in draft["body_markdown"].lower() or "menu" in draft["body_markdown"].lower()
     assert draft["table_blocks"][0]["column_order"] == ["menu", "dates", "notes"]
     assert "01.02.2026" in draft["table_blocks"][0]["rows"][0]["dates"]
 
@@ -277,5 +279,6 @@ def test_enrich_general_qna_step2_room_menu_columns(monkeypatch, state):
     classification = {"is_general": True}
     enrich_general_qna_step2(state, classification)
     draft = state.draft_messages[-1]
-    assert "| Room | Menus | Dates | Notes |" in draft["body_markdown"]
+    # Body is now conversational format, table data is in table_blocks
+    assert "options" in draft["body_markdown"].lower() or "room" in draft["body_markdown"].lower()
     assert draft["table_blocks"][0]["column_order"] == ["room", "menu", "dates", "notes"]

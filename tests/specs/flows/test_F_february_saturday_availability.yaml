@@ -12,8 +12,7 @@
       "expect": {
         "intent": "event_intake_shortcut",
         "actions": [
-          {"type": "send_reply"},
-          {"type": "send_reply"}
+          {"type": "room_options_enqueued"}
         ],
         "current_step": 3,
         "res": {

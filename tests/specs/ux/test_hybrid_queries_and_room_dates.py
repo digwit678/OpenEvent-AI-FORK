@@ -189,7 +189,8 @@ def test_step2_hybrid_stays_in_date_gate_with_products(subject, body, tmp_path, 
         assert block["column_order"][-1] in {"notes", "status"}
     else:
         assert "View Catering information" in body_text or "info/qna" in body_text
-    assert "NEXT STEP:" in body_text
+    # Step/Next info is now in footer format, not "NEXT STEP:" prefix
+    assert "Step: 2" in body_text or "Step: 2" in str(draft.get("footer", ""))
     assert "- Room " not in body_text, "Step-2 must not list rooms before the gate."
     _assert_no_full_menu_dump(body_text)
     assert all(not value.endswith(".2025") for value in draft["candidate_dates"]), "Off-window dates leaked into Step-2 candidates."

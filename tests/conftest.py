@@ -9,6 +9,8 @@ from tests.flows.run_yaml_flow import run_suite_file
 
 # Force plain verbalizer tone for deterministic test output
 os.environ.setdefault("VERBALIZER_TONE", "plain")
+# Default to stub mode for tests (no LLM calls)
+os.environ.setdefault("AGENT_MODE", "stub")
 
 
 def pytest_collect_file(parent, path):
