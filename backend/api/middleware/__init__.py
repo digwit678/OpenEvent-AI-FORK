@@ -1,10 +1,13 @@
-"""
-MODULE: backend/api/middleware/__init__.py
-PURPOSE: FastAPI middleware for cross-cutting concerns.
+"""Middleware package for API layer."""
 
-WILL CONTAIN (after main.py split):
-    - error_handlers.py    Centralized exception handling
+from .tenant_context import (
+    TenantContextMiddleware,
+    get_request_team_id,
+    get_request_manager_id,
+)
 
-MIGRATION STATUS:
-    Prepared for Phase C of refactoring.
-"""
+__all__ = [
+    "TenantContextMiddleware",
+    "get_request_team_id",
+    "get_request_manager_id",
+]

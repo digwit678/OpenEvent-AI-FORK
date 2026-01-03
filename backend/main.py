@@ -43,6 +43,7 @@ from backend.legacy.session_store import active_conversations  # Used in root en
 # NOTE: adapter imports moved to routes/messages.py
 # NOTE: workflow imports moved to routes/messages.py
 from backend.utils import json_io
+from backend.api.middleware import TenantContextMiddleware
 
 # Environment mode detection: dev vs prod
 # In dev mode, auto-launch/kill conveniences are enabled by default
@@ -112,6 +113,10 @@ app.include_router(emails_router)
 DEBUG_TRACE_ENABLED = is_trace_enabled()
 
 # NOTE: GUI_ADAPTER moved to routes/messages.py
+
+# Tenant context middleware (extracts X-Team-Id, X-Manager-Id headers for multi-tenancy)
+# Only active when TENANT_HEADER_ENABLED=1 (test/dev environments)
+app.add_middleware(TenantContextMiddleware)
 
 # CORS for frontend - configurable origins for security
 # Default allows localhost:3000 for local development
