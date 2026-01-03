@@ -2,7 +2,7 @@
 
 **Objective:** Update the `backend/` folder on the `integration/hostinger-backend` branch with the latest changes from `refactoring/17_12_25`, ensuring that:
 1.  The new modular file structure (routes, etc.) is applied.
-2.  The Hostinger-specific configuration (specifically `backend/.env`, which contains the API keys and is tracked on that branch) is **preserved**.
+2.  The Hostinger-specific configuration (specifically `backend/.env`, which contains the API keys and is tracked on that branch) is **preserved**. See: docs/integration/frontend_and_database/specs/HOSTINGER_CONFIG_REFERENCE.md
 3.  The process is automated with minimal manual intervention.
 4.  **No push ever breaks production code or causes errors for customers.**
 

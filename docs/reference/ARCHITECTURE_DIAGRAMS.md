@@ -1,6 +1,6 @@
 # OpenEvent AI Architecture Diagrams
 
-> **Note:** These diagrams are generated using Mermaid.js. They reflect the current architecture as of December 2025.
+> **Note:** These diagrams are generated using Mermaid.js. They reflect the current architecture as of January 2026.
 > Consult `docs/reference/DEPENDENCY_GRAPH.md` for detailed file mapping.
 
 ## 1. System Context & High-Level Architecture
@@ -12,11 +12,12 @@ graph TB
     Client((Client)) -->|Chat| Frontend[Frontend Next.js]
     Manager((Manager)) -->|Approve/View| Frontend
 
-    Frontend <-->|REST API| Backend[Backend FastAPI]
+    Frontend <-->|REST API + Headers| Backend[Backend FastAPI]
     
     subgraph Backend Services
-        Backend --> Orchestrator[Workflow Engine]
-        Orchestrator -->|Read/Write| DB[(JSON Database)]
+        Backend --> Middleware[Tenant Middleware]
+        Middleware --> Orchestrator[Workflow Engine]
+        Orchestrator -->|Read/Write| DB[(JSON/Supabase DB)]
         Orchestrator -->|Draft/Classify| LLM_Adapter[LLM Adapter]
         Orchestrator -->|Check| Calendar[Calendar Adapter]
         
@@ -159,3 +160,53 @@ flowchart LR
 | **5** | **Negotiation** | Refine terms. | Handle price objections, menu changes. |
 | **6** | **Transition** | Pre-booking checks (Merged into 5/7). | Verify all details before final confirmation. |
 | **7** | **Confirmation** | Final booking. | Send confirmation email. Close lead. |
+
+## 7. User Journey (End-to-End)
+
+This diagram tracks the lifecycle of an event from the perspectives of the **Client** and the **Manager**.
+
+```mermaid
+journey
+    title OpenEvent Booking Journey
+    section Inquiry (Step 1-2)
+      Client: Sends initial request (Pax/Date): 5: Client
+      AI Assistant: Classifies & acknowledges: 5: AI
+      Manager: (Passive) Monitors Lead: 3: Manager
+    section Planning (Step 3)
+      AI Assistant: Presents room options: 5: AI
+      Client: Selects room / asks Qs: 5: Client
+    section Offer (Step 4-5)
+      AI Assistant: Generates Offer & Products: 5: AI
+      Manager: Reviews & Approves Offer (HIL): 5: Manager
+      Client: Receives Offer & Negotiates: 5: Client
+    section Closing (Step 6-7)
+      Client: Accepts & Provides Billing: 5: Client
+      Client: Pays Deposit: 5: Client
+      Manager: Approves Final Booking (HIL): 5: Manager
+      AI Assistant: Proposes Site Visit: 5: AI
+```
+
+## 8. Action Processing Diagram
+
+How internal `GroupResult.action` types map to system behavior and Frontend UI components.
+
+```mermaid
+graph LR
+    subgraph Workflow Engine
+        Step[Step Handler] --> Result[GroupResult]
+    end
+
+    Result -->|action: confirm_date| UI_Date[UI: Date Slot Selection]
+    Result -->|action: room_availability| UI_Room[UI: Room Cards / Comparison]
+    Result -->|action: offer_draft_prepared| UI_Offer[UI: Offer Summary / PDF Link]
+    Result -->|action: hil_task_created| UI_HIL[UI: Manager Approval Pending]
+    Result -->|action: site_visit_proposed| UI_Visit[UI: Site Visit Calendar]
+    Result -->|action: qna_select_result| UI_QNA[UI: Info Page / FAQ]
+
+    UI_Date --> API[API: /api/messages/send]
+    UI_Room --> API
+    UI_Offer --> API
+    UI_HIL --> API
+    UI_Visit --> API
+    UI_QNA --> API
+```

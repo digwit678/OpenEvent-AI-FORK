@@ -113,7 +113,7 @@ The email ingestion worker needs to:
     *   *Verify:* Team A's notes on John are NOT visible to Team B.
 
 ### 5.2 Implementation Checklist
-- [ ] Add `WorkflowContext` using `contextvars`.
+- [x] Add `WorkflowContext` using `contextvars`.
 - [ ] Update `supabase_adapter.py` to use context `team_id`.
 - [ ] Add `team_id` column to all Supabase tables.
 - [ ] Create RLS policies on Supabase.

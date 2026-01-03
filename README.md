@@ -183,6 +183,14 @@ pytest backend/tests/flow/test_happy_path_step1_to_4.py
 
 ## 🛠 Current Status & Configuration
 
+### Multi-tenancy Support (Phase 1)
+The system is transitioning from single-tenant to multi-tenant architecture. **Phase 1 (Infrastructure)** is complete.
+
+- **Context Propagation**: `TenantContextMiddleware` extracts `X-Team-Id` and `X-Manager-Id` headers from requests.
+- **Development/Testing**: You can simulate multi-tenant requests by setting `TENANT_HEADER_ENABLED=1` in your `.env` and passing `X-Team-Id` headers.
+- **Default Behavior**: Defaults to single-tenant mode (using `OE_TEAM_ID` from environment) if headers are missing or disabled.
+- **Data Isolation**: (In Progress) Future phases will enforce `team_id` filtering on all database queries.
+
 ### Recent Updates
 - **Supabase Integration**: Can be toggled via `OE_INTEGRATION_MODE=supabase`.
 - **Site Visit Logic**: Dedicated sub-flow for handling venue tours.
