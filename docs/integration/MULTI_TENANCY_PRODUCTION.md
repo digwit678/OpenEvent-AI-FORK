@@ -26,6 +26,12 @@ TENANT_HEADER_ENABLED=1              # Enable tenant header parsing
 OE_TEAM_ID=your-default-team-uuid    # Default team UUID
 OE_SYSTEM_USER_ID=your-user-uuid     # Default system user UUID
 OE_EMAIL_ACCOUNT_ID=your-email-uuid  # Default email account UUID (if needed)
+
+# Authentication (enable for production)
+AUTH_ENABLED=1                       # Enable auth checks
+AUTH_MODE=api_key                    # Use "api_key" or "supabase_jwt"
+API_KEY=your-secure-api-key          # Required when AUTH_MODE=api_key
+SUPABASE_JWT_SECRET=your-jwt-secret  # Required when AUTH_MODE=supabase_jwt
 ```
 
 ### 2. Supabase RLS Migration
@@ -92,21 +98,25 @@ UPDATE tasks SET team_id = 'your-team-uuid' WHERE team_id IS NULL;
 
 ## API Integration
 
-### Required Headers for Multi-Tenancy
+### Required Headers
 
-All API requests must include tenant headers:
+All API requests must include these headers:
 
 | Header | Type | Required | Description |
 |--------|------|----------|-------------|
+| `Authorization` | string | **Yes** (prod) | `Bearer <API_KEY>` or Supabase JWT |
 | `X-Team-Id` | string | Yes | Team/venue UUID |
 | `X-Manager-Id` | string | Optional | Current manager/user UUID |
+
+**Note:** `X-Api-Key: <key>` is also accepted as fallback for internal tools.
 
 ### Example API Calls
 
 ```bash
-# Start conversation with tenant headers
+# Start conversation with auth + tenant headers
 curl -X POST http://your-backend/api/start-conversation \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "X-Team-Id: team-abc-123" \
   -H "X-Manager-Id: manager-xyz-789" \
   -d '{"email_body":"Book room for 20 people...", ...}'

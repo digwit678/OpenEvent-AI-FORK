@@ -2,6 +2,40 @@
 
 ## 2026-01-03
 
+### Authentication Middleware (Phases 1 & 2)
+
+**Summary:** Added production-ready auth middleware with API key support.
+
+**What Was Implemented:**
+
+1. **Auth Middleware with Toggle**
+   - `AUTH_ENABLED=0` (default): No auth checks, dev/test unchanged
+   - `AUTH_ENABLED=1`: Enforces auth on protected routes
+   - Allowlist for public routes: `/health`, `/docs`, `/api/workflow/health`
+
+2. **API Key Mode**
+   - Validates `Authorization: Bearer <API_KEY>` header
+   - Fallback: `X-Api-Key` header for internal tools
+   - Logs auth failures with redacted tokens
+
+3. **Supabase JWT Mode (Placeholder)**
+   - Infrastructure in place for Phase 3
+   - Will extract `team_id` from JWT claims (integrates with multi-tenancy)
+
+**Files Created:**
+- `backend/api/middleware/auth.py` - Auth middleware
+- `backend/tests/api/test_auth_middleware.py` - 24 tests
+
+**Env Vars:**
+- `AUTH_ENABLED`: "0" or "1"
+- `AUTH_MODE`: "api_key" or "supabase_jwt"
+- `API_KEY`: Secret for api_key mode
+- `SUPABASE_JWT_SECRET`: Secret for JWT validation (future)
+
+**No Breaking Changes:** Default `AUTH_ENABLED=0` preserves existing behavior.
+
+---
+
 ### Multi-Tenancy Phase 3: Supabase RLS + Record-Level team_id
 
 **Summary:** Completed multi-tenancy implementation with production-ready security.

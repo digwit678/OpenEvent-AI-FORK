@@ -43,7 +43,7 @@ from backend.legacy.session_store import active_conversations  # Used in root en
 # NOTE: adapter imports moved to routes/messages.py
 # NOTE: workflow imports moved to routes/messages.py
 from backend.utils import json_io
-from backend.api.middleware import TenantContextMiddleware
+from backend.api.middleware import TenantContextMiddleware, AuthMiddleware
 
 # Environment mode detection: dev vs prod
 # In dev mode, auto-launch/kill conveniences are enabled by default
@@ -117,6 +117,11 @@ DEBUG_TRACE_ENABLED = is_trace_enabled()
 # Tenant context middleware (extracts X-Team-Id, X-Manager-Id headers for multi-tenancy)
 # Only active when TENANT_HEADER_ENABLED=1 (test/dev environments)
 app.add_middleware(TenantContextMiddleware)
+
+# Auth middleware (validates API key or JWT for protected routes)
+# Only active when AUTH_ENABLED=1 (production)
+# In Supabase JWT mode, also sets tenant context from JWT claims (overrides headers)
+app.add_middleware(AuthMiddleware)
 
 # CORS for frontend - configurable origins for security
 # Default allows localhost:3000 for local development

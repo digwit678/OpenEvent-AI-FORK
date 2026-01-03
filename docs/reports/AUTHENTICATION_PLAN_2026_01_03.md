@@ -16,20 +16,33 @@ Add backend authentication and authorization without breaking current behavior. 
   - `AUTH_MODE=api_key` (simple API key for initial prod rollout)
   - `AUTH_MODE=supabase_jwt` (later, use Supabase auth + claims)
 
+## Implementation Status
+
+| Phase | Status | Date |
+|-------|--------|------|
+| Phase 1: Toggle + Middleware | ✅ Complete | 2026-01-03 |
+| Phase 2: API Key Mode | ✅ Complete | 2026-01-03 |
+| Phase 3: Supabase JWT Mode | ⏳ Pending | - |
+| Phase 4: Authorization (Roles) | ⏳ Pending | - |
+
 ## Implementation Plan
 
-### Phase 1: Toggle + Middleware (No Behavior Change)
+### ✅ Phase 1: Toggle + Middleware (Completed 2026-01-03)
 1) Add auth middleware to the FastAPI app:
    - If `AUTH_ENABLED=0`, return immediately (no changes to behavior).
    - If enabled, enforce auth on protected routes.
 2) Add an allowlist for public routes (health, static, optional test endpoints in dev only).
 3) Add structured error responses (401/403) without stack traces.
 
-### Phase 2: API Key Mode (Production-Ready Minimal Auth)
+### ✅ Phase 2: API Key Mode (Completed 2026-01-03)
 1) Read `API_KEY` from env.
 2) Require `Authorization: Bearer <API_KEY>` for all protected routes.
 3) Optionally add `X-Api-Key` fallback for internal tools.
 4) Log auth failures with redacted tokens.
+
+**Files Created:**
+- `backend/api/middleware/auth.py` - Auth middleware implementation
+- `backend/tests/api/test_auth_middleware.py` - 24 tests (all passing)
 
 ### Phase 3: Supabase JWT Mode (Production, Full Auth)
 1) Validate Supabase JWT signature using `SUPABASE_JWT_SECRET` or JWKS.
