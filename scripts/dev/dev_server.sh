@@ -77,27 +77,65 @@ start_backend() {
         exit 1
     fi
 
-    # Load API key from Keychain
-    KEY_SERVICE='openevent-api-test-key'
-    if security find-generic-password -s "$KEY_SERVICE" -a "$USER" >/dev/null 2>&1; then
-        export OPENAI_API_KEY="$(security find-generic-password -a "$USER" -s "$KEY_SERVICE" -w)"
+    # Load API keys from Keychain
+    OPENAI_KEY_SERVICE='openevent-api-test-key'
+    if security find-generic-password -s "$OPENAI_KEY_SERVICE" -a "$USER" >/dev/null 2>&1; then
+        export OPENAI_API_KEY="$(security find-generic-password -a "$USER" -s "$OPENAI_KEY_SERVICE" -w)"
         log_info "Loaded OPENAI_API_KEY from Keychain"
     else
-        log_warn "No Keychain item '$KEY_SERVICE' - running without OpenAI"
+        log_warn "No Keychain item '$OPENAI_KEY_SERVICE' - running without OpenAI"
+    fi
+
+    GEMINI_KEY_SERVICE='openevent-gemini-key'
+    if security find-generic-password -s "$GEMINI_KEY_SERVICE" >/dev/null 2>&1; then
+        export GOOGLE_API_KEY="$(security find-generic-password -s "$GEMINI_KEY_SERVICE" -w)"
+        log_info "Loaded GOOGLE_API_KEY from Keychain"
+    else
+        log_warn "No Keychain item '$GEMINI_KEY_SERVICE' - running without Gemini"
     fi
 
     # Set environment
     export PYTHONPATH="$(pwd)"
     export PYTHONDONTWRITEBYTECODE=1
     export TZ=Europe/Zurich
-    # Default to openai mode (never stub for dev/playwright tests)
-    export AGENT_MODE="${AGENT_MODE:-openai}"
+    # Default to gemini mode for hybrid setup
+    export AGENT_MODE="${AGENT_MODE:-gemini}"
+    # Detection mode: unified uses both Gemini (intent) and OpenAI (verbalization)
+    export DETECTION_MODE="${DETECTION_MODE:-unified}"
     # Fallback diagnostics: off by default (set to 1 for debugging)
     export OE_FALLBACK_DIAGNOSTICS="${OE_FALLBACK_DIAGNOSTICS:-0}"
     # Enable dangerous endpoints for dev/testing (reset client, clear tasks, etc.)
     export ENABLE_DANGEROUS_ENDPOINTS="${ENABLE_DANGEROUS_ENDPOINTS:-true}"
     # Enable tenant header switching for multi-tenancy testing
     export TENANT_HEADER_ENABLED="${TENANT_HEADER_ENABLED:-1}"
+
+    # ========== API KEY STATUS CHECK ==========
+    echo ""
+    echo "=========================================="
+    echo "          API KEY STATUS"
+    echo "=========================================="
+    if [ -n "${OPENAI_API_KEY:-}" ]; then
+        echo -e "${GREEN}✓ OPENAI_API_KEY${NC}: SET (${#OPENAI_API_KEY} chars)"
+    else
+        echo -e "${RED}✗ OPENAI_API_KEY${NC}: NOT SET - verbalization will fail!"
+    fi
+    if [ -n "${GOOGLE_API_KEY:-}" ]; then
+        echo -e "${GREEN}✓ GOOGLE_API_KEY${NC}: SET (${#GOOGLE_API_KEY} chars)"
+    else
+        echo -e "${RED}✗ GOOGLE_API_KEY${NC}: NOT SET - Gemini detection will fail!"
+    fi
+    echo "------------------------------------------"
+    echo "AGENT_MODE: $AGENT_MODE"
+    echo "DETECTION_MODE: ${DETECTION_MODE:-legacy}"
+    echo "=========================================="
+    echo ""
+
+    # Warn if hybrid mode but keys missing
+    if [ "$AGENT_MODE" = "gemini" ] && [ -z "${GOOGLE_API_KEY:-}" ]; then
+        log_error "AGENT_MODE=gemini but GOOGLE_API_KEY is not set!"
+        log_error "Add key to Keychain: security add-generic-password -s 'openevent-gemini-key' -a '$USER' -w 'YOUR_KEY'"
+        exit 1
+    fi
 
     log_info "Starting backend on port $PORT..."
 
