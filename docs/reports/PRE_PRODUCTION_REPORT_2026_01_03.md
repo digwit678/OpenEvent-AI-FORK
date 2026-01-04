@@ -182,25 +182,53 @@ A malicious actor could upload a multi-GB file and exhaust server memory.
 
 ## Tasks (Remaining - Must Address Before Production)
 
-1) Add authentication/authorization to API routes that mutate config or drive workflows.
-   - Target: `backend/api/routes/config.py`, `backend/api/agent_router.py`, `backend/api/routes/messages.py`, `backend/api/routes/tasks.py`, `backend/api/routes/events.py`
-   - Rationale: These routes are currently exposed without auth and can be used to mutate state.
+### ✅ Task 1: Authentication/Authorization (Completed 2026-01-03)
 
-## Proposed Solutions (Backend-Only, Hostinger, Supabase, Multi-Tenancy Pending)
-1) Authentication/authorization for state-mutating APIs
-   - Add API key/JWT middleware at the FastAPI layer.
-   - Enforce auth on config/task/event/agent/message routes.
-   - Add per-route role checks (e.g., manager vs. system).
+**Problem**: API routes that mutate config or drive workflows were exposed without auth.
+
+**Solution Implemented**:
+- Created `backend/api/middleware/auth.py` with toggle-based auth
+- `AUTH_ENABLED=0` (default): No auth checks (dev/test unchanged)
+- `AUTH_ENABLED=1`: Enforces auth on all non-allowlisted routes
+- Supports `AUTH_MODE=api_key` (Bearer token) and `AUTH_MODE=supabase_jwt` (future)
+- Allowlist for public routes: `/health`, `/docs`, `/api/workflow/health`
+
+**Files Created**:
+- `backend/api/middleware/auth.py` - Auth middleware
+- `backend/tests/api/test_auth_middleware.py` - 24 tests
+
+**Production Usage**:
+```bash
+AUTH_ENABLED=1
+AUTH_MODE=api_key
+API_KEY=your-secret-key
+```
+
+---
+
+### ✅ Multi-Tenancy (Completed 2026-01-03)
+
+**Problem**: No tenant isolation - all data shared across teams.
+
+**Solution Implemented**:
+- Phase 1: Tenant context middleware (`X-Team-Id`, `X-Manager-Id` headers)
+- Phase 2: JSON DB per-team file routing + config layer integration
+- Phase 3: Supabase adapter team_id enforcement + RLS policies
+
+**Files Created**:
+- `backend/api/middleware/tenant_context.py`
+- `supabase/migrations/20260103000000_enable_rls_team_isolation.sql`
+- `docs/integration/MULTI_TENANCY_PRODUCTION.md`
+
+---
+
+## Proposed Solutions (Backend-Only, Hostinger, Supabase)
 
 6) Supabase integration readiness
-   - Enable `OE_INTEGRATION_MODE=supabase` and validate required env vars.
-   - Ensure all write paths use Supabase adapters (events, tasks, emails).
-   - Add migration step to backfill JSON data into Supabase before cutover.
-
-7) Multi-tenancy groundwork (must land before production if required)
-   - Enforce `team_id` and `system_user_id` in all data writes.
-   - Add tenant scoping to every query (team_id filter).
-   - Add per-tenant API keys or JWT claims with team_id.
+   - ✅ RLS policies created (`supabase/migrations/...`)
+   - ✅ All Supabase adapter functions filter by team_id
+   - ⏳ Enable `OE_INTEGRATION_MODE=supabase` and validate required env vars
+   - ⏳ Add migration step to backfill JSON data into Supabase before cutover
 
 ## Notes on Deployment Context
 - Backend hosted on Hostinger; frontend is separate. Focus is API hardening, auth, and environment gating.
