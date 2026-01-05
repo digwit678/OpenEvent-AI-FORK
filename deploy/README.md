@@ -150,6 +150,8 @@ TENANT_HEADER_ENABLED=0       # Disables header-based tenant switching
 
 # ========== ERROR ALERTING (optional) ==========
 # Get notified when AI fails and falls back to manual review
+# ⚠️  PRIVACY NOTE: Alert emails include client message content (PII)
+#    Only add trusted internal staff to ALERT_EMAIL_RECIPIENTS
 ALERT_EMAIL_RECIPIENTS=ops@openevent.com,dev@openevent.com
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
