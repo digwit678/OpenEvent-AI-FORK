@@ -1,20 +1,24 @@
 #!/bin/bash
 # OpenEvent AI - Quick Update Script
 # Run after pushing changes to git
-# Usage: ssh your-vps "cd /var/www/openevent && ./deploy/update.sh"
+# Usage: ssh root@72.60.135.183 "cd /opt/openevent && ./deploy/update.sh"
 
 set -e
 
-cd /var/www/openevent
+cd /opt/openevent
 
-echo "Pulling latest changes..."
-git pull origin main
+echo "Pulling latest changes from hostinger-backend..."
+git pull origin integration/hostinger-backend
 
 echo "Installing any new dependencies..."
 ./venv/bin/pip install -r requirements-dev
 
 echo "Restarting service..."
-sudo systemctl restart openevent
+systemctl restart openevent
 
 echo "Done! Checking status..."
-sudo systemctl status openevent --no-pager
+systemctl status openevent --no-pager
+
+echo ""
+echo "Quick test:"
+curl -s http://localhost:8000/api/workflow/health | python3 -m json.tool

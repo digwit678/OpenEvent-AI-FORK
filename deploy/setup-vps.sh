@@ -28,7 +28,8 @@ echo "[3/6] Setting up application in ${APP_DIR}..."
 if [ -d "$APP_DIR" ] && [ -d "$APP_DIR/.git" ]; then
     echo "  Repository exists, pulling latest..."
     cd $APP_DIR
-    git pull origin main
+    git checkout integration/hostinger-backend
+    git pull origin integration/hostinger-backend
 else
     echo "  Repository should already be cloned (you ran this script from it)"
     # If running from the cloned repo, just ensure we're in the right place
