@@ -296,13 +296,23 @@ def _ensure_general_qna_classification(state: WorkflowState, message_text: str) 
 def _resolve_tenant_db_path(base_path: Path) -> Path:
     """Resolve tenant-aware database path.
 
-    When TENANT_HEADER_ENABLED=1 and X-Team-Id header is set,
-    routes to per-team file: events_{team_id}.json
-    Otherwise uses the default path.
+    Per-manager isolation: each manager (user) has their own events file.
+    When TENANT_HEADER_ENABLED=1 and X-Manager-Id header is set,
+    routes to per-manager file: events_{manager_id}.json
+
+    Fallback: If manager_id not set but team_id is, uses events_{team_id}.json
+    Otherwise uses the default path (events_database.json).
     """
     try:
-        from backend.workflows.io.integration.config import get_team_id
+        from backend.workflows.io.integration.config import get_manager_id, get_team_id
 
+        # Primary: manager-level isolation
+        manager_id = get_manager_id()
+        if manager_id:
+            per_manager_path = base_path.parent / f"events_{manager_id}.json"
+            return per_manager_path
+
+        # Fallback: team-level isolation
         team_id = get_team_id()
         if team_id:
             per_team_path = base_path.parent / f"events_{team_id}.json"

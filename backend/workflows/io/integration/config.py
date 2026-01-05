@@ -154,6 +154,19 @@ def get_system_user_id() -> Optional[str]:
     return INTEGRATION_CONFIG.system_user_id
 
 
+def get_manager_id() -> Optional[str]:
+    """Get the manager_id for per-user event isolation.
+
+    Each manager (user) only sees their own events/clients.
+    This is the primary isolation boundary for multi-tenancy.
+
+    Resolution order:
+    1. Request-scoped contextvar (if set via X-Manager-Id header)
+    2. Environment variable OE_SYSTEM_USER_ID (static fallback)
+    """
+    return get_system_user_id()  # Same source, clearer name
+
+
 def reload_config() -> None:
     """Reload configuration from environment (useful for testing)."""
     global INTEGRATION_CONFIG

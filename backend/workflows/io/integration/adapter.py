@@ -195,16 +195,24 @@ class JSONDatabaseAdapter(DatabaseAdapter):
     def _resolve_db_path(self) -> "Path":
         """Resolve the actual database path for the current request.
 
-        Returns per-team path when team_id is set, otherwise default path.
-        Pattern: events_{team_id}.json or events_database.json (default)
+        Per-manager isolation: each manager (user) has their own events file.
+        Fallback to team-level if manager_id not set.
+        Pattern: events_{manager_id}.json or events_{team_id}.json or events_database.json
         """
-        from .config import get_team_id
+        from .config import get_manager_id, get_team_id
 
         self.initialize()  # Ensure _db_path is set
 
+        # Primary: per-manager isolation
+        manager_id = get_manager_id()
+        if manager_id:
+            per_manager_path = self._db_path.parent / f"events_{manager_id}.json"
+            logger.debug("Using per-manager DB path: %s", per_manager_path)
+            return per_manager_path
+
+        # Fallback: per-team isolation
         team_id = get_team_id()
         if team_id:
-            # Per-team file: same directory, different filename
             per_team_path = self._db_path.parent / f"events_{team_id}.json"
             logger.debug("Using per-team DB path: %s", per_team_path)
             return per_team_path
