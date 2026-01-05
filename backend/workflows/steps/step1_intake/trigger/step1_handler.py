@@ -48,6 +48,7 @@ from ..condition.checks import is_event_request
 import re
 from ..llm.analysis import classify_intent, extract_user_information
 from backend.workflows.nlu.preferences import extract_preferences
+from backend.services import client_memory
 from ..billing_flow import handle_billing_capture
 from backend.workflows.common.datetime_parse import parse_first_date
 from backend.services.products import list_product_records, merge_product_requests, normalise_product_payload
@@ -529,6 +530,17 @@ def process(state: WorkflowState) -> GroupResult:
             state.intent_detail = "event_intake_product_update"
     state.user_info = user_info
     append_history(client, message_payload, intent.value, confidence, user_info)
+
+    # Store in client memory for personalization (if enabled)
+    client_memory.append_message(
+        client,
+        role="client",
+        text=message_payload.get("body") or "",
+        metadata={"intent": intent.value, "confidence": confidence},
+    )
+    # Update profile with detected language/preferences
+    if user_info.get("language"):
+        client_memory.update_profile(client, language=user_info["language"])
 
     context = context_snapshot(state.db, client, state.client_id)
     state.record_context(context)

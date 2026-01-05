@@ -23,6 +23,7 @@ from backend.workflows.io.database import append_audit_entry, update_event_metad
 from backend.workflows.nlu import detect_general_room_query
 from backend.debug.hooks import trace_marker
 from backend.utils.profiler import profile_step
+from backend.utils.page_snapshots import delete_snapshots_for_event
 
 # F1: Extracted modules
 from .classification import classify_message
@@ -379,6 +380,14 @@ def _handle_reserve(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
 def _handle_decline(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:
     """Handle booking decline/cancellation."""
     event_entry.setdefault("event_data", {})["Status"] = EventStatus.CANCELLED.value
+
+    # Clean up event-specific snapshots (room listings, offers) on cancellation
+    event_id = event_entry.get("event_id")
+    if event_id:
+        try:
+            delete_snapshots_for_event(event_id)
+        except Exception:
+            pass  # Don't fail booking flow on cleanup errors
     draft = {
         "body": append_footer(
             "Thank you for letting us know. We've released the date, and we'd be happy to assist with any future events.",
@@ -443,6 +452,15 @@ def _process_hil_confirmation(state: WorkflowState, event_entry: Dict[str, Any])
         ensure_calendar_block(event_entry)
         event_entry.setdefault("event_data", {})["Status"] = EventStatus.CONFIRMED.value
         conf_state["pending"] = None
+
+        # Clean up event-specific snapshots (room listings, offers) on confirmation
+        event_id = event_entry.get("event_id")
+        if event_id:
+            try:
+                delete_snapshots_for_event(event_id)
+            except Exception:
+                pass  # Don't fail booking flow on cleanup errors
+
         update_event_metadata(event_entry, transition_ready=True, thread_state="Awaiting Client")
         append_audit_entry(event_entry, 7, 7, "confirmation_sent")
         state.set_thread_state("Awaiting Client")

@@ -238,6 +238,19 @@ class WorkflowState:
         message.setdefault("created_at_step", step_value)
         self.draft_messages.append(message)
 
+        # Store assistant response in client memory (if enabled)
+        if self.client and body_markdown:
+            try:
+                from backend.services import client_memory  # pylint: disable=import-outside-toplevel
+                client_memory.append_message(
+                    self.client,
+                    role="assistant",
+                    text=body_markdown,
+                    metadata={"step": step_value, "thread_state": thread_state},
+                )
+            except Exception:
+                pass  # Don't fail workflow on memory storage errors
+
         try:
             from backend.debug.hooks import trace_draft  # pylint: disable=import-outside-toplevel
         except Exception:
