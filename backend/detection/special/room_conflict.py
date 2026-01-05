@@ -228,6 +228,9 @@ def compose_conflict_hil_task(
     room_id = conflict_info.get("room_id")
     event_date = conflict_info.get("event_date")
 
+    current_holder_email = conflict_info.get("conflicting_client_email")
+    new_requester_email = current_client.get("email") or current_event.get("client_email")
+
     task = {
         "type": "room_conflict_resolution",
         "status": "pending",
@@ -236,27 +239,31 @@ def compose_conflict_hil_task(
         "data": {
             "room_id": room_id,
             "event_date": event_date,
-            "client_1": {
+            "current_holder": {
                 "event_id": conflict_info.get("conflicting_event_id"),
-                "email": conflict_info.get("conflicting_client_email"),
+                "email": current_holder_email,
                 "name": conflict_info.get("conflicting_client_name"),
                 "status": conflict_info.get("status"),
-                "note": "First to reserve (current holder)",
+                "note": "First to reserve",
             },
-            "client_2": {
+            "new_request": {
                 "event_id": current_event.get("event_id"),
-                "email": current_client.get("email") or current_event.get("client_email"),
+                "email": new_requester_email,
                 "name": current_client.get("name") or current_event.get("client_name"),
-                "status": "Option (pending)",
-                "insist_reason": insist_reason,
+                "status": "Requested (pending decision)",
+                "reason": insist_reason,
             },
         },
         "description": (
-            f"Room Conflict: {room_id} on {event_date}\n\n"
-            f"Client 1 (current holder): {conflict_info.get('conflicting_client_email')}\n"
-            f"Client 2 (requesting): {current_client.get('email') or current_event.get('client_email')}\n\n"
-            f"Client 2's reason for insisting:\n{insist_reason}\n\n"
-            f"Please decide who should get the room."
+            f"Overlapping Booking Request: {room_id} on {event_date}\n\n"
+            f"Current holder: {current_holder_email}\n"
+            f"New request from: {new_requester_email}\n\n"
+            f"Reason for request:\n{insist_reason}\n\n"
+            f"---\n"
+            f"IMPORTANT: Before confirming either booking, please contact the client "
+            f"who will need to choose an alternative date or room. This ensures they "
+            f"are not caught off-guard by the change.\n"
+            f"---"
         ),
     }
     return task
@@ -286,13 +293,13 @@ def resolve_conflict(
         raise ValueError(f"Task {task_id} not found")
 
     task_data = task.get("data") or {}
-    client_1_event_id = task_data.get("client_1", {}).get("event_id")
-    client_2_event_id = task_data.get("client_2", {}).get("event_id")
+    current_holder_event_id = task_data.get("current_holder", {}).get("event_id")
+    new_request_event_id = task_data.get("new_request", {}).get("event_id")
 
-    if winner_event_id == client_1_event_id:
-        loser_event_id = client_2_event_id
-    elif winner_event_id == client_2_event_id:
-        loser_event_id = client_1_event_id
+    if winner_event_id == current_holder_event_id:
+        loser_event_id = new_request_event_id
+    elif winner_event_id == new_request_event_id:
+        loser_event_id = current_holder_event_id
     else:
         raise ValueError(f"Winner event ID {winner_event_id} not in conflict")
 
@@ -608,9 +615,9 @@ def notify_conflict_resolution(
         winner_event.pop("conflict_task_id", None)
         winner_event["thread_state"] = "Awaiting Client"
 
-    # Check if winner was the one who insisted (Client 2)
-    client_2_event_id = task_data.get("client_2", {}).get("event_id")
-    winner_was_insister = winner_id == client_2_event_id
+    # Check if winner was the one who insisted (new request)
+    new_request_event_id = task_data.get("new_request", {}).get("event_id")
+    winner_was_insister = winner_id == new_request_event_id
 
     if winner_was_insister:
         winner_message = compose_winner_message(room_name, event_date, had_conflict=True)

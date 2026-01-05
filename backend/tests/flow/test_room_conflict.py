@@ -212,9 +212,9 @@ class TestHILTask:
 
         assert task["type"] == "room_conflict_resolution"
         assert task["status"] == "pending"
-        assert task["data"]["client_1"]["email"] == "laura.meier@bluewin.ch"
-        assert task["data"]["client_2"]["email"] == "max.mueller@gmail.com"
-        assert "birthday" in task["data"]["client_2"]["insist_reason"].lower()
+        assert task["data"]["current_holder"]["email"] == "laura.meier@bluewin.ch"
+        assert task["data"]["new_request"]["email"] == "max.mueller@gmail.com"
+        assert "birthday" in task["data"]["new_request"]["reason"].lower()
         assert "Room E" in task["description"]
         assert "2026-02-07" in task["description"]
 
@@ -513,7 +513,7 @@ class TestHardConflictHandling:
         assert len(tasks) == 1
         task = list(tasks.values())[0]
         assert task["type"] == "room_conflict_resolution"
-        assert "birthday" in task["data"]["client_2"]["insist_reason"].lower()
+        assert "birthday" in task["data"]["new_request"]["reason"].lower()
 
         # Check event flags
         event = sample_db["events"]["event_2"]

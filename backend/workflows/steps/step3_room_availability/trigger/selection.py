@@ -152,13 +152,13 @@ def handle_select_room_action(
             "data": {
                 "room_id": room,
                 "event_date": chosen_date,
-                "client_1": {
+                "current_holder": {
                     "event_id": conflict_info.get("conflicting_event_id"),
                     "email": conflict_info.get("conflicting_client_email"),
                     "name": conflict_info.get("conflicting_client_name"),
                     "status": conflict_info.get("status"),
                 },
-                "client_2": {
+                "new_request": {
                     "event_id": event_id,
                     "email": event_entry.get("client_email"),
                     "name": event_entry.get("client_name"),
@@ -166,10 +166,10 @@ def handle_select_room_action(
                 },
             },
             "description": (
-                f"Soft Conflict: {room} on {display_date}\n\n"
-                f"Client 1: {conflict_info.get('conflicting_client_email')} (already {conflict_info.get('status')})\n"
-                f"Client 2: {event_entry.get('client_email')} (has been notified)\n\n"
-                f"Client 2 is deciding whether to insist or choose alternative."
+                f"Overlapping Interest: {room} on {display_date}\n\n"
+                f"Current holder: {conflict_info.get('conflicting_client_email')} ({conflict_info.get('status')})\n"
+                f"New request: {event_entry.get('client_email')} (has been notified)\n\n"
+                f"The new requester is deciding whether to proceed or choose an alternative."
             ),
         }
         event_entry["conflict_task_id"] = task_id
