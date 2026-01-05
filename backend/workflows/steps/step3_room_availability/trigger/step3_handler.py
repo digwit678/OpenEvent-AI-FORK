@@ -46,6 +46,8 @@ from backend.detection.special.room_conflict import (
     ConflictType,
     detect_conflict_type,
     compose_soft_conflict_warning,
+    handle_hard_conflict,
+    get_available_rooms_on_date,
 )
 from backend.debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate, trace_state, trace_step, set_subloop, trace_marker, trace_general_qa_status
 from backend.utils.profiler import profile_step
@@ -169,6 +171,18 @@ def process(state: WorkflowState) -> GroupResult:
     if len(filtered) != len(pending):
         event_entry["pending_hil_requests"] = filtered
         state.extras["persist"] = True
+
+    # -------------------------------------------------------------------------
+    # CONFLICT PENDING DECISION: Handle client response to soft conflict warning
+    # When another client has an Option on the same room, we asked this client
+    # to either choose alternative or insist with reason.
+    # -------------------------------------------------------------------------
+    conflict_pending = event_entry.get("conflict_pending_decision")
+    if conflict_pending:
+        result = _handle_conflict_response(state, event_entry, conflict_pending, thread_id)
+        if result:
+            return result
+        # If no result, client didn't make a clear choice - fall through to normal flow
 
     # [CHANGE DETECTION + Q&A] Tap incoming stream BEFORE room evaluation to detect client revisions
     # ("actually we're 50 now") and route them back to dependent nodes while hashes stay valid.
@@ -1860,6 +1874,339 @@ def _select_room(ranked: List[RankedRoom]) -> Optional[RankedRoom]:
 # - _reset_room_attempts
 # - _format_display_date
 
+
+# -------------------------------------------------------------------------
+# CONFLICT RESPONSE HANDLING
+# Handles client response to soft conflict warning (Option + Option scenario)
+# -------------------------------------------------------------------------
+
+
+def _handle_conflict_response(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    conflict_pending: Dict[str, Any],
+    thread_id: str,
+) -> Optional[GroupResult]:
+    """Handle client response to soft conflict warning.
+
+    Args:
+        state: Workflow state
+        event_entry: Event entry dict
+        conflict_pending: The conflict_pending_decision dict from event
+        thread_id: Thread identifier for tracing
+
+    Returns:
+        GroupResult if handled, None if client hasn't made clear choice
+    """
+    message_text = _message_text(state) or ""
+    message_lower = message_text.lower()
+
+    room_id = conflict_pending.get("room_id")
+    event_date = conflict_pending.get("event_date")
+    conflict_info = conflict_pending.get("conflict_info") or {}
+
+    # Detect client's choice from message
+    wants_alternative = _detect_wants_alternative(message_lower, state)
+    wants_to_insist = _detect_wants_to_insist(message_lower, state)
+    has_reason = _extract_insist_reason(message_text, state)
+
+    if thread_id:
+        trace_marker(
+            thread_id,
+            "CONFLICT_RESPONSE",
+            detail=f"alternative={wants_alternative}, insist={wants_to_insist}, has_reason={bool(has_reason)}",
+            data={
+                "room_id": room_id,
+                "event_date": event_date,
+                "message_preview": message_text[:100] if message_text else "",
+            },
+            owner_step="Step3_Room",
+        )
+
+    # Case 1: Client wants alternatives - clear conflict and re-show rooms
+    if wants_alternative:
+        return _handle_conflict_choose_alternative(state, event_entry, conflict_pending, thread_id)
+
+    # Case 2: Client insists WITH reason - escalate to HIL
+    if wants_to_insist and has_reason:
+        return _handle_conflict_insist_with_reason(
+            state, event_entry, conflict_pending, has_reason, thread_id
+        )
+
+    # Case 3: Client insists WITHOUT reason - ask for reason
+    if wants_to_insist and not has_reason:
+        return _handle_conflict_ask_for_reason(state, event_entry, conflict_pending, thread_id)
+
+    # Case 4: Unclear response but has substantive text - treat as reason to insist
+    if message_text and len(message_text) > 20 and not _is_generic_question(message_lower):
+        # Client wrote something substantive - might be their reason
+        return _handle_conflict_insist_with_reason(
+            state, event_entry, conflict_pending, message_text, thread_id
+        )
+
+    # No clear choice - fall through to normal flow
+    return None
+
+
+def _detect_wants_alternative(message_lower: str, state: WorkflowState) -> bool:
+    """Detect if client wants to see alternative rooms."""
+    # Check button click action from state
+    user_info = state.user_info or {}
+    if user_info.get("clicked_action") == "conflict_choose_alternative":
+        return True
+
+    # Check message keywords
+    alternative_keywords = [
+        "other option", "other room", "alternative", "different room",
+        "show me other", "what else", "another room", "see other",
+        "different date", "another date",
+    ]
+    return any(kw in message_lower for kw in alternative_keywords)
+
+
+def _detect_wants_to_insist(message_lower: str, state: WorkflowState) -> bool:
+    """Detect if client wants to insist on this room."""
+    # Check button click action from state
+    user_info = state.user_info or {}
+    if user_info.get("clicked_action") == "conflict_insist":
+        return True
+
+    # Check message keywords
+    insist_keywords = [
+        "i need this", "i really need", "must have", "insist",
+        "this room please", "please this room", "important",
+        "birthday", "anniversary", "special", "only this",
+        "can't change", "no other", "has to be",
+    ]
+    return any(kw in message_lower for kw in insist_keywords)
+
+
+def _extract_insist_reason(message_text: str, state: WorkflowState) -> Optional[str]:
+    """Extract the reason why client insists on this room."""
+    if not message_text or len(message_text) < 10:
+        return None
+
+    # If message is substantive enough, use it as the reason
+    # Skip generic responses
+    generic_patterns = ["yes", "ok", "okay", "sure", "proceed", "continue"]
+    text_lower = message_text.lower().strip()
+    if text_lower in generic_patterns:
+        return None
+
+    return message_text
+
+
+def _is_generic_question(message_lower: str) -> bool:
+    """Check if message is a generic question rather than a reason."""
+    question_starters = ["what", "when", "where", "how", "why", "can you", "do you"]
+    return any(message_lower.strip().startswith(q) for q in question_starters)
+
+
+def _handle_conflict_choose_alternative(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    conflict_pending: Dict[str, Any],
+    thread_id: str,
+) -> GroupResult:
+    """Handle client choosing to see alternative rooms."""
+    event_id = event_entry.get("event_id")
+    conflicted_room = conflict_pending.get("room_id")
+    event_date = conflict_pending.get("event_date")
+
+    # Clear conflict pending state
+    event_entry.pop("conflict_pending_decision", None)
+    event_entry.pop("has_conflict", None)
+    event_entry.pop("conflict_with", None)
+    event_entry.pop("conflict_type", None)
+
+    # Get available rooms excluding the conflicted one
+    available_rooms = get_available_rooms_on_date(
+        state.db, event_id, event_date, exclude_statuses=["confirmed"]
+    )
+    # Filter out the conflicted room from alternatives
+    alternative_rooms = [r for r in available_rooms if r.lower() != (conflicted_room or "").lower()]
+
+    state.extras["persist"] = True
+    append_audit_entry(event_entry, 3, 3, "conflict_chose_alternative")
+
+    if thread_id:
+        trace_marker(
+            thread_id,
+            "CONFLICT_ALTERNATIVE",
+            detail=f"alternatives={len(alternative_rooms)}",
+            data={"conflicted_room": conflicted_room, "alternatives": alternative_rooms},
+            owner_step="Step3_Room",
+        )
+
+    if alternative_rooms:
+        # Show alternatives
+        alt_list = ", ".join(alternative_rooms[:5])
+        body = (
+            f"No problem! Let me show you some alternatives.\n\n"
+            f"The following rooms are available on {_format_display_date(event_date)}:\n"
+            f"{alt_list}\n\n"
+            f"Would you like me to recommend one based on your requirements, or do you have a preference?"
+        )
+    else:
+        # No alternatives on this date - suggest different date
+        body = (
+            f"I'm sorry, but all rooms are already reserved for {_format_display_date(event_date)}.\n\n"
+            f"Would you like to check a different date? Let me know and I'll find available options."
+        )
+
+    body_with_footer = append_footer(
+        body,
+        step=3,
+        next_step="Room selection",
+        thread_state="Awaiting Client",
+    )
+
+    state.draft_messages.clear()
+    state.add_draft_message({
+        "body": body_with_footer,
+        "body_markdown": body,
+        "step": 3,
+        "thread_state": "Awaiting Client",
+        "topic": "conflict_alternatives",
+        "requires_approval": False,
+    })
+
+    return GroupResult(
+        action="conflict_chose_alternative",
+        payload={
+            "client_id": state.client_id,
+            "event_id": event_id,
+            "conflicted_room": conflicted_room,
+            "alternatives": alternative_rooms,
+            "draft_messages": state.draft_messages,
+        },
+        halt=False,
+    )
+
+
+def _handle_conflict_insist_with_reason(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    conflict_pending: Dict[str, Any],
+    reason: str,
+    thread_id: str,
+) -> GroupResult:
+    """Handle client insisting on the room with a reason - escalate to HIL."""
+    event_id = event_entry.get("event_id")
+    conflict_info = conflict_pending.get("conflict_info") or {}
+
+    # Use existing handle_hard_conflict which creates the HIL task
+    result = handle_hard_conflict(
+        db=state.db,
+        event_id=event_id,
+        conflict_info=conflict_info,
+        client_reason=reason,
+    )
+
+    # Clear conflict_pending_decision but keep conflict flags (now managed by handle_hard_conflict)
+    event_entry.pop("conflict_pending_decision", None)
+    state.extras["persist"] = True
+    append_audit_entry(event_entry, 3, 3, "conflict_escalated_to_hil")
+
+    if thread_id:
+        trace_marker(
+            thread_id,
+            "CONFLICT_HIL_CREATED",
+            detail=f"task_id={result.get('task_id')}",
+            data={"reason_preview": reason[:100]},
+            owner_step="Step3_Room",
+        )
+
+    # Return the message from handle_hard_conflict
+    body = result.get("message", "I've forwarded your request to our manager.")
+    body_with_footer = append_footer(
+        body,
+        step=3,
+        next_step="Awaiting decision",
+        thread_state="Waiting on HIL",
+    )
+
+    state.draft_messages.clear()
+    state.add_draft_message({
+        "body": body_with_footer,
+        "body_markdown": body,
+        "step": 3,
+        "thread_state": "Waiting on HIL",
+        "topic": "conflict_hil_pending",
+        "requires_approval": False,
+    })
+
+    update_event_metadata(event_entry, thread_state="Waiting on HIL")
+    state.set_thread_state("Waiting on HIL")
+
+    return GroupResult(
+        action="conflict_escalated_to_hil",
+        payload={
+            "client_id": state.client_id,
+            "event_id": event_id,
+            "task_id": result.get("task_id"),
+            "draft_messages": state.draft_messages,
+        },
+        halt=False,
+    )
+
+
+def _handle_conflict_ask_for_reason(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    conflict_pending: Dict[str, Any],
+    thread_id: str,
+) -> GroupResult:
+    """Ask client to provide reason for insisting on this room."""
+    event_id = event_entry.get("event_id")
+    room_id = conflict_pending.get("room_id")
+    event_date = conflict_pending.get("event_date")
+
+    if thread_id:
+        trace_marker(
+            thread_id,
+            "CONFLICT_ASK_REASON",
+            detail="asking_for_reason",
+            owner_step="Step3_Room",
+        )
+
+    body = (
+        f"I understand you'd like to keep {room_id} for {_format_display_date(event_date)}.\n\n"
+        f"Could you share why this specific room is important for your event? "
+        f"For example, is it a special occasion like a birthday or anniversary?\n\n"
+        f"This will help our manager make a fair decision when reviewing both bookings."
+    )
+
+    body_with_footer = append_footer(
+        body,
+        step=3,
+        next_step="Awaiting reason",
+        thread_state="Awaiting Client",
+    )
+
+    state.draft_messages.clear()
+    state.add_draft_message({
+        "body": body_with_footer,
+        "body_markdown": body,
+        "step": 3,
+        "thread_state": "Awaiting Client",
+        "topic": "conflict_ask_reason",
+        "requires_approval": False,
+    })
+
+    # Keep conflict_pending_decision so next message is still handled as conflict response
+    state.extras["persist"] = True
+
+    return GroupResult(
+        action="conflict_ask_reason",
+        payload={
+            "client_id": state.client_id,
+            "event_id": event_id,
+            "room_id": room_id,
+            "draft_messages": state.draft_messages,
+        },
+        halt=False,
+    )
 
 
 def _collect_alternative_dates(

@@ -16,7 +16,11 @@ from datetime import datetime as dt
 from typing import Any, Dict, List, Optional
 
 from backend.debug.hooks import trace_db_write, trace_state
-from backend.detection.special.room_conflict import ConflictType, detect_conflict_type
+from backend.detection.special.room_conflict import (
+    ConflictType,
+    detect_conflict_type,
+    compose_conflict_warning_message,
+)
 from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.workflows.common.types import GroupResult, WorkflowState
@@ -83,10 +87,61 @@ def handle_select_room_action(
         action="select",  # Client is selecting (becoming Option)
     )
 
-    # Handle soft conflict: create HIL notification but don't block the client
-    soft_conflict_note = ""
+    # Handle soft conflict: NOTIFY client and ask if they insist
     if conflict_type == ConflictType.SOFT and conflict_info:
-        # Create HIL notification task for manager (NOT blocking)
+        display_date = _format_display_date(chosen_date)
+
+        # Store conflict info for follow-up handling when client responds
+        event_entry["conflict_pending_decision"] = {
+            "room_id": room,
+            "room_status": status,
+            "event_date": chosen_date,
+            "conflict_info": dict(conflict_info),
+            "created_at": dt.now().isoformat(),
+        }
+
+        # Mark event with soft conflict flag
+        event_entry["has_conflict"] = True
+        event_entry["conflict_with"] = conflict_info.get("conflicting_event_id")
+        event_entry["conflict_type"] = "soft_pending"  # Pending client decision
+        state.extras["persist"] = True
+
+        # Compose warning message using existing function
+        warning = compose_conflict_warning_message(room, display_date)
+        body_with_footer = append_footer(
+            warning,
+            step=3,
+            next_step="Room decision",
+            thread_state="Awaiting Client",
+        )
+
+        # Return response with action buttons asking what client wants to do
+        state.draft_messages.clear()
+        state.add_draft_message({
+            "body": body_with_footer,
+            "body_markdown": warning,
+            "step": 3,
+            "next_step": "Room decision",
+            "thread_state": "Awaiting Client",
+            "topic": "soft_conflict_warning",
+            "actions": [
+                {
+                    "type": "conflict_choose_alternative",
+                    "label": "Show me other options",
+                    "room": room,
+                    "date": chosen_date,
+                },
+                {
+                    "type": "conflict_insist",
+                    "label": "I need this room (explain why)",
+                    "room": room,
+                    "date": chosen_date,
+                },
+            ],
+            "requires_approval": False,
+        })
+
+        # Create manager visibility task (non-blocking)
         tasks = state.db.setdefault("tasks", {})
         task_id = f"soft_conflict_{event_id}_{dt.now().strftime('%Y%m%d%H%M%S')}"
         tasks[task_id] = {
@@ -107,24 +162,30 @@ def handle_select_room_action(
                     "event_id": event_id,
                     "email": event_entry.get("client_email"),
                     "name": event_entry.get("client_name"),
-                    "status": "Option (new)",
+                    "status": "Considering (notified of conflict)",
                 },
             },
             "description": (
-                f"Soft Conflict: {room} on {chosen_date}\n\n"
+                f"Soft Conflict: {room} on {display_date}\n\n"
                 f"Client 1: {conflict_info.get('conflicting_client_email')} (already {conflict_info.get('status')})\n"
-                f"Client 2: {event_entry.get('client_email')} (newly selecting)\n\n"
-                f"Both clients now have Option status on this room. "
-                f"Monitor and resolve before either tries to confirm."
+                f"Client 2: {event_entry.get('client_email')} (has been notified)\n\n"
+                f"Client 2 is deciding whether to insist or choose alternative."
             ),
         }
-        # Mark event with soft conflict flag (for later hard conflict detection)
-        event_entry["has_conflict"] = True
-        event_entry["conflict_with"] = conflict_info.get("conflicting_event_id")
-        event_entry["conflict_type"] = "soft"
         event_entry["conflict_task_id"] = task_id
-        # NOTE: Neither client is notified - manager just gets visibility
-        state.extras["persist"] = True
+
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_id,
+            "intent": state.intent.value if state.intent else None,
+            "conflict_type": "soft",
+            "conflict_room": room,
+            "conflict_date": chosen_date,
+            "draft_messages": state.draft_messages,
+            "thread_state": "Awaiting Client",
+            "context": state.context_snapshot,
+        }
+        return GroupResult(action="soft_conflict_warning", payload=payload, halt=False)
 
     update_event_room(
         state.db,
