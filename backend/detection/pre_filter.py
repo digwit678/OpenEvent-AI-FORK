@@ -25,8 +25,13 @@ from typing import Optional, List, Dict, Any
 # =============================================================================
 
 def get_pre_filter_mode() -> str:
-    """Get current pre-filter mode from environment or database config."""
-    return os.getenv("PRE_FILTER_MODE", "legacy").lower()
+    """Get current pre-filter mode from environment or database config.
+
+    Modes:
+    - "enhanced": Uses LLM for ambiguous cases (recommended, ~$0.001/msg)
+    - "legacy": Regex-only, may miss edge cases like "Yes, but 2pm instead?"
+    """
+    return os.getenv("PRE_FILTER_MODE", "enhanced").lower()
 
 
 def is_enhanced_mode() -> bool:

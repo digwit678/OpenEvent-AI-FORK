@@ -744,7 +744,7 @@ _REQUIREMENT_TOKENS = (
 
 # Comprehensive event type keywords for intent classification rescue
 # When LLM classifies as "other" but message contains event type + participant count,
-# we override to EVENT_REQUEST. Covers both English and German terms.
+# we override to EVENT_REQUEST. Covers English, German, and French terms.
 _EVENT_TYPE_TOKENS = (
     # Food/catering event types
     "dinner", "lunch", "breakfast", "brunch", "banquet", "gala",
@@ -759,12 +759,18 @@ _EVENT_TYPE_TOKENS = (
     "abendessen", "mittagessen", "frühstück", "empfang", "feier",
     "hochzeit", "geburtstag", "firmenfeier", "teamanlass", "anlass",
     "veranstaltung", "tagung", "sitzung", "besprechung", "schulung",
+    # French equivalents (Lausanne client)
+    "dîner", "déjeuner", "petit-déjeuner", "réunion", "conférence",
+    "séminaire", "atelier", "formation", "présentation", "événement",
+    "mariage", "anniversaire", "fête", "réception", "soirée",
+    "apéritif", "cocktail dînatoire", "journée d'équipe",
 )
 
-# Participant count indicators (EN + DE)
+# Participant count indicators (EN + DE + FR)
 _PARTICIPANT_TOKENS = (
     "people", "guests", "participants", "pax", "persons", "attendees",
     "personen", "gäste", "teilnehmer", "leute",
+    "personnes", "invités", "convives", "participants",
 )
 
 
@@ -772,6 +778,15 @@ def _heuristic_intent_override(
     payload: Dict[str, str],
     base_intent: IntentLabel,
 ) -> Optional[IntentLabel]:
+    """Apply rule-based intent corrections when LLM misses patterns.
+
+    Used to rescue missed bookings when LLM returns garbage ("other", "non_event").
+    NEVER overrides general_qna - if LLM detected Q&A, we trust it.
+
+    Args:
+        payload: Message with subject/body
+        base_intent: Intent from LLM
+    """
     raw_subject = (payload.get("subject") or "")
     raw_body = (payload.get("body") or "")
     subject = raw_subject.strip()
@@ -808,13 +823,17 @@ def _heuristic_intent_override(
     if detected_date and "works" in body_lower:
         return IntentLabel.CONFIRM_DATE if has_time_range else IntentLabel.CONFIRM_DATE_PARTIAL
 
-    if base_intent != IntentLabel.EVENT_REQUEST:
+    # EVENT_REQUEST override: Rescue missed bookings when LLM returns garbage
+    # NEVER override general_qna - if LLM detected Q&A, trust it
+    # Only applies when LLM returned "other", "non_event", etc.
+    if base_intent not in (IntentLabel.EVENT_REQUEST, IntentLabel.GENERAL_QNA):
         # Generic event type + participant count detection
         # Catches "dinner for 25 guests", "corporate event with 50 people", etc.
         has_event_type = any(token in text for token in _EVENT_TYPE_TOKENS)
         has_participant_ref = any(pax_token in text for pax_token in _PARTICIPANT_TOKENS)
         # Also check for numeric participant patterns like "25 guests" or "for 50"
-        has_numeric_pax = bool(re.search(r"\b\d{1,3}\s*(?:people|guests|pax|persons|personen|gäste)\b", text))
+        # Includes French pattern: "personnes"
+        has_numeric_pax = bool(re.search(r"\b\d{1,3}\s*(?:people|guests|pax|persons|personen|gäste|personnes|invités)\b", text))
         if has_event_type and (has_participant_ref or has_numeric_pax):
             return IntentLabel.EVENT_REQUEST
 
