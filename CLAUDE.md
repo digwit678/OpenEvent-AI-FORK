@@ -2,7 +2,36 @@
 
 This file provides guidance to Claude (Opus 4.5) working on the OpenEvent-AI repository.
 
-## Current Stage: Testing / Pre-Production (December 2025)
+## Development Environment (CRITICAL)
+
+### Ports
+- **Backend**: `http://localhost:8000` (FastAPI/Uvicorn)
+- **Frontend**: `http://localhost:3000` (Next.js)
+- **NEVER** use other ports like 5173, 5180, etc.
+
+### Default Mode
+Always run in **hybrid mode** for testing:
+- `AGENT_MODE=gemini` (default) - Uses Gemini for intent/entity classification
+- OpenAI for verbalization
+- `DETECTION_MODE=unified` (default) - Uses unified detection pipeline
+
+### Playwright Testing Rules
+When testing with Playwright browser:
+1. **Port**: Always navigate to `http://localhost:3000` (NOT 5173, 5180, or any other port)
+2. **Email Required**: First message MUST include client email in proper email format
+3. **Reset Client**: Every test starts with a freshly reset client (click "Reset Client" button) unless user specifies otherwise
+4. **Ensure Both Running**: Backend (8000) and frontend (3000) must both be running before testing
+
+Example test setup:
+```
+1. Navigate to http://localhost:3000
+2. Click "Reset Client" button
+3. Enter message WITH email: "Hi, I'm test@example.com and I need a room for 20 people on Feb 15, 2026"
+4. Click Send
+5. Wait for response
+```
+
+## Current Stage: Testing / Pre-Production (January 2026)
 
 **The application is feature-complete for core workflow (Steps 1-7) and in active testing phase.**
 
