@@ -126,6 +126,35 @@ def get_verbalization_provider() -> Provider:
     return get_llm_providers().verbalization_provider
 
 
+def is_dual_llm_verification_enabled() -> bool:
+    """
+    Check if dual LLM verification is enabled.
+
+    When enabled, a 2nd LLM call verifies the 1st LLM's output for accuracy.
+    This is more robust than rule-based verification but costs 2x API calls.
+
+    Returns:
+        True if dual verification is enabled, False otherwise (default).
+    """
+    # Check environment variable first
+    env_val = os.getenv("DUAL_LLM_VERIFICATION", "").lower()
+    if env_val in ("true", "1", "yes"):
+        return True
+    if env_val in ("false", "0", "no"):
+        return False
+
+    # Check database config
+    try:
+        from backend.workflows.io.database import load_db
+        db = load_db()
+        llm_config = db.get("config", {}).get("llm_provider", {})
+        return llm_config.get("dual_llm_verification", False)
+    except Exception:
+        pass  # Database not available
+
+    return False  # Default: OFF
+
+
 # ============================================================================
 # HYBRID MODE ENFORCEMENT
 # ============================================================================

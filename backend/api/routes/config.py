@@ -98,6 +98,7 @@ class LLMProviderConfig(BaseModel):
     - intent: Provider for intent classification (gemini = 75% cheaper)
     - entity: Provider for entity extraction (gemini = 75% cheaper)
     - verbalization: Provider for draft composition (openai = better quality)
+    - dual_llm_verification: Use 2nd LLM to verify 1st LLM output (2x cost)
 
     Valid providers: "openai", "gemini", "stub"
 
@@ -106,6 +107,7 @@ class LLMProviderConfig(BaseModel):
     intent_provider: str = "gemini"       # Default: cheap, good accuracy
     entity_provider: str = "gemini"       # Default: cheap, structured extraction
     verbalization_provider: str = "openai"  # Default: quality for client-facing
+    dual_llm_verification: bool = False   # Default: OFF (rule-based verification)
 
 
 class PreFilterConfig(BaseModel):
@@ -355,6 +357,7 @@ async def get_llm_provider_config():
                 "intent_provider": llm_config.get("intent_provider", "openai"),
                 "entity_provider": llm_config.get("entity_provider", "openai"),
                 "verbalization_provider": llm_config.get("verbalization_provider", "openai"),
+                "dual_llm_verification": llm_config.get("dual_llm_verification", False),
                 "source": "database",
                 "updated_at": llm_config.get("updated_at"),
             }
@@ -365,11 +368,13 @@ async def get_llm_provider_config():
         intent_provider = os.getenv("INTENT_PROVIDER", agent_mode)
         entity_provider = os.getenv("ENTITY_PROVIDER", agent_mode)
         verbalization_provider = os.getenv("VERBALIZER_PROVIDER", "openai")
+        dual_llm_verification = os.getenv("DUAL_LLM_VERIFICATION", "false").lower() == "true"
 
         return {
             "intent_provider": intent_provider,
             "entity_provider": entity_provider,
             "verbalization_provider": verbalization_provider,
+            "dual_llm_verification": dual_llm_verification,
             "source": "environment",
         }
 
@@ -424,6 +429,7 @@ async def set_llm_provider_config(config: LLMProviderConfig):
             "intent_provider": config.intent_provider.lower(),
             "entity_provider": config.entity_provider.lower(),
             "verbalization_provider": config.verbalization_provider.lower(),
+            "dual_llm_verification": config.dual_llm_verification,
             "updated_at": _now_iso(),
         }
         wf_save_db(db)
@@ -433,6 +439,7 @@ async def set_llm_provider_config(config: LLMProviderConfig):
         os.environ["INTENT_PROVIDER"] = config.intent_provider.lower()
         os.environ["ENTITY_PROVIDER"] = config.entity_provider.lower()
         os.environ["VERBALIZER_PROVIDER"] = config.verbalization_provider.lower()
+        os.environ["DUAL_LLM_VERIFICATION"] = "true" if config.dual_llm_verification else "false"
 
         # Reset caches to pick up new settings
         from backend.adapters.agent_adapter import reset_agent_adapter
@@ -440,14 +447,15 @@ async def set_llm_provider_config(config: LLMProviderConfig):
         reset_agent_adapter()
         clear_provider_cache()
 
-        logger.info("LLM providers updated: intent=%s entity=%s verbalization=%s",
-                    config.intent_provider, config.entity_provider, config.verbalization_provider)
+        logger.info("LLM providers updated: intent=%s entity=%s verbalization=%s dual_verify=%s",
+                    config.intent_provider, config.entity_provider, config.verbalization_provider, config.dual_llm_verification)
 
         return {
             "status": "ok",
             "intent_provider": config.intent_provider.lower(),
             "entity_provider": config.entity_provider.lower(),
             "verbalization_provider": config.verbalization_provider.lower(),
+            "dual_llm_verification": config.dual_llm_verification,
             "message": "LLM provider settings updated. Changes take effect on next request.",
         }
     except Exception as exc:
@@ -602,6 +610,95 @@ async def set_hybrid_enforcement_config(config: HybridEnforcementConfig):
     except Exception as exc:
         raise HTTPException(
             status_code=500, detail=f"Failed to save hybrid enforcement config: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Error Alerting Configuration Endpoints
+# ---------------------------------------------------------------------------
+
+class ErrorAlertingConfig(BaseModel):
+    """
+    Error alerting configuration for workflow failures.
+
+    When a workflow fails unexpectedly (not a normal HIL request), instead of
+    sending confusing fallback messages to clients:
+    1. No message is sent to the client
+    2. An alert email is sent to the configured address(es) with full diagnostic info
+
+    This allows the team to immediately investigate and respond manually.
+    """
+    enabled: bool = True
+    alert_emails: list[str] = ["river@more-life.ch"]  # Default: OpenEvent support
+
+
+@router.get("/error-alerting")
+async def get_error_alerting_config():
+    """
+    Get the current error alerting configuration.
+
+    Returns:
+        enabled: bool - Whether error alerting is active
+        alert_emails: list[str] - Email addresses to receive alerts
+    """
+    try:
+        db = wf_load_db()
+        alerting_config = db.get("config", {}).get("error_alerting", {})
+
+        return {
+            "enabled": alerting_config.get("enabled", True),
+            "alert_emails": alerting_config.get("alert_emails", ["river@more-life.ch"]),
+            "updated_at": alerting_config.get("updated_at"),
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load error alerting config: {exc}"
+        ) from exc
+
+
+@router.post("/error-alerting")
+async def set_error_alerting_config(config: ErrorAlertingConfig):
+    """
+    Set the error alerting configuration.
+
+    Args:
+        enabled: Whether to send error alerts
+        alert_emails: List of email addresses to receive alerts
+
+    When enabled, workflow failures will:
+    1. NOT send any message to the client
+    2. Send alert email to all configured addresses with:
+       - Client email/name
+       - Original message
+       - Error details
+       - Full diagnostic info for debugging
+    """
+    try:
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+
+        db["config"]["error_alerting"] = {
+            "enabled": config.enabled,
+            "alert_emails": config.alert_emails,
+            "updated_at": _now_iso(),
+        }
+        wf_save_db(db)
+
+        logger.info(
+            "Error alerting config updated: enabled=%s, emails=%s",
+            config.enabled,
+            config.alert_emails,
+        )
+
+        return {
+            "status": "ok",
+            "enabled": config.enabled,
+            "alert_emails": config.alert_emails,
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save error alerting config: {exc}"
         ) from exc
 
 

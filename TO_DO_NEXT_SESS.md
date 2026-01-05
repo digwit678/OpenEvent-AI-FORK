@@ -42,3 +42,82 @@ This file tracks active implementation goals and planned roadmap items. **Check 
 | 2025-12-08 | **Test Pages/Links** | `docs/plans/active/test_pages_and_links_integration.md` | Low |
 | 2025-12-05 | **Pseudo-links Calendar** | `docs/plans/active/pseudolinks_calendar_integration.md` | Low |
 | 2025-12-01 | **Hostinger Logic Update** | `docs/plans/active/HOSTINGER_UPDATE_PLAN.md` | Medium |
+| 2026-01-05 | **Dual-LLM Verification Backup** | See below | Low |
+
+---
+
+## 🔮 Future: Dual-LLM Verification Backup (2026-01-05)
+
+**Status:** PLANNED - Backup mechanism if rule-based sandwich fails too often
+
+**Concept:** Replace or supplement rule-based fact verification with a second LLM call:
+1. First LLM generates verbalized text
+2. Second LLM (same or different model) verifies: "Given these facts, is this text accurate?"
+3. If NO → use fallback text
+
+**Implementation Approach:**
+```python
+# In universal_verbalizer.py - disabled by default
+DUAL_LLM_VERIFICATION = os.getenv("DUAL_LLM_VERIFICATION", "false").lower() == "true"
+
+async def _verify_with_llm(text: str, facts: Dict[str, List[str]]) -> Tuple[bool, str]:
+    """Second LLM call to verify first LLM's output."""
+    prompt = f"""Given these facts:
+    - Dates: {facts.get('dates', [])}
+    - Amounts: {facts.get('amounts', [])}
+    - Rooms: {facts.get('room_names', [])}
+    - Capacities: {facts.get('room_capacities', [])}
+
+    Does this text accurately represent them? Answer YES or NO with explanation.
+
+    Text: {text}"""
+    # Call verification LLM...
+```
+
+**Trade-offs:**
+- ✅ More robust than regex patterns
+- ✅ Can catch nuanced hallucinations
+- ❌ 2x API cost per message
+- ❌ Added latency
+
+**Trigger Criteria:** Enable if rule-based sandwich has >5% false negative rate (misses hallucinations that reach users)
+
+## ✅ FIXED: Verbalizer Text/Data Inconsistency (2026-01-05)
+
+**Status:** FIXED - Room status verification added to `_verify_facts()`
+
+**Issue:** The verbalized response contradicted the structured room data:
+- Text said: "Room F **isn't available** that day"
+- Structured data showed: "Room F - Status: **available**"
+
+**Fix Applied:**
+1. Added `room_statuses` to `extract_hard_facts()` in `MessageContext`
+2. Added room availability consistency check in `_verify_facts()`:
+   - If LLM claims room "isn't available", verify it matches actual status
+   - If status is actually "available"/"option", flag as invented fact
+3. When inconsistency detected, fallback text is used instead of hallucinated LLM output
+
+**Files Modified:**
+- `backend/ux/universal_verbalizer.py` - Added room status tracking and verification
+
+## ✅ ADDED: Room Capacity Verification (2026-01-05)
+
+**Status:** ADDED - Prevents LLM from claiming rooms fit more people than they can
+
+**Issue Prevented:** LLM could hallucinate capacity claims like "Room A fits 100 people" when actual max is 40.
+
+**Fix Applied:**
+1. Added `room_capacities` to `extract_hard_facts()` - extracts `name:capacity_max` pairs
+2. Added capacity consistency check in `_verify_facts()`:
+   - Detects patterns: "fits X", "holds X", "accommodates X", "X people/guests"
+   - If claimed capacity > actual max, flags as invented fact
+3. When overclaim detected, fallback text is used
+
+**Test Coverage:**
+- 7 new tests in `TestRoomCapacityVerification` class
+- Tests cover: extraction, overclaims, "holds up to", "accommodates", exact max, below max, guests pattern
+
+**Files Modified:**
+- `backend/ux/universal_verbalizer.py` - Added capacity tracking and verification
+- `backend/tests/unit/test_verbalizer_sandwich.py` - Added Section 10 with 7 tests
+

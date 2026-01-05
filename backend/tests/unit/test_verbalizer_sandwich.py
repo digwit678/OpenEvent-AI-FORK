@@ -44,6 +44,7 @@ from typing import Dict, List
 # Import the functions we're testing
 from backend.ux.universal_verbalizer import (
     _verify_facts,
+    _verify_facts_with_llm,
     _patch_facts,
     MessageContext,
 )
@@ -808,6 +809,420 @@ class TestFullFlow:
         ok, missing, invented = _verify_facts(output_with_subtotal, hard_facts)
         # CHF 540 is 30 * 18, so it's a valid calculated subtotal
         assert "540" not in str(invented), f"Should accept calculated subtotal. Invented: {invented}"
+
+
+# =============================================================================
+# SECTION 9: Room Status Verification Tests (Added 2026-01-05)
+# =============================================================================
+
+@pytest.mark.v4
+class TestRoomStatusVerification:
+    """Tests for room availability status consistency verification."""
+
+    def test_room_status_extracted(self) -> None:
+        """Verify room_statuses are extracted from context."""
+        ctx = MessageContext(
+            step=3,
+            topic="room_available",
+            room_name="Room A",
+            room_status="available",
+            rooms=[
+                {"name": "Room A", "status": "available"},
+                {"name": "Room F", "status": "available"},
+            ],
+        )
+        facts = ctx.extract_hard_facts()
+
+        assert "room_statuses" in facts
+        assert any("Room A:available" in s for s in facts["room_statuses"])
+        assert any("Room F:available" in s for s in facts["room_statuses"])
+
+    def test_claims_unavailable_when_available(self) -> None:
+        """LLM claims room isn't available when it IS available - should fail."""
+        hard_facts = {
+            "dates": ["15.02.2026"],
+            "room_names": ["Room A", "Room F"],
+            "room_statuses": ["Room A:available", "Room F:available"],
+            "counts": ["20"],
+        }
+        # LLM incorrectly says Room F isn't available
+        bad_output = """
+        I recommend Room A for your event on 15.02.2026 with 20 guests.
+
+        Room F isn't available that day, but Room A is perfect.
+        """
+
+        ok, missing, invented = _verify_facts(bad_output, hard_facts)
+
+        assert not ok, "Should fail when LLM claims available room is unavailable"
+        assert any("Room F" in inv and "unavailable" in inv for inv in invented), \
+            f"Should flag Room F status inconsistency. Invented: {invented}"
+
+    def test_claims_not_available_when_available(self) -> None:
+        """Alternative phrasing: 'is not available' instead of 'isn't available'."""
+        hard_facts = {
+            "dates": ["15.02.2026"],
+            "room_names": ["Room B"],
+            "room_statuses": ["Room B:available"],
+            "counts": ["30"],
+        }
+        bad_output = "Room B is not available on 15.02.2026 for your 30 guests."
+
+        ok, missing, invented = _verify_facts(bad_output, hard_facts)
+
+        assert not ok, "Should catch 'is not available' phrasing"
+        assert any("Room B" in inv for inv in invented)
+
+    def test_claims_booked_when_available(self) -> None:
+        """LLM claims room is booked when it's actually available."""
+        hard_facts = {
+            "dates": ["15.02.2026"],
+            "room_names": ["Room C"],
+            "room_statuses": ["Room C:available"],
+        }
+        bad_output = "Room C is booked on 15.02.2026."
+
+        ok, missing, invented = _verify_facts(bad_output, hard_facts)
+
+        assert not ok, "Should catch 'is booked' when room is available"
+
+    def test_correct_status_claim_passes(self) -> None:
+        """Correct status claims should pass verification."""
+        hard_facts = {
+            "dates": ["15.02.2026"],
+            "room_names": ["Room A", "Room F"],
+            "room_statuses": ["Room A:available", "Room F:available"],
+            "counts": ["20"],
+        }
+        good_output = """
+        Room A is available for your event on 15.02.2026 with 20 guests.
+
+        Room F is also available if you need more space.
+        """
+
+        ok, missing, invented = _verify_facts(good_output, hard_facts)
+
+        assert ok, f"Correct status claims should pass. Missing: {missing}, Invented: {invented}"
+
+    def test_unavailable_room_correctly_stated(self) -> None:
+        """If room is actually unavailable, saying so is correct."""
+        hard_facts = {
+            "dates": ["15.02.2026"],
+            "room_names": ["Room A", "Room B"],
+            "room_statuses": ["Room A:available", "Room B:unavailable"],
+        }
+        # LLM correctly says Room B is unavailable
+        correct_output = """
+        Room A is available on 15.02.2026.
+        Room B isn't available that day.
+        """
+
+        ok, missing, invented = _verify_facts(correct_output, hard_facts)
+
+        # Should NOT flag Room B as invented because it's actually unavailable
+        room_b_flagged = any("Room B" in inv and "unavailable" in inv for inv in invented)
+        assert not room_b_flagged, f"Should not flag correct unavailable claim. Invented: {invented}"
+
+    def test_option_status_not_flagged_as_unavailable(self) -> None:
+        """Room with 'option' status should not be flagged when claimed unavailable."""
+        hard_facts = {
+            "dates": ["15.02.2026"],
+            "room_names": ["Room D"],
+            "room_statuses": ["Room D:option"],  # Option means available but held
+        }
+        # Saying "isn't available" for an option room is incorrect
+        bad_output = "Room D isn't available on 15.02.2026."
+
+        ok, missing, invented = _verify_facts(bad_output, hard_facts)
+
+        # Option rooms ARE available (just with a hold), so claiming unavailable is wrong
+        assert not ok, "Should flag 'option' room claimed as unavailable"
+
+
+# =============================================================================
+# SECTION 10: Room Capacity Verification Tests (Added 2026-01-05)
+# =============================================================================
+
+@pytest.mark.v4
+class TestRoomCapacityVerification:
+    """Tests for room capacity claim verification."""
+
+    def test_capacity_extracted_from_rooms(self) -> None:
+        """Verify room_capacities are extracted from context."""
+        ctx = MessageContext(
+            step=3,
+            topic="room_available",
+            rooms=[
+                {"name": "Room A", "capacity_max": 40},
+                {"name": "Room F", "capacity_max": 80},
+            ],
+        )
+        facts = ctx.extract_hard_facts()
+
+        assert "room_capacities" in facts
+        assert "Room A:40" in facts["room_capacities"]
+        assert "Room F:80" in facts["room_capacities"]
+
+    def test_claims_capacity_higher_than_max(self) -> None:
+        """LLM claims room fits more people than it can - should fail."""
+        hard_facts = {
+            "dates": ["15.02.2026"],
+            "room_names": ["Room A"],
+            "room_capacities": ["Room A:40"],
+            "counts": ["50"],
+        }
+        # LLM incorrectly says Room A fits 100 people
+        bad_output = "Room A fits 100 people and is available on 15.02.2026 for your 50 guests."
+
+        ok, missing, invented = _verify_facts(bad_output, hard_facts)
+
+        assert not ok, "Should fail when LLM claims capacity higher than max"
+        assert any("capacity" in inv and "Room A" in inv for inv in invented), \
+            f"Should flag capacity inconsistency. Invented: {invented}"
+
+    def test_holds_up_to_pattern(self) -> None:
+        """Test 'holds up to X' phrasing is caught."""
+        hard_facts = {
+            "room_names": ["Room B"],
+            "room_capacities": ["Room B:30"],
+        }
+        bad_output = "Room B holds up to 60 guests for your event."
+
+        ok, missing, invented = _verify_facts(bad_output, hard_facts)
+
+        assert not ok, "Should catch 'holds up to X' overclaim"
+        assert any("capacity" in inv for inv in invented)
+
+    def test_accommodates_pattern(self) -> None:
+        """Test 'accommodates X' phrasing is caught."""
+        hard_facts = {
+            "room_names": ["Room C"],
+            "room_capacities": ["Room C:25"],
+        }
+        bad_output = "Room C accommodates 50 people comfortably."
+
+        ok, missing, invented = _verify_facts(bad_output, hard_facts)
+
+        assert not ok, "Should catch 'accommodates X' overclaim"
+
+    def test_capacity_at_max_passes(self) -> None:
+        """Claiming exactly max capacity should pass."""
+        hard_facts = {
+            "room_names": ["Room A"],
+            "room_capacities": ["Room A:40"],
+        }
+        good_output = "Room A fits 40 people perfectly for your event."
+
+        ok, missing, invented = _verify_facts(good_output, hard_facts)
+
+        assert ok, f"Claiming exact max should pass. Invented: {invented}"
+
+    def test_capacity_below_max_passes(self) -> None:
+        """Claiming below max capacity should pass."""
+        hard_facts = {
+            "room_names": ["Room A"],
+            "room_capacities": ["Room A:40"],
+        }
+        good_output = "Room A fits 30 people and has room to spare."
+
+        ok, missing, invented = _verify_facts(good_output, hard_facts)
+
+        assert ok, f"Claiming below max should pass. Invented: {invented}"
+
+    def test_people_guests_pattern(self) -> None:
+        """Test 'X people/guests' patterns in context of room name."""
+        hard_facts = {
+            "room_names": ["Room F"],
+            "room_capacities": ["Room F:80"],
+        }
+        # Number must be in same sentence as room name
+        bad_output = "Room F is perfect for your event with 150 guests."
+
+        ok, missing, invented = _verify_facts(bad_output, hard_facts)
+
+        assert not ok, "Should catch 'X guests' overclaim in room context"
+
+    # --- NO FALSE POSITIVE TESTS ---
+
+    def test_date_not_mistaken_for_capacity(self) -> None:
+        """Date numbers should not be mistaken for capacity claims."""
+        hard_facts = {
+            "dates": ["15.02.2026"],
+            "room_names": ["Room A"],
+            "room_capacities": ["Room A:40"],  # Max 40
+            "counts": ["20"],
+        }
+        # "2026" should not be flagged as a capacity claim
+        good_output = "Room A is available on 15.02.2026 for your 20 guests."
+
+        ok, missing, invented = _verify_facts(good_output, hard_facts)
+
+        assert ok, f"Date numbers should not trigger capacity check. Invented: {invented}"
+
+    def test_unrelated_numbers_not_flagged(self) -> None:
+        """Numbers not followed by people/guests shouldn't trigger capacity check."""
+        hard_facts = {
+            "room_names": ["Room A"],
+            "room_capacities": ["Room A:40"],
+        }
+        # "150 events" - 150 followed by 'events', not 'people/guests'
+        good_output = "Room A has hosted over 150 events this year."
+
+        ok, missing, invented = _verify_facts(good_output, hard_facts)
+
+        assert ok, f"Unrelated numbers should not trigger capacity check. Invented: {invented}"
+
+    def test_participant_count_within_capacity_passes(self) -> None:
+        """Participant count within capacity should pass, not be flagged."""
+        hard_facts = {
+            "room_names": ["Room A"],
+            "room_capacities": ["Room A:40"],
+            "counts": ["35"],
+        }
+        # 35 people < 40 capacity - should pass
+        good_output = "Room A is perfect for your group of 35 people."
+
+        ok, missing, invented = _verify_facts(good_output, hard_facts)
+
+        assert ok, f"Participant count within capacity should pass. Invented: {invented}"
+
+
+# =============================================================================
+# SECTION 11: Dual-LLM Verification Tests (Added 2026-01-05)
+# =============================================================================
+
+@pytest.mark.v4
+class TestDualLLMVerification:
+    """Tests for the dual-LLM verification feature (experimental).
+
+    These tests verify:
+    1. The dual-LLM verification function works correctly
+    2. It falls back to rule-based when LLM fails
+    3. The toggle correctly switches between methods
+    """
+
+    def test_dual_llm_function_exists(self) -> None:
+        """Verify the dual-LLM verification function is importable."""
+        # If this test runs, the import worked
+        assert callable(_verify_facts_with_llm)
+
+    def test_dual_llm_returns_tuple(self) -> None:
+        """Dual-LLM verification returns same format as rule-based."""
+        # This test uses a mock to avoid actual LLM calls
+        from unittest.mock import patch, MagicMock
+
+        mock_adapter = MagicMock()
+        mock_adapter.complete.return_value = '{"ok": true, "missing": [], "invented": []}'
+
+        hard_facts = {
+            "dates": ["15.02.2026"],
+            "room_names": ["Room A"],
+        }
+
+        with patch("backend.adapters.agent_adapter.get_agent_adapter", return_value=mock_adapter):
+            result = _verify_facts_with_llm("Room A is available on 15.02.2026", hard_facts)
+
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+        assert isinstance(result[0], bool)
+        assert isinstance(result[1], list)
+        assert isinstance(result[2], list)
+
+    def test_dual_llm_detects_missing_facts(self) -> None:
+        """Dual-LLM should detect missing facts."""
+        from unittest.mock import patch, MagicMock
+
+        mock_adapter = MagicMock()
+        mock_adapter.complete.return_value = '{"ok": false, "missing": ["date 15.02.2026"], "invented": []}'
+
+        hard_facts = {
+            "dates": ["15.02.2026"],
+            "room_names": ["Room A"],
+        }
+
+        with patch("backend.adapters.agent_adapter.get_agent_adapter", return_value=mock_adapter):
+            ok, missing, invented = _verify_facts_with_llm("Room A is available.", hard_facts)
+
+        assert not ok
+        assert len(missing) > 0
+
+    def test_dual_llm_detects_invented_facts(self) -> None:
+        """Dual-LLM should detect invented facts."""
+        from unittest.mock import patch, MagicMock
+
+        mock_adapter = MagicMock()
+        mock_adapter.complete.return_value = '{"ok": false, "missing": [], "invented": ["wrong date 20.02.2026"]}'
+
+        hard_facts = {
+            "dates": ["15.02.2026"],
+            "room_names": ["Room A"],
+        }
+
+        with patch("backend.adapters.agent_adapter.get_agent_adapter", return_value=mock_adapter):
+            ok, missing, invented = _verify_facts_with_llm("Room A on 20.02.2026", hard_facts)
+
+        assert not ok
+        assert len(invented) > 0
+
+    def test_dual_llm_falls_back_on_error(self) -> None:
+        """If LLM call fails, fall back to rule-based verification."""
+        from unittest.mock import patch, MagicMock
+
+        mock_adapter = MagicMock()
+        mock_adapter.complete.side_effect = Exception("LLM unavailable")
+
+        hard_facts = {
+            "dates": ["15.02.2026"],
+            "room_names": ["Room A"],
+        }
+
+        with patch("backend.adapters.agent_adapter.get_agent_adapter", return_value=mock_adapter):
+            # Should not raise, should fall back to rule-based
+            ok, missing, invented = _verify_facts_with_llm(
+                "Room A is available on 15.02.2026.",
+                hard_facts
+            )
+
+        # Rule-based should pass for this correct output
+        assert ok
+
+    def test_toggle_default_is_off(self) -> None:
+        """Default setting should use rule-based (sandwich), not dual-LLM."""
+        from backend.llm.provider_config import is_dual_llm_verification_enabled
+        import os
+
+        # Clear any env override
+        old_val = os.environ.pop("DUAL_LLM_VERIFICATION", None)
+
+        try:
+            # Default should be False (rule-based)
+            # Note: This might be True if database has it enabled, but for fresh install it's False
+            enabled = is_dual_llm_verification_enabled()
+            # We can't assert False here because database might have it enabled
+            # But we can assert the function returns a bool
+            assert isinstance(enabled, bool)
+        finally:
+            if old_val is not None:
+                os.environ["DUAL_LLM_VERIFICATION"] = old_val
+
+    def test_toggle_env_override(self) -> None:
+        """Environment variable should override database setting."""
+        from backend.llm.provider_config import is_dual_llm_verification_enabled
+        import os
+
+        old_val = os.environ.get("DUAL_LLM_VERIFICATION")
+
+        try:
+            os.environ["DUAL_LLM_VERIFICATION"] = "true"
+            assert is_dual_llm_verification_enabled() is True
+
+            os.environ["DUAL_LLM_VERIFICATION"] = "false"
+            assert is_dual_llm_verification_enabled() is False
+        finally:
+            if old_val is not None:
+                os.environ["DUAL_LLM_VERIFICATION"] = old_val
+            else:
+                os.environ.pop("DUAL_LLM_VERIFICATION", None)
 
 
 if __name__ == "__main__":

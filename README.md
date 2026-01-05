@@ -261,6 +261,7 @@ The system supports multiple LLM providers with per-operation granularity:
 | `INTENT_PROVIDER` | `openai`, `gemini` | (AGENT_MODE) | Intent classification provider |
 | `ENTITY_PROVIDER` | `openai`, `gemini` | (AGENT_MODE) | Entity extraction provider |
 | `VERBALIZER_PROVIDER` | `openai`, `gemini` | `openai` | Draft verbalization provider |
+| `DUAL_LLM_VERIFICATION` | `true`, `false` | `false` | Enable 2nd LLM to verify 1st LLM output (2x cost) |
 | `GOOGLE_API_KEY` | - | (required for Gemini) | Google AI API key |
 
 #### Cost Comparison per API Call

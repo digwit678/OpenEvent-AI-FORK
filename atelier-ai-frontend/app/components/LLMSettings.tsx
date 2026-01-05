@@ -32,6 +32,7 @@ export interface LLMProviderConfig {
   intent_provider: 'openai' | 'gemini' | 'stub';
   entity_provider: 'openai' | 'gemini' | 'stub';
   verbalization_provider: 'openai' | 'gemini' | 'stub';
+  dual_llm_verification: boolean;  // 2nd LLM verifies 1st LLM output (2x cost)
   source?: string;
   updated_at?: string;
 }
@@ -55,6 +56,7 @@ const DEFAULT_CONFIG: LLMProviderConfig = {
   intent_provider: 'gemini',      // Default: cheap, good accuracy
   entity_provider: 'gemini',      // Default: cheap, good for structured extraction
   verbalization_provider: 'openai', // Default: quality for client-facing messages
+  dual_llm_verification: false,   // Default: OFF (rule-based verification, not 2x LLM cost)
 };
 
 const PROVIDERS = [
@@ -99,6 +101,7 @@ export default function LLMSettings({
               intent_provider: data.intent_provider ?? 'openai',
               entity_provider: data.entity_provider ?? 'openai',
               verbalization_provider: data.verbalization_provider ?? 'openai',
+              dual_llm_verification: data.dual_llm_verification ?? false,
             });
             setConfigSource(data.source ?? 'default');
           }
@@ -307,6 +310,7 @@ export default function LLMSettings({
           intent_provider: 'gemini',
           entity_provider: 'gemini',
           verbalization_provider: 'openai',
+          dual_llm_verification: false,
         });
         break;
       case 'openai':
@@ -314,6 +318,7 @@ export default function LLMSettings({
           intent_provider: 'openai',
           entity_provider: 'openai',
           verbalization_provider: 'openai',
+          dual_llm_verification: false,
         });
         break;
       case 'gemini':
@@ -321,6 +326,7 @@ export default function LLMSettings({
           intent_provider: 'gemini',
           entity_provider: 'gemini',
           verbalization_provider: 'gemini',
+          dual_llm_verification: false,
         });
         break;
       case 'stub':
@@ -328,6 +334,7 @@ export default function LLMSettings({
           intent_provider: 'stub',
           entity_provider: 'stub',
           verbalization_provider: 'stub',
+          dual_llm_verification: false,
         });
         break;
     }
@@ -563,6 +570,43 @@ export default function LLMSettings({
             )}
           </p>
           <p className="text-xs text-gray-400 mt-1">Source: {preFilterSource}</p>
+        </div>
+
+        {/* Dual LLM Verification Toggle */}
+        <div className="pt-4 border-t border-gray-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Dual LLM Verification
+                <span className="text-xs text-gray-400 ml-2">(experimental)</span>
+              </label>
+              <p className="text-xs text-gray-500 mt-1">
+                Use a 2nd LLM to verify 1st LLM output. More robust but 2x verbalization cost.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={!isEditing}
+              onClick={() => setConfig((prev) => ({ ...prev, dual_llm_verification: !prev.dual_llm_verification }))}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                config.dual_llm_verification ? 'bg-orange-500' : 'bg-gray-200'
+              } ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
+              role="switch"
+              aria-checked={config.dual_llm_verification}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  config.dual_llm_verification ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+          {config.dual_llm_verification && (
+            <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-700">
+              <strong>Warning:</strong> Dual verification doubles verbalization API costs.
+              Only enable if rule-based verification fails too often.
+            </div>
+          )}
         </div>
 
         {/* Cost Preview */}

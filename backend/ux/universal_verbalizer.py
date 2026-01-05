@@ -85,6 +85,8 @@ class MessageContext:
             "dates": [],
             "amounts": [],
             "room_names": [],
+            "room_statuses": [],  # (room_name, status) pairs for availability verification
+            "room_capacities": [],  # (room_name, max_capacity) pairs for capacity verification
             "counts": [],
             "units": [],
             "product_names": [],
@@ -120,10 +122,21 @@ class MessageContext:
 
         if self.room_name:
             facts["room_names"].append(self.room_name)
+            # Add room status for the primary room
+            if self.room_status:
+                facts["room_statuses"].append(f"{self.room_name}:{self.room_status.lower()}")
         for room in self.rooms:
             name = room.get("name") or room.get("id")
             if name and name not in facts["room_names"]:
                 facts["room_names"].append(name)
+            # Track room status for availability verification
+            status = room.get("status")
+            if name and status:
+                facts["room_statuses"].append(f"{name}:{status.lower()}")
+            # Track room capacity for capacity verification
+            capacity = room.get("capacity_max") or room.get("capacity")
+            if name and capacity:
+                facts["room_capacities"].append(f"{name}:{capacity}")
 
         if self.participants_count is not None:
             facts["counts"].append(str(self.participants_count))
@@ -483,7 +496,8 @@ def verbalize_message(
             step=context.step,
             topic=context.topic,
         )
-        return wrap_fallback(fallback_text, ctx)
+        result = wrap_fallback(fallback_text, ctx)
+        return result if result is not None else ""
 
     try:
         prompt_payload = _build_prompt(context, fallback_text, locale)
@@ -496,7 +510,8 @@ def verbalize_message(
             topic=context.topic,
             error=exc,
         )
-        return wrap_fallback(fallback_text, ctx)
+        result = wrap_fallback(fallback_text, ctx)
+        return result if result is not None else ""
 
     if not llm_text or not llm_text.strip():
         ctx = create_fallback_context(
@@ -505,11 +520,19 @@ def verbalize_message(
             step=context.step,
             topic=context.topic,
         )
-        return wrap_fallback(fallback_text, ctx)
+        result = wrap_fallback(fallback_text, ctx)
+        return result if result is not None else ""
 
     # Verify hard facts preserved
     hard_facts = context.extract_hard_facts()
-    verification = _verify_facts(llm_text, hard_facts)
+
+    # Choose verification method: dual-LLM (experimental) or rule-based (default)
+    from backend.llm.provider_config import is_dual_llm_verification_enabled
+    if is_dual_llm_verification_enabled():
+        logger.debug("Using dual-LLM verification (experimental)")
+        verification = _verify_facts_with_llm(llm_text, hard_facts)
+    else:
+        verification = _verify_facts(llm_text, hard_facts)
 
     if not verification[0]:
         # Verification failed - try to patch the output first
@@ -543,7 +566,8 @@ def verbalize_message(
                 f"universal_verbalizer: patching failed for step={context.step}, topic={context.topic}, using fallback",
                 extra={"missing": verification[1], "invented": verification[2]},
             )
-            return wrap_fallback(fallback_text, ctx)
+            result = wrap_fallback(fallback_text, ctx)
+            return result if result is not None else ""
 
     logger.debug(f"universal_verbalizer: success for step={context.step}, topic={context.topic}")
     return llm_text
@@ -771,12 +795,94 @@ def _call_llm(payload: Dict[str, Any]) -> str:
     )
 
 
+# =============================================================================
+# Dual-LLM Verification (experimental, off by default)
+# =============================================================================
+
+_DUAL_VERIFY_PROMPT = """You are a fact-checker. Compare the RESPONSE against the FACTS.
+
+FACTS (ground truth):
+- Dates: {dates}
+- Amounts: {amounts}
+- Room names: {room_names}
+- Room capacities: {room_capacities}
+- Counts: {counts}
+- Products: {product_names}
+
+RESPONSE to verify:
+{response}
+
+Check if the response:
+1. Contains all required facts (dates, amounts, room names, counts)
+2. Does NOT invent facts that contradict the ground truth
+3. Does NOT claim rooms are unavailable when they're available
+4. Does NOT claim capacity higher than actual
+
+Answer in JSON format:
+{{"ok": true/false, "missing": ["list of missing facts"], "invented": ["list of invented/wrong facts"]}}
+
+Only output the JSON, nothing else."""
+
+
+def _verify_facts_with_llm(
+    llm_text: str,
+    hard_facts: Dict[str, List[str]],
+) -> Tuple[bool, List[str], List[str]]:
+    """
+    Verify facts using a 2nd LLM call (experimental).
+
+    This is more robust than rule-based verification but costs 2x API calls.
+    Only used when DUAL_LLM_VERIFICATION=true.
+
+    Returns:
+        Tuple of (ok, missing_facts, invented_facts)
+    """
+    from backend.adapters.agent_adapter import get_agent_adapter
+
+    prompt = _DUAL_VERIFY_PROMPT.format(
+        dates=hard_facts.get("dates", []),
+        amounts=hard_facts.get("amounts", []),
+        room_names=hard_facts.get("room_names", []),
+        room_capacities=hard_facts.get("room_capacities", []),
+        counts=hard_facts.get("counts", []),
+        product_names=hard_facts.get("product_names", []),
+        response=llm_text,
+    )
+
+    try:
+        adapter = get_agent_adapter()
+        result = adapter.complete(
+            user_prompt=prompt,
+            system_prompt="You are a precise fact-checker. Output only valid JSON.",
+            temperature=0.0,  # Deterministic for verification
+            json_mode=True,
+        )
+
+        # Parse JSON response
+        import json
+        data = json.loads(result)
+        ok = data.get("ok", False)
+        missing = data.get("missing", [])
+        invented = data.get("invented", [])
+
+        logger.debug(
+            f"dual_llm_verification: ok={ok}, missing={missing}, invented={invented}"
+        )
+
+        return (ok, missing, invented)
+
+    except Exception as e:
+        logger.warning(f"dual_llm_verification failed, falling back to rule-based: {e}")
+        # Fall back to rule-based verification if LLM call fails
+        return _verify_facts(llm_text, hard_facts)
+
+
 def _verify_facts(
     llm_text: str,
     hard_facts: Dict[str, List[str]],
 ) -> Tuple[bool, List[str], List[str]]:
     """
-    Verify that all hard facts appear in the LLM output.
+    Verify that all hard facts appear in the LLM output (rule-based).
 
     This verification is intentionally flexible to allow natural rephrasing
     while catching actual factual errors (wrong numbers, invented dates, etc.)
@@ -1036,6 +1142,59 @@ def _verify_facts(
 
                 if not is_close:
                     invented.append(f"amount:CHF {found_amount}")
+
+    # Check room availability status consistency
+    # If text says a room "isn't available" or "not available", verify it matches actual status
+    room_statuses = hard_facts.get("room_statuses", [])
+    for status_pair in room_statuses:
+        if ":" not in status_pair:
+            continue
+        room_name, actual_status = status_pair.rsplit(":", 1)
+        room_lower = room_name.lower()
+        # Patterns that indicate the room is claimed to be unavailable
+        unavailable_patterns = [
+            f"{room_lower} isn't available",
+            f"{room_lower} is not available",
+            f"{room_lower} isn't open",
+            f"{room_lower} is unavailable",
+            f"{room_lower} is booked",
+            f"{room_lower} is not open",
+        ]
+        # Check if text claims room is unavailable
+        text_claims_unavailable = any(pat in text_lower for pat in unavailable_patterns)
+        # Check if room is actually available
+        room_is_available = actual_status in ("available", "option")
+
+        if text_claims_unavailable and room_is_available:
+            # LLM incorrectly said room isn't available when it IS available
+            invented.append(f"status:{room_name} claimed unavailable but is {actual_status}")
+
+    # Check room capacity claims
+    # If text claims a room "fits X people" or "holds X", verify X <= actual capacity
+    room_capacities = hard_facts.get("room_capacities", [])
+    for cap_pair in room_capacities:
+        if ":" not in cap_pair:
+            continue
+        room_name, max_cap_str = cap_pair.rsplit(":", 1)
+        try:
+            max_capacity = int(max_cap_str)
+        except ValueError:
+            continue
+        room_lower = room_name.lower()
+        # Look for capacity claims in the text
+        # Patterns: "Room A fits 50 people", "Room A holds up to 50", "Room A (capacity: 50)"
+        capacity_patterns = [
+            rf"{room_lower}\s+(?:fits|holds|accommodates|has capacity for|seats)\s+(?:up to\s+)?(\d+)",
+            rf"{room_lower}\s*\(capacity[:\s]+(\d+)",
+            rf"{room_lower}[^.]*?(\d+)\s+(?:people|guests|persons|attendees|participants)",
+        ]
+        for pattern in capacity_patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                claimed_capacity = int(match.group(1))
+                if claimed_capacity > max_capacity:
+                    invented.append(f"capacity:{room_name} claimed {claimed_capacity} but max is {max_capacity}")
+                break  # Only flag once per room
 
     ok = len(missing) == 0 and len(invented) == 0
     return (ok, missing, invented)
