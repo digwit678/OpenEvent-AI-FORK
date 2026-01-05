@@ -134,35 +134,56 @@ That's it! The frontend will now call your Hostinger backend.
 
 ---
 
-## API Endpoints (Already Implemented)
+## API Endpoints (43 Total)
 
-These endpoints are ready to use. **For detailed curl examples and test results, see [API_TESTS.md](./API_TESTS.md)**.
+**For detailed curl examples and test results, see [API_TESTS.md](./API_TESTS.md)**.
+
+### Authentication
+Most endpoints require the `X-Team-Id` header for multi-tenancy:
+```bash
+curl -H "X-Team-Id: your-team-id" http://72.60.135.183:8000/api/...
+```
+
+### Key Endpoints
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/start-conversation` | POST | Start new chat |
 | `/api/send-message` | POST | Send message to agent |
+| `/api/conversation/{id}` | GET | Get conversation state |
 | `/api/tasks/pending` | GET | Get HIL tasks for manager |
 | `/api/tasks/{id}/approve` | POST | Approve HIL task |
 | `/api/tasks/{id}/reject` | POST | Reject HIL task |
 | `/api/tasks/cleanup` | POST | Clear old tasks |
+| `/api/events` | GET | List all events |
+| `/api/events/{id}` | GET | Get event details |
 | `/api/workflow/health` | GET | Health check |
 | `/api/workflow/hil-status` | GET | HIL toggle status |
 | `/api/config/global-deposit` | GET/POST | Deposit settings |
+| `/api/config/hil-mode` | GET/POST | HIL mode toggle |
+| `/api/config/prompts` | GET/POST | LLM prompt config |
 | `/api/event/deposit/pay` | POST | Pay deposit (simulation) |
 | `/api/event/{id}/deposit` | GET | Get deposit status |
 | `/api/qna` | GET | Q&A data |
 | `/api/test-data/rooms` | GET | Room data |
+| `/api/test-data/catering` | GET | Catering menus |
 | `/api/snapshots/{id}` | GET | Snapshot data |
 
-**Backend source references (for quick edits)**  
-All endpoints above live in `backend/main.py`:
+See [API_TESTS.md](./API_TESTS.md) for full list of 43 endpoints with curl examples.
 
-- Conversation entry points: `/api/start-conversation` and `/api/send-message` around lines 721–998.
-- Manager task endpoints: `/api/tasks/pending`, `/api/tasks/{task_id}/approve`, `/api/tasks/{task_id}/reject`, `/api/tasks/cleanup` around lines 1001–1190.
-- Health + HIL toggles: `/api/workflow/health` and `/api/workflow/hil-status` around lines 1726–1743.
-- Config/deposit flow: `/api/config/global-deposit` (GET/POST) near lines 1762–1811, `/api/event/deposit/pay` and `/api/event/{event_id}/deposit` around lines 1903–2009.
-- Test data + reference endpoints: `/api/test-data/rooms`, `/api/test-data/catering`, `/api/qna`, and `/api/snapshots/*` around lines 1495–1710.
+**Backend source references (for quick edits)**
+Endpoints are organized in modular route files under `backend/api/routes/`:
+
+| Route File | Endpoints |
+|------------|-----------|
+| `messages.py` | `/api/start-conversation`, `/api/send-message`, `/api/conversation/*` |
+| `tasks.py` | `/api/tasks/pending`, `/api/tasks/{id}/approve`, `/api/tasks/{id}/reject` |
+| `workflow.py` | `/api/workflow/health`, `/api/workflow/hil-status` |
+| `config.py` | `/api/config/global-deposit`, `/api/config/hil-mode`, `/api/config/prompts` |
+| `events.py` | `/api/events`, `/api/event/{id}/deposit`, `/api/event/deposit/pay` |
+| `test_data.py` | `/api/test-data/rooms`, `/api/test-data/catering`, `/api/qna` |
+| `snapshots.py` | `/api/snapshots/*` |
+| `debug.py` | `/api/debug/*` (requires DEBUG_TRACE_ENABLED=true) |
 
 ---
 
