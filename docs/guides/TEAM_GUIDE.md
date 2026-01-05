@@ -1,5 +1,24 @@
 # OpenEvent Workflow Team Guide
 
+## Quick Start: API Key Setup
+
+Before running the project, configure API keys using macOS Keychain:
+
+```bash
+# OpenAI (for verbalization)
+security add-generic-password -s 'openevent-api-test-key' -a "$USER" -w 'YOUR-OPENAI-KEY'
+
+# Gemini (for intent/entity extraction)
+security add-generic-password -s 'openevent-gemini-key' -a "$USER" -w 'YOUR-GOOGLE-KEY'
+
+# Start server (auto-loads keys from Keychain)
+./scripts/dev/dev_server.sh
+```
+
+See [SETUP_API_KEYS.md](./SETUP_API_KEYS.md) for full guide.
+
+---
+
 ## UX Design Principle: Verbalization vs Info Page
 
 **CRITICAL DESIGN RULE - Always remember when working on verbalization:**
