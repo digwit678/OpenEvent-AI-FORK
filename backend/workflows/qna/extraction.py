@@ -13,6 +13,11 @@ from backend.workflows.common.fallback_reason import (
     llm_disabled_reason,
     llm_exception_reason,
 )
+from backend.workflows.llm.sanitize import (
+    sanitize_for_llm,
+    MAX_SUBJECT_LENGTH,
+    MAX_BODY_LENGTH,
+)
 
 QNA_EXTRACTION_MODEL = os.getenv("OPEN_EVENT_QNA_EXTRACTION_MODEL", "o3-mini")
 
@@ -158,11 +163,12 @@ def ensure_qna_extraction(
         state.extras["qna_extraction_skipped"] = True
         return None
 
+    # Sanitize user-provided content before LLM processing (prompt injection protection)
     payload = {
         "message": {
-            "subject": state.message.subject or "",
-            "body": state.message.body or "",
-            "text": text,
+            "subject": sanitize_for_llm(state.message.subject or "", max_length=MAX_SUBJECT_LENGTH, field_name="qna_subject"),
+            "body": sanitize_for_llm(state.message.body or "", max_length=MAX_BODY_LENGTH, field_name="qna_body"),
+            "text": sanitize_for_llm(text, max_length=MAX_BODY_LENGTH, field_name="qna_text"),
         },
         "event_state": state.event_entry or {},
         "scan": {

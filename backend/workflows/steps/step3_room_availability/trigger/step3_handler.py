@@ -63,7 +63,7 @@ from .constants import (
     ROOM_OUTCOME_AVAILABLE,
     ROOM_OUTCOME_OPTION,
     ROOM_OUTCOME_CAPACITY_EXCEEDED,
-    ROOM_SIZE_ORDER,
+    get_room_size_order,
     ROOM_PROPOSAL_HIL_THRESHOLD,
 )
 
@@ -1356,15 +1356,16 @@ def _needs_better_room_alternatives(
     if (user_info or {}).get("room_feedback") != "not_good_enough":
         return False
 
+    room_size_order = get_room_size_order()
     requirements = event_entry.get("requirements") or {}
     baseline_room = event_entry.get("locked_room_id") or requirements.get("preferred_room")
-    baseline_rank = ROOM_SIZE_ORDER.get(str(baseline_room), 0)
+    baseline_rank = room_size_order.get(str(baseline_room), 0)
     if baseline_rank == 0:
         return True
 
     larger_available = False
     for room_name, status in status_map.items():
-        if ROOM_SIZE_ORDER.get(room_name, 0) > baseline_rank and status == ROOM_OUTCOME_AVAILABLE:
+        if room_size_order.get(room_name, 0) > baseline_rank and status == ROOM_OUTCOME_AVAILABLE:
             larger_available = True
             break
 

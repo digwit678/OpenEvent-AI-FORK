@@ -218,10 +218,14 @@ def run_unified_detection(
     """
     from backend.adapters.agent_adapter import get_adapter_for_provider
     from backend.llm.provider_config import get_intent_provider
+    from backend.workflows.llm.sanitize import sanitize_for_llm, MAX_BODY_LENGTH
+
+    # Sanitize user message before LLM processing (prompt injection protection)
+    safe_message = sanitize_for_llm(message, max_length=MAX_BODY_LENGTH, field_name="detection_message")
 
     # Build the prompt
     prompt = UNIFIED_DETECTION_PROMPT.format(
-        message=message,
+        message=safe_message,
         current_step=current_step or "unknown",
         date_confirmed=date_confirmed,
         room_locked=room_locked,

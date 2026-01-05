@@ -6,19 +6,27 @@ This module contains constants used throughout the Step 3 room availability work
 
 from __future__ import annotations
 
+from typing import Dict
+
 # Room outcome status strings
 ROOM_OUTCOME_UNAVAILABLE = "Unavailable"
 ROOM_OUTCOME_AVAILABLE = "Available"
 ROOM_OUTCOME_OPTION = "Option"
 ROOM_OUTCOME_CAPACITY_EXCEEDED = "CapacityExceeded"
 
-# Room size ordering for ranking (smaller number = smaller room)
-ROOM_SIZE_ORDER = {
-    "Room A": 1,
-    "Room B": 2,
-    "Room C": 3,
-    "Punkt.Null": 4,
-}
+
+def get_room_size_order() -> Dict[str, int]:
+    """Get room size ordering from JSON config.
+
+    Room order is based on position in rooms.json (first = smallest).
+    Returns dict mapping room name to order (1 = smallest).
+    """
+    from backend.workflows.io.database import load_rooms
+
+    rooms = load_rooms()
+    # Order by position in config (first room = 1, etc.)
+    return {name: idx + 1 for idx, name in enumerate(rooms)}
+
 
 # Number of room proposals before requiring HIL approval
 # TODO(openevent-team): make this configurable per venue

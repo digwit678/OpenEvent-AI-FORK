@@ -238,11 +238,31 @@ def last_call_metadata() -> Dict[str, Any]:
 
 
 def _prepare_payload(message: Dict[str, Optional[str]]) -> Dict[str, str]:
-    """[LLM] Ensure the adapter payload always provides subject/body strings."""
+    """[LLM] Ensure the adapter payload always provides subject/body strings.
+
+    Applies sanitization to protect against prompt injection attacks.
+    """
+    from backend.workflows.llm.sanitize import (
+        sanitize_for_llm,
+        MAX_SUBJECT_LENGTH,
+        MAX_BODY_LENGTH,
+        MAX_FIELD_LENGTH,
+    )
 
     payload = dict(message)
-    payload["subject"] = payload.get("subject") or ""
-    payload["body"] = payload.get("body") or ""
+    # Sanitize user-provided content before LLM processing
+    payload["subject"] = sanitize_for_llm(
+        payload.get("subject") or "", max_length=MAX_SUBJECT_LENGTH, field_name="adapter_subject"
+    )
+    payload["body"] = sanitize_for_llm(
+        payload.get("body") or "", max_length=MAX_BODY_LENGTH, field_name="adapter_body"
+    )
+    # Sanitize any other string fields that might contain user input
+    for key in ("notes", "additional_info", "special_requirements"):
+        if key in payload and payload[key]:
+            payload[key] = sanitize_for_llm(
+                payload[key], max_length=MAX_FIELD_LENGTH, field_name=f"adapter_{key}"
+            )
     return payload
 
 

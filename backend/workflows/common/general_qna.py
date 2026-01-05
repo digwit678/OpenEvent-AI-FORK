@@ -21,12 +21,16 @@ from backend.workflows.common.prompts import append_footer
 from backend.workflows.common.types import GroupResult, WorkflowState
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.router import route_general_qna
+from backend.workflows.io.database import load_rooms
 
 # TODO(openevent-team): Move extended room descriptions to dedicated metadata instead of the products mapping workaround.
 
 CLIENT_AVAILABILITY_HEADER = "Availability overview"
 
-ROOM_IDS = ["Room A", "Room B", "Room C"]
+
+def get_room_ids() -> List[str]:
+    """Get room IDs from JSON config. No hardcoded fallback."""
+    return load_rooms()
 LAYOUT_KEYWORDS = {
     "u-shape": "U-shape",
     "u shape": "U-shape",
@@ -293,7 +297,7 @@ def _room_recommendations(
     features = preferences.get("features") or []
 
     recommendations: List[Dict[str, Any]] = []
-    for room in ROOM_IDS:
+    for room in get_room_ids():
         if participants and not fits_capacity(room, participants, layout):
             continue
         layout_note = ""

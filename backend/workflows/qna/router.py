@@ -14,6 +14,7 @@ from backend.workflows.common.catalog import (
 )
 from backend.workflows.qna.templates import build_info_block, build_next_step_line
 from backend.debug.hooks import trace_qa_enter, trace_qa_exit
+from backend.workflows.io.database import load_rooms
 
 # Generic accessor for LLM-extracted Q&A requirements
 def get_qna_requirements(extraction: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -39,7 +40,9 @@ def _get_cached_extraction(event_entry: Optional[Dict[str, Any]]) -> Optional[Di
     return None
 
 
-_ROOM_NAMES = ("Room A", "Room B", "Room C", "Punkt.Null")
+def _get_room_names() -> Tuple[str, ...]:
+    """Get room names from JSON config. No hardcoded values."""
+    return tuple(load_rooms())
 _FEATURE_KEYWORDS = {
     "hdmi": "HDMI",
     "projector": "Projector",
@@ -190,15 +193,18 @@ def _extract_feature_tokens(
 
 def _extract_requested_room(text: str) -> Optional[str]:
     lowered = text.lower()
-    for name in _ROOM_NAMES:
+    room_names = _get_room_names()
+    for name in room_names:
         if name.lower() in lowered:
             return name
+    # Also check "Room X" pattern for letter-named rooms
     alias = _ROOM_PATTERN.search(lowered)
     if alias:
         letter = alias.group(1).upper()
-        return f"Room {letter}"
-    if "punkt" in lowered:
-        return "Punkt.Null"
+        candidate = f"Room {letter}"
+        # Verify this room exists in config
+        if candidate in room_names:
+            return candidate
     return None
 
 

@@ -603,7 +603,8 @@ def default_event_record(user_info: Dict[str, Any], msg: Dict[str, Any], receive
 def _load_rooms_cached(resolved_path: str) -> List[str]:
     rooms_path = Path(resolved_path)
     if not rooms_path.exists():
-        return ["Punkt.Null", "Room A", "Room B", "Room C"]
+        logger.warning("Rooms config not found at %s - using empty list", resolved_path)
+        return []
     with rooms_path.open("r", encoding="utf-8") as handle:
         payload = json_io.load(handle)
     rooms = payload.get("rooms") or []

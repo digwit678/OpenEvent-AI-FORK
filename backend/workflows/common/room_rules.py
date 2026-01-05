@@ -8,13 +8,26 @@ _ALT_DATE_CACHE: Dict[Tuple[Any, ...], list[str]] = {}
 _ALT_DATE_LIMIT = 128
 
 
-ROOM_ALIASES = {
-    "punkt.null": "Punkt.Null",
-    "punktnull": "Punkt.Null",
-    "room a": "Room A",
-    "room b": "Room B",
-    "room c": "Room C",
-}
+def get_room_aliases() -> Dict[str, str]:
+    """Build room aliases dynamically from JSON config.
+
+    Creates lowercase → proper name mapping for all configured rooms.
+    """
+    from backend.workflows.io.database import load_rooms
+
+    aliases: Dict[str, str] = {}
+    for room_name in load_rooms():
+        # Add lowercase version
+        aliases[room_name.lower()] = room_name
+        # Add version without spaces/dots
+        normalized = room_name.lower().replace(" ", "").replace(".", "")
+        if normalized != room_name.lower():
+            aliases[normalized] = room_name
+    return aliases
+
+
+# Keep for backwards compatibility - calls the function
+ROOM_ALIASES = get_room_aliases()
 
 LANGUAGE_ALIASES = {
     "english": "en",
