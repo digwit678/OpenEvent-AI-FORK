@@ -34,13 +34,8 @@ import re
 import time
 from typing import Any, Dict, Optional
 
-try:
-    from openai import OpenAI
-except ImportError:  # pragma: no cover - OpenAI optional in local/dev runs
-    OpenAI = None  # type: ignore[assignment]
-
+from backend.llm.client import get_openai_client, is_llm_available
 from backend.workflows.common.types import WorkflowState
-from backend.utils.openai_key import load_openai_api_key
 
 # Import consolidated pattern from keyword_buckets (single source of truth)
 from backend.detection.keywords.buckets import ACTION_REQUEST_PATTERNS
@@ -156,7 +151,7 @@ _CACHE_MAX = 256
 _CACHE: Dict[str, Dict[str, Any]] = {}
 
 _LLM_MODEL = os.getenv("OPENAI_GENERAL_QNA_MODEL", "gpt-4o-mini")
-_LLM_ENABLED = bool(load_openai_api_key(required=False))
+# LLM availability is now checked dynamically via is_llm_available()
 
 
 def reset_general_qna_cache() -> None:
@@ -276,7 +271,7 @@ def should_call_llm(heuristics: Dict[str, Any], parsed: Dict[str, Any], message_
 
 
 def llm_classify(msg_text: str) -> Dict[str, Any]:
-    if not _LLM_ENABLED or OpenAI is None:
+    if not is_llm_available():
         return {"label": "not_general", "uncertain": True, "constraints": {}}
 
     system_prompt = (
@@ -360,8 +355,7 @@ def llm_classify(msg_text: str) -> Dict[str, Any]:
         },
     ]
 
-    api_key = load_openai_api_key()
-    client = OpenAI(api_key=api_key)
+    client = get_openai_client()
     response = client.chat.completions.create(
         model=_LLM_MODEL,
         temperature=0,

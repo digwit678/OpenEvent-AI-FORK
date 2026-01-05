@@ -29,9 +29,12 @@ Detour Flow:
 from __future__ import annotations
 
 import re
+import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 # Import enhanced detection from keyword_buckets
 # MIGRATED: from backend.workflows.nlu.keyword_buckets -> backend.detection.keywords.buckets
@@ -961,11 +964,11 @@ def detect_change_type_enhanced(
         # the message text before classifying as DATE change.
         # -------------------------------------------------------------------------
         extracted_date = user_info.get("date") or user_info.get("event_date")
-        print(f"[CHANGE_PROP][GUARD] extracted_date={extracted_date}")
+        logger.debug("[CHANGE_PROP][GUARD] extracted_date=%s", extracted_date)
         if extracted_date:
             date_in_message = False
             if message_text:
-                print(f"[CHANGE_PROP][GUARD] checking message_text={message_text[:100] if message_text else 'None'}...")
+                logger.debug("[CHANGE_PROP][GUARD] checking message_text=%s...", message_text[:100] if message_text else 'None')
                 # Check if the date appears directly in the message
                 if extracted_date in message_text:
                     date_in_message = True

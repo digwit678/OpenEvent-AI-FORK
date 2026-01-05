@@ -147,7 +147,7 @@ def _debug_state(stage: str, state: WorkflowState, extra: Optional[Dict[str, Any
         info.update(extra)
     if WF_DEBUG:
         serialized = " ".join(f"{key}={value}" for key, value in info.items())
-        print(f"[WF DEBUG][state] {serialized}")
+        logger.debug("[WF DEBUG][state] %s", serialized)
 
     if not debug_trace_enabled:
         return
@@ -293,10 +293,29 @@ def _ensure_general_qna_classification(state: WorkflowState, message_text: str) 
     return classification
 
 
+def _resolve_tenant_db_path(base_path: Path) -> Path:
+    """Resolve tenant-aware database path.
+
+    When TENANT_HEADER_ENABLED=1 and X-Team-Id header is set,
+    routes to per-team file: events_{team_id}.json
+    Otherwise uses the default path.
+    """
+    try:
+        from backend.workflows.io.integration.config import get_team_id
+
+        team_id = get_team_id()
+        if team_id:
+            per_team_path = base_path.parent / f"events_{team_id}.json"
+            return per_team_path
+    except ImportError:
+        pass  # Config not available
+    return base_path
+
+
 def load_db(path: Path = DB_PATH) -> Dict[str, Any]:
     """[OpenEvent Database] Load the workflow database with locking safeguards."""
 
-    path = Path(path)
+    path = _resolve_tenant_db_path(Path(path))
     lock_path = _resolve_lock_path(path)
     return db_io.load_db(path, lock_path=lock_path)
 
@@ -304,7 +323,7 @@ def load_db(path: Path = DB_PATH) -> Dict[str, Any]:
 def save_db(db: Dict[str, Any], path: Path = DB_PATH) -> None:
     """[OpenEvent Database] Persist the workflow database atomically."""
 
-    path = Path(path)
+    path = _resolve_tenant_db_path(Path(path))
     lock_path = _resolve_lock_path(path)
     db_io.save_db(db, path, lock_path=lock_path)
 
@@ -340,7 +359,8 @@ def _flush_and_finalize(result: GroupResult, state: WorkflowState, path: Path, l
 def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     """[Trigger] Process an inbound message through workflow groups A–C."""
 
-    path = Path(db_path)
+    # Resolve tenant-aware path (uses X-Team-Id header when TENANT_HEADER_ENABLED=1)
+    path = _resolve_tenant_db_path(Path(db_path))
     lock_path = _resolve_lock_path(path)
     db = db_io.load_db(path, lock_path=lock_path)
 
@@ -400,7 +420,9 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
 
     # Loop completed without halting - finalize and return
     _debug_state("final", state)
-    print(f"[WF][FINAL] Returning with action={last_result.action if last_result else 'None'}, halt={last_result.halt if last_result else 'N/A'}")
+    logger.debug("[WF][FINAL] Returning with action=%s, halt=%s",
+                last_result.action if last_result else 'None',
+                last_result.halt if last_result else 'N/A')
 
     # [WF0.1 FIX] Safety net: if routing loop completed without any draft messages,
     # add a fallback message to prevent empty replies
@@ -410,8 +432,9 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         event_id = event_entry.get("event_id") if event_entry else None
         action = last_result.action if last_result else "unknown"
 
-        print(f"[WF][EMPTY_REPLY_GUARD] No draft messages after routing loop!")
-        print(f"[WF][EMPTY_REPLY_GUARD] step={current_step}, action={action}, event_id={event_id}")
+        logger.warning("[WF][EMPTY_REPLY_GUARD] No draft messages after routing loop!")
+        logger.warning("[WF][EMPTY_REPLY_GUARD] step=%s, action=%s, event_id=%s",
+                      current_step, action, event_id)
 
         # Create a context-aware fallback message
         fallback_body = (

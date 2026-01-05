@@ -13,6 +13,9 @@ Public API:
 from __future__ import annotations
 
 import hashlib
+import logging
+
+logger = logging.getLogger(__name__)
 import json
 from datetime import datetime
 from pathlib import Path
@@ -222,7 +225,7 @@ def approve_task_and_send(
             from backend.workflows.steps import step5_negotiation as negotiation_group
             from backend.workflows.steps.step6_transition import process as process_transition
 
-            print(f"[HIL] Step 4 offer approved with deposit paid, continuing to site visit")
+            logger.info("[HIL] Step 4 offer approved with deposit paid, continuing to site visit")
 
             hil_message = IncomingMessage.from_dict(
                 {
@@ -756,13 +759,13 @@ def _notify_hil_email(task: Dict[str, Any], event_entry: Dict[str, Any]) -> None
         result = notify_hil_task_created(task, event_entry)
         if result:
             if result.get("success"):
-                print(f"[HIL_EMAIL] Notification sent for task {task.get('task_id')}")
+                logger.info("[HIL_EMAIL] Notification sent for task %s", task.get('task_id'))
             else:
-                print(f"[HIL_EMAIL] Failed to send: {result.get('error')}")
+                logger.warning("[HIL_EMAIL] Failed to send: %s", result.get('error'))
 
     except ImportError:
         # Email service not available - silently skip
         pass
     except Exception as e:
         # Log but don't fail the HIL task creation
-        print(f"[HIL_EMAIL] Error sending notification: {e}")
+        logger.error("[HIL_EMAIL] Error sending notification: %s", e)

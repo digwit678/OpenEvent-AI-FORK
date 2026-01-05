@@ -3,9 +3,16 @@
 !/.env
 !backend/.env
 
+# Local runtime databases
+backend/events_database.json
+
 # OS files
 .DS_Store
 **/.DS_Store
+
+# Local dev runtime artifacts
+.dev/*.pid
+.dev/*.log
 
 # Temporary and debug files
 .tmp*
@@ -58,3 +65,10 @@ wheels/
 # Node
 node_modules/
 .next/
+
+# Codex local config (keep repo skills tracked)
+.codex/*
+!.codex/skills/
+!.codex/skills/**
+.codex/config.toml
+.codex/lsp.json

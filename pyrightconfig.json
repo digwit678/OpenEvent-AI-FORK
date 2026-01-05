@@ -1,0 +1,34 @@
+{
+  "include": [
+    "backend",
+    "scripts"
+  ],
+  "exclude": [
+    "backend/DEPRECATED",
+    "backend/legacy",
+    "tmp-*",
+    "tmp-cache",
+    "tmp-check",
+    ".playwright-mcp",
+    "**/__pycache__",
+    "**/node_modules",
+    "atelier-ai-frontend"
+  ],
+  "ignore": [
+    "backend/tests",
+    "backend/tests_integration"
+  ],
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.9",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "reportOptionalMemberAccess": "warning",
+  "reportOptionalSubscript": "warning",
+  "reportPrivateUsage": "warning",
+  "reportUnusedImport": "warning",
+  "reportUnusedVariable": "warning",
+  "reportGeneralTypeIssues": "warning",
+  "reportIncompatibleVariableOverride": "warning",
+  "venvPath": ".",
+  "venv": "venv"
+}

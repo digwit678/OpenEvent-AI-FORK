@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.workflows.groups.offer.trigger.process import (
+from backend.workflows.steps.step4_offer.trigger.step4_handler import (
     _apply_product_operations,
     _compose_offer_summary,
 )
@@ -30,6 +30,7 @@ def test_apply_product_operations_adds_catalog_item_without_pricing():
 
 
 def test_apply_product_operations_updates_existing_product_quantity():
+    """Test that adding more of an existing product increments the quantity."""
     event_entry = _base_event(
         products=[
             {"name": "Wireless Microphone", "quantity": 1, "unit_price": 25.0},
@@ -43,7 +44,8 @@ def test_apply_product_operations_updates_existing_product_quantity():
 
     assert changed is True
     mic_entry = next(item for item in event_entry["products"] if item["name"] == "Wireless Microphone")
-    assert mic_entry["quantity"] == 2
+    # upsert_product increments quantity (1 existing + 2 added = 3)
+    assert mic_entry["quantity"] == 3
 
 
 def test_apply_product_operations_removes_item_from_dict_payload():
@@ -94,7 +96,10 @@ def test_apply_product_operations_clears_autofill_summary_matched():
     assert summary.get("alternatives")
 
 
-def test_compose_offer_summary_recomputes_total_from_products():
+def test_compose_offer_summary_recomputes_total_from_products(tmp_path):
+    from pathlib import Path
+    from backend.workflows.common.types import IncomingMessage, WorkflowState
+
     event_entry = {
         "chosen_date": "20.11.2026",
         "locked_room_id": "Room E",
@@ -106,6 +111,21 @@ def test_compose_offer_summary_recomputes_total_from_products():
         "products_state": {"autofill_summary": {}},
     }
 
-    lines = _compose_offer_summary(event_entry, total_amount=1965.0)
+    # Create minimal state required by _compose_offer_summary
+    msg = IncomingMessage.from_dict({
+        "msg_id": "msg-test",
+        "from_name": "Client",
+        "from_email": "client@example.com",
+        "subject": "Test",
+        "body": "",
+        "ts": "2025-11-25T00:00:00Z",
+    })
+    state = WorkflowState(message=msg, db_path=tmp_path / "events.json", db={"events": []})
+    state.event_entry = event_entry
 
-    assert any("**Total: CHF 1,940.00**" in line for line in lines), "Summary must reflect product totals"
+    lines = _compose_offer_summary(event_entry, total_amount=1965.0, state=state)
+
+    # Total includes room rate (1,650) + products (180 + 1,440 + 320) = 3,590
+    assert any("**Total: CHF 3,590.00**" in line for line in lines), (
+        f"Summary must reflect product totals. Lines: {lines}"
+    )

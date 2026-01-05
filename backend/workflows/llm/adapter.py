@@ -368,7 +368,7 @@ def classify_intent(message: Dict[str, Optional[str]]) -> Tuple[IntentLabel, flo
 
     payload = _prepare_payload(message)
     if os.getenv("INTENT_FORCE_EVENT_REQUEST") == "1":
-        print("[DEV] intent override -> event_request")
+        logger.debug("[DEV] intent override -> event_request")
         return IntentLabel.EVENT_REQUEST, 0.99
     analysis = _analyze_payload(payload)
     normalized = IntentLabel.normalize(analysis.get("intent"))

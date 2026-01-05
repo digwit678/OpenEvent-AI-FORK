@@ -6,18 +6,16 @@ Tests can call `reset_agent_adapter()` to clear the shared singleton between run
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.domain import IntentLabel
-from backend.utils.openai_key import load_openai_api_key
+logger = logging.getLogger(__name__)
 
-try:  # pragma: no cover - optional dependency resolved at runtime
-    from openai import OpenAI  # type: ignore
-except Exception:  # pragma: no cover - library may be unavailable in tests
-    OpenAI = None  # type: ignore
+from backend.domain import IntentLabel
+from backend.llm.client import get_openai_client
 
 try:  # pragma: no cover - optional dependency resolved at runtime
     import google.generativeai as genai  # type: ignore
@@ -389,12 +387,16 @@ class OpenAIAgentAdapter(AgentAdapter):
     _ENTITY_PROMPT_TEMPLATE = (
         "Today is {today}. Extract booking details from the email. "
         "Return JSON with keys: date (YYYY-MM-DD or null), "
-        "start_time, end_time, city, participants, room, name, email, type, catering, phone, company, "
-        "language, notes, billing_address, products_add (array of {{name, quantity}} for items to add), "
+        "start_time, end_time, city, participants, room, name, email, "
+        "type (event type like wedding/workshop/dinner - NOT room descriptors), "
+        "room_type_hint (room descriptor like 'conference room', 'meeting room', 'training room' - null if not mentioned), "
+        "catering, phone, company, language, notes, billing_address, "
+        "products_add (array of {{name, quantity}} for items to add), "
         "products_remove (array of product names to remove). Use null when unknown. "
         "IMPORTANT: When a year is explicitly mentioned (e.g., '2026'), use that exact year. "
         "For vague dates like 'late spring' or 'next month', return null for date. "
-        "For 'add another X' or 'one more X', include {{\"name\": \"X\", \"quantity\": 1}} in products_add."
+        "For 'add another X' or 'one more X', include {{\"name\": \"X\", \"quantity\": 1}} in products_add. "
+        "IMPORTANT: room_type_hint is for room descriptors only, NOT equipment like 'video conferencing'."
     )
 
     _ENTITY_KEYS = [
@@ -407,6 +409,7 @@ class OpenAIAgentAdapter(AgentAdapter):
         "name",
         "email",
         "type",
+        "room_type_hint",
         "catering",
         "phone",
         "company",
@@ -418,10 +421,11 @@ class OpenAIAgentAdapter(AgentAdapter):
     ]
 
     def __init__(self) -> None:
-        if OpenAI is None:
-            raise RuntimeError("openai package is required when AGENT_MODE=openai")
-        api_key = load_openai_api_key()
-        self._client = OpenAI(api_key=api_key)
+        self._client = get_openai_client()
+        # TODO: Consider changing default from o3-mini to gpt-4o-mini
+        # o3-mini is a reasoning model that sometimes returns malformed JSON
+        # gpt-4o-mini is 7x cheaper and more reliable for JSON extraction
+        # Need to verify gpt-4o-mini reliability before switching default
         model = os.getenv("OPENAI_AGENT_MODEL", "o3-mini")
         self._intent_model = os.getenv("OPENAI_INTENT_MODEL", model)
         self._entity_model = os.getenv("OPENAI_ENTITY_MODEL", model)
@@ -528,7 +532,7 @@ class OpenAIAgentAdapter(AgentAdapter):
             response = self._client.chat.completions.create(**kwargs)
             return response.choices[0].message.content or "{}"
         except Exception as e:
-            print(f"[OpenAIAgentAdapter] complete error: {e}")
+            logger.warning("[OpenAIAgentAdapter] complete error: %s", e)
             return self._fallback.complete(prompt, system_prompt=system_prompt, json_mode=json_mode)
 
 
@@ -549,16 +553,19 @@ class GeminiAgentAdapter(AgentAdapter):
         "Today is {today}. Extract booking details from this email. "
         "Return ONLY a JSON object with these keys (use null when unknown): "
         "date (YYYY-MM-DD), start_time, end_time, city, participants (integer), "
-        "room, name, email, type, catering, phone, company, language, notes, "
+        "room, name, email, type (event type like wedding/workshop - NOT room descriptors), "
+        "room_type_hint (room descriptor like 'conference room', 'meeting room' - null if not mentioned), "
+        "catering, phone, company, language, notes, "
         "billing_address, products_add (array of {{name, quantity}}), "
         "products_remove (array of product names). "
         "IMPORTANT: Use the exact year mentioned (e.g., '2026'). "
-        "For vague dates like 'late spring', return null for date."
+        "For vague dates like 'late spring', return null for date. "
+        "room_type_hint is for room descriptors only, NOT equipment like 'video conferencing'."
     )
 
     _ENTITY_KEYS = [
         "date", "start_time", "end_time", "city", "participants", "room",
-        "name", "email", "type", "catering", "phone", "company", "language",
+        "name", "email", "type", "room_type_hint", "catering", "phone", "company", "language",
         "notes", "billing_address", "products_add", "products_remove",
     ]
 
@@ -705,6 +712,40 @@ class GeminiAgentAdapter(AgentAdapter):
 
 
 _AGENT_SINGLETON: Optional[AgentAdapter] = None
+
+# Per-provider singletons for hybrid mode
+_PROVIDER_ADAPTERS: Dict[str, AgentAdapter] = {}
+
+
+def get_adapter_for_provider(provider: str) -> AgentAdapter:
+    """
+    Get an adapter for a specific provider (hybrid mode support).
+
+    This allows using different providers for different tasks:
+    - Gemini for intent/entity extraction (cheaper)
+    - OpenAI for verbalization (better quality)
+
+    Args:
+        provider: One of "openai", "gemini", "stub"
+
+    Returns:
+        AgentAdapter for the specified provider
+    """
+    provider = provider.lower()
+
+    if provider in _PROVIDER_ADAPTERS:
+        return _PROVIDER_ADAPTERS[provider]
+
+    if provider == "stub":
+        _PROVIDER_ADAPTERS[provider] = StubAgentAdapter()
+    elif provider == "openai":
+        _PROVIDER_ADAPTERS[provider] = OpenAIAgentAdapter()
+    elif provider == "gemini":
+        _PROVIDER_ADAPTERS[provider] = GeminiAgentAdapter()
+    else:
+        raise RuntimeError(f"Unsupported provider: {provider}")
+
+    return _PROVIDER_ADAPTERS[provider]
 
 
 def get_agent_adapter() -> AgentAdapter:

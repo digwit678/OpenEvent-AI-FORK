@@ -11,7 +11,10 @@ Contains pre-routing checks that run after intake but before the step router:
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from backend.workflows.common.types import GroupResult, WorkflowState
@@ -21,6 +24,37 @@ from backend.detection.pre_filter import pre_filter, PreFilterResult, is_enhance
 from backend.detection.unified import run_unified_detection, UnifiedDetectionResult, is_unified_mode
 from backend.domain import TaskType
 from backend.workflows.io.tasks import enqueue_task
+from backend.workflows.io.config_store import get_manager_names
+
+
+# =============================================================================
+# OUT-OF-CONTEXT INTENT MAPPING
+# =============================================================================
+# Maps intents to the steps where they're valid.
+# Intents not in this map are considered valid at ALL steps (e.g., general_qna).
+# If an intent is detected at an invalid step, it's "out of context" → no response.
+
+INTENT_VALID_STEPS: Dict[str, set] = {
+    # Date confirmation is only valid at step 2 (or as a change at later steps)
+    "confirm_date": {2},
+    "confirm_date_partial": {2},
+    # Offer-related intents are only valid at steps 4-5
+    "accept_offer": {4, 5},
+    "decline_offer": {4, 5},
+    "counter_offer": {4, 5},
+}
+
+# Intents that should NEVER be treated as out-of-context
+# These represent cross-cutting concerns that can happen at any step
+ALWAYS_VALID_INTENTS = {
+    "event_request",  # New booking requests are always valid
+    "edit_date",  # Date changes can happen at any step
+    "edit_room",  # Room changes can happen at any step
+    "edit_requirements",  # Requirement changes can happen at any step
+    "message_manager",  # Manager requests are always valid
+    "general_qna",  # Q&A is always valid
+    "non_event",  # Non-event messages need other handling
+}
 
 
 # Type aliases for callback functions
@@ -53,9 +87,9 @@ def run_unified_pre_filter(
     if state.event_entry:
         last_message = state.event_entry.get("last_client_message")
 
-    # Get registered manager names if available (for escalation detection)
-    # TODO: Load from client/venue config when available
-    registered_manager_names = None
+    # Get registered manager names from config (for escalation detection)
+    manager_names = get_manager_names()
+    registered_manager_names = manager_names if manager_names else None
 
     # Run the pre-filter (regex only - $0 cost)
     pre_result = pre_filter(
@@ -102,15 +136,119 @@ def run_unified_pre_filter(
         # Store unified detection result
         state.extras["unified_detection"] = unified_result.to_dict()
 
-        print(f"[UNIFIED_DETECTION] intent={unified_result.intent}, manager={unified_result.is_manager_request}, conf={unified_result.is_confirmation}")
+        logger.debug(
+            "[UNIFIED_DETECTION] intent=%s, manager=%s, conf=%s, qna_types=%s",
+            unified_result.intent, unified_result.is_manager_request,
+            unified_result.is_confirmation, unified_result.qna_types
+        )
 
     # Log in enhanced mode
     if is_enhanced_mode() and pre_result.matched_patterns:
-        print(f"[PRE_FILTER] Mode=enhanced, signals={pre_result.matched_patterns[:5]}")
+        logger.debug("[PRE_FILTER] Mode=enhanced, signals=%s", pre_result.matched_patterns[:5])
         if pre_result.can_skip_intent_llm:
-            print(f"[PRE_FILTER] Can skip intent LLM (pure confirmation)")
+            logger.debug("[PRE_FILTER] Can skip intent LLM (pure confirmation)")
 
     return pre_result, unified_result
+
+
+def is_out_of_context(
+    unified_result: Optional[UnifiedDetectionResult],
+    current_step: Optional[int],
+) -> bool:
+    """Check if the detected intent is out of context for the current step.
+
+    An intent is "out of context" when:
+    1. It's a step-specific intent (in INTENT_VALID_STEPS)
+    2. The current step is NOT in the valid steps for that intent
+
+    Out-of-context messages should receive NO response - the workflow
+    only responds when the client takes the right action for their current step.
+
+    Args:
+        unified_result: Result from unified LLM detection
+        current_step: Current workflow step (1-7)
+
+    Returns:
+        True if intent is out of context and should be silently ignored
+    """
+    if unified_result is None or current_step is None:
+        return False
+
+    intent = unified_result.intent
+
+    # Always-valid intents are never out of context
+    if intent in ALWAYS_VALID_INTENTS:
+        return False
+
+    # Check if this intent has step restrictions
+    valid_steps = INTENT_VALID_STEPS.get(intent)
+    if valid_steps is None:
+        # Not in the mapping = valid at all steps
+        return False
+
+    # Intent has step restrictions - check if current step is valid
+    if current_step not in valid_steps:
+        logger.warning("[OUT_OF_CONTEXT] Intent '%s' is only valid at steps %s, but current step is %s",
+                      intent, valid_steps, current_step)
+        return True
+
+    return False
+
+
+def check_out_of_context(
+    state: WorkflowState,
+    unified_result: Optional[UnifiedDetectionResult],
+    path: Path,
+    lock_path: Path,
+    finalize_fn: FinalizeFn,
+) -> Optional[Dict[str, Any]]:
+    """Check if the message is out of context and should be silently ignored.
+
+    Out-of-context messages are step-specific actions sent at the wrong step.
+    For example:
+    - "I confirm the date" at step 5 (negotiation) - date confirmation is step 2
+    - "I accept the offer" at step 2 (date confirmation) - offer acceptance is step 4-5
+
+    These are NOT nonsense (gibberish) - they're valid actions at the wrong step.
+    The workflow does not respond, waiting for the client to take the correct action.
+
+    Returns finalized "no response" if out of context, None otherwise.
+    """
+    if not state.event_entry:
+        return None
+
+    current_step = state.event_entry.get("current_step")
+    intent = unified_result.intent if unified_result else None
+    logger.debug("[OOC_CHECK] intent=%s, current_step=%s", intent, current_step)
+
+    if not is_out_of_context(unified_result, current_step):
+        return None
+
+    # Log the out-of-context detection
+    intent = unified_result.intent if unified_result else "unknown"
+    logger.warning("[PRE_ROUTE] Out-of-context message detected - no response")
+
+    from backend.debug.hooks import trace_marker
+    trace_marker(
+        state.thread_id,
+        "OUT_OF_CONTEXT_IGNORED",
+        detail=f"Intent '{intent}' not valid at step {current_step}",
+        owner_step=f"Step{current_step}",
+    )
+
+    # Return a "no response" result - workflow stays at current step, no message sent
+    ooc_response = GroupResult(
+        action="out_of_context_ignored",
+        halt=True,
+        payload={
+            "reason": "step_mismatch",
+            "intent": intent,
+            "current_step": current_step,
+            "valid_steps": list(INTENT_VALID_STEPS.get(intent, set())),
+        },
+    )
+
+    return finalize_fn(ooc_response, state, path, lock_path)
 
 
 def handle_manager_escalation(
@@ -148,7 +286,7 @@ def handle_manager_escalation(
     if not unified_result.is_manager_request:
         return None
 
-    print(f"[PRE_ROUTE] Manager escalation detected - creating HIL task")
+    logger.info("[PRE_ROUTE] Manager escalation detected - creating HIL task")
 
     # Get client and event info
     client_id = state.client_id or "unknown"
@@ -187,7 +325,7 @@ def handle_manager_escalation(
     # Save the updated database
     save_db(state.db, state.db_path, lock_path_for(state.db_path))
 
-    print(f"[PRE_ROUTE] Created manager escalation task: {task_id}")
+    logger.info("[PRE_ROUTE] Created manager escalation task: %s", task_id)
 
     # Set flag on event for downstream handlers
     if state.event_entry:
@@ -310,7 +448,7 @@ def evaluate_pre_route_guards(state: WorkflowState) -> None:
 
     # Apply deposit bypass - force step 5 for deposit flow
     if guard_snapshot.deposit_bypass and guard_snapshot.forced_step == 5:
-        print(f"[WF][GUARDS] Deposit bypass: forcing step 5 for event {event_id}")
+        logger.debug("[WF][GUARDS] Deposit bypass: forcing step 5 for event %s", event_id)
         state.event_entry["current_step"] = 5
         state.extras["persist"] = True
         return  # Skip other guard logic during deposit flow
@@ -322,19 +460,19 @@ def evaluate_pre_route_guards(state: WorkflowState) -> None:
         and (state.event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
     )
     if in_billing_flow:
-        print(f"[WF][GUARDS] Billing flow active: skipping guard forcing for event {event_id}")
+        logger.debug("[WF][GUARDS] Billing flow active: skipping guard forcing for event %s", event_id)
         return  # Skip guard logic during billing flow - step should remain at 5
 
     # Apply requirements_hash update if changed
     if guard_snapshot.requirements_hash_changed and guard_snapshot.requirements_hash:
-        print(f"[WF][GUARDS] Requirements hash updated: {guard_snapshot.requirements_hash}")
+        logger.debug("[WF][GUARDS] Requirements hash updated: %s", guard_snapshot.requirements_hash)
         state.event_entry["requirements_hash"] = guard_snapshot.requirements_hash
         state.extras["persist"] = True
 
     # Apply forced step if needed (step 2, 3, or 4 guard)
     if guard_snapshot.forced_step is not None:
         current = state.event_entry.get("current_step")
-        print(f"[WF][GUARDS] Forcing step from {current} to {guard_snapshot.forced_step}")
+        logger.debug("[WF][GUARDS] Forcing step from %s to %s", current, guard_snapshot.forced_step)
         state.event_entry["current_step"] = guard_snapshot.forced_step
         state.extras["persist"] = True
 
@@ -382,11 +520,11 @@ def correct_billing_flow_step(state: WorkflowState) -> None:
     stored_step = state.event_entry.get("current_step")
 
     if in_billing_flow and stored_step != 5:
-        print(f"[WF][BILLING_FIX] Correcting step from {stored_step} to 5 for billing flow")
+        logger.debug("[WF][BILLING_FIX] Correcting step from %s to 5 for billing flow", stored_step)
         state.event_entry["current_step"] = 5
         state.extras["persist"] = True
     elif in_billing_flow:
-        print(f"[WF][BILLING_FLOW] Already at step 5, proceeding with billing flow")
+        logger.debug("[WF][BILLING_FLOW] Already at step 5, proceeding with billing flow")
 
 
 def run_pre_route_pipeline(
@@ -440,6 +578,15 @@ def run_pre_route_pipeline(
     if escalation_result is not None:
         return escalation_result, intake_result
 
+    # 0.6. Out-of-context check - step-specific intents at wrong steps
+    # Example: "I confirm the date" at step 5 (negotiation) → silently ignored
+    # This is NOT nonsense - it's a valid action at the wrong step
+    ooc_result = check_out_of_context(
+        state, unified_result, path, lock_path, finalize_fn
+    )
+    if ooc_result is not None:
+        return ooc_result, intake_result
+
     # 1. Duplicate message detection (now uses pre-filter result if in enhanced mode)
     # In enhanced mode, pre_filter_result.is_duplicate is already computed
     duplicate_result = check_duplicate_message(state, combined_text, path, lock_path, finalize_fn)
@@ -466,9 +613,11 @@ def run_pre_route_pipeline(
     correct_billing_flow_step(state)
 
     # Pre-route debug logging
-    print(f"[WF][PRE_ROUTE] About to enter routing loop, event_entry exists={state.event_entry is not None}")
+    logger.debug("[WF][PRE_ROUTE] About to enter routing loop, event_entry exists=%s",
+                state.event_entry is not None)
     if state.event_entry:
-        print(f"[WF][PRE_ROUTE] current_step={state.event_entry.get('current_step')}, offer_accepted={state.event_entry.get('offer_accepted')}")
+        logger.debug("[WF][PRE_ROUTE] current_step=%s, offer_accepted=%s",
+                    state.event_entry.get('current_step'), state.event_entry.get('offer_accepted'))
 
     # Continue to router
     return None, intake_result

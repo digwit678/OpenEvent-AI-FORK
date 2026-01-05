@@ -13,9 +13,12 @@ ROUTES:
 MIGRATION: Extracted from main.py in Phase C refactoring (2025-12-18).
 """
 
+import logging
 import os
 import re
 import uuid
+
+logger = logging.getLogger(__name__)
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -189,7 +192,7 @@ def _update_event_info_from_db(event_info: EventInformation, event_id: Optional[
     try:
         db = wf_load_db()
     except Exception as exc:
-        print(f"[WF][WARN] Unable to refresh event info from DB: {exc}")
+        logger.warning("Unable to refresh event info from DB: %s", exc)
         return event_info
 
     events = db.get("events") or []
@@ -267,21 +270,44 @@ def _format_participants_label(raw: Optional[str]) -> str:
     return text
 
 
-def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> None:
-    """Trigger room availability workflow after date confirmation."""
+def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> Optional[str]:
+    """Trigger room availability workflow after date confirmation.
+
+    Returns:
+        Error message if something failed, None if successful.
+    """
+    # Note: create_fallback_context imported at module level from backend.core.fallback
+
     if not event_id:
-        print("[WF] Skipping room availability trigger - missing event_id.")
-        return
+        ctx = create_fallback_context(
+            source="api.routes.messages.trigger_availability",
+            trigger="missing_event_id",
+        )
+        logger.error("Fallback: %s | %s", ctx.source, ctx.trigger)
+        return "I couldn't check room availability because the event record is missing."
+
     try:
         db = wf_load_db()
     except Exception as exc:
-        print(f"[WF][ERROR] Failed to load workflow DB: {exc}")
-        return
+        ctx = create_fallback_context(
+            source="api.routes.messages.trigger_availability",
+            trigger="db_load_failed",
+            event_id=event_id,
+            error=exc,
+        )
+        logger.error("Fallback: %s | %s | %s", ctx.source, ctx.trigger, exc)
+        return "I couldn't access the booking database. I've escalated this for manual follow-up."
+
     events = db.get("events", [])
     event_entry = next((evt for evt in events if evt.get("event_id") == event_id), None)
     if not event_entry:
-        print(f"[WF][WARN] Event {event_id} not found in DB; cannot trigger availability workflow.")
-        return
+        ctx = create_fallback_context(
+            source="api.routes.messages.trigger_availability",
+            trigger="event_not_found",
+            event_id=event_id,
+        )
+        logger.error("Fallback: %s | %s | event_id=%s", ctx.source, ctx.trigger, event_id)
+        return "I couldn't find the event record. I've asked a teammate to verify it manually."
 
     event_data = event_entry.setdefault("event_data", {})
     event_data["Status"] = "Date Confirmed"
@@ -298,8 +324,8 @@ def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> Non
                 first_day = requested_days[0] if requested_days else None
                 if first_day == iso_date:
                     wf_save_db(db)
-                    print(f"[WF] Availability already assessed for {iso_date}; skipping rerun.")
-                    return
+                    logger.info("Availability already assessed for %s; skipping rerun", iso_date)
+                    return None
 
     logs.append(
         {
@@ -314,12 +340,22 @@ def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> Non
 
     try:
         run_availability_workflow(event_id, get_calendar_adapter(), GUI_ADAPTER)
+        return None  # Success
     except Exception as exc:
-        print(f"[WF][ERROR] Availability workflow failed: {exc}")
+        ctx = create_fallback_context(
+            source="api.routes.messages.trigger_availability",
+            trigger="workflow_failed",
+            event_id=event_id,
+            error=exc,
+        )
+        logger.error("Fallback: %s | %s | %s", ctx.source, ctx.trigger, exc)
+        return "Room availability check encountered an issue. I'll follow up with availability options shortly."
 
 
 def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: str) -> Dict[str, Any]:
     """Persist confirmed date and trigger availability workflow."""
+    # Note: create_fallback_context imported at module level from backend.core.fallback
+
     conversation_state.event_info.event_date = chosen_date
     conversation_state.event_info.status = "Date Confirmed"
 
@@ -332,15 +368,29 @@ def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: 
         "ts": datetime.utcnow().isoformat() + "Z",
         "body": f"The client confirms the preferred event date is {chosen_date}.",
     }
+
+    # Track any fallback messages to append to the response
+    fallback_notices: List[str] = []
+
     wf_res = {}
     try:
         wf_res = wf_process_msg(synthetic_msg)
-        print(
-            "[WF] confirm_date action="
-            f"{wf_res.get('action')} event_id={wf_res.get('event_id')} intent={wf_res.get('intent')}"
+        logger.info(
+            "confirm_date action=%s event_id=%s intent=%s",
+            wf_res.get('action'), wf_res.get('event_id'), wf_res.get('intent')
         )
     except Exception as exc:
-        print(f"[WF][ERROR] Failed to persist confirmed date: {exc}")
+        ctx = create_fallback_context(
+            source="api.routes.messages.persist_confirmed_date",
+            trigger="persistence_failed",
+            event_id=conversation_state.event_id,
+            error=exc,
+        )
+        logger.error("Fallback: %s | %s | %s", ctx.source, ctx.trigger, exc)
+        fallback_notices.append(
+            "I logged your confirmation, but our booking system didn't save the update. "
+            "I've escalated it for manual follow-up."
+        )
 
     event_id = wf_res.get("event_id") or conversation_state.event_id
     conversation_state.event_id = event_id
@@ -354,12 +404,12 @@ def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: 
                 "date": iso_confirmed,
             })
         except PayloadValidationError as exc:
-            print(f"[WF][WARN] confirm_date payload validation failed: {exc}")
+            logger.warning("confirm_date payload validation failed: %s", exc)
 
-    try:
-        _trigger_room_availability(event_id, chosen_date)
-    except Exception as exc:
-        print(f"[WF][ERROR] trigger availability failed: {exc}")
+    # Trigger availability and capture any error message
+    availability_error = _trigger_room_availability(event_id, chosen_date)
+    if availability_error:
+        fallback_notices.append(availability_error)
 
     rendered = render_step3_reply(conversation_state, wf_res.get("draft_messages"))
     actions: List[Dict[str, Any]] = []
@@ -380,6 +430,11 @@ def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: 
             next_step="Availability result",
             thread_state="Checking",
         )
+
+    # Append any fallback notices to the response
+    if fallback_notices:
+        notice_text = "\n\n---\n\n" + "\n\n".join(fallback_notices)
+        assistant_reply = (assistant_reply or "") + notice_text
 
     return {
         "body": assistant_reply,
@@ -413,11 +468,10 @@ async def start_conversation(request: StartConversationRequest):
     try:
         wf_res = wf_process_msg(msg)
         wf_action = wf_res.get("action")
-        print(f"[WF] start action={wf_action} client={request.client_email} event_id={wf_res.get('event_id')} task_id={wf_res.get('task_id')}")
+        logger.info("start action=%s client=%s event_id=%s task_id=%s",
+                    wf_action, request.client_email, wf_res.get('event_id'), wf_res.get('task_id'))
     except Exception as e:
-        import traceback
-        print(f"[WF][ERROR] {e}")
-        traceback.print_exc()
+        logger.exception("start_conversation workflow failed: %s", e)
     if not wf_res:
         raise HTTPException(status_code=500, detail="Workflow processing failed")
     if wf_action == "manual_review_enqueued":
@@ -427,6 +481,17 @@ async def start_conversation(request: StartConversationRequest):
         return {
             "session_id": None,
             "workflow_type": "other",
+            "response": response_text,
+            "is_complete": False,
+            "event_info": None,
+        }
+    # Handle standalone Q&A (questions without existing event)
+    if wf_action == "standalone_qna":
+        draft_messages = wf_res.get("draft_messages", [])
+        response_text = draft_messages[0].get("body", "") if draft_messages else ""
+        return {
+            "session_id": session_id,
+            "workflow_type": "standalone_qna",
             "response": response_text,
             "is_complete": False,
             "event_info": None,
@@ -491,7 +556,7 @@ async def start_conversation(request: StartConversationRequest):
             event_id=(wf_res or {}).get("event_id"),
         )
         active_conversations[session_id] = conversation_state
-        print(f"[WF] start pause ask_for_date session={session_id} task={wf_res.get('task_id')}")
+        logger.info("start pause ask_for_date session=%s task=%s", session_id, wf_res.get('task_id'))
         return {
             "session_id": session_id,
             "workflow_type": "new_event",
@@ -524,11 +589,13 @@ async def start_conversation(request: StartConversationRequest):
     hil_pending = res_meta.get("pending_hil_approval", False)
     if not assistant_reply and not hil_pending:
         # DIAGNOSTIC: Log what wf_res contained so we can debug recurring fallbacks
-        print(f"[WF][FALLBACK_DIAGNOSTIC] start_conversation returned empty reply")
-        print(f"[WF][FALLBACK_DIAGNOSTIC] wf_res.action={wf_res.get('action')}")
-        print(f"[WF][FALLBACK_DIAGNOSTIC] wf_res.draft_messages count={len(wf_res.get('draft_messages') or [])}")
-        print(f"[WF][FALLBACK_DIAGNOSTIC] wf_res.assistant_message={bool(wf_res.get('assistant_message'))}")
-        print(f"[WF][FALLBACK_DIAGNOSTIC] wf_res.event_id={wf_res.get('event_id')}")
+        logger.warning(
+            "start_conversation empty reply: action=%s drafts=%d has_assistant=%s event_id=%s",
+            wf_res.get('action'),
+            len(wf_res.get('draft_messages') or []),
+            bool(wf_res.get('assistant_message')),
+            wf_res.get('event_id')
+        )
 
         # Create diagnostic fallback context
         fallback_ctx = create_fallback_context(
@@ -592,9 +659,7 @@ async def send_message(request: SendMessageRequest):
     try:
         wf_res = wf_process_msg(payload)
     except Exception as exc:
-        print(f"[WF][ERROR] send_message workflow failed: {exc}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("send_message workflow failed: %s", exc)
 
         # Create diagnostic fallback context for workflow exception
         fallback_ctx = create_fallback_context(
@@ -664,6 +729,26 @@ async def send_message(request: SendMessageRequest):
     # Only use fallback message if reply is empty AND HIL approval is NOT pending
     res_meta = wf_res.get("res") or {}
     hil_pending = res_meta.get("pending_hil_approval", False)
+    workflow_action = wf_res.get("action", "")
+
+    # Handle intentionally silent responses (out-of-context, nonsense_ignored)
+    # These actions mean "do not respond" - return empty response, no fallback
+    silent_actions = {"out_of_context_ignored", "nonsense_ignored"}
+    if workflow_action in silent_actions:
+        # Intentionally no response - client sent wrong step action or nonsense
+        conversation_state.event_info = _update_event_info_from_db(
+            conversation_state.event_info,
+            wf_res.get("event_id") or conversation_state.event_id,
+        )
+        return {
+            "session_id": request.session_id,
+            "workflow_type": request.session_id,
+            "response": "",  # Empty response = no reply
+            "is_complete": conversation_state.is_complete,
+            "event_info": conversation_state.event_info.dict(),
+            "pending_actions": None,
+        }
+
     if not assistant_reply and not hil_pending:
         # Create diagnostic fallback context for empty workflow reply
         fallback_ctx = create_fallback_context(

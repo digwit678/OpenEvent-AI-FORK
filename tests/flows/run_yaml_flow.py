@@ -101,10 +101,10 @@ class FlowHarness:
 
     def _install_stubs(self) -> None:
         modules = [
-            "backend.workflows.groups.intake.condition.checks",
-            "backend.workflows.groups.intake.condition",
-            "backend.workflows.groups.intake",
-            "backend.workflows.groups.date_confirmation.trigger.process",
+            "backend.workflows.steps.step1_intake.condition.checks",
+            "backend.workflows.steps.step1_intake.condition",
+            "backend.workflows.steps.step1_intake",
+            "backend.workflows.steps.step2_date_confirmation.trigger.step2_handler",
         ]
         for name in modules:
             module = import_module(name)
@@ -116,7 +116,7 @@ class FlowHarness:
         original_week_window = getattr(dates_module, "week_window")
         self._original_patches.append((dates_module, "week_window", original_week_window))
         setattr(dates_module, "week_window", stub_week_window)
-        room_config_module = import_module("backend.workflows.groups.room_availability.db_pers")
+        room_config_module = import_module("backend.workflows.steps.step3_room_availability.db_pers")
         original_load_rooms = getattr(room_config_module, "load_rooms_config")
         self._original_patches.append((room_config_module, "load_rooms_config", original_load_rooms))
         setattr(room_config_module, "load_rooms_config", stub_load_rooms_config)
@@ -210,7 +210,7 @@ class FlowHarness:
         raise AssertionError(f"Unknown system_call {name}")
 
     def _build_offer(self, event: Dict[str, Any], args: Dict[str, Any]) -> Dict[str, Any]:
-        from backend.workflows.groups.offer.trigger.process import build_offer
+        from backend.workflows.steps.step4_offer.trigger.step4_handler import build_offer
 
         result = build_offer(
             event.get("event_id"),

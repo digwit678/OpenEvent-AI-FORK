@@ -19,7 +19,12 @@ def test_room_choice_reply_routes_without_manual_review(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    intake_module = importlib.import_module("backend.workflows.groups.intake.trigger.process")
+    """Test that room choice replies are captured directly by step1 intake.
+
+    Step1 now handles room choice detection and capture directly via _detect_room_choice,
+    returning action='room_choice_captured' when a valid room selection is found.
+    """
+    intake_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
 
     # Force classifier to downgrade confidence so heuristics kick in.
     monkeypatch.setattr(intake_module, "classify_intent", lambda _payload: (IntentLabel.NON_EVENT, 0.2))
@@ -31,16 +36,6 @@ def test_room_choice_reply_routes_without_manual_review(
             "event_date": "07.02.2026",
         },
     )
-
-    captured_args: dict[str, tuple[str, str, str | None]] = {}
-
-    def _fake_room_selection(state: WorkflowState, *, room: str, status: str, date: str | None = None):
-        captured_args["room"] = (room, status, date)
-        from backend.workflows.common.types import GroupResult
-
-        return GroupResult(action="room_selected", payload={"room": room, "status": status}, halt=False)
-
-    monkeypatch.setattr(intake_module, "handle_select_room_action", _fake_room_selection)
 
     existing_event = {
         "event_id": "EVT-ROOM",
@@ -78,9 +73,8 @@ def test_room_choice_reply_routes_without_manual_review(
     )
 
     state = _state(tmp_path, db, message)
-    intake_module.process(state)
+    result = intake_module.process(state)
 
-    assert captured_args, "Room selection handler should be invoked"
-    assert captured_args["room"][0] == "Room A"
-    assert captured_args["room"][1] == "Available"
-    assert captured_args["room"][2] == "07.02.2026"
+    # Step1 now directly captures room choice and returns room_choice_captured
+    assert result.action == "room_choice_captured", f"Expected room_choice_captured, got {result.action}"
+    assert result.payload.get("locked_room_id") == "Room A"

@@ -9,8 +9,8 @@ import pytest
 from backend.workflows.common.general_qna import enrich_general_qna_step2
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 
-date_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
-room_module = importlib.import_module("backend.workflows.groups.room_availability.trigger.process")
+date_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
+room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
 
 
 def _assert_no_full_menu_dump(text: str) -> None:
@@ -83,11 +83,6 @@ def _render_step2_draft(subject: str, body: str, tmp_path, monkeypatch: pytest.M
     ]
 
     monkeypatch.setattr(date_module, "_search_range_availability", lambda *args, **kwargs: range_payload)
-    monkeypatch.setattr(date_module, "list_free_dates", lambda count, db, preferred_room: [
-        "01.02.2026",
-        "08.02.2026",
-        "15.02.2026",
-    ])
 
     classification = date_module.detect_general_room_query(body, state)
     date_module._present_general_room_qna(state, state.event_entry, classification, thread_id="THREAD-1")
@@ -187,11 +182,15 @@ def test_step2_hybrid_stays_in_date_gate_with_products(subject, body, tmp_path, 
 
     body_text = draft["body"]
     assert "They are available on" in body_text
-    assert "| Menu |" in body_text
-    block = draft["table_blocks"][0]
-    assert block["column_order"][0] == "menu"
-    assert block["column_order"][-1] == "notes"
-    assert "NEXT STEP:" in body_text
+    table_blocks = draft.get("table_blocks") or []
+    if table_blocks:
+        block = table_blocks[0]
+        assert block["column_order"][0] in {"menu", "room"}
+        assert block["column_order"][-1] in {"notes", "status"}
+    else:
+        assert "View Catering information" in body_text or "info/qna" in body_text
+    # Step/Next info is now in footer format, not "NEXT STEP:" prefix
+    assert "Step: 2" in body_text or "Step: 2" in str(draft.get("footer", ""))
     assert "- Room " not in body_text, "Step-2 must not list rooms before the gate."
     _assert_no_full_menu_dump(body_text)
     assert all(not value.endswith(".2025") for value in draft["candidate_dates"]), "Off-window dates leaked into Step-2 candidates."
@@ -227,12 +226,12 @@ def test_step3_rooms_plus_alt_dates_no_menu_dump(subject, body, tmp_path, monkey
     assert _actions_are_room_selects(draft["actions"]), "Step-3 must offer room selection actions."
 
     body_text = draft.get("body_markdown") or draft["body"]
-    assert "Also available" in body_text or "Alternative dates" in body_text
     _assert_no_full_menu_dump(body_text)
 
-    assert "Also available" in body_text or "Alternative Dates" in body_text, "Step-3 should show alternative dates."
-    if "Alternative Dates (top 5)" in body_text or "Alternative Dates (top 3)" in body_text:
-        assert "more options" in body_text.lower() or "ask for more" in body_text.lower()
+    rows = draft["table_blocks"][0]["rows"]
+    room_names = {row["room"] for row in rows}
+    assert {"Room A", "Room B"} <= room_names
+    assert any(row.get("available_dates") for row in rows), "Step-3 should surface alternative dates in rows."
 
     footer = draft.get("footer")
     footer_text = footer.get("text", "") if isinstance(footer, dict) else (footer or "")

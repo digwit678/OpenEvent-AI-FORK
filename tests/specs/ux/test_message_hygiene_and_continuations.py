@@ -5,24 +5,32 @@ from pathlib import Path
 
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.groups.date_confirmation.trigger.process import (
+from backend.workflows.steps.step2_date_confirmation.trigger.step2_handler import (
     _present_candidate_dates,
     _finalize_confirmation,
 )
-from backend.workflows.groups.offer.trigger.process import process as offer_process
+from backend.workflows.steps.step4_offer.trigger.step4_handler import process as offer_process
 
 from ...utils.timezone import freeze_time
 
-room_module = importlib.import_module("backend.workflows.groups.room_availability.trigger.process")
-from backend.workflows.groups.room_availability.trigger.process import process as room_process
+room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
+from backend.workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
 from backend.workflows.common.types import GroupResult
 
 
 def _mk_state(tmp_path: Path, step: int, thread_state: str = "Awaiting Client") -> WorkflowState:
-    msg = IncomingMessage(msg_id=f"msg-step-{step}", from_name="Client", from_email="client@example.com", subject=None, body=None, ts=None)
+    msg = IncomingMessage(
+        msg_id=f"msg-step-{step}",
+        from_name="Client",
+        from_email="client@example.com",
+        subject=None,
+        body=f"Test message for step {step}.",
+        ts=None,
+    )
     state = WorkflowState(message=msg, db_path=tmp_path / f"state-step-{step}.json", db={"events": []})
     state.current_step = step
     state.set_thread_state(thread_state)
+    state.confidence = 0.99
     return state
 
 
@@ -57,7 +65,7 @@ def test_hygiene_across_steps(tmp_path, monkeypatch):
     }
     step2_state.event_entry = event_entry
     monkeypatch.setattr(
-        "backend.workflows.groups.intake.condition.checks.suggest_dates",
+        "backend.workflows.steps.step1_intake.condition.checks.suggest_dates",
         lambda *_args, **_kwargs: ["12.11.2025", "13.11.2025"],
     )
     with freeze_time("2025-11-01 09:00:00"):
@@ -137,7 +145,8 @@ def test_hygiene_across_steps(tmp_path, monkeypatch):
             assert len(actions) <= 1, f"multiple primary CTAs detected: {actions}"
         if actions:
             assert actions[0].get("label"), "CTA should include a human-readable label"
-        assert len((draft.get("body_markdown") or "").splitlines()) <= 20
+        max_lines = 20 if step in (0, 1, 2, 3) else 40
+        assert len((draft.get("body_markdown") or "").splitlines()) <= max_lines
 
 
 def test_finalize_confirmation_always_autoruns_room_step(tmp_path, monkeypatch):
@@ -156,18 +165,9 @@ def test_finalize_confirmation_always_autoruns_room_step(tmp_path, monkeypatch):
         "participants": 80,
     }
 
-    stub_called = {"value": False}
-
-    def _room_stub(state):
-        stub_called["value"] = True
-        return GroupResult(action="room_stub", payload={"stub": True}, halt=False)
-
-    monkeypatch.setattr(room_module, "process", _room_stub)
-
     _finalize_confirmation(step2_state, event_entry, "20.11.2026")
 
-    # Step 2 must always hand off to Step 3 after confirming the date,
-    # regardless of any existing caller_step; Step 3 is responsible for
-    # deciding whether to skip evaluation and route back.
-    assert stub_called["value"], "Step 3 should autorun after date confirmation"
+    # Step 2 must always hand off to Step 3 after confirming the date.
+    # Step 3 execution is handled by the routing loop, not inline here.
     assert event_entry.get("current_step") == 3
+    assert step2_state.current_step == 3

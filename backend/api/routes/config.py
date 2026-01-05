@@ -13,12 +13,29 @@ ENDPOINTS:
     POST /api/config/pre-filter       - Set pre-filter mode
     GET  /api/config/detection-mode   - Get detection mode (unified/legacy)
     POST /api/config/detection-mode   - Set detection mode
+    GET  /api/config/venue            - Get venue settings (name, city, timezone, etc.)
+    POST /api/config/venue            - Set venue settings
+    GET  /api/config/site-visit       - Get site visit settings (blocked dates, slots, weekday rules)
+    POST /api/config/site-visit       - Set site visit settings
+    GET  /api/config/managers         - Get manager settings (names for escalation)
+    POST /api/config/managers         - Set manager settings
+    GET  /api/config/products         - Get product settings (autofill threshold)
+    POST /api/config/products         - Set product settings
+    GET  /api/config/menus            - Get menus (catering) settings
+    POST /api/config/menus            - Set menus (catering) settings
+    GET  /api/config/catalog          - Get catalog settings (product-room availability)
+    POST /api/config/catalog          - Set catalog settings
+    GET  /api/config/faq              - Get FAQ settings
+    POST /api/config/faq              - Set FAQ settings
 
 DEPENDS ON:
     - backend/workflow_email.py  # Database operations
 """
 
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -29,7 +46,8 @@ from backend.workflow_email import (
 )
 from backend.ux.universal_verbalizer import (
     UNIVERSAL_SYSTEM_PROMPT,
-    STEP_PROMPTS as DEFAULT_STEP_PROMPTS
+    STEP_PROMPTS as DEFAULT_STEP_PROMPTS,
+    _build_system_prompt as build_dynamic_system_prompt,
 )
 
 
@@ -193,7 +211,7 @@ async def set_global_deposit_config(config: GlobalDepositConfig):
             "updated_at": _now_iso(),
         }
         wf_save_db(db)
-        print(f"[Config] Global deposit updated: enabled={config.deposit_enabled} type={config.deposit_type}")
+        logger.info("Global deposit updated: enabled=%s type=%s", config.deposit_enabled, config.deposit_type)
         return {"status": "ok", "config": db["config"]["global_deposit"]}
     except Exception as exc:
         raise HTTPException(
@@ -284,7 +302,8 @@ async def set_hil_mode(config: HILModeConfig):
         refresh_hil_setting()
 
         status = "enabled" if config.enabled else "disabled"
-        print(f"[Config] HIL mode {status} - all AI replies {'require' if config.enabled else 'do not require'} manager approval")
+        logger.info("HIL mode %s - all AI replies %s manager approval",
+                    status, "require" if config.enabled else "do not require")
 
         return {
             "status": "ok",
@@ -415,11 +434,14 @@ async def set_llm_provider_config(config: LLMProviderConfig):
         os.environ["ENTITY_PROVIDER"] = config.entity_provider.lower()
         os.environ["VERBALIZER_PROVIDER"] = config.verbalization_provider.lower()
 
-        # Reset the agent adapter singleton to pick up new settings
+        # Reset caches to pick up new settings
         from backend.adapters.agent_adapter import reset_agent_adapter
+        from backend.llm.provider_config import clear_provider_cache
         reset_agent_adapter()
+        clear_provider_cache()
 
-        print(f"[Config] LLM providers updated: intent={config.intent_provider} entity={config.entity_provider} verbalization={config.verbalization_provider}")
+        logger.info("LLM providers updated: intent=%s entity=%s verbalization=%s",
+                    config.intent_provider, config.entity_provider, config.verbalization_provider)
 
         return {
             "status": "ok",
@@ -431,6 +453,155 @@ async def set_llm_provider_config(config: LLMProviderConfig):
     except Exception as exc:
         raise HTTPException(
             status_code=500, detail=f"Failed to save LLM provider config: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Hybrid Mode Enforcement Configuration Endpoints
+# ---------------------------------------------------------------------------
+
+class HybridEnforcementConfig(BaseModel):
+    """
+    Hybrid mode enforcement configuration.
+
+    By default (enabled=True), the system MUST run in hybrid mode.
+    Hybrid mode = using BOTH Gemini and OpenAI for different operations.
+
+    When enabled:
+    - Dev mode: Logs error but continues (for debugging)
+    - Production mode: BLOCKS startup if not in hybrid mode
+
+    When disabled (emergency bypass):
+    - Allows single-provider modes (OpenAI-only or Gemini-only)
+    - Should only be used as fallback if one provider is unavailable
+
+    IMPORTANT: Disabling enforcement is NOT recommended for production.
+    It bypasses cost optimization and reduces testing coverage.
+    """
+    enabled: bool = True
+
+
+@router.get("/hybrid-enforcement")
+async def get_hybrid_enforcement_config():
+    """
+    Get the current hybrid mode enforcement configuration.
+
+    Returns:
+        enabled: bool - Whether hybrid mode enforcement is active
+        is_hybrid: bool - Whether current config is actually hybrid
+        source: str - Where the setting came from
+        providers: dict - Current provider configuration
+    """
+    import os
+    from backend.llm.provider_config import (
+        get_llm_providers,
+        is_hybrid_mode,
+        is_hybrid_enforcement_enabled,
+    )
+
+    try:
+        db = wf_load_db()
+        enforcement_config = db.get("config", {}).get("hybrid_enforcement", {})
+
+        # Check database first
+        if "enabled" in enforcement_config:
+            enabled = enforcement_config["enabled"]
+            source = "database"
+            updated_at = enforcement_config.get("updated_at")
+        # Check environment variable
+        elif os.getenv("OE_BYPASS_HYBRID_ENFORCEMENT", "").lower() in ("1", "true", "yes"):
+            enabled = False
+            source = "environment (OE_BYPASS_HYBRID_ENFORCEMENT=1)"
+            updated_at = None
+        else:
+            enabled = True
+            source = "default"
+            updated_at = None
+
+        # Get current provider settings
+        settings = get_llm_providers(force_reload=True)
+        is_hybrid = is_hybrid_mode(settings)
+
+        return {
+            "enabled": enabled,
+            "is_hybrid": is_hybrid,
+            "source": source,
+            "updated_at": updated_at,
+            "providers": {
+                "intent_provider": settings.intent_provider,
+                "entity_provider": settings.entity_provider,
+                "verbalization_provider": settings.verbalization_provider,
+            },
+            "status": "✅ OK" if is_hybrid else ("⚠️ Bypassed" if not enabled else "❌ Violation"),
+        }
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load hybrid enforcement config: {exc}"
+        ) from exc
+
+
+@router.post("/hybrid-enforcement")
+async def set_hybrid_enforcement_config(config: HybridEnforcementConfig):
+    """
+    Set the hybrid mode enforcement configuration.
+
+    WARNING: Disabling enforcement is NOT recommended for production.
+    Only disable as emergency fallback if one LLM provider is unavailable.
+
+    When enforcement is enabled (default):
+    - Dev mode: Logs error if not in hybrid mode
+    - Production mode: BLOCKS startup if not in hybrid mode
+
+    When enforcement is disabled:
+    - Allows single-provider modes (OpenAI-only or Gemini-only)
+    - Logs warning that enforcement is bypassed
+    """
+    import os
+    from backend.llm.provider_config import (
+        get_llm_providers,
+        is_hybrid_mode,
+    )
+
+    try:
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+
+        db["config"]["hybrid_enforcement"] = {
+            "enabled": config.enabled,
+            "updated_at": _now_iso(),
+        }
+        wf_save_db(db)
+
+        # Check current hybrid status
+        settings = get_llm_providers(force_reload=True)
+        is_hybrid = is_hybrid_mode(settings)
+
+        status = "enabled" if config.enabled else "DISABLED (bypass mode)"
+        logger.warning(
+            "Hybrid mode enforcement %s. Current mode: %s",
+            status,
+            "hybrid" if is_hybrid else "single-provider"
+        )
+
+        if not config.enabled:
+            logger.warning(
+                "⚠️  HYBRID ENFORCEMENT BYPASSED - This should only be used for emergency fallback!"
+            )
+
+        return {
+            "status": "ok",
+            "enabled": config.enabled,
+            "is_hybrid": is_hybrid,
+            "message": (
+                f"Hybrid enforcement {status}. "
+                f"{'System is correctly in hybrid mode.' if is_hybrid else 'WARNING: Not in hybrid mode!'}"
+            ),
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save hybrid enforcement config: {exc}"
         ) from exc
 
 
@@ -540,7 +711,7 @@ async def set_pre_filter_config(config: PreFilterConfig):
         # Update environment variable for current process
         os.environ["PRE_FILTER_MODE"] = config.mode.lower()
 
-        print(f"[Config] Pre-filter mode updated: {config.mode}")
+        logger.info("Pre-filter mode updated: %s", config.mode)
 
         return {
             "status": "ok",
@@ -647,7 +818,7 @@ async def set_detection_mode_config(config: DetectionModeConfig):
         # Update environment variable for current process
         os.environ["DETECTION_MODE"] = config.mode.lower()
 
-        print(f"[Config] Detection mode updated: {config.mode}")
+        logger.info("Detection mode updated: %s", config.mode)
 
         return {
             "status": "ok",
@@ -686,15 +857,17 @@ async def get_prompts_config():
             except ValueError:
                 pass
 
+        # Use dynamic prompt with venue config as the default
+        default_prompt = build_dynamic_system_prompt()
         return {
-            "system_prompt": stored.get("system_prompt", UNIVERSAL_SYSTEM_PROMPT),
+            "system_prompt": stored.get("system_prompt") or default_prompt,
             "step_prompts": merged_steps
         }
     except Exception as exc:
-        print(f"[Config][ERROR] Failed to load prompts: {exc}")
-        # Fallback to defaults on error
+        logger.error("Failed to load prompts: %s", exc)
+        # Fallback to dynamic defaults on error
         return {
-            "system_prompt": UNIVERSAL_SYSTEM_PROMPT,
+            "system_prompt": build_dynamic_system_prompt(),
             "step_prompts": DEFAULT_STEP_PROMPTS
         }
 
@@ -728,7 +901,7 @@ async def set_prompts_config(config: PromptConfig):
             "updated_at": _now_iso()
         }
         wf_save_db(db)
-        print("[Config] Prompts updated and persisted.")
+        logger.info("Prompts updated and persisted")
         return {"status": "ok"}
     except Exception as exc:
         raise HTTPException(
@@ -784,7 +957,7 @@ async def revert_prompts_config(index: int):
         db["config"]["prompts_history"] = history[:50]
         
         wf_save_db(db)
-        print(f"[Config] Reverted prompts to version from {target_entry.get('ts')}")
+        logger.info("Reverted prompts to version from %s", target_entry.get('ts'))
         return {"status": "ok"}
     except HTTPException:
         raise
@@ -861,7 +1034,7 @@ async def revert_prompts_config(index: int):
 #             "updated_at": _now_iso(),
 #         }
 #         wf_save_db(db)
-#         print(f"[Config] Room deposit updated: room={room_id} required={deposit_required} percent={deposit_percent}")
+#         logger.info("Room deposit updated: room={room_id} required={deposit_required} percent={deposit_percent}")
 #         return {"status": "ok", "room_id": room_id, "config": db["config"]["room_deposits"][room_id]}
 #     except Exception as exc:
 #         raise HTTPException(
@@ -968,7 +1141,7 @@ async def set_hil_email_config(config: HILEmailConfig):
         wf_save_db(db)
 
         status = "enabled" if config.enabled else "disabled"
-        print(f"[Config] HIL email {status} - notifications to {config.manager_email}")
+        logger.info("HIL email %s - notifications to %s", status, config.manager_email)
 
         return {
             "status": "ok",
@@ -1020,4 +1193,705 @@ async def test_hil_email():
     except Exception as exc:
         raise HTTPException(
             status_code=500, detail=f"Failed to send test email: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Venue Configuration Endpoints
+# ---------------------------------------------------------------------------
+
+class OperatingHoursConfig(BaseModel):
+    """Operating hours configuration."""
+    start: int = 8
+    end: int = 23
+
+
+class VenueConfig(BaseModel):
+    """
+    Venue configuration for multi-tenant / white-label deployments.
+
+    These settings replace previously hardcoded values throughout the codebase:
+    - name: Venue name displayed in prompts and emails
+    - city: Venue city for location context
+    - timezone: IANA timezone (e.g., 'Europe/Zurich')
+    - currency_code: ISO currency code (e.g., 'CHF', 'EUR', 'USD')
+    - operating_hours: Start/end hours for event availability
+    - from_email: Sender email for notifications
+    - from_name: Sender name for email headers
+    - frontend_url: Base URL for approval links in emails
+    """
+    name: Optional[str] = None
+    city: Optional[str] = None
+    timezone: Optional[str] = None
+    currency_code: Optional[str] = None
+    operating_hours: Optional[OperatingHoursConfig] = None
+    from_email: Optional[str] = None
+    from_name: Optional[str] = None
+    frontend_url: Optional[str] = None
+
+
+@router.get("/venue")
+async def get_venue_config():
+    """
+    Get the current venue configuration.
+
+    Returns all venue settings with defaults for any missing values.
+    These settings control:
+    - Venue branding (name, city) in prompts and emails
+    - Timezone for date/time handling
+    - Currency for pricing display
+    - Operating hours for availability validation
+    - Email sender details
+    - Frontend URL for approval links
+
+    Returns:
+        Complete venue configuration with source info
+    """
+    try:
+        from backend.workflows.io.config_store import get_all_venue_config
+
+        config = get_all_venue_config()
+        return {
+            "name": config.get("name"),
+            "city": config.get("city"),
+            "timezone": config.get("timezone"),
+            "currency_code": config.get("currency_code"),
+            "operating_hours": config.get("operating_hours"),
+            "from_email": config.get("from_email"),
+            "from_name": config.get("from_name"),
+            "frontend_url": config.get("frontend_url"),
+            "source": "database",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load venue config: {exc}"
+        ) from exc
+
+
+@router.post("/venue")
+async def set_venue_config(config: VenueConfig):
+    """
+    Set the venue configuration.
+
+    Update venue settings for multi-tenant or white-label deployments.
+    Only provided fields are updated; omitted fields keep their current values.
+
+    PRODUCTION NOTE:
+    Changing these settings affects:
+    - AI prompt context (venue name, city)
+    - Email sender details
+    - Currency formatting in offers
+    - Timezone for availability checks
+    - Operating hours validation
+
+    Changes take effect immediately for new requests.
+    """
+    try:
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+
+        # Get current venue config or empty dict
+        current = db["config"].get("venue", {})
+
+        # Merge updates (only update provided fields)
+        if config.name is not None:
+            current["name"] = config.name
+        if config.city is not None:
+            current["city"] = config.city
+        if config.timezone is not None:
+            current["timezone"] = config.timezone
+        if config.currency_code is not None:
+            current["currency_code"] = config.currency_code
+        if config.operating_hours is not None:
+            current["operating_hours"] = {
+                "start": config.operating_hours.start,
+                "end": config.operating_hours.end,
+            }
+        if config.from_email is not None:
+            current["from_email"] = config.from_email
+        if config.from_name is not None:
+            current["from_name"] = config.from_name
+        if config.frontend_url is not None:
+            current["frontend_url"] = config.frontend_url
+
+        current["updated_at"] = _now_iso()
+        db["config"]["venue"] = current
+        wf_save_db(db)
+
+        logger.info("Venue updated: name=%s city=%s", current.get('name'), current.get('city'))
+
+        return {
+            "status": "ok",
+            "config": current,
+            "message": "Venue configuration updated. Changes take effect immediately.",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save venue config: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Site Visit Configuration Endpoints
+# ---------------------------------------------------------------------------
+
+class SiteVisitConfig(BaseModel):
+    """
+    Site visit configuration for scheduling venue tours.
+
+    Controls when and how site visits can be booked:
+    - blocked_dates: Additional dates to block (holidays, maintenance)
+    - default_slots: Available hours for site visits (24-hour format)
+    - weekdays_only: Whether to restrict to weekdays only
+    - min_days_ahead: Minimum days before event for booking
+    """
+    blocked_dates: Optional[List[str]] = None
+    default_slots: Optional[List[int]] = None
+    weekdays_only: Optional[bool] = None
+    min_days_ahead: Optional[int] = None
+
+
+@router.get("/site-visit")
+async def get_site_visit_config():
+    """
+    Get the current site visit configuration.
+
+    Returns settings for site visit scheduling:
+    - blocked_dates: Additional blocked dates (ISO format)
+    - default_slots: Available hours [10, 14, 16]
+    - weekdays_only: True = Mon-Fri only
+    - min_days_ahead: Minimum days before event
+    """
+    try:
+        from backend.workflows.io.config_store import get_all_site_visit_config
+
+        config = get_all_site_visit_config()
+        return {
+            "blocked_dates": config.get("blocked_dates", []),
+            "default_slots": config.get("default_slots", [10, 14, 16]),
+            "weekdays_only": config.get("weekdays_only", True),
+            "min_days_ahead": config.get("min_days_ahead", 2),
+            "source": "database",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load site visit config: {exc}"
+        ) from exc
+
+
+@router.post("/site-visit")
+async def set_site_visit_config(config: SiteVisitConfig):
+    """
+    Set the site visit configuration.
+
+    Update site visit scheduling settings. Only provided fields are updated.
+
+    EXAMPLES:
+    - Block holidays: {"blocked_dates": ["2026-01-01", "2026-12-25"]}
+    - Change available hours: {"default_slots": [9, 11, 14, 16]}
+    - Allow weekends: {"weekdays_only": false}
+    """
+    try:
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+
+        current = db["config"].get("site_visit", {})
+
+        if config.blocked_dates is not None:
+            current["blocked_dates"] = config.blocked_dates
+        if config.default_slots is not None:
+            current["default_slots"] = config.default_slots
+        if config.weekdays_only is not None:
+            current["weekdays_only"] = config.weekdays_only
+        if config.min_days_ahead is not None:
+            current["min_days_ahead"] = config.min_days_ahead
+
+        current["updated_at"] = _now_iso()
+        db["config"]["site_visit"] = current
+        wf_save_db(db)
+
+        logger.info("Site visit updated: slots=%s weekdays_only=%s",
+                    current.get('default_slots'), current.get('weekdays_only'))
+
+        return {
+            "status": "ok",
+            "config": current,
+            "message": "Site visit configuration updated.",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save site visit config: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Manager Configuration Endpoints
+# ---------------------------------------------------------------------------
+
+class ManagerConfig(BaseModel):
+    """
+    Manager configuration for escalation detection.
+
+    - names: List of registered manager names. Used to detect when clients
+             ask to speak with a specific manager by name.
+    """
+    names: Optional[List[str]] = None
+
+
+@router.get("/managers")
+async def get_manager_config():
+    """
+    Get the current manager configuration.
+
+    Returns registered manager names for escalation detection.
+    """
+    try:
+        from backend.workflows.io.config_store import get_all_manager_config
+
+        config = get_all_manager_config()
+        return {
+            "names": config.get("names", []),
+            "source": "database",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load manager config: {exc}"
+        ) from exc
+
+
+@router.post("/managers")
+async def set_manager_config(config: ManagerConfig):
+    """
+    Set the manager configuration.
+
+    Register manager names for escalation detection:
+    - When clients mention these names, the system can detect escalation requests
+
+    EXAMPLE:
+    {"names": ["John", "Sarah", "Michael"]}
+    """
+    try:
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+
+        current = db["config"].get("managers", {})
+
+        if config.names is not None:
+            current["names"] = config.names
+
+        current["updated_at"] = _now_iso()
+        db["config"]["managers"] = current
+        wf_save_db(db)
+
+        logger.info("Managers updated: names=%s", current.get('names'))
+
+        return {
+            "status": "ok",
+            "config": current,
+            "message": "Manager configuration updated.",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save manager config: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Product Configuration Endpoints
+# ---------------------------------------------------------------------------
+
+class ProductConfig(BaseModel):
+    """
+    Product configuration for offer generation.
+
+    - autofill_min_score: Similarity threshold (0.0-1.0) for auto-including
+                          products in offers based on client preferences.
+                          Default 0.5 = 50% match required.
+    """
+    autofill_min_score: Optional[float] = None
+
+
+@router.get("/products")
+async def get_product_config():
+    """
+    Get the current product configuration.
+
+    Returns settings for product autofill in offer generation.
+    """
+    try:
+        from backend.workflows.io.config_store import get_all_product_config
+
+        config = get_all_product_config()
+        return {
+            "autofill_min_score": config.get("autofill_min_score", 0.5),
+            "source": "database",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load product config: {exc}"
+        ) from exc
+
+
+@router.post("/products")
+async def set_product_config(config: ProductConfig):
+    """
+    Set the product configuration.
+
+    Adjust product autofill behavior:
+    - autofill_min_score: 0.0 = include all products, 1.0 = exact matches only
+
+    EXAMPLES:
+    - More suggestions: {"autofill_min_score": 0.3}
+    - Fewer suggestions: {"autofill_min_score": 0.7}
+    """
+    if config.autofill_min_score is not None:
+        if not 0.0 <= config.autofill_min_score <= 1.0:
+            raise HTTPException(
+                status_code=400,
+                detail="autofill_min_score must be between 0.0 and 1.0"
+            )
+
+    try:
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+
+        current = db["config"].get("products", {})
+
+        if config.autofill_min_score is not None:
+            current["autofill_min_score"] = config.autofill_min_score
+
+        current["updated_at"] = _now_iso()
+        db["config"]["products"] = current
+        wf_save_db(db)
+
+        logger.info("Products updated: autofill_min_score=%s", current.get('autofill_min_score'))
+
+        return {
+            "status": "ok",
+            "config": current,
+            "message": "Product configuration updated.",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save product config: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Menus (Catering) Configuration Endpoints
+# ---------------------------------------------------------------------------
+
+class MenuItemConfig(BaseModel):
+    """
+    Configuration for a single dinner menu option.
+    """
+    menu_name: str
+    courses: int = 3
+    vegetarian: bool = False
+    wine_pairing: bool = False
+    price: str = "CHF 0"
+    description: str = ""
+    available_months: List[str] = []
+    season_label: str = ""
+    notes: List[str] = []
+    priority: int = 1
+
+
+class MenusConfig(BaseModel):
+    """
+    Menus (catering) configuration for the venue.
+
+    - dinner_options: List of available dinner menus with pricing,
+                      dietary info, and seasonal availability.
+    """
+    dinner_options: Optional[List[MenuItemConfig]] = None
+
+
+@router.get("/menus")
+async def get_menus_config():
+    """
+    Get the current menus (catering) configuration.
+
+    Returns dinner menu options that clients can select from.
+    If no custom menus are configured, returns built-in defaults.
+    """
+    try:
+        from backend.workflows.io.config_store import get_all_menus_config
+
+        config = get_all_menus_config()
+        return {
+            "dinner_options": config.get("dinner_options", []),
+            "source": "database",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load menus config: {exc}"
+        ) from exc
+
+
+@router.post("/menus")
+async def set_menus_config(config: MenusConfig):
+    """
+    Set the menus (catering) configuration.
+
+    Configure dinner menu options for the venue. Each menu includes:
+    - menu_name: Display name
+    - courses: Number of courses
+    - vegetarian: Whether it's vegetarian-friendly
+    - wine_pairing: Whether wine pairing is included
+    - price: Price string (e.g., "CHF 92")
+    - description: Menu description
+    - available_months: Seasonal availability
+    - season_label: Human-readable availability text
+    - notes: Additional notes (e.g., ["vegetarian"])
+    - priority: Sort order (lower = higher priority)
+
+    EXAMPLE:
+    {
+      "dinner_options": [
+        {
+          "menu_name": "Garden Trio",
+          "courses": 3,
+          "vegetarian": true,
+          "wine_pairing": true,
+          "price": "CHF 92",
+          "description": "Seasonal vegetarian menu...",
+          "available_months": ["december", "january", "february"],
+          "season_label": "Available December–February",
+          "notes": ["vegetarian"],
+          "priority": 1
+        }
+      ]
+    }
+
+    Set to empty array to reset to built-in defaults:
+    {"dinner_options": []}
+    """
+    try:
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+
+        current = db["config"].get("menus", {})
+
+        if config.dinner_options is not None:
+            # Convert to dict format for JSON storage
+            current["dinner_options"] = [
+                item.model_dump() for item in config.dinner_options
+            ]
+
+        current["updated_at"] = _now_iso()
+        db["config"]["menus"] = current
+        wf_save_db(db)
+
+        count = len(current.get("dinner_options", []))
+        logger.info("Menus updated: %d dinner options", count)
+
+        return {
+            "status": "ok",
+            "config": current,
+            "message": f"Menus configuration updated. {count} dinner option(s) configured.",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save menus config: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Catalog Configuration Endpoints (Product-Room Availability Mapping)
+# ---------------------------------------------------------------------------
+
+class ProductRoomMapItem(BaseModel):
+    """
+    Configuration for a single product-to-room mapping.
+    """
+    name: str
+    category: str = "equipment"
+    rooms: List[str] = []
+
+
+class CatalogConfig(BaseModel):
+    """
+    Catalog configuration for product-room availability mapping.
+
+    - product_room_map: Maps products to the rooms they're available in.
+    """
+    product_room_map: Optional[List[ProductRoomMapItem]] = None
+
+
+@router.get("/catalog")
+async def get_catalog_config():
+    """
+    Get the current catalog configuration.
+
+    Returns product-to-room availability mappings.
+    If no custom mapping is configured, returns built-in defaults.
+    """
+    try:
+        from backend.workflows.io.config_store import get_all_catalog_config
+
+        config = get_all_catalog_config()
+        return {
+            "product_room_map": config.get("product_room_map", []),
+            "source": "database",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load catalog config: {exc}"
+        ) from exc
+
+
+@router.post("/catalog")
+async def set_catalog_config(config: CatalogConfig):
+    """
+    Set the catalog configuration.
+
+    Configure which products are available in which rooms:
+    - name: Product display name
+    - category: Product category (av, equipment, lighting, furniture, supplies)
+    - rooms: List of room names where this product is available
+
+    EXAMPLE:
+    {
+      "product_room_map": [
+        {"name": "Projector & Screen", "category": "av", "rooms": ["Room A", "Room B"]},
+        {"name": "Stage Lighting", "category": "lighting", "rooms": ["Room C"]}
+      ]
+    }
+
+    Set to empty array to reset to built-in defaults:
+    {"product_room_map": []}
+    """
+    try:
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+
+        current = db["config"].get("catalog", {})
+
+        if config.product_room_map is not None:
+            current["product_room_map"] = [
+                item.model_dump() for item in config.product_room_map
+            ]
+
+        current["updated_at"] = _now_iso()
+        db["config"]["catalog"] = current
+        wf_save_db(db)
+
+        count = len(current.get("product_room_map", []))
+        logger.info("Catalog updated: %d product-room mappings", count)
+
+        return {
+            "status": "ok",
+            "config": current,
+            "message": f"Catalog configuration updated. {count} product mapping(s) configured.",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save catalog config: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# FAQ Configuration Endpoints
+# ---------------------------------------------------------------------------
+
+class FAQItem(BaseModel):
+    """
+    Configuration for a single FAQ item.
+    """
+    category: str
+    question: str
+    answer: str
+    related_links: List[str] = []
+
+
+class FAQConfig(BaseModel):
+    """
+    FAQ configuration for venue-specific Q&A.
+
+    - items: List of FAQ entries with category, question, and answer.
+    """
+    items: Optional[List[FAQItem]] = None
+
+
+@router.get("/faq")
+async def get_faq_config():
+    """
+    Get the current FAQ configuration.
+
+    Returns venue-specific FAQ items for the Q&A page.
+    If no custom FAQ is configured, returns built-in defaults.
+    """
+    try:
+        from backend.workflows.io.config_store import get_all_faq_config
+
+        config = get_all_faq_config()
+        return {
+            "items": config.get("items", []),
+            "source": "database",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load FAQ config: {exc}"
+        ) from exc
+
+
+@router.post("/faq")
+async def set_faq_config(config: FAQConfig):
+    """
+    Set the FAQ configuration.
+
+    Configure venue-specific FAQ items:
+    - category: FAQ category (Parking, Catering, Booking, Equipment, Access)
+    - question: The FAQ question
+    - answer: The answer text
+    - related_links: Optional related URLs
+
+    EXAMPLE:
+    {
+      "items": [
+        {
+          "category": "Parking",
+          "question": "Where can guests park?",
+          "answer": "Underground parking available..."
+        }
+      ]
+    }
+
+    Set to empty array to reset to built-in defaults:
+    {"items": []}
+    """
+    try:
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+
+        current = db["config"].get("faq", {})
+
+        if config.items is not None:
+            current["items"] = [
+                item.model_dump() for item in config.items
+            ]
+
+        current["updated_at"] = _now_iso()
+        db["config"]["faq"] = current
+        wf_save_db(db)
+
+        count = len(current.get("items", []))
+        logger.info("FAQ updated: %d items", count)
+
+        return {
+            "status": "ok",
+            "config": current,
+            "message": f"FAQ configuration updated. {count} item(s) configured.",
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save FAQ config: {exc}"
         ) from exc

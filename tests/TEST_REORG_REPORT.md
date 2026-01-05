@@ -51,6 +51,6 @@
   - tests/specs/gatekeeping/test_tool_allowlist_and_schema.py (tool schema + allowlist)
   - Extended tests/specs/date/test_date_confirmation_next5.py & tests/specs/room/test_room_availability.py for structured payload assertions
 - Tooling:
-  - scripts/test-all.sh added for local pytest aggregation
+  - scripts/tests/test-all.sh added for local pytest aggregation
 - CI:
   - Legacy smoke workflows kept under .github/workflows/legacy but gated via `if: false`

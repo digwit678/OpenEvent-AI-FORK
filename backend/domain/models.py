@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime
 from enum import Enum
 from typing import Literal, Optional
+
+logger = logging.getLogger(__name__)
 
 # Debug flag - set WF_DEBUG_STATE=1 to enable verbose workflow prints
 WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"
@@ -125,18 +128,17 @@ class EventInformation(BaseModel):
         ]
 
         if WF_DEBUG:
-            print("\n=== IS_COMPLETE CHECK (RELAXED) ===")
+            logger.debug("=== IS_COMPLETE CHECK (RELAXED) ===")
             for field in critical_fields:
                 value = getattr(self, field)
                 is_valid = not (value == "Not specified" or value is None or value == "")
-                print(f"{field}: '{value}' → {'✅' if is_valid else '❌'}")
+                logger.debug("%s: '%s' → %s", field, value, 'PASS' if is_valid else 'FAIL')
 
         for field in critical_fields:
             value = getattr(self, field)
             if value == "Not specified" or value is None or value == "":
                 if WF_DEBUG:
-                    print(f"❌ FAILED: {field}")
-                    print("===================================\n")
+                    logger.debug("FAILED: %s", field)
                 return False
 
         if (
@@ -145,13 +147,11 @@ class EventInformation(BaseModel):
             or len(self.catering_preference) < 5
         ):
             if WF_DEBUG:
-                print("❌ FAILED: catering_preference")
-                print("===================================\n")
+                logger.debug("FAILED: catering_preference")
             return False
 
         if WF_DEBUG:
-            print("✅ ALL CRITICAL CHECKS PASSED!")
-            print("===================================\n")
+            logger.debug("ALL CRITICAL CHECKS PASSED")
         return True
 
     def to_dict(self) -> dict[str, str | Literal["Not specified"]]:

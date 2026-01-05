@@ -1,9 +1,8 @@
 # OpenEvent-AI: The Autonomous Venue Booking Engine
 
 OpenEvent-AI is a sophisticated, full-stack system designed to automate the end-to-end venue booking flow for "The Atelier". It combines the flexibility of Large Language Models (LLMs) with the reliability of deterministic state machines to handle inquiries, negotiate offers, and confirm bookings with "Human-In-The-Loop" (HIL) oversight.
-
-> **Branch focus:** `integration/hostinger-backend` ships only the backend API that is deployed to Hostinger. Frontend apps live in the repo but are not part of this deployment target.
-
+development: https://github.com/shami-ah/OpenEvent-AI/tree/main
+backend deployment: https://github.com/shami-ah/OpenEvent-AI/tree/integration/hostinger-backend
 ## 🚀 Overview
 
 The system ingests client inquiries (currently simulated via chat), maintains a deterministic event record, and coordinates every step of the booking process. Unlike simple chatbots, OpenEvent-AI is built on a **workflow engine** that tracks the lifecycle of an event from a "Lead" to a "Confirmed" booking.
@@ -101,12 +100,12 @@ The system avoids "always-on" LLM calls by using a tiered detection architecture
 /
 ├── atelier-ai-frontend/    # Next.js Frontend application
 ├── backend/                # Python Backend application
+│   ├── adapters/           # Interface adapters (Calendar, GUI)
 │   ├── api/                # FastAPI endpoints
 │   ├── main.py             # App entry point
 │   ├── workflow_email.py   # Core State Machine Orchestrator
 │   └── workflows/          # Business Logic
-│       ├── groups/         # Ste
-p implementations (intake, offer, etc.)
+│       ├── groups/         # Step implementations (intake, offer, etc.)
 │       ├── nlu/            # Detectors & Classifiers (Regex + LLM)
 │       └── io/             # Database & Task Management
 ├── docs/                   # Detailed documentation & rules
@@ -123,39 +122,46 @@ p implementations (intake, offer, etc.)
 - **OpenAI API Key** (Set as `OPENAI_API_KEY` env var)
 
 ### 1. Setup Backend
+```bash
+# From project root - create virtual environment (optional but recommended)
+python -m venv venv
+source venv/bin/activate
 
-1. **Create a virtual environment (optional, but recommended)**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate
-   ```
-2. **Install the runtime dependencies (works on any shell/IDE)**
-   ```bash
-   pip install fastapi uvicorn pydantic python-dotenv openai openai-agents openai-chatkit
-   ```
-   (or simply `pip install -r requirements-dev` to match the Hostinger runtime snapshot)
-3. **(Optional) Install test tooling**
-   ```bash
-   pip install -r requirements-dev.txt
-   ```
-   `requirements-dev.txt` only contains pytest/freezegun/etc. for regression suites; skip it if you just need the API running.
-4. **Start the backend**
-   ```bash
-   # macOS shortcut: also sets PYTHONPATH before launching uvicorn
-   source scripts/oe_env.sh && uvicorn backend.main:app --reload --port 8000
+# Install dependencies
+pip install -r requirements-dev.txt
 
-   # or do it manually on any platform
-   export PYTHONPATH=$(pwd)
-   uvicorn backend.main:app --reload --port 8000
-   ```
+# Option A: Use the dev server script (RECOMMENDED)
+# Automatically handles port cleanup, PID tracking, and API key loading
+./scripts/dev/dev_server.sh
 
-> ℹ️ Replace the placeholder `OPENAI_API_KEY=sk-your-openai-key` in `.env` with
-> your real key (and never commit the real secret). The backend loads this file
-> automatically, so once it’s filled in you can run `uvicorn` without extra env
-> exports.
+# Option B: Use the environment script + manual uvicorn
+source scripts/dev/oe_env.sh
+uvicorn backend.main:app --reload --port 8000
 
-### 2. (Optional) Setup Frontend Locally
-The Hostinger deployment only runs the backend, but you can still launch the dev UI if needed:
+# Option C: Fully manual setup
+export PYTHONPATH=$(pwd)
+export OPENAI_API_KEY=your_api_key_here
+uvicorn backend.main:app --reload --port 8000
+```
+
+**Dev Server Script Commands:**
+```bash
+./scripts/dev/dev_server.sh         # Start backend (with auto-cleanup)
+./scripts/dev/dev_server.sh stop    # Stop backend
+./scripts/dev/dev_server.sh restart # Restart backend
+./scripts/dev/dev_server.sh status  # Check if backend is running
+./scripts/dev/dev_server.sh cleanup # Kill all dev processes (backend + frontend)
+```
+
+**Storing API Key in macOS Keychain (optional):**
+```bash
+# Add key to Keychain (one-time setup)
+security add-generic-password -a "$USER" -s 'openevent-api-test-key' -w 'sk-your-key-here'
+
+# Both dev_server.sh and oe_env.sh will auto-load it
+```
+
+### 2. Setup Frontend
 ```bash
 cd atelier-ai-frontend
 npm install
@@ -170,53 +176,26 @@ The project has a comprehensive regression suite.
 pytest
 
 # Run specific workflow tests
-pytest backend/tests/workflows/test_workflow_v3_alignment.py
+pytest backend/tests/flow/test_happy_path_step1_to_4.py
 ```
 
 ---
 
 ## 🛠 Current Status & Configuration
 
+### Multi-tenancy Support (Phase 1)
+The system is transitioning from single-tenant to multi-tenant architecture. **Phase 1 (Infrastructure)** is complete.
+
+- **Context Propagation**: `TenantContextMiddleware` extracts `X-Team-Id` and `X-Manager-Id` headers from requests.
+- **Development/Testing**: You can simulate multi-tenant requests by setting `TENANT_HEADER_ENABLED=1` in your `.env` and passing `X-Team-Id` headers.
+- **Default Behavior**: Defaults to single-tenant mode (using `OE_TEAM_ID` from environment) if headers are missing or disabled.
+- **Data Isolation**: (In Progress) Future phases will enforce `team_id` filtering on all database queries.
+
 ### Recent Updates
 - **Supabase Integration**: Can be toggled via `OE_INTEGRATION_MODE=supabase`.
 - **Site Visit Logic**: Dedicated sub-flow for handling venue tours.
 - **Deposit Configuration**: Managers can now set global deposit rules.
 - **HIL Toggle for AI Replies**: Optional review of all AI-generated responses before sending.
-
----
-
-## 🚀 Deploying to Hostinger (Backend Only)
-
-This branch is wired for the Hostinger VPS described in `deploy/README.md`. Quick steps:
-
-1. **SSH into the VPS**
-   ```bash
-   ssh root@72.60.135.183
-   ```
-2. **Clone / update the repo**
-   ```bash
-   cd /opt
-   git clone https://github.com/YOUR_USERNAME/OpenEvent-AI.git openevent
-   cd openevent
-   git checkout integration/hostinger-backend
-   ```
-3. **Run the provisioning script**
-   ```bash
-   chmod +x deploy/*.sh
-   ./deploy/setup-vps.sh
-   ```
-4. **Edit `/opt/openevent/.env` to add your real secrets (the tracked `.env` ships with placeholders only).**
-5. **Restart the service**
-   ```bash
-   systemctl restart openevent
-   systemctl status openevent
-   ```
-6. **Verify the API**
-   ```bash
-   curl http://72.60.135.183:8000/api/workflow/health
-   ```
-
-For the complete checklist (nginx config, firewall, API smoke tests), see `deploy/README.md` and `deploy/API_TESTS.md`.
 
 ### Configuration
 Key environment variables (create a `.env` file):
@@ -226,8 +205,161 @@ Key environment variables (create a `.env` file):
 | `OPENAI_API_KEY` | (required) | API key for NLU and Verbalizer |
 | `OE_INTEGRATION_MODE` | `json` | `json` (local files) or `supabase` (production) |
 | `OE_HIL_ALL_LLM_REPLIES` | `false` | Require approval for ALL AI responses (see below) |
+| `OE_DEV_TEST_MODE` | `true` | Enable dev test mode (continue/reset choice) |
 | `WF_DEBUG_STATE` | `0` | Set to `1` for verbose workflow logging |
 | `VERBALIZER_TONE` | `professional` | Message tone: `professional` or `plain` |
+
+#### Environment Mode (DEV vs PROD)
+
+The `ENV` variable controls whether developer conveniences are enabled:
+
+| ENV Value | Behavior | Use Case |
+|-----------|----------|----------|
+| `dev` (default) | All auto-launch/kill features enabled | Local development |
+| `prod` | All auto-launch/kill features disabled | Production (Hostinger) |
+
+**What gets disabled in PROD mode:**
+- `AUTO_FREE_BACKEND_PORT`: Won't auto-kill processes on port 8000
+- `AUTO_LAUNCH_FRONTEND`: Won't spawn `npm run dev`
+- `AUTO_FIX_FRONTEND`: Won't kill/reset unhealthy frontend
+- `AUTO_OPEN_FRONTEND`: Won't open browser automatically
+- `AUTO_OPEN_DEBUG_PANEL`: Won't open debug panel tab
+
+```bash
+# Development (default) - all conveniences enabled
+./scripts/dev/dev_server.sh
+
+# Production - all conveniences disabled
+ENV=prod uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
+
+**Note:** You can still override individual behaviors with explicit env vars (e.g., `AUTO_FREE_BACKEND_PORT=1` even in prod mode).
+
+#### Local Development Options
+
+These options are **OFF by default** for production safety. Enable them in your `.env` for local dev:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_DANGEROUS_ENDPOINTS` | `false` | Enable `/api/client/reset` and `/api/client/continue` test endpoints |
+| `OE_FALLBACK_DIAGNOSTICS` | `false` | Show internal fallback diagnostics in responses (debugging) |
+
+```bash
+# Example .env additions for local development
+ENABLE_DANGEROUS_ENDPOINTS=true
+OE_FALLBACK_DIAGNOSTICS=true
+```
+
+### LLM Provider Settings
+
+The system supports multiple LLM providers with per-operation granularity:
+
+| Variable | Options | Default | Description |
+|----------|---------|---------|-------------|
+| `AGENT_MODE` | `openai`, `gemini`, `stub` | `openai` | Main LLM provider mode |
+| `PROVIDER` | `openai`, `gemini` | `openai` | Provider registry selection |
+| `INTENT_PROVIDER` | `openai`, `gemini` | (AGENT_MODE) | Intent classification provider |
+| `ENTITY_PROVIDER` | `openai`, `gemini` | (AGENT_MODE) | Entity extraction provider |
+| `VERBALIZER_PROVIDER` | `openai`, `gemini` | `openai` | Draft verbalization provider |
+| `GOOGLE_API_KEY` | - | (required for Gemini) | Google AI API key |
+
+#### Cost Comparison per API Call
+
+| Operation | OpenAI (o3-mini) | Gemini Flash 2.0 | Savings |
+|-----------|------------------|------------------|---------|
+| Intent Classification | ~$0.005 | ~$0.00125 | **75%** |
+| Entity Extraction | ~$0.008 | ~$0.002 | **75%** |
+| Verbalization | ~$0.015 | ~$0.004 | 73% |
+
+#### Cost per Event (Typical Flow)
+
+| Configuration | Cost/Event | Notes |
+|---------------|------------|-------|
+| Full OpenAI | ~$0.04 | Best quality, highest cost |
+| Hybrid (Gemini intent/entity, OpenAI verbal) | ~$0.02 | **Recommended** - 50% savings |
+| Full Gemini | ~$0.007 | 82% savings, slightly lower quality |
+| Stub mode | $0 | Heuristics only, development/testing |
+
+#### Gemini Free Tier Limits
+
+| Limit | Value | Implication |
+|-------|-------|-------------|
+| Requests per minute | 15 RPM | ~7.5 messages/minute (2 calls each) |
+| Tokens per day | 1,000,000 | More than sufficient for typical use |
+| Requests per day | 1,500 | **~750 client messages/day** |
+
+**Calculation:** Each client message = 1 intent call + 1 entity call = 2 API requests.
+With 1,500 requests/day limit: `1500 / 2 = 750 messages/day` on free tier.
+
+**To get a Gemini API key:** https://aistudio.google.com/apikey (free, no billing required)
+
+#### Cost Optimization Strategy
+- Use `AGENT_MODE=gemini` for intent/entity extraction (75% cheaper than OpenAI)
+- Keep `VERBALIZER_PROVIDER=openai` for client-facing message quality
+- Use `VERBALIZER_TONE=plain` to disable LLM verbalization entirely (testing only)
+- Use `AGENT_MODE=stub` for deterministic heuristics (no LLM cost, lower quality)
+
+#### Admin UI Toggle
+- **Global Deposit**: Configure at runtime via admin panel → Deposit Settings
+- **LLM Provider**: Configure at runtime via admin panel → LLM Settings
+- **Hybrid Enforcement**: Configure at runtime via admin panel or API
+
+#### Hybrid Mode Enforcement
+
+**By default, OpenEvent REQUIRES hybrid mode** (using both Gemini and OpenAI). This ensures:
+- Cost efficiency: Gemini for intent/entity extraction (75% cheaper)
+- Quality: OpenAI for client-facing verbalization
+- Test coverage: Both LLM providers are exercised
+
+| Mode | Behavior |
+|------|----------|
+| **Production** | Startup BLOCKED if not in hybrid mode |
+| **Development** | Error logged but continues (for debugging) |
+
+**Emergency bypass (NOT recommended for production):**
+```bash
+# Environment variable bypass
+export OE_BYPASS_HYBRID_ENFORCEMENT=1
+
+# Or via API
+curl -X POST http://localhost:8000/api/config/hybrid-enforcement \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}'
+```
+
+**Check current status:**
+```bash
+curl http://localhost:8000/api/config/hybrid-enforcement
+# Returns: {"enabled": true, "is_hybrid": true, "status": "✅ OK", ...}
+```
+
+> **⚠️ Warning:** Disabling enforcement should only be used as emergency fallback if one LLM provider (e.g., Google/Gemini) is unavailable. Re-enable as soon as possible.
+
+> **📚 Detailed Architecture:** For a complete breakdown of which extraction methods (Regex, NER, LLM) are used where, see [`docs/internal/LLM_EXTRACTION_ARCHITECTURE.md`](docs/internal/LLM_EXTRACTION_ARCHITECTURE.md)
+
+### Dev Test Mode (Continue/Reset Choice)
+
+When testing with an existing event, the system offers a choice to continue at the current step or reset to a new event. This is useful during development to avoid resetting the database between tests.
+
+**What happens:**
+- Message matches an existing event AND event is past Step 1
+- System returns a choice prompt instead of processing
+- "Continue" resumes at current step with all existing data
+- "Reset" creates a new event from scratch
+
+**Control the behavior:**
+```bash
+# Disable dev test mode (always continue automatically)
+export OE_DEV_TEST_MODE=false
+
+# Or skip choice programmatically:
+curl -X POST http://localhost:8000/api/start-conversation \
+  -H "Content-Type: application/json" \
+  -d '{"email_body": "...", "client_email": "...", "skip_dev_choice": true}'
+
+# Or use the continue endpoint:
+curl -X POST http://localhost:8000/api/client/{client_id}/continue
+```
 
 ### HIL Toggle for AI Reply Approval
 
@@ -260,15 +392,46 @@ curl http://localhost:8000/api/config/hil-status
 # Returns: {"hil_all_replies_enabled": true/false}
 ```
 
+## 🎛 Admin Features
+
+### Prompt Configuration & Workflow Editor
+A dedicated configuration page is available for non-technical administrators (e.g., Co-Founders, Managers) to safely tune the AI's behavior without touching code.
+
+**Access:**
+Navigate to `http://localhost:3000/admin/prompts`
+
+**Capabilities:**
+*   **Edit Global Persona:** Modify the "System Prompt" to change the AI's tone, empathy level, or core rules.
+*   **Step-Specific Instructions:** Fine-tune the logic and instructions for each of the 7 workflow steps (e.g., "Be more pushy in Step 5").
+*   **Safety & History:**
+    *   **Persistence:** Changes are only live after pressing "Save".
+    *   **Version Control:** Every save creates a timestamped history entry.
+    *   **Instant Revert:** You can browse past versions and revert to any previous state with one click, ensuring you can experiment safely.
+*   **Lovable Compatible:** The interface is built with standard React/Tailwind components, making it easy to integrate into other Lovable-based tools.
+
 ---
 
 ## 📚 Documentation
 For deeper dives into specific subsystems:
-- **[Workflow Rules](docs/workflow_rules.md)**: The "Constitution" of the booking logic.
-- **[Architecture Diagrams](docs/ARCHITECTURE_DIAGRAMS.md)**: Visual guide to the system architecture, workflow stages, and detection logic.
-- **[Team Guide](docs/TEAM_GUIDE.md)**: Best practices and troubleshooting.
-- **[Integration Guide](docs/integration_to_frontend_and_database/INTEGRATION_PREPARATION_GUIDE.md)**: How to deploy and connect to real infrastructure.
+- **[Workflow Rules](docs/guides/workflow_rules.md)**: The "Constitution" of the booking logic.
+- **[Architecture Diagrams](docs/reference/ARCHITECTURE_DIAGRAMS.md)**: Visual guide to the system architecture, workflow stages, and detection logic.
+- **[Team Guide](docs/guides/TEAM_GUIDE.md)**: Best practices and troubleshooting.
+- **[Integration Guide](docs/integration/frontend_and_database/guides/INTEGRATION_PREPARATION_GUIDE.md)**: How to deploy and connect to real infrastructure.
 - **[Dev Changelog](DEV_CHANGELOG.md)**: Day-by-day summary of new features, fixes, and experiments.
-- **[Open Decisions](docs/internal/OPEN_DECISIONS.md)**: Documented architecture choices and the reasoning behind them.
-- **[Change Propagation Readme](docs/internal/CHANGE_PROPAGATION_README.md)**: How updates move through the repo and what to touch when.
+- **[Open Decisions](docs/internal/planning/OPEN_DECISIONS.md)**: Documented architecture choices and the reasoning behind them.
+- **[Change Propagation Readme](docs/internal/backend/CHANGE_PROPAGATION_README.md)**: How updates move through the repo and what to touch when.
 - **[Implementation Plans](docs/plans/)**: Deep-dive project plans (multi-tenant rollout, detection revamp, calendar integration, etc.).
+
+Docs layout (top-level subfolders):
+- `docs/guides/`: Team Guide, Workflow Rules, GPT prompt, Step 4/5 requirements, and other playbooks.
+- `docs/manual_ux/`: Deterministic/manual UX transcripts and validation reports.
+- `docs/reference/`: Architecture diagrams, dependency graph, and structural maps.
+- `docs/integration/frontend_and_database/`: Integration + Supabase contract docs split into `guides/`, `specs/`, `security/`, and `status/`.
+- `docs/internal/`: Private notes grouped into `backend/`, `planning/`, `completed/`, and `research/`.
+- `docs/plans/`: Roadmaps split into `active/` (in-flight plans) and `completed/` (DONE__ records); `docs/reports/` + `docs/archive/` hold historical reports and backups.
+
+Scripts layout:
+- `scripts/dev/`: Local dev helpers (`dev_server.sh`, env setup, run_all, ports utilities).
+- `scripts/tests/`: CI and smoke/test lanes (`test-smoke.sh`, `test-all.sh`, regression helpers).
+- `scripts/manual_ux/`: Deterministic/manual UX flows and validators.
+- `scripts/tools/`: One-off utilities (calendar generation, measurement helpers).

@@ -12,11 +12,14 @@ DEPENDS ON:
     - backend/workflow_email.py  # Database operations
 """
 
+import logging
 import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from backend.workflow_email import (
     load_db as wf_load_db,
@@ -102,7 +105,7 @@ async def pay_deposit(request: DepositPaymentRequest):
         event_entry["deposit_info"] = deposit_info
 
         wf_save_db(db)
-        print(f"[Deposit] Event {request.event_id}: Deposit marked as paid")
+        logger.info("Event %s: Deposit marked as paid", request.event_id)
 
         # Check if prerequisites are met to continue workflow using unified gate
         # Note: We just updated deposit_paid above, so use fresh event_entry state
@@ -112,7 +115,7 @@ async def pay_deposit(request: DepositPaymentRequest):
         thread_id = event_entry.get("thread_id", request.event_id)
 
         if not gate_status.offer_accepted:
-            print(f"[Deposit] Event {request.event_id}: Offer not accepted, not continuing workflow")
+            logger.info("Event %s: Offer not accepted, not continuing workflow", request.event_id)
             return {
                 "status": "ok",
                 "event_id": request.event_id,
@@ -123,7 +126,8 @@ async def pay_deposit(request: DepositPaymentRequest):
             }
 
         if not gate_status.billing_complete:
-            print(f"[Deposit] Event {request.event_id}: Billing incomplete (missing: {gate_status.billing_missing}), not continuing workflow")
+            logger.info("Event %s: Billing incomplete (missing: %s), not continuing workflow",
+                        request.event_id, gate_status.billing_missing)
             return {
                 "status": "ok",
                 "event_id": request.event_id,
@@ -135,9 +139,9 @@ async def pay_deposit(request: DepositPaymentRequest):
             }
 
         # All prerequisites met - continue to HIL
-        print(f"[Deposit] Event {request.event_id}: All prerequisites met (billing_complete={gate_status.billing_complete}, "
-              f"deposit_paid={gate_status.deposit_paid}, offer_accepted={gate_status.offer_accepted}) - continuing to HIL")
-        print(f"[Deposit] Using client_email={client_email}, thread_id={thread_id}")
+        logger.info("Event %s: All prerequisites met (billing=%s, deposit=%s, offer=%s) - continuing to HIL",
+                    request.event_id, gate_status.billing_complete, gate_status.deposit_paid, gate_status.offer_accepted)
+        logger.debug("Event %s: client_email=%s, thread_id=%s", request.event_id, client_email, thread_id)
 
         # Continue workflow with synthetic message about deposit payment
         synthetic_msg = {
@@ -156,11 +160,9 @@ async def pay_deposit(request: DepositPaymentRequest):
         wf_res = {}
         try:
             wf_res = wf_process_msg(synthetic_msg)
-            print(f"[Deposit] Workflow continued: action={wf_res.get('action')} event_id={wf_res.get('event_id')}")
+            logger.info("Workflow continued: action=%s event_id=%s", wf_res.get('action'), wf_res.get('event_id'))
         except Exception as exc:
-            print(f"[Deposit][ERROR] Failed to continue workflow: {exc}")
-            import traceback
-            traceback.print_exc()
+            logger.exception("Failed to continue workflow: %s", exc)
 
         # Extract response from draft_messages (workflow returns draft_messages, not reply_text)
         draft_messages = wf_res.get("draft_messages") or []

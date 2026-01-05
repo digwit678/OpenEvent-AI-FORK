@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, time
+
+logger = logging.getLogger(__name__)
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.workflows.common.prompts import append_footer
@@ -403,12 +406,12 @@ def process(state: WorkflowState) -> GroupResult:
         if parsed_date:
             user_info["date"] = parsed_date.isoformat()
             user_info["event_date"] = format_iso_date_to_ddmmyyyy(parsed_date.isoformat())
-            print(f"[Step1] Regex fallback extracted date: {parsed_date.isoformat()}")
+            logger.debug("[Step1] Regex fallback extracted date: %s", parsed_date.isoformat())
             # Boost confidence if we found date via regex - indicates valid event request
             if intent == IntentLabel.EVENT_REQUEST and confidence < 0.90:
                 confidence = 0.90
                 state.confidence = confidence
-                print(f"[Step1] Boosted confidence to {confidence} due to regex date extraction")
+                logger.debug("[Step1] Boosted confidence to %s due to regex date extraction", confidence)
     # Preserve raw message content for downstream semantic extraction.
     needs_vague_date_confirmation = _needs_vague_date_confirmation(user_info)
     if needs_vague_date_confirmation:
@@ -592,6 +595,46 @@ def process(state: WorkflowState) -> GroupResult:
                     state.confidence = confidence
                     state.intent_detail = "event_intake_billing_capture"
                     user_info["billing_address"] = body_text.strip()
+
+                # Handle standalone Q&A without event - don't route to manual_review
+                # This allows Q&A questions like "do you have parking?" to be answered
+                # even when there's no existing booking context
+                is_qna_intent = intent in (IntentLabel.NON_EVENT, IntentLabel.CAPABILITY_QNA) or "qna" in intent.value.lower()
+                if is_qna_intent and not linked_event:
+                    # Return a helpful response instead of manual_review
+                    qna_response = (
+                        "Thank you for your question! To help you best, could you let me know if "
+                        "you're interested in booking an event with us? If so, please share:\n"
+                        "- Your preferred date\n"
+                        "- Expected number of guests\n\n"
+                        "If you have a general question about our venue or services, "
+                        "feel free to ask and I'll do my best to help."
+                    )
+                    qna_response = append_footer(
+                        qna_response,
+                        step=1,
+                        next_step=1,
+                        thread_state="Awaiting Client",
+                    )
+                    state.add_draft_message(
+                        {
+                            "body": qna_response,
+                            "step": 1,
+                            "topic": "standalone_qna",
+                        }
+                    )
+                    state.set_thread_state("Awaiting Client")
+                    payload = {
+                        "client_id": state.client_id,
+                        "event_id": None,
+                        "intent": intent.value,
+                        "confidence": round(confidence, 3),
+                        "draft_messages": state.draft_messages,
+                        "thread_state": state.thread_state,
+                        "standalone_qna": True,
+                    }
+                    return GroupResult(action="standalone_qna", payload=payload, halt=True)
+
                 if not is_event_request(intent) or confidence < 0.85:
                     trace_marker(
                         thread_id,
@@ -633,13 +676,8 @@ def process(state: WorkflowState) -> GroupResult:
                         }
                     )
                     state.set_thread_state("Waiting on HIL")
-                    if os.getenv("OE_DEBUG") == "1":
-                        print(
-                            "[DEBUG] manual_review_enqueued:",
-                            f"conf={confidence:.2f}",
-                            f"parsed_date={user_info.get('date')}",
-                            f"intent={intent.value}",
-                        )
+                    logger.debug("[Step1] manual_review_enqueued: conf=%.2f, parsed_date=%s, intent=%s",
+                                confidence, user_info.get('date'), intent.value)
                     payload = {
                         "client_id": state.client_id,
                         "event_id": linked_event_id,
@@ -768,7 +806,8 @@ def process(state: WorkflowState) -> GroupResult:
         # If a different room is already locked, DON'T update the lock here.
         # Let the normal workflow continue so change detection can route to Step 3.
         if existing_lock and existing_lock != room_choice_selected:
-            print(f"[Step1] Room change detected: {existing_lock} → {room_choice_selected}, skipping room_choice_captured")
+            logger.debug("[Step1] Room change detected: %s → %s, skipping room_choice_captured",
+                        existing_lock, room_choice_selected)
             # Don't return here - let the normal flow continue with change detection
             # The user_info["room"] is already set, so detect_change_type_enhanced will find it
         else:
@@ -831,9 +870,12 @@ def process(state: WorkflowState) -> GroupResult:
     else:
         enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
         change_type = enhanced_result.change_type if enhanced_result.is_change else None
-        print(f"[Step1][CHANGE_DETECT] user_info.date={user_info.get('date')}, user_info.event_date={user_info.get('event_date')}")
-        print(f"[Step1][CHANGE_DETECT] is_change={enhanced_result.is_change}, change_type={change_type}")
-        print(f"[Step1][CHANGE_DETECT] message_text={message_text[:100] if message_text else 'None'}...")
+        logger.debug("[Step1][CHANGE_DETECT] user_info.date=%s, user_info.event_date=%s",
+                    user_info.get('date'), user_info.get('event_date'))
+        logger.debug("[Step1][CHANGE_DETECT] is_change=%s, change_type=%s",
+                    enhanced_result.is_change, change_type)
+        logger.debug("[Step1][CHANGE_DETECT] message_text=%s...",
+                    message_text[:100] if message_text else 'None')
 
     if needs_vague_date_confirmation and not in_billing_flow:
         event_entry["range_query_detected"] = True

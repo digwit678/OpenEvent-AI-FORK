@@ -4,15 +4,15 @@ import pytest
 
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.groups.date_confirmation.trigger.process import (
+from backend.workflows.steps.step2_date_confirmation.trigger.step2_handler import (
     _present_candidate_dates,
     _finalize_confirmation,
 )
-from backend.workflows.groups.room_availability.trigger.process import process as room_process
-from backend.workflows.groups.offer.trigger.process import process as offer_process
+from backend.workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
+from backend.workflows.steps.step4_offer.trigger.step4_handler import process as offer_process
 import importlib
 
-room_module = importlib.import_module("backend.workflows.groups.room_availability.trigger.process")
+room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
 
 
 def _build_state(tmp_path: Path) -> WorkflowState:
@@ -52,7 +52,7 @@ def test_stubbed_flow_progression(tmp_path, monkeypatch, room_status):
     state.event_entry = event_entry
 
     monkeypatch.setattr(
-        "backend.workflows.groups.intake.condition.checks.suggest_dates",
+        "backend.workflows.steps.step1_intake.condition.checks.suggest_dates",
         lambda *_args, **_kwargs: ["10.11.2025", "12.11.2025"],
     )
 

@@ -167,8 +167,10 @@ class TestDetectChangeType:
         user_info = {
             "date": "2026-03-17",
         }
+        # Change detection requires message_text for intent pattern matching
+        message_text = "Can we change the date to 17.03.2026 instead?"
 
-        change_type = detect_change_type(event_state, user_info)
+        change_type = detect_change_type(event_state, user_info, message_text=message_text)
 
         assert change_type == ChangeType.DATE
 
@@ -196,8 +198,10 @@ class TestDetectChangeType:
         user_info = {
             "room": "RoomB",
         }
+        # Change detection requires message_text for intent pattern matching
+        message_text = "Can we switch to RoomB instead?"
 
-        change_type = detect_change_type(event_state, user_info)
+        change_type = detect_change_type(event_state, user_info, message_text=message_text)
 
         assert change_type == ChangeType.ROOM
 
@@ -206,12 +210,15 @@ class TestDetectChangeType:
         event_state = {
             "current_step": 4,
             "locked_room_id": "RoomA",
+            "requirements": {"number_of_participants": 20},  # Original value
         }
         user_info = {
             "participants": 36,  # Changed from original
         }
+        # Change detection requires message_text for intent pattern matching
+        message_text = "Actually, we're 36 people now instead of 20."
 
-        change_type = detect_change_type(event_state, user_info)
+        change_type = detect_change_type(event_state, user_info, message_text=message_text)
 
         assert change_type == ChangeType.REQUIREMENTS
 
@@ -221,11 +228,14 @@ class TestDetectChangeType:
             "current_step": 4,
             "locked_room_id": "RoomA",
         }
+        # Use products_add for explicit add signal (strong signal path)
         user_info = {
-            "products": ["Prosecco", "Coffee"],
+            "products_add": ["Prosecco", "Coffee"],
         }
+        # Change detection can also use message_text, but products_add is a direct signal
+        message_text = "Could you include Prosecco and Coffee with the catering?"
 
-        change_type = detect_change_type(event_state, user_info)
+        change_type = detect_change_type(event_state, user_info, message_text=message_text)
 
         assert change_type == ChangeType.PRODUCTS
 

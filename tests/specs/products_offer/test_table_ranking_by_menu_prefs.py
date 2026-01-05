@@ -6,12 +6,13 @@ from pathlib import Path
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 
-room_module = importlib.import_module("backend.workflows.groups.room_availability.trigger.process")
-from backend.workflows.groups.room_availability.trigger.process import process as room_process
+room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
+from backend.workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
 
 
 def _state(tmp_path: Path) -> WorkflowState:
-    msg = IncomingMessage(msg_id="menu-pref", from_name="Client", from_email="client@example.com", subject=None, body=None, ts=None)
+    # Provide a proper message body to avoid nonsense detection early exit
+    msg = IncomingMessage(msg_id="menu-pref", from_name="Client", from_email="client@example.com", subject="Room booking", body="I am interested in booking a room", ts=None)
     state = WorkflowState(message=msg, db_path=tmp_path / "menu-pref.json", db={"events": []})
     state.event_id = "EVT-MENU"
     state.current_step = 3

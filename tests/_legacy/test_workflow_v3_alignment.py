@@ -14,10 +14,10 @@ from backend.workflow_email import load_db, process_msg, save_db  # noqa: E402
 from backend.workflows.common.requirements import requirements_hash  # noqa: E402
 from backend.workflows.common.types import IncomingMessage, WorkflowState  # noqa: E402
 from backend.workflows.planner import maybe_run_smart_shortcuts  # noqa: E402
-import backend.workflows.groups.room_availability.trigger.process as room_trigger  # noqa: E402
+import backend.workflows.steps.step3_room_availability.trigger.step3_handler as room_trigger  # noqa: E402
 
 date_trigger_module = importlib.import_module(
-    "backend.workflows.groups.date_confirmation.trigger.process"
+    "backend.workflows.steps.step2_date_confirmation.trigger.step2_handler"
 )
 from backend.domain import TaskType  # noqa: E402
 

@@ -16,7 +16,12 @@ from backend.ux.verbalizer_payloads import (
     RoomOfferFacts,
     build_room_offer_facts,
 )
-from backend.llm.verbalizer_agent import verbalize_room_offer
+
+# Lazy import to avoid circular dependency with backend.llm.verbalizer_agent
+# which imports backend.ux.verb_rubric which imports this module
+def _get_verbalize_room_offer():
+    from backend.llm.verbalizer_agent import verbalize_room_offer
+    return verbalize_room_offer
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +87,7 @@ def verbalize_room_response(
     )
 
     # Call the Safety Sandwich verbalizer
-    return verbalize_room_offer(facts, fallback_text, locale=locale)
+    return _get_verbalize_room_offer()(facts, fallback_text, locale=locale)
 
 
 def verbalize_offer_response(
@@ -168,7 +173,7 @@ def verbalize_offer_response(
     )
 
     # Call the Safety Sandwich verbalizer
-    return verbalize_room_offer(facts, fallback_text, locale=locale)
+    return _get_verbalize_room_offer()(facts, fallback_text, locale=locale)
 
 
 __all__ = [

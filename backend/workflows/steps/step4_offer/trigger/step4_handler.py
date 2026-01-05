@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
+logger = logging.getLogger(__name__)
 
 from backend.workflows.common.requirements import merge_client_profile, requirements_hash
 from backend.workflows.common.billing import (
@@ -58,6 +61,7 @@ from backend.workflows.change_propagation import (
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
+from backend.workflows.io.config_store import get_product_autofill_threshold
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.workflows.common.pricing import build_deposit_info, derive_room_rate, normalise_rate
 from backend.workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
@@ -187,8 +191,8 @@ def process(state: WorkflowState) -> GroupResult:
 
         if gate_status.ready_for_hil:
             # All prerequisites met - continue to HIL
-            print(f"[Step4] Confirmation gate passed: billing_complete={gate_status.billing_complete}, "
-                  f"deposit_required={gate_status.deposit_required}, deposit_paid={gate_status.deposit_paid}")
+            logger.debug("[Step4] Confirmation gate passed: billing_complete=%s, deposit_required=%s, deposit_paid=%s",
+                        gate_status.billing_complete, gate_status.deposit_required, gate_status.deposit_paid)
             return _start_hil_acceptance_flow(
                 state,
                 event_entry,
@@ -511,14 +515,14 @@ def process(state: WorkflowState) -> GroupResult:
         )
         if any(phrase in message_body for phrase in skip_phrases):
             state.user_info["skip_products"] = True
-            print(f"[Step4] Detected skip products phrase in message")
+            logger.debug("[Step4] Detected skip products phrase in message")
     products_changed = _apply_product_operations(event_entry, state.user_info or {})
     if products_changed:
         state.extras["persist"] = True
     autofilled = _autofill_products_from_preferences(
         event_entry,
         state.user_info or {},
-        min_score=0.5,  # TODO(openevent): expose as configurable threshold
+        min_score=get_product_autofill_threshold(),
     )
     if autofilled:
         state.extras["persist"] = True

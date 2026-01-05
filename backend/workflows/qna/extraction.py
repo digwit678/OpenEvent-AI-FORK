@@ -4,15 +4,10 @@ import json
 import os
 from typing import Any, Dict, Optional
 
-try:  # pragma: no cover - optional dependency resolved at runtime
-    from openai import OpenAI  # type: ignore
-except Exception:  # pragma: no cover - library may be unavailable in tests
-    OpenAI = None  # type: ignore
-
+from backend.llm.client import get_openai_client, is_llm_available
 from backend.workflows.common.types import WorkflowState
 # MIGRATED: from backend.workflows.nlu.general_qna_classifier -> backend.detection.qna.general_qna
 from backend.detection.qna.general_qna import quick_general_qna_scan
-from backend.utils.openai_key import load_openai_api_key
 from backend.workflows.common.fallback_reason import (
     create_fallback_reason,
     llm_disabled_reason,
@@ -20,7 +15,6 @@ from backend.workflows.common.fallback_reason import (
 )
 
 QNA_EXTRACTION_MODEL = os.getenv("OPEN_EVENT_QNA_EXTRACTION_MODEL", "o3-mini")
-_LLM_ENABLED = bool(load_openai_api_key(required=False) and OpenAI is not None)
 
 Q_VALUE_KEYS = (
     "date",
@@ -186,7 +180,7 @@ def ensure_qna_extraction(
 
     normalized = _normalize_qna_extraction(extraction)
     meta = {
-        "model": QNA_EXTRACTION_MODEL if _LLM_ENABLED else "fallback",
+        "model": QNA_EXTRACTION_MODEL if is_llm_available() else "fallback",
         "trigger": "borderline" if borderline and not likely_general else "general",
     }
     state.extras["qna_extraction"] = normalized
@@ -206,11 +200,10 @@ def ensure_qna_extraction(
 
 
 def _run_qna_extraction(payload: Dict[str, Any]) -> Dict[str, Any]:
-    if not _LLM_ENABLED:
+    if not is_llm_available():
         return _fallback_extraction(payload, reason="llm_disabled")
 
-    api_key = load_openai_api_key()
-    client = OpenAI(api_key=api_key)
+    client = get_openai_client()
     response = client.chat.completions.create(
         model=QNA_EXTRACTION_MODEL,
         temperature=0,

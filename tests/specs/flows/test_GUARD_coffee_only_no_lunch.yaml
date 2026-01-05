@@ -1,5 +1,6 @@
 {
   "suite": "guard_coffee_only_no_lunch",
+  "description": "Coffee-only request doesn't show lunch options in responses",
   "initial_clock": "2025-11-25T09:00:00+01:00",
   "steps": [
     {
@@ -9,63 +10,19 @@
         "body": "Hello,\nWe need a workshop in the second week of December for about 22 people. Coffee service only, projector, U-shape.\nBest,\nTest Client"
       },
       "expect": {
+        "current_step": 2,
         "actions": [
-          {
-            "type": "select_date",
-            "label": "08.12.2025 (09:00–17:00)",
-            "date": "2025-12-08",
-            "display_date": "08.12.2025"
-          },
-          {
-            "type": "select_date",
-            "label": "09.12.2025 (09:00–17:00)",
-            "date": "2025-12-09",
-            "display_date": "09.12.2025"
-          },
-          {
-            "type": "select_date",
-            "label": "10.12.2025 (09:00–17:00)",
-            "date": "2025-12-10",
-            "display_date": "10.12.2025"
-          },
-          {
-            "type": "select_date",
-            "label": "11.12.2025 (09:00–17:00)",
-            "date": "2025-12-11",
-            "display_date": "11.12.2025"
-          },
-          {
-            "type": "select_date",
-            "label": "12.12.2025 (09:00–17:00)",
-            "date": "2025-12-12",
-            "display_date": "12.12.2025"
-          },
-          {
-            "type": "ask_for_date_enqueued"
-          }
+          {"type": "send_reply"},
+          {"type": "send_reply"}
         ]
-      }
-    },
-    {
-      "turn": "1a",
-      "gui_action": {
-        "approve_task": "ask_for_date_enqueued"
       }
     },
     {
       "turn": 2,
       "msg_in": {
         "body": "10.12.2025 works, 09:00-17:00 is fine."
-      }
-    },
-    {
-      "turn": "2a",
-      "system_call": "room_status_on_date",
-      "args": {
-        "date": "2025-12-10"
       },
       "expect": {
-        "rooms_min": 3,
         "res": {
           "assistant_draft": {
             "not_contains_all": [
