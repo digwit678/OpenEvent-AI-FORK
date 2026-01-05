@@ -72,3 +72,4 @@ node_modules/
 !.codex/skills/**
 .codex/config.toml
 .codex/lsp.json
+tmp-check
