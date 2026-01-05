@@ -40,10 +40,11 @@ ALLOWLIST_PREFIXES = (
     "/api/workflow/health",
 )
 
-# Routes that are public even with auth enabled (read-only info endpoints)
+# Routes that are public even with auth enabled
+# Note: /api/qna was removed - venue data should require auth in production.
+# Venues wanting public Q&A should proxy through their own authenticated layer.
 ALLOWLIST_EXACT = {
     "/",
-    "/api/qna",
 }
 
 

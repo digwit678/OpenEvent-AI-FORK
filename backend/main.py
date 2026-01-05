@@ -44,6 +44,8 @@ from backend.legacy.session_store import active_conversations  # Used in root en
 # NOTE: workflow imports moved to routes/messages.py
 from backend.utils import json_io
 from backend.api.middleware import TenantContextMiddleware, AuthMiddleware
+from backend.api.middleware.rate_limit import limiter, rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 # Environment mode detection: dev vs prod
 # In dev mode, auto-launch/kill conveniences are enabled by default
@@ -113,10 +115,31 @@ async def lifespan(app: FastAPI):
         # Unexpected error during validation - log but don't block startup
         logger.warning("[Backend] Could not validate hybrid mode: %s", e)
 
+    # --- Startup: Validate error alerting configuration ---
+    # In production with fallback suppression, alerting MUST be configured
+    # or errors will silently disappear.
+    try:
+        from backend.services.error_alerting import validate_alerting_config_on_startup
+        is_production = not _IS_DEV
+        result = validate_alerting_config_on_startup()
+        if not result["valid"] and is_production:
+            for warning in result["warnings"]:
+                logger.critical("[Backend] %s", warning)
+            logger.critical(
+                "[Backend] STARTUP WARNING: Error alerting not properly configured. "
+                "Fallbacks will still be suppressed but no alerts will be sent!"
+            )
+    except Exception as e:
+        logger.warning("[Backend] Could not validate alerting config: %s", e)
+
     yield
     # --- Shutdown logic (if any) can go here ---
 
 app = FastAPI(title="AI Event Manager", lifespan=lifespan)
+
+# Rate limiting (enabled in production, disabled in dev by default)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # Include route modules (Phase C refactoring - complete)
 app.include_router(tasks_router)

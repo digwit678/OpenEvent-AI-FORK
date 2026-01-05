@@ -17,8 +17,17 @@ USED BY:
     - backend/workflows/groups/*/trigger/*.py    # Step-specific fallbacks
 
 ENVIRONMENT:
-    OE_FALLBACK_DIAGNOSTICS=false  # Hide diagnostics (default, production-safe)
-    OE_FALLBACK_DIAGNOSTICS=true   # Show full diagnostics (dev/staging only)
+    ENV=dev|prod                  # Development vs production mode
+    OE_FALLBACK_DIAGNOSTICS=true  # Show full diagnostics (dev/staging only)
+
+PRODUCTION BEHAVIOR:
+    - Fallback messages are SUPPRESSED (not sent to clients)
+    - Error alerts are sent to configured admin emails
+    - Clients receive NO confusing "manual review" messages
+
+DEV BEHAVIOR:
+    - Fallback messages are shown with diagnostic info (if enabled)
+    - Helps developers identify issues quickly
 
 OUTPUT FORMAT (when diagnostics enabled):
 
@@ -35,8 +44,14 @@ OUTPUT FORMAT (when diagnostics enabled):
 from __future__ import annotations
 
 import os
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
+
+# Environment mode detection
+_IS_DEV = os.getenv("ENV", "dev").lower() in ("dev", "development", "local")
 
 # Default to hiding diagnostics (production-safe). Set OE_FALLBACK_DIAGNOSTICS=true for dev.
 SHOW_FALLBACK_DIAGNOSTICS = os.environ.get("OE_FALLBACK_DIAGNOSTICS", "false").lower() in (
@@ -44,6 +59,14 @@ SHOW_FALLBACK_DIAGNOSTICS = os.environ.get("OE_FALLBACK_DIAGNOSTICS", "false").l
     "1",
     "yes",
 )
+
+# Hard override: SUPPRESS_CLIENT_FALLBACKS=1 forces suppression regardless of ENV
+# Use this for staging environments that should behave like production
+_FORCE_SUPPRESS = os.getenv("SUPPRESS_CLIENT_FALLBACKS", "").lower() in ("1", "true", "yes")
+
+# In production, suppress fallback messages entirely
+# Also suppress if hard override is set
+SUPPRESS_FALLBACK_IN_PRODUCTION = (not _IS_DEV) or _FORCE_SUPPRESS
 
 
 @dataclass
@@ -149,19 +172,39 @@ class FallbackContext:
         return "\n".join(lines)
 
 
-def wrap_fallback(message: str, context: FallbackContext) -> str:
+def wrap_fallback(
+    message: str,
+    context: FallbackContext,
+    *,
+    client_email: Optional[str] = None,
+    client_name: Optional[str] = None,
+    original_message: Optional[str] = None,
+) -> Optional[str]:
     """
     Wrap a fallback message with diagnostic information.
 
     This function MUST be called for all fallback messages to ensure
     visibility of fallback conditions.
 
+    PRODUCTION BEHAVIOR:
+        - Returns None (message should NOT be sent to client)
+        - Sends error alert to configured admin emails
+        - Log the suppression
+
+    DEV BEHAVIOR:
+        - Returns message with diagnostic block (if diagnostics enabled)
+        - Helps identify fallback causes quickly
+
     Args:
         message: The original fallback message
         context: FallbackContext with diagnostic information
+        client_email: Client's email (for alerting)
+        client_name: Client's name (for alerting)
+        original_message: The client's original message (for alerting)
 
     Returns:
-        Message with diagnostic block prepended (if diagnostics enabled)
+        - In dev: Message with diagnostic block prepended (if diagnostics enabled)
+        - In production: None (message suppressed, alert sent)
 
     Example:
         context = FallbackContext(
@@ -172,7 +215,41 @@ def wrap_fallback(message: str, context: FallbackContext) -> str:
             attempted="classify_intent(message='asdfgh')"
         )
         wrapped = wrap_fallback("I'm not sure I understand.", context)
+        if wrapped is None:
+            # Message was suppressed in production
+            return  # Don't send anything to client
     """
+    # In production: suppress fallback and send alert
+    if SUPPRESS_FALLBACK_IN_PRODUCTION:
+        logger.warning(
+            "[FALLBACK_SUPPRESSED] %s trigger=%s step=%s",
+            context.source,
+            context.trigger,
+            context.step,
+        )
+
+        # Send error alert (async-safe, won't block)
+        try:
+            from backend.services.error_alerting import alert_fallback_triggered
+
+            alert_fallback_triggered(
+                reason=f"{context.source}: {context.trigger}",
+                client_email=client_email or "unknown",
+                client_name=client_name or "Unknown",
+                original_message=original_message or "",
+                workflow_step=f"Step {context.step}" if context.step else None,
+                event_id=context.event_id,
+                fallback_message=message,
+                confidence=context.confidence,
+                error_type=context.error_type,
+                error_message=context.error_message,
+            )
+        except Exception as e:
+            logger.error("[FALLBACK_ALERT_FAILED] %s", e)
+
+        return None  # Signal: do not send message to client
+
+    # In dev: show message with diagnostics
     if not SHOW_FALLBACK_DIAGNOSTICS:
         return message
 

@@ -834,10 +834,14 @@ def _verify_facts_with_llm(
     This is more robust than rule-based verification but costs 2x API calls.
     Only used when DUAL_LLM_VERIFICATION=true.
 
+    IMPORTANT: Uses a DIFFERENT LLM provider than the generator for true independence.
+    If generator is OpenAI, verifier uses Gemini (and vice versa).
+    If only one provider is available, logs a warning that verification is not independent.
+
     Returns:
         Tuple of (ok, missing_facts, invented_facts)
     """
-    from backend.adapters.agent_adapter import get_agent_adapter
+    from backend.adapters.agent_adapter import get_verification_adapter
 
     prompt = _DUAL_VERIFY_PROMPT.format(
         dates=hard_facts.get("dates", []),
@@ -850,7 +854,12 @@ def _verify_facts_with_llm(
     )
 
     try:
-        adapter = get_agent_adapter()
+        adapter, is_independent = get_verification_adapter()
+        if not is_independent:
+            logger.warning(
+                "dual_llm_verification using same provider as generator - "
+                "verification is not fully independent"
+            )
         result = adapter.complete(
             user_prompt=prompt,
             system_prompt="You are a precise fact-checker. Output only valid JSON.",

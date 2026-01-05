@@ -23,8 +23,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+from backend.api.middleware.rate_limit import limit_conversation, limit_message
 
 from backend.domain import ConversationState, EventInformation
 from backend.legacy.session_store import (
@@ -448,7 +449,8 @@ def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: 
 # ---------------------------------------------------------------------------
 
 @router.post("/api/start-conversation")
-async def start_conversation(request: StartConversationRequest):
+@limit_conversation
+async def start_conversation(http_request: Request, request: StartConversationRequest):
     """Start a new conversation workflow."""
     os.environ.setdefault("AGENT_MODE", "openai")
     subject_line = (request.email_body.splitlines()[0][:80] if request.email_body else "No subject")
@@ -475,9 +477,15 @@ async def start_conversation(request: StartConversationRequest):
     if not wf_res:
         raise HTTPException(status_code=500, detail="Workflow processing failed")
     if wf_action == "manual_review_enqueued":
-        response_text = (
-            "Thanks for your message. We routed it for manual review and will get back to you shortly."
-        )
+        # In production: don't send confusing "manual review" message
+        # This is handled by the HIL system - manager gets notified, client waits
+        from backend.core.fallback import SUPPRESS_FALLBACK_IN_PRODUCTION
+        if SUPPRESS_FALLBACK_IN_PRODUCTION:
+            response_text = ""  # No message to client in production
+        else:
+            response_text = (
+                "Thanks for your message. We routed it for manual review and will get back to you shortly."
+            )
         return {
             "session_id": None,
             "workflow_type": "other",
@@ -609,12 +617,18 @@ async def start_conversation(request: StartConversationRequest):
         )
         assistant_reply = wrap_fallback(
             "Thanks for your message. I'll follow up shortly with availability details.",
-            fallback_ctx
+            fallback_ctx,
+            client_email=request.client_email,
+            original_message=request.email_body,
         )
+        # In production: fallback suppressed, return None response (no message to client)
+        if assistant_reply is None:
+            assistant_reply = ""  # Empty = no message to client
 
     conversation_state.event_id = wf_res.get("event_id") or event_id
     conversation_state.event_info = _update_event_info_from_db(conversation_state.event_info, conversation_state.event_id)
-    conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+    if assistant_reply:  # Only add to history if there's a message
+        conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
 
     active_conversations[session_id] = conversation_state
 
@@ -631,7 +645,8 @@ async def start_conversation(request: StartConversationRequest):
 
 
 @router.post("/api/send-message")
-async def send_message(request: SendMessageRequest):
+@limit_message
+async def send_message(http_request: Request, request: SendMessageRequest):
     """Send a message in an existing conversation."""
     if request.session_id not in active_conversations:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -670,11 +685,27 @@ async def send_message(request: SendMessageRequest):
             error=exc,
             message_preview=request.message[:50] if request.message else None,
         )
+        # Get client email from event data if available
+        client_email = None
+        try:
+            db = wf_load_db()
+            event_entry = db.get("events", {}).get(conversation_state.event_id or "", {})
+            client_email = event_entry.get("event_data", {}).get("Email")
+        except Exception:
+            pass
+
         assistant_reply = wrap_fallback(
             "Thanks for the update. I'll follow up shortly with the latest availability.",
-            fallback_ctx
+            fallback_ctx,
+            client_email=client_email,
+            original_message=request.message,
         )
-        conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+        # In production: fallback suppressed
+        if assistant_reply is None:
+            assistant_reply = ""
+
+        if assistant_reply:
+            conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
         return {
             "session_id": request.session_id,
             "workflow_type": conversation_state.workflow_type,
@@ -682,19 +713,27 @@ async def send_message(request: SendMessageRequest):
             "is_complete": conversation_state.is_complete,
             "event_info": conversation_state.event_info.dict(),
             "pending_actions": None,
+            "suppressed": assistant_reply == "",  # Indicate message was suppressed
         }
 
     wf_action = wf_res.get("action")
     if wf_action == "manual_review_enqueued":
-        assistant_reply = (
-            "Thanks for your message. We routed it for manual review and will get back to you shortly."
-        )
+        # In production: don't send confusing "manual review" message
+        # This is handled by the HIL system - manager gets notified, client waits
+        from backend.core.fallback import SUPPRESS_FALLBACK_IN_PRODUCTION
+        if SUPPRESS_FALLBACK_IN_PRODUCTION:
+            assistant_reply = ""  # No message to client in production
+        else:
+            assistant_reply = (
+                "Thanks for your message. We routed it for manual review and will get back to you shortly."
+            )
         conversation_state.event_id = wf_res.get("event_id") or conversation_state.event_id
         conversation_state.event_info = _update_event_info_from_db(
             conversation_state.event_info,
             conversation_state.event_id,
         )
-        conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+        if assistant_reply:  # Only add to history if there's a message
+            conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
         return {
             "session_id": request.session_id,
             "workflow_type": conversation_state.workflow_type,
@@ -761,10 +800,24 @@ async def send_message(request: SendMessageRequest):
             has_assistant_msg=bool(wf_res.get("assistant_message")),
             current_step=wf_res.get("current_step"),
         )
+        # Get client email from event data if available
+        client_email = None
+        try:
+            db = wf_load_db()
+            event_entry = db.get("events", {}).get(conversation_state.event_id or "", {})
+            client_email = event_entry.get("event_data", {}).get("Email")
+        except Exception:
+            pass
+
         assistant_reply = wrap_fallback(
             "Thanks for the update. I'll keep you posted as I gather the details.",
-            fallback_ctx
+            fallback_ctx,
+            client_email=client_email,
+            original_message=request.message,
         )
+        # In production: fallback suppressed
+        if assistant_reply is None:
+            assistant_reply = ""
 
     # Only apply step3_payload override if HIL is NOT pending
     if not hil_pending:
@@ -782,7 +835,8 @@ async def send_message(request: SendMessageRequest):
         conversation_state.event_info,
         conversation_state.event_id,
     )
-    conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
+    if assistant_reply:  # Only add to history if there's a message
+        conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
 
     pending_actions = {"type": "workflow_actions", "actions": action_items} if action_items else None
 

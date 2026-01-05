@@ -1,5 +1,50 @@
 # Development Changelog
 
+## 2026-01-05
+
+### Production Safety: Rate Limiting, Error Alerting, Fallback Suppression
+
+**Summary:** Comprehensive production safety features to prevent confusing messages to clients.
+
+**What Was Implemented:**
+
+1. **Rate Limiting Middleware**
+   - `/api/start-conversation`: 30 requests/minute
+   - `/api/send-message`: 60 requests/minute
+   - Configurable via env vars: `RATE_LIMIT_CONVERSATION`, `RATE_LIMIT_MESSAGE`
+
+2. **Error Alerting System**
+   - Email alerts sent when fallback/error paths triggered
+   - Configurable admin email via `/api/config/error-alerting`
+   - Default recipient: `river@more-life.ch`
+   - HTML + plain text email templates with full diagnostic info
+
+3. **Fallback Suppression in Production**
+   - `ENV=prod`: Fallback messages suppressed (client sees nothing)
+   - Alert email sent to admin with full context
+   - `ENV=dev`: Fallback messages shown for debugging
+
+4. **Room Status Verification (Bug Fix)**
+   - Fixed LLM hallucinating "Room X isn't available" when it IS available
+   - Added `room_statuses` to fact verification
+   - If LLM claims unavailable but status is "available", falls back to original text
+
+**Files Created/Modified:**
+- `backend/api/middleware/rate_limit.py` (new)
+- `backend/services/error_alerting.py` (new)
+- `backend/core/fallback.py` (modified - production suppression)
+- `backend/api/routes/messages.py` (modified - handle None returns)
+- `backend/api/routes/config.py` (modified - error alerting config)
+- `backend/ux/universal_verbalizer.py` (modified - room status verification)
+- `CLAUDE.md` (modified - added dev environment and Playwright rules)
+
+**Env Vars:**
+- `ENV`: "dev" (show errors) or "prod" (suppress, send alerts)
+- `RATE_LIMIT_CONVERSATION`: Default 30
+- `RATE_LIMIT_MESSAGE`: Default 60
+
+---
+
 ## 2026-01-03
 
 ### Authentication Middleware (Phases 1 & 2)

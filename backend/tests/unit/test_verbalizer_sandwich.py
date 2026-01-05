@@ -1119,7 +1119,7 @@ class TestDualLLMVerification:
             "room_names": ["Room A"],
         }
 
-        with patch("backend.adapters.agent_adapter.get_agent_adapter", return_value=mock_adapter):
+        with patch("backend.adapters.agent_adapter.get_verification_adapter", return_value=(mock_adapter, True)):
             result = _verify_facts_with_llm("Room A is available on 15.02.2026", hard_facts)
 
         assert isinstance(result, tuple)
@@ -1140,7 +1140,7 @@ class TestDualLLMVerification:
             "room_names": ["Room A"],
         }
 
-        with patch("backend.adapters.agent_adapter.get_agent_adapter", return_value=mock_adapter):
+        with patch("backend.adapters.agent_adapter.get_verification_adapter", return_value=(mock_adapter, True)):
             ok, missing, invented = _verify_facts_with_llm("Room A is available.", hard_facts)
 
         assert not ok
@@ -1158,7 +1158,7 @@ class TestDualLLMVerification:
             "room_names": ["Room A"],
         }
 
-        with patch("backend.adapters.agent_adapter.get_agent_adapter", return_value=mock_adapter):
+        with patch("backend.adapters.agent_adapter.get_verification_adapter", return_value=(mock_adapter, True)):
             ok, missing, invented = _verify_facts_with_llm("Room A on 20.02.2026", hard_facts)
 
         assert not ok
@@ -1176,7 +1176,7 @@ class TestDualLLMVerification:
             "room_names": ["Room A"],
         }
 
-        with patch("backend.adapters.agent_adapter.get_agent_adapter", return_value=mock_adapter):
+        with patch("backend.adapters.agent_adapter.get_verification_adapter", return_value=(mock_adapter, True)):
             # Should not raise, should fall back to rule-based
             ok, missing, invented = _verify_facts_with_llm(
                 "Room A is available on 15.02.2026.",

@@ -773,3 +773,86 @@ def reset_agent_adapter() -> None:
 
     global _AGENT_SINGLETON
     _AGENT_SINGLETON = None
+
+
+# Singleton for verification adapter (separate from main adapter)
+_VERIFICATION_SINGLETON: Optional[AgentAdapter] = None
+
+
+def get_verification_adapter() -> Tuple[AgentAdapter, bool]:
+    """
+    Get an adapter for dual-LLM verification.
+
+    Returns a DIFFERENT provider than the main generator to ensure independent
+    verification. If only one provider is available, returns it with a warning flag.
+
+    Returns:
+        Tuple of (adapter, is_independent):
+        - adapter: The verification adapter instance
+        - is_independent: True if using a different provider than generator
+    """
+    global _VERIFICATION_SINGLETON
+
+    main_mode = os.environ.get("AGENT_MODE", "stub").lower()
+
+    # In stub mode, verification uses stub too (testing only)
+    if main_mode == "stub":
+        if _VERIFICATION_SINGLETON is None:
+            _VERIFICATION_SINGLETON = StubAgentAdapter()
+        return _VERIFICATION_SINGLETON, False
+
+    # Try to use a different provider than main
+    # If main is OpenAI -> try Gemini for verification
+    # If main is Gemini -> try OpenAI for verification
+    if main_mode == "openai":
+        # Try Gemini for verification
+        if genai is not None and os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"):
+            if _VERIFICATION_SINGLETON is None:
+                try:
+                    _VERIFICATION_SINGLETON = GeminiAgentAdapter()
+                    logger.info("dual_llm_verification: using Gemini for verification (OpenAI is generator)")
+                except Exception as e:
+                    logger.warning(f"Failed to initialize Gemini for verification: {e}")
+                    _VERIFICATION_SINGLETON = None
+
+        if _VERIFICATION_SINGLETON is None:
+            # Fall back to same provider
+            logger.warning(
+                "dual_llm_verification: Gemini unavailable, using OpenAI for both "
+                "(verification not independent)"
+            )
+            _VERIFICATION_SINGLETON = OpenAIAgentAdapter()
+            return _VERIFICATION_SINGLETON, False
+
+        return _VERIFICATION_SINGLETON, True
+
+    elif main_mode == "gemini":
+        # Try OpenAI for verification
+        if os.environ.get("OPENAI_API_KEY"):
+            if _VERIFICATION_SINGLETON is None:
+                try:
+                    _VERIFICATION_SINGLETON = OpenAIAgentAdapter()
+                    logger.info("dual_llm_verification: using OpenAI for verification (Gemini is generator)")
+                except Exception as e:
+                    logger.warning(f"Failed to initialize OpenAI for verification: {e}")
+                    _VERIFICATION_SINGLETON = None
+
+        if _VERIFICATION_SINGLETON is None:
+            # Fall back to same provider
+            logger.warning(
+                "dual_llm_verification: OpenAI unavailable, using Gemini for both "
+                "(verification not independent)"
+            )
+            _VERIFICATION_SINGLETON = GeminiAgentAdapter()
+            return _VERIFICATION_SINGLETON, False
+
+        return _VERIFICATION_SINGLETON, True
+
+    # Unknown mode - should not happen
+    raise RuntimeError(f"Unsupported AGENT_MODE for verification: {main_mode}")
+
+
+def reset_verification_adapter() -> None:
+    """Reset the cached verification adapter instance (used by tests)."""
+    global _VERIFICATION_SINGLETON
+    _VERIFICATION_SINGLETON = None
