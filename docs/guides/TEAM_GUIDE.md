@@ -19,6 +19,16 @@ See [SETUP_API_KEYS.md](./SETUP_API_KEYS.md) for full guide.
 
 ---
 
+## Production Readiness Risks (Audit 2026-01-05)
+
+- Auth is disabled by default; set AUTH_ENABLED=1 in production or all endpoints are public.
+- ENV defaults to dev; set ENV=prod to avoid exposing debug/test routes and debug traces.
+- LLM input sanitization is not wired into unified detection/Q&A/verbalizer entrypoints yet.
+- Rate limiting middleware import exists in backend/main.py but the module is missing in this repo.
+- Mock deposit payment endpoint should be gated or disabled in production.
+
+---
+
 ## UX Design Principle: Verbalization vs Info Page
 
 **CRITICAL DESIGN RULE - Always remember when working on verbalization:**
@@ -115,3 +125,29 @@ All unit types that may appear in product data:
 4. Search for `patching failed` to find fallback occurrences
 
 **Key File**: `backend/ux/universal_verbalizer.py` (lines 170-230 for prompts, 880-950 for verification, 1000-1110 for patching)
+
+---
+
+## Known Bugs & Issues (2026-01-05)
+
+### BUG-001: Post-HIL Step Mismatch
+**Status**: Open
+**Severity**: Medium
+**Symptom**: After HIL approval at Step 5, thread routing thinks it's at Step 2 while event is at Step 5. Next client message gets blocked as "out of context".
+**Reproduction**: Complete booking flow → HIL approves offer → client sends follow-up → "Intent 'X' is only valid at steps {4, 5}, but current step is 2"
+**Root Cause**: Thread state not synced with event state after HIL task approval.
+**Files**: `backend/api/routes/tasks.py`, `backend/workflows/runtime/pre_route.py`
+
+### BUG-002: Q&A Doesn't Answer Room Pricing
+**Status**: Open
+**Severity**: Low
+**Symptom**: "How much does Room A cost?" returns room capacity info but not price.
+**Expected**: Should answer with room rental rate (e.g., CHF 500/day).
+**Files**: `backend/workflows/common/general_qna.py`, `backend/workflows/qna/router.py`
+
+### BUG-003: Hybrid Messages Ignore Q&A Part
+**Status**: Open
+**Severity**: Medium
+**Symptom**: Message like "Book room for April 5 + do you have parking?" handles booking but drops parking question.
+**Expected**: Should answer both booking AND Q&A in same response.
+**Files**: `backend/detection/unified.py`, `backend/workflows/steps/step1_intake/trigger/step1_handler.py`
