@@ -184,11 +184,12 @@ HARD RULES (NEVER BREAK):
 3. ALL room names must appear exactly as provided
 4. ALL participant counts must appear
 5. ALL product names must appear exactly as provided
-6. NEVER change units: "per event" stays "per event", "per person" stays "per person"
-7. NEVER invent dates, prices, room names, or units not in the facts
-8. NEVER change any numbers or swap unit types
-9. PRESERVE ALL HTML links EXACTLY as provided - if you see <a href="...">text</a>, keep it exactly as-is. Format link as markdown [text](url) if the original is a raw URL
-10. ONLY suggest products/catering the client mentioned or that are truly essential for their request. DO NOT proactively push catering if they only asked for equipment (projector, sound, etc.)
+6. ALL product/pricing units MUST appear with prices: include "per event", "per person", "per hour", "per day", or any other unit provided. When you write a price, ALWAYS include its unit (e.g., "CHF 75.00 per event", not just "CHF 75.00")
+7. NEVER change units: keep the exact unit type provided - do not swap "per event" for "per person" or vice versa
+8. NEVER invent dates, prices, room names, or units not in the facts
+9. NEVER change any numbers or swap unit types
+10. PRESERVE ALL HTML links EXACTLY as provided - if you see <a href="...">text</a>, keep it exactly as-is. Format link as markdown [text](url) if the original is a raw URL
+11. ONLY suggest products/catering the client mentioned or that are truly essential for their request. DO NOT proactively push catering if they only asked for equipment (projector, sound, etc.)
 
 TRANSFORMATION EXAMPLES:"""
 
@@ -232,11 +233,12 @@ HARD RULES (NEVER BREAK):
 3. ALL room names must appear exactly as provided
 4. ALL participant counts must appear
 5. ALL product names must appear exactly as provided
-6. NEVER change units: "per event" stays "per event", "per person" stays "per person"
-7. NEVER invent dates, prices, room names, or units not in the facts
-8. NEVER change any numbers or swap unit types
-9. PRESERVE ALL HTML links EXACTLY as provided - if you see <a href="...">text</a>, keep it exactly as-is. Format link as markdown [text](url) if the original is a raw URL
-10. ONLY suggest products/catering the client mentioned or that are truly essential for their request. DO NOT proactively push catering if they only asked for equipment (projector, sound, etc.)
+6. ALL product/pricing units MUST appear with prices: include "per event", "per person", "per hour", "per day", or any other unit provided. When you write a price, ALWAYS include its unit (e.g., "CHF 75.00 per event", not just "CHF 75.00")
+7. NEVER change units: keep the exact unit type provided - do not swap "per event" for "per person" or vice versa
+8. NEVER invent dates, prices, room names, or units not in the facts
+9. NEVER change any numbers or swap unit types
+10. PRESERVE ALL HTML links EXACTLY as provided - if you see <a href="...">text</a>, keep it exactly as-is. Format link as markdown [text](url) if the original is a raw URL
+11. ONLY suggest products/catering the client mentioned or that are truly essential for their request. DO NOT proactively push catering if they only asked for equipment (projector, sound, etc.)
 
 TRANSFORMATION EXAMPLES:
 
@@ -733,8 +735,11 @@ def _format_facts_for_prompt(context: MessageContext) -> str:
         for p in context.products[:5]:  # Limit to top 5
             name = p.get("name", "Item")
             price = p.get("unit_price") or p.get("price")
+            unit = p.get("unit", "").replace("_", " ")  # per_event -> per event
             if price:
-                product_summary.append(f"{name} (CHF {float(price):.2f})")
+                # Always include unit with price to ensure LLM preserves it
+                unit_suffix = f" {unit}" if unit else ""
+                product_summary.append(f"{name} (CHF {float(price):.2f}{unit_suffix})")
             else:
                 product_summary.append(name)
         lines.append(f"- Products: {', '.join(product_summary)}")
@@ -913,15 +918,22 @@ def _verify_facts(
             missing.append(f"product:{product_name}")
 
     # Check units - be flexible about phrasing
+    # Map each unit to acceptable alternatives
+    unit_alternatives = {
+        "per person": ["per guest", "each guest", "per head", "/person", "/ person", "per attendee", "per participant"],
+        "per event": ["flat fee", "fixed", "one-time", "/event", "/ event", "per booking", "flat rate"],
+        "per hour": ["/hour", "/ hour", "hourly", "per hr"],
+        "per day": ["/day", "/ day", "daily", "per 24 hours"],
+        "per night": ["/night", "/ night", "nightly"],
+        "per week": ["/week", "/ week", "weekly"],
+    }
     input_units = set(hard_facts.get("units", []))
     for unit in input_units:
         unit_found = unit in text_lower
         if not unit_found:
-            # Check alternative phrasings
-            if unit == "per person":
-                unit_found = any(alt in text_lower for alt in ["per guest", "each guest", "per head", "/person", "/ person"])
-            elif unit == "per event":
-                unit_found = any(alt in text_lower for alt in ["flat fee", "fixed", "one-time", "/event", "/ event"])
+            # Check alternative phrasings for this unit
+            alternatives = unit_alternatives.get(unit, [])
+            unit_found = any(alt in text_lower for alt in alternatives)
         if not unit_found:
             missing.append(f"unit:{unit}")
 
@@ -938,25 +950,27 @@ def _verify_facts(
         invented.append("unit:per event (should be per person)")
 
     # Check for invented dates (be lenient - only flag if clearly wrong)
+    # Skip this check if no dates were expected (empty context = nothing to invent against)
     date_pattern = re.compile(r"\b(\d{1,2}\.\d{1,2}\.\d{4})\b")
     valid_dates = set(hard_facts.get("dates", []))
-    for match in date_pattern.finditer(llm_text):
-        found_date = match.group(1)
-        if found_date not in valid_dates:
-            # Check if it's just a reformatted version of a valid date
-            is_reformat = False
-            try:
-                from datetime import datetime
-                found_parsed = datetime.strptime(found_date, "%d.%m.%Y")
-                for valid in valid_dates:
-                    valid_parsed = datetime.strptime(valid, "%d.%m.%Y")
-                    if found_parsed == valid_parsed:
-                        is_reformat = True
-                        break
-            except (ValueError, ImportError):
-                pass
-            if not is_reformat:
-                invented.append(f"date:{found_date}")
+    if valid_dates:  # Only check for invented dates if we have expected dates
+        for match in date_pattern.finditer(llm_text):
+            found_date = match.group(1)
+            if found_date not in valid_dates:
+                # Check if it's just a reformatted version of a valid date
+                is_reformat = False
+                try:
+                    from datetime import datetime
+                    found_parsed = datetime.strptime(found_date, "%d.%m.%Y")
+                    for valid in valid_dates:
+                        valid_parsed = datetime.strptime(valid, "%d.%m.%Y")
+                        if found_parsed == valid_parsed:
+                            is_reformat = True
+                            break
+                except (ValueError, ImportError):
+                    pass
+                if not is_reformat:
+                    invented.append(f"date:{found_date}")
 
     # Check for invented amounts - be more lenient
     # Use apostrophe-removed text for matching Swiss format (1'500 -> 1500)
@@ -996,30 +1010,32 @@ def _verify_facts(
             canonical_amounts.add(str(int(subtotal)))
 
     # Search in apostrophe-removed text to handle Swiss format (CHF 1'500)
-    for match in amount_pattern.finditer(text_no_apostrophe):
-        found_amount = match.group(1).replace(",", ".")
-        found_no_decimal = re.sub(r"\.00$", "", found_amount)
-        found_int = str(int(float(found_amount))) if "." in found_amount else found_amount
+    # Skip this check if no amounts were expected (empty context = nothing to invent against)
+    if canonical_amounts:
+        for match in amount_pattern.finditer(text_no_apostrophe):
+            found_amount = match.group(1).replace(",", ".")
+            found_no_decimal = re.sub(r"\.00$", "", found_amount)
+            found_int = str(int(float(found_amount))) if "." in found_amount else found_amount
 
-        if not any(f in canonical_amounts for f in [found_amount, found_no_decimal, found_int]):
-            # Only flag if it's not close to any canonical amount (allows for small rounding)
-            is_close = False
-            try:
-                found_val = float(found_amount)
-                for canonical in canonical_amounts:
-                    try:
-                        canonical_val = float(canonical)
-                        # Allow 1% tolerance for rounding
-                        if abs(found_val - canonical_val) / max(canonical_val, 1) < 0.01:
-                            is_close = True
-                            break
-                    except ValueError:
-                        pass
-            except ValueError:
-                pass
+            if not any(f in canonical_amounts for f in [found_amount, found_no_decimal, found_int]):
+                # Only flag if it's not close to any canonical amount (allows for small rounding)
+                is_close = False
+                try:
+                    found_val = float(found_amount)
+                    for canonical in canonical_amounts:
+                        try:
+                            canonical_val = float(canonical)
+                            # Allow 1% tolerance for rounding
+                            if abs(found_val - canonical_val) / max(canonical_val, 1) < 0.01:
+                                is_close = True
+                                break
+                        except ValueError:
+                            pass
+                except ValueError:
+                    pass
 
-            if not is_close:
-                invented.append(f"amount:CHF {found_amount}")
+                if not is_close:
+                    invented.append(f"amount:CHF {found_amount}")
 
     ok = len(missing) == 0 and len(invented) == 0
     return (ok, missing, invented)
@@ -1071,6 +1087,28 @@ def _patch_facts(
             patched = re.sub(r"\bper event\b", "per person", patched, flags=re.IGNORECASE)
             patched_something = True
             logger.debug("_patch_facts: fixed unit swap 'per event' -> 'per person'")
+
+    # --- Missing unit fixes ---
+    # If unit is missing (not swapped), try to append it after the product price
+    # This handles cases where LLM wrote "CHF 75.00" but should be "CHF 75.00 per event"
+    missing_units = [m for m in missing if m.startswith("unit:")]
+    if missing_units and len(input_units) == 1:
+        # Single unit type - safe to append after any product price
+        the_unit = list(input_units)[0]
+        # Check if output already has any unit-like phrase
+        has_any_unit = any(u in patched.lower() for u in ["per event", "per person", "per hour", "per day", "flat fee", "per guest"])
+        if not has_any_unit:
+            # Find product prices and append unit
+            # Pattern: CHF amount followed by word boundary (not already having a unit)
+            product_amounts = [amt for amt in hard_facts.get("amounts", []) if amt != f"CHF {hard_facts.get('total_amount', 0):.2f}"]
+            for amt in product_amounts:
+                # Only patch product prices, not total
+                # Match CHF XX.XX not followed by "per" or other unit words
+                pattern = rf"({re.escape(amt)})(?!\s*(?:per|flat|fixed|hourly|daily))"
+                if re.search(pattern, patched, re.IGNORECASE):
+                    patched = re.sub(pattern, rf"\1 {the_unit}", patched, flags=re.IGNORECASE)
+                    patched_something = True
+                    logger.debug(f"_patch_facts: added missing unit '{the_unit}' after {amt}")
 
     # --- Amount fixes ---
     # If an amount was invented (not in our canonical list), try to find and fix it
