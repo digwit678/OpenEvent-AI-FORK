@@ -13,8 +13,8 @@
 | Severity | Total | Resolved | Pending |
 |----------|-------|----------|---------|
 | HIGH | 3 | 1 | 2 |
-| MEDIUM | 7 | 5 | 2 |
-| LOW | 2 | 0 | 2 |
+| MEDIUM | 7 | 6 | 1 |
+| LOW | 2 | 1 | 1 |
 
 ---
 
@@ -56,9 +56,9 @@
   - **Fix**: Added French keywords for Lausanne client (dîner, réunion, personnes, etc.)
   - References: `backend/workflows/llm/adapter.py:762`
 
-- ⚠️ **PENDING**: Auth allowlist includes `/` and `/api/workflow/health`, which return event counts and absolute DB path even when auth is enabled (information leak).
-  - **Risk**: Low - operational info, not user data
-  - References: `backend/api/middleware/auth.py:34`, `backend/main.py:452`
+- ✅ **RESOLVED** (2026-01-05): Auth allowlist includes `/` and `/api/workflow/health`, which return event counts and absolute DB path even when auth is enabled (information leak).
+  - **Fix**: `db_path` now hidden when `ENV=prod`. Health endpoint only returns `{"ok": true}` in production.
+  - References: `backend/api/routes/workflow.py:30`
 
 - ✅ **RESOLVED** (OPEN_ITEMS_PLAN): Tenant header overrides are accepted when TENANT_HEADER_ENABLED=1; if enabled in production or auth is off, headers can steer tenant context (misconfig risk).
   - **Fix**: Headers validated for format, TENANT_HEADER_ENABLED=0 enforced in prod
@@ -66,12 +66,16 @@
 
 ### Low
 
-- ⚪ **DEFERRED**: Unified detection prompt assumes current year for yearless dates, which can mis-handle multi-year planning.
-  - **Risk**: Edge case - only affects bookings 12+ months ahead
-  - Reference: `backend/detection/unified.py:186`
+- ✅ **RESOLVED** (2026-01-05): Unified detection prompt assumes current year for yearless dates, which can mis-handle multi-year planning.
+  - **Analysis**: Code actually handles this correctly:
+    - Step 1 gatekeeping: If no date provided, asks client (no assumption)
+    - Q&A "is room B free?": Defaults to TODAY (correct behavior)
+    - Year-missing dates: `_resolve_anchor_date()` smartly picks next year if month already passed
+  - **Conclusion**: Non-issue. LLM prompt says "assume current year" but actual code in `catalog.py:219-220` handles December→January correctly.
+  - References: `backend/workflows/common/catalog.py:214-222`
 
 - ⚪ **DEFERRED**: Error alerting emails include full client message content; ensure alert recipients are trusted to avoid PII leakage.
-  - **Risk**: Operational - recipients are internal OpenEvent staff
+  - **Risk**: Operational - recipients are internal OpenEvent staff configured via `ALERT_EMAIL_RECIPIENTS`
   - Reference: `backend/services/error_alerting.py:90`
 
 ---
@@ -89,8 +93,16 @@
 
 ## Still Pending
 
-1. **AUTH_ENABLED default** - Must be explicitly set in production deployment
-2. **ENV default** - Must be explicitly set to "prod" in production deployment
-3. **Health endpoint info leak** - Consider removing DB path from response
-4. **Year assumption** - Low priority edge case
-5. **Error alerting PII** - Operational concern, recipients are trusted
+1. **AUTH_ENABLED default** - Must be explicitly set in production deployment (documented in hostinger deploy README)
+2. **ENV default** - Must be explicitly set to "prod" in production deployment (documented in hostinger deploy README)
+3. ~~**Health endpoint info leak**~~ - ✅ Fixed: `db_path` hidden in prod
+4. ~~**Year assumption**~~ - ✅ Non-issue: code handles correctly
+5. **Error alerting PII** - Accepted risk: recipients are trusted internal staff
+
+## Deployment Documentation
+
+Production settings documented in `integration/hostinger-backend:deploy/README.md`:
+- `ENV=prod` - hides debug routes
+- `AUTH_ENABLED=1` - requires API key
+- `RATE_LIMIT_ENABLED=1` - prevents abuse
+- `TENANT_HEADER_ENABLED=0` - prevents header spoofing
