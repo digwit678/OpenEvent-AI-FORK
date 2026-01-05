@@ -21,11 +21,18 @@ See [SETUP_API_KEYS.md](./SETUP_API_KEYS.md) for full guide.
 
 ## Production Readiness Risks (Audit 2026-01-05)
 
-- Auth is disabled by default; set AUTH_ENABLED=1 in production or all endpoints are public.
-- ENV defaults to dev; set ENV=prod to avoid exposing debug/test routes and debug traces.
+**Must-set env vars for production:**
+- `AUTH_ENABLED=1` - Otherwise all endpoints are public
+- `ENV=prod` - Hides debug routes, reduces health endpoint info exposure
+
+**Optional hardening env vars:**
+- `REQUEST_SIZE_LIMIT_KB=1024` - Max request body size (default 1MB)
+- `LLM_CACHE_MAX_SIZE=500` - Max LLM analysis cache entries (default 500)
+
+**Remaining risks:**
 - LLM input sanitization is not wired into unified detection/Q&A/verbalizer entrypoints yet.
-- Rate limiting middleware import exists in backend/main.py but the module is missing in this repo.
 - Mock deposit payment endpoint should be gated or disabled in production.
+- Snapshot storage uses local JSON (not suitable for multi-worker deployments).
 
 ---
 

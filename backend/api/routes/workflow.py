@@ -9,6 +9,8 @@ ROUTES:
 MIGRATION: Extracted from main.py in Phase C refactoring (2025-12-18).
 """
 
+import os
+
 from fastapi import APIRouter
 
 from backend.workflow_email import DB_PATH as WF_DB_PATH
@@ -16,11 +18,20 @@ from backend.workflows.io.integration.config import is_hil_all_replies_enabled
 
 router = APIRouter(tags=["workflow"])
 
+# Only expose detailed info in dev mode
+_IS_DEV = os.getenv("ENV", "dev").lower() != "prod"
+
 
 @router.get("/api/workflow/health")
 async def workflow_health():
-    """Minimal health check for workflow integration."""
-    return {"db_path": str(WF_DB_PATH), "ok": True}
+    """Minimal health check for workflow integration.
+
+    In production (ENV=prod), only returns ok status.
+    In dev mode, includes db_path for debugging.
+    """
+    if _IS_DEV:
+        return {"db_path": str(WF_DB_PATH), "ok": True}
+    return {"ok": True}
 
 
 @router.get("/api/workflow/hil-status")

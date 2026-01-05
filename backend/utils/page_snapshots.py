@@ -7,7 +7,9 @@ we store a snapshot so that:
 2. Client can revisit older links in the conversation
 3. Same data source as verbalizer ensures consistency
 
-Snapshots are stored in a JSON file with TTL-based expiration.
+Storage backends:
+- JSON file (default): Local storage, suitable for single-worker deployments
+- Supabase (OE_INTEGRATION_MODE=supabase): Database storage for multi-worker deployments
 """
 
 from __future__ import annotations
@@ -22,12 +24,29 @@ from typing import Any, Dict, List, Optional
 
 from backend.utils import json_io
 
+
+def _use_supabase() -> bool:
+    """Check if Supabase snapshots are enabled (lazy import to avoid circular deps)."""
+    try:
+        from backend.workflows.io.integration.config import INTEGRATION_CONFIG
+        return INTEGRATION_CONFIG.use_supabase_snapshots
+    except ImportError:
+        return False
+
 # Snapshot storage location
 SNAPSHOTS_DIR = Path(__file__).resolve().parent.parent.parent / "tmp-cache" / "page_snapshots"
 SNAPSHOTS_FILE = SNAPSHOTS_DIR / "snapshots.json"
 
-# Default TTL: 7 days
+# Default TTL by snapshot type
+# Event-specific data: shorter TTL (cleaned up when event completes anyway)
+# General Q&A: longer TTL (clients may reference after event)
 DEFAULT_TTL_DAYS = 7
+TTL_BY_TYPE = {
+    "qna": 365,        # General Q&A links stay valid for a year
+    "rooms": 7,        # Room listings (event-specific)
+    "offer": 7,        # Offer details (event-specific)
+    "products": 7,     # Product/catering info (event-specific)
+}
 
 # Maximum snapshots to keep (cleanup old ones)
 MAX_SNAPSHOTS = 500
@@ -94,21 +113,38 @@ def create_snapshot(
     data: Any,
     event_id: Optional[str] = None,
     params: Optional[Dict[str, Any]] = None,
-    ttl_days: int = DEFAULT_TTL_DAYS,
+    ttl_days: Optional[int] = None,
 ) -> str:
     """
     Create a snapshot of page data and return the snapshot ID.
 
     Args:
-        snapshot_type: Type of snapshot (e.g., "rooms", "products", "offer")
+        snapshot_type: Type of snapshot (e.g., "rooms", "products", "offer", "qna")
         data: The actual data to store (rooms list, products list, etc.)
         event_id: Optional event ID for context
         params: Original query parameters used to generate this data
-        ttl_days: Time-to-live in days (default: 7)
+        ttl_days: Time-to-live in days. If None, uses type-specific default:
+                  - qna: 365 days (clients may reference after event)
+                  - rooms/offer/products: 7 days (event-specific)
 
     Returns:
         snapshot_id: Unique identifier for retrieving this snapshot
     """
+    # Use type-specific TTL if not explicitly provided
+    if ttl_days is None:
+        ttl_days = TTL_BY_TYPE.get(snapshot_type, DEFAULT_TTL_DAYS)
+
+    # Route to Supabase if enabled
+    if _use_supabase():
+        from backend.workflows.io.integration import supabase_snapshots
+        return supabase_snapshots.create_snapshot(
+            snapshot_type=snapshot_type,
+            data=data,
+            event_id=event_id,
+            params=params,
+            ttl_days=ttl_days,
+        )
+
     storage = _load_snapshots()
     snapshots = storage.get("snapshots", {})
 
@@ -144,6 +180,11 @@ def get_snapshot(snapshot_id: str) -> Optional[Dict[str, Any]]:
 
     Returns None if snapshot doesn't exist or has expired.
     """
+    # Route to Supabase if enabled
+    if _use_supabase():
+        from backend.workflows.io.integration import supabase_snapshots
+        return supabase_snapshots.get_snapshot(snapshot_id)
+
     storage = _load_snapshots()
     snapshots = storage.get("snapshots", {})
 
@@ -165,6 +206,11 @@ def get_snapshot_data(snapshot_id: str) -> Optional[Any]:
 
     Convenience function for when you only need the data.
     """
+    # Route to Supabase if enabled
+    if _use_supabase():
+        from backend.workflows.io.integration import supabase_snapshots
+        return supabase_snapshots.get_snapshot_data(snapshot_id)
+
     snapshot = get_snapshot(snapshot_id)
     if snapshot:
         return snapshot.get("data")
@@ -181,6 +227,15 @@ def list_snapshots(
 
     Returns metadata only (not full data) for efficiency.
     """
+    # Route to Supabase if enabled
+    if _use_supabase():
+        from backend.workflows.io.integration import supabase_snapshots
+        return supabase_snapshots.list_snapshots(
+            snapshot_type=snapshot_type,
+            event_id=event_id,
+            limit=limit,
+        )
+
     storage = _load_snapshots()
     snapshots = storage.get("snapshots", {})
 
@@ -211,6 +266,11 @@ def list_snapshots(
 
 def delete_snapshot(snapshot_id: str) -> bool:
     """Delete a specific snapshot."""
+    # Route to Supabase if enabled
+    if _use_supabase():
+        from backend.workflows.io.integration import supabase_snapshots
+        return supabase_snapshots.delete_snapshot(snapshot_id)
+
     storage = _load_snapshots()
     snapshots = storage.get("snapshots", {})
 
@@ -228,6 +288,11 @@ def cleanup_all_expired() -> int:
 
     Returns the number of snapshots removed.
     """
+    # Route to Supabase if enabled
+    if _use_supabase():
+        from backend.workflows.io.integration import supabase_snapshots
+        return supabase_snapshots.cleanup_all_expired()
+
     storage = _load_snapshots()
     snapshots = storage.get("snapshots", {})
     original_count = len(snapshots)
@@ -239,11 +304,49 @@ def cleanup_all_expired() -> int:
     return original_count - len(snapshots)
 
 
+def delete_snapshots_for_event(event_id: str) -> int:
+    """
+    Delete all snapshots associated with an event.
+
+    Call this when a booking is completed/cancelled to clean up
+    associated info page data (rooms, offers, etc.).
+
+    Args:
+        event_id: The event ID whose snapshots should be deleted
+
+    Returns:
+        Number of snapshots deleted
+    """
+    # Route to Supabase if enabled
+    if _use_supabase():
+        from backend.workflows.io.integration import supabase_snapshots
+        return supabase_snapshots.delete_snapshots_for_event(event_id)
+
+    storage = _load_snapshots()
+    snapshots = storage.get("snapshots", {})
+
+    # Find and remove snapshots for this event
+    to_delete = [
+        snap_id for snap_id, snap_data in snapshots.items()
+        if snap_data.get("event_id") == event_id
+    ]
+
+    for snap_id in to_delete:
+        del snapshots[snap_id]
+
+    if to_delete:
+        storage["snapshots"] = snapshots
+        _save_snapshots(storage)
+
+    return len(to_delete)
+
+
 __all__ = [
     "create_snapshot",
     "get_snapshot",
     "get_snapshot_data",
     "list_snapshots",
     "delete_snapshot",
+    "delete_snapshots_for_event",
     "cleanup_all_expired",
 ]

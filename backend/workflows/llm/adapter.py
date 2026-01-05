@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from backend.adapters.agent_adapter import AgentAdapter, StubAgentAdapter, get_agent_adapter, reset_agent_adapter
@@ -34,7 +35,12 @@ from backend.utils.dates import MONTH_INDEX_TO_NAME, from_hints
 
 adapter: AgentAdapter = get_agent_adapter()
 _LAST_CALL_METADATA: Dict[str, Any] = {}
-_ANALYSIS_CACHE: Dict[str, Dict[str, Any]] = {}
+
+# Bounded LRU cache for analysis results.
+# Max entries configurable via env var; default 500 to limit memory.
+# Uses OrderedDict for LRU eviction when cache is full.
+_ANALYSIS_CACHE_MAX_SIZE = int(os.getenv("LLM_CACHE_MAX_SIZE", "500"))
+_ANALYSIS_CACHE: OrderedDict[str, Dict[str, Any]] = OrderedDict()
 
 logger = logging.getLogger(__name__)
 
@@ -351,15 +357,30 @@ def _fallback_analysis(
 
 
 def _analyze_payload(payload: Dict[str, str]) -> Dict[str, Any]:
+    """Run LLM analysis with bounded LRU caching.
+
+    Cache is bounded to _ANALYSIS_CACHE_MAX_SIZE entries.
+    On cache hit, entry is moved to end (most recently used).
+    On cache miss + insert, oldest entries are evicted if over limit.
+    """
     cache_key = _analysis_cache_key(payload)
     cached = _ANALYSIS_CACHE.get(cache_key)
     if cached is not None:
+        # Move to end (mark as recently used)
+        _ANALYSIS_CACHE.move_to_end(cache_key)
         return dict(cached)
 
     analysis = _invoke_provider_with_retry(payload, phase="analysis")
     if analysis is None:
         analysis = _fallback_analysis(payload)
+
+    # Insert new entry
     _ANALYSIS_CACHE[cache_key] = analysis
+
+    # Evict oldest entries if over limit
+    while len(_ANALYSIS_CACHE) > _ANALYSIS_CACHE_MAX_SIZE:
+        _ANALYSIS_CACHE.popitem(last=False)
+
     return dict(analysis)
 
 
@@ -685,7 +706,7 @@ def reset_llm_adapter() -> None:
     reset_agent_adapter()
     adapter = get_agent_adapter()
     _LAST_CALL_METADATA = {}
-    _ANALYSIS_CACHE = {}
+    _ANALYSIS_CACHE = OrderedDict()
     reset_provider_for_tests()
 
 

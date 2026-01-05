@@ -20,8 +20,69 @@ __workflow_role__ = "Database"
 
 LOCK_TIMEOUT = 5.0
 LOCK_SLEEP = 0.1
+STALE_LOCK_AGE_SECONDS = 300  # Consider lock stale if file is older than 5 minutes
 
 logger = logging.getLogger(__name__)
+
+
+def _is_process_running(pid: int) -> bool:
+    """Check if a process with the given PID is still running."""
+    try:
+        os.kill(pid, 0)  # Signal 0 = check if process exists
+        return True
+    except OSError:
+        return False
+
+
+def _cleanup_stale_lock(lock_path: Path) -> bool:
+    """
+    Remove stale lock file if the owning process is dead.
+
+    Returns True if a stale lock was removed, False otherwise.
+    """
+    if not lock_path.exists():
+        return False
+
+    try:
+        # Read the PID from the lock file
+        with open(lock_path, "r") as f:
+            content = f.read().strip()
+
+        if not content:
+            # Empty lock file - likely corrupted, remove it
+            lock_path.unlink()
+            logger.warning("Removed empty/corrupted lock file: %s", lock_path)
+            return True
+
+        try:
+            pid = int(content)
+        except ValueError:
+            # Invalid PID content - remove the lock
+            lock_path.unlink()
+            logger.warning("Removed lock file with invalid PID content: %s", lock_path)
+            return True
+
+        # Check if the process is still running
+        if not _is_process_running(pid):
+            lock_path.unlink()
+            logger.warning("Removed stale lock file (PID %d is dead): %s", pid, lock_path)
+            return True
+
+        # Process is still running - also check file age as a fallback
+        # (in case PID was recycled to a different process)
+        file_age = time.time() - lock_path.stat().st_mtime
+        if file_age > STALE_LOCK_AGE_SECONDS:
+            lock_path.unlink()
+            logger.warning(
+                "Removed stale lock file (age %.0fs > %ds): %s",
+                file_age, STALE_LOCK_AGE_SECONDS, lock_path
+            )
+            return True
+
+    except (OSError, IOError) as e:
+        logger.debug("Could not check/cleanup stale lock %s: %s", lock_path, e)
+
+    return False
 
 
 class FileLock:
@@ -37,12 +98,22 @@ class FileLock:
         """[OpenEvent Database] Block until a lock file can be created or raise on timeout."""
 
         deadline = time.time() + self.timeout
+        stale_check_done = False
+
         while True:
             try:
                 self.fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                 os.write(self.fd, str(os.getpid()).encode("utf-8"))
                 return
             except FileExistsError:
+                # First time we hit a lock, check if it's stale
+                if not stale_check_done:
+                    if _cleanup_stale_lock(self.path):
+                        # Stale lock removed - retry immediately
+                        stale_check_done = True
+                        continue
+                    stale_check_done = True
+
                 if time.time() >= deadline:
                     raise TimeoutError(f"Could not acquire lock {self.path}")
                 time.sleep(self.sleep)

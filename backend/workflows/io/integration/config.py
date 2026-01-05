@@ -53,6 +53,7 @@ class IntegrationConfig:
     use_supabase_events: bool = False   # Use Supabase for event storage
     use_supabase_tasks: bool = False    # Use Supabase for HIL tasks
     use_supabase_emails: bool = False   # Use Supabase for email storage
+    use_supabase_snapshots: bool = False  # Use Supabase for info page snapshots
 
     # HIL for all LLM replies (default OFF for backwards compatibility)
     # When True: ALL AI-generated outbound replies go to "AI Reply Approval" HIL queue
@@ -78,6 +79,7 @@ class IntegrationConfig:
             use_supabase_events=mode == "supabase",
             use_supabase_tasks=mode == "supabase",
             use_supabase_emails=mode == "supabase",
+            use_supabase_snapshots=mode == "supabase",
             # HIL toggle for all LLM replies
             hil_all_llm_replies=hil_all_replies,
         )

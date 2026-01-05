@@ -227,6 +227,91 @@ When renaming becomes necessary:
 
 ---
 
+### DECISION-008: Database Cleanup Strategy
+
+**Date Raised:** 2026-01-05
+**Context:** Production readiness audit - data retention and cleanup
+**Status:** Open
+
+**Question:** What should our general strategy be for cleaning up old/stale data across all storage layers?
+
+**Current State (ad-hoc):**
+| Data Type | Storage | Current Cleanup | TTL |
+|-----------|---------|-----------------|-----|
+| Snapshots (info pages) | JSON / Supabase | TTL + max count | 7d (event) / 365d (Q&A) |
+| LLM analysis cache | In-memory | LRU eviction | None (bounded to 500) |
+| Events | JSON / Supabase | None | Indefinite |
+| Clients | JSON / Supabase | None | Indefinite |
+| HIL Tasks | JSON / Supabase | None | Indefinite |
+| Conversation state | In-memory dict | None | Until server restart |
+| Debug traces | Files | None | Indefinite |
+
+**Questions to Resolve:**
+
+1. **Events lifecycle:**
+   - When should completed/cancelled events be archived or deleted?
+   - Should we keep them for analytics/reporting?
+   - GDPR implications for client data in events?
+
+2. **Snapshot cleanup triggers:**
+   - Current: TTL-based (7 days event-specific, 365 days Q&A)
+   - Should we also cleanup when event reaches terminal status?
+   - Hook location: Step 7 confirmation flow?
+
+3. **Conversation state:**
+   - `active_conversations` dict grows unbounded
+   - Should we expire inactive conversations?
+   - What timeout is reasonable? (30 min? 24h?)
+
+4. **Debug traces:**
+   - Currently stored indefinitely in files
+   - Should be cleaned up in production
+   - Retain how long for debugging?
+
+5. **HIL Tasks:**
+   - Resolved tasks accumulate forever
+   - Archive after X days?
+   - Keep for audit trail?
+
+**Options for General Strategy:**
+
+**Option A: Event-driven cleanup**
+- Cleanup associated data when event reaches terminal status
+- Pro: Data removed when no longer needed
+- Con: Complex to implement, need to track all related data
+
+**Option B: TTL-based cleanup (cron job)**
+- Daily/weekly job removes data older than X days
+- Pro: Simple, predictable
+- Con: May delete data still being referenced
+
+**Option C: Tiered retention**
+- Hot: Last 7 days (full data)
+- Warm: 7-90 days (archived, queryable)
+- Cold: 90+ days (deleted or anonymized)
+- Pro: Balances performance and compliance
+- Con: More complex infrastructure
+
+**Option D: Manual cleanup**
+- Admin triggers cleanup when needed
+- Pro: Full control
+- Con: Relies on human action, may forget
+
+**Recommendation:** Combination of A + B
+- Event-driven: Clean snapshots when booking completes
+- TTL-based: Cron job for expired sessions, old debug traces
+- Keep events/clients longer for business reporting
+
+**Implementation Needed:**
+1. Hook `delete_snapshots_for_event()` into Step 7 terminal states
+2. Add session expiration to `active_conversations`
+3. Add debug trace cleanup job (or disable in prod)
+4. Document retention policy for compliance
+
+**Dependencies:** Business requirements, GDPR compliance review, ops infrastructure
+
+---
+
 ## Resolved Decisions
 
 (Move decisions here once resolved, with date and rationale)

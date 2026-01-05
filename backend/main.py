@@ -44,6 +44,7 @@ from backend.legacy.session_store import active_conversations  # Used in root en
 # NOTE: workflow imports moved to routes/messages.py
 from backend.utils import json_io
 from backend.api.middleware import TenantContextMiddleware, AuthMiddleware
+from backend.api.middleware.request_limits import RequestSizeLimitMiddleware
 
 # Environment mode detection: dev vs prod
 # In dev mode, auto-launch/kill conveniences are enabled by default
@@ -137,6 +138,10 @@ app.include_router(emails_router)
 DEBUG_TRACE_ENABLED = is_trace_enabled()
 
 # NOTE: GUI_ADAPTER moved to routes/messages.py
+
+# Request size limit middleware (DoS protection)
+# Rejects requests with body > 1MB (configurable via REQUEST_SIZE_LIMIT_KB)
+app.add_middleware(RequestSizeLimitMiddleware)
 
 # Tenant context middleware (extracts X-Team-Id, X-Manager-Id headers for multi-tenancy)
 # Only active when TENANT_HEADER_ENABLED=1 (test/dev environments)
@@ -428,12 +433,20 @@ def save_events_database(database):
 
 @app.get("/")
 async def root():
-    database = load_events_database()
-    return {
-        "status": "AI Event Manager Running",
-        "active_conversations": len(active_conversations),
-        "total_saved_events": len(database["events"])
-    }
+    """Root health check endpoint.
+
+    In production (ENV=prod), returns minimal status only.
+    In dev mode, includes conversation/event counts for debugging.
+    """
+    is_dev = os.getenv("ENV", "dev").lower() != "prod"
+    if is_dev:
+        database = load_events_database()
+        return {
+            "status": "AI Event Manager Running",
+            "active_conversations": len(active_conversations),
+            "total_saved_events": len(database["events"])
+        }
+    return {"status": "ok"}
 
 
 def _stop_frontend_process() -> None:
