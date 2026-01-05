@@ -9,6 +9,8 @@ ROUTES:
 MIGRATION: Extracted from main.py in Phase C refactoring (2025-12-18).
 """
 
+import os
+
 from fastapi import APIRouter
 
 from backend.workflow_email import DB_PATH as WF_DB_PATH
@@ -19,8 +21,15 @@ router = APIRouter(tags=["workflow"])
 
 @router.get("/api/workflow/health")
 async def workflow_health():
-    """Minimal health check for workflow integration."""
-    return {"db_path": str(WF_DB_PATH), "ok": True}
+    """Minimal health check for workflow integration.
+
+    In production (ENV=prod), db_path is hidden to avoid info leak.
+    """
+    response = {"ok": True}
+    # Only expose db_path in dev mode (info leak in production)
+    if os.getenv("ENV", "dev").lower() != "prod":
+        response["db_path"] = str(WF_DB_PATH)
+    return response
 
 
 @router.get("/api/workflow/hil-status")
