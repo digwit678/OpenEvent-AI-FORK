@@ -315,6 +315,94 @@ When renaming becomes necessary:
 
 ---
 
+### DECISION-009: Client Memory - What to Extract and Store
+
+**Date Raised:** 2026-01-05
+**Context:** Client memory service implemented, but extraction strategy TBD
+**Status:** Open
+
+**Question:** What information should we extract from conversations and store in client memory for personalization?
+
+**Current Implementation:**
+- Basic message history (client + assistant, truncated to 500 chars)
+- Profile fields: name, company, language, preferences[], notes[]
+- Simple rule-based summary (placeholder for LLM)
+
+**Open Questions:**
+
+1. **What to extract automatically:**
+   - Preferred communication style (formal/informal)?
+   - Recurring event patterns (annual conferences, quarterly meetings)?
+   - Room/catering preferences from past bookings?
+   - Budget sensitivity signals?
+   - Decision-making patterns (quick vs. deliberate)?
+
+2. **How to extract:**
+   - Rule-based keyword matching (fast, deterministic)?
+   - LLM extraction after each conversation (accurate but costly)?
+   - Batch processing overnight (delayed but efficient)?
+   - Hybrid: rules for obvious signals, LLM for nuance?
+
+3. **Summary generation:**
+   - When to generate/refresh summaries?
+   - LLM prompt design for personalization summaries?
+   - Max summary length for prompt injection?
+
+4. **Privacy considerations:**
+   - What's appropriate to remember vs. creepy?
+   - Should clients be able to see/edit their memory?
+   - GDPR right to erasure - already have `clear_memory()`
+
+**Extraction Candidates:**
+
+| Signal | Source | Extraction Method | Value |
+|--------|--------|-------------------|-------|
+| Preferred language | user_info.language | Already captured | High |
+| Company size hints | Message content | LLM | Medium |
+| Budget sensitivity | Negotiation patterns | LLM | High |
+| Recurring events | Booking history | Rule-based | High |
+| Room preferences | Past bookings | Rule-based | High |
+| Catering preferences | Past bookings | Rule-based | Medium |
+| Communication style | Message tone | LLM | Low |
+| Decision speed | Response timing | Rule-based | Low |
+
+**Options:**
+
+**Option A: Minimal (Current)**
+- Store messages only
+- No automatic extraction
+- Manual profile updates
+- Pro: Simple, no cost
+- Con: Limited personalization
+
+**Option B: Rule-based extraction**
+- Extract obvious signals (language, room prefs from bookings)
+- Pattern matching for recurring events
+- Pro: Fast, deterministic, no LLM cost
+- Con: Misses nuanced signals
+
+**Option C: LLM extraction**
+- Run extraction prompt after each conversation
+- Generate rich client profiles
+- Pro: Captures nuance, better personalization
+- Con: Cost (~$0.01-0.02 per extraction), latency
+
+**Option D: Hybrid (Recommended)**
+- Rule-based for structured data (prefs from bookings)
+- LLM for summaries (batch, not real-time)
+- Refresh summaries weekly or after N messages
+- Pro: Balance of cost and quality
+- Con: More complex implementation
+
+**Implementation Notes:**
+- Current `generate_summary()` is a placeholder for LLM version
+- `CLIENT_MEMORY_SUMMARY_INTERVAL` controls refresh frequency
+- Memory stored in client dict, persists with database
+
+**Dependencies:** UX research on what personalization is valuable, cost analysis for LLM extraction
+
+---
+
 ## Resolved Decisions
 
 (Move decisions here once resolved, with date and rationale)
