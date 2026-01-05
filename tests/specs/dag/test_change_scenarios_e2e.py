@@ -102,8 +102,10 @@ class TestScenario1_DateChangeRoomStillAvailable:
         user_info = {
             "event_date": "17.03.2026",  # New date
         }
+        # Change detection requires message_text with "date" keyword for intent pattern matching
+        message_text = "Can we change the date to 17.03.2026 instead?"
 
-        change_type = detect_change_type(event_state, user_info)
+        change_type = detect_change_type(event_state, user_info, message_text=message_text)
 
         assert change_type == ChangeType.DATE
 
@@ -113,7 +115,9 @@ class TestScenario1_DateChangeRoomStillAvailable:
 
         # 1. Detect change
         user_info = {"event_date": "17.03.2026"}
-        change_type = detect_change_type(event_state, user_info)
+        # Change detection requires message_text for intent pattern matching
+        message_text = "Can we change the date to 17.03.2026?"
+        change_type = detect_change_type(event_state, user_info, message_text=message_text)
         assert change_type == ChangeType.DATE
 
         # 2. Route change
@@ -228,8 +232,10 @@ class TestScenario3_RequirementsChangeWithSameDate:
         user_info = {
             "participants": 32,  # Changed from 18
         }
+        # Change detection requires message_text for intent pattern matching
+        message_text = "We are actually 32 people, not 18."
 
-        change_type = detect_change_type(event_state, user_info)
+        change_type = detect_change_type(event_state, user_info, message_text=message_text)
 
         assert change_type == ChangeType.REQUIREMENTS
 
@@ -280,12 +286,14 @@ class TestScenario4_ProductsChangeOnly:
         """Detect PRODUCTS change from user_info."""
         event_state = _create_event_with_room_locked()
 
+        # Use products_add for explicit add signal (strong signal path)
         user_info = {
-            "products": ["Prosecco"],
-            "catering": "Add wine pairing",
+            "products_add": ["Prosecco", "Wine Pairing"],
         }
+        # Change detection can also use message_text, but products_add is a direct signal
+        message_text = "Add Prosecco and wine pairing for the event."
 
-        change_type = detect_change_type(event_state, user_info)
+        change_type = detect_change_type(event_state, user_info, message_text=message_text)
 
         assert change_type == ChangeType.PRODUCTS
 
@@ -354,8 +362,10 @@ class TestScenario5_AcceptedOfferThenDateChange:
         user_info = {
             "date": "2026-04-25",  # New date
         }
+        # Change detection requires message_text with "date" keyword for intent pattern matching
+        message_text = "Can we change the date to 25.04.2026 instead?"
 
-        change_type = detect_change_type(event_state, user_info)
+        change_type = detect_change_type(event_state, user_info, message_text=message_text)
 
         assert change_type == ChangeType.DATE
 

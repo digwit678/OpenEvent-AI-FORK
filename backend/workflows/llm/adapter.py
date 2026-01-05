@@ -368,7 +368,7 @@ def classify_intent(message: Dict[str, Optional[str]]) -> Tuple[IntentLabel, flo
 
     payload = _prepare_payload(message)
     if os.getenv("INTENT_FORCE_EVENT_REQUEST") == "1":
-        print("[DEV] intent override -> event_request")
+        logger.debug("[DEV] intent override -> event_request")
         return IntentLabel.EVENT_REQUEST, 0.99
     analysis = _analyze_payload(payload)
     normalized = IntentLabel.normalize(analysis.get("intent"))
@@ -722,6 +722,31 @@ _REQUIREMENT_TOKENS = (
     "equipment",
 )
 
+# Comprehensive event type keywords for intent classification rescue
+# When LLM classifies as "other" but message contains event type + participant count,
+# we override to EVENT_REQUEST. Covers both English and German terms.
+_EVENT_TYPE_TOKENS = (
+    # Food/catering event types
+    "dinner", "lunch", "breakfast", "brunch", "banquet", "gala",
+    "cocktail", "apéro", "apero", "aperitif", "reception",
+    # Event format types
+    "workshop", "training", "seminar", "conference", "meeting",
+    "presentation", "lecture", "talk", "event", "booking",
+    # Celebration types
+    "wedding", "birthday", "celebration", "party", "anniversary",
+    "corporate event", "team event", "company event",
+    # German equivalents
+    "abendessen", "mittagessen", "frühstück", "empfang", "feier",
+    "hochzeit", "geburtstag", "firmenfeier", "teamanlass", "anlass",
+    "veranstaltung", "tagung", "sitzung", "besprechung", "schulung",
+)
+
+# Participant count indicators (EN + DE)
+_PARTICIPANT_TOKENS = (
+    "people", "guests", "participants", "pax", "persons", "attendees",
+    "personen", "gäste", "teilnehmer", "leute",
+)
+
 
 def _heuristic_intent_override(
     payload: Dict[str, str],
@@ -764,9 +789,13 @@ def _heuristic_intent_override(
         return IntentLabel.CONFIRM_DATE if has_time_range else IntentLabel.CONFIRM_DATE_PARTIAL
 
     if base_intent != IntentLabel.EVENT_REQUEST:
-        if any(token in text for token in ("workshop", "conference", "meeting", "event")) and any(
-            pax_token in text for pax_token in ("people", "guests", "participants", "pax")
-        ):
+        # Generic event type + participant count detection
+        # Catches "dinner for 25 guests", "corporate event with 50 people", etc.
+        has_event_type = any(token in text for token in _EVENT_TYPE_TOKENS)
+        has_participant_ref = any(pax_token in text for pax_token in _PARTICIPANT_TOKENS)
+        # Also check for numeric participant patterns like "25 guests" or "for 50"
+        has_numeric_pax = bool(re.search(r"\b\d{1,3}\s*(?:people|guests|pax|persons|personen|gäste)\b", text))
+        if has_event_type and (has_participant_ref or has_numeric_pax):
             return IntentLabel.EVENT_REQUEST
 
     return None

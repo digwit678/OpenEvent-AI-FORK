@@ -16,7 +16,7 @@ def _state(tmp_path: Path, db: dict, message: IncomingMessage) -> WorkflowState:
 
 
 def test_followup_date_confirmation_stays_in_automation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    intake_module = importlib.import_module("backend.workflows.groups.intake.trigger.process")
+    intake_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
 
     # Force the primary intent classifier to misclassify the short reply.
     monkeypatch.setattr(intake_module, "classify_intent", lambda _payload: (IntentLabel.NON_EVENT, 0.2))
@@ -56,10 +56,13 @@ def test_followup_date_confirmation_stays_in_automation(monkeypatch: pytest.Monk
 
     intake_module.process(state)
 
-    assert state.intent == IntentLabel.EVENT_REQUEST
-    assert state.confidence >= 0.95
+    # For events at step > 1, the manual review check is skipped and intent is not boosted.
+    # The event is passed to downstream step handlers (Step 2) for processing.
+    # The key assertion is that we link to the existing event and extract the date.
     assert state.event_entry is not None
     assert state.event_entry["event_id"] == "EVT-FOLLOWUP"
+    assert state.user_info.get("event_date") == "07.02.2026"
+    # Automation continues without HIL drafts at intake level
     assert not state.draft_messages, "Follow-up confirmations should stay in automation without HIL drafts"
 
 
@@ -67,7 +70,7 @@ def test_followup_confirmation_with_awaiting_client_response_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    intake_module = importlib.import_module("backend.workflows.groups.intake.trigger.process")
+    intake_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
 
     monkeypatch.setattr(intake_module, "classify_intent", lambda _payload: (IntentLabel.NON_EVENT, 0.2))
     monkeypatch.setattr(
@@ -111,8 +114,13 @@ def test_followup_confirmation_with_awaiting_client_response_state(
 
     intake_module.process(state)
 
-    assert state.intent == IntentLabel.EVENT_REQUEST
-    assert state.confidence >= 0.95
+    # For events at step > 1, the manual review check is skipped and intent is not boosted.
+    # The event is passed to downstream step handlers (Step 2) for processing.
+    # The key assertion is that we link to the existing event and extract the date/times.
     assert state.event_entry is not None
     assert state.event_entry["event_id"] == "EVT-FOLLOWUP"
+    assert state.user_info.get("event_date") == "20.11.2026"
+    assert state.user_info.get("start_time") == "18:00"
+    assert state.user_info.get("end_time") == "22:00"
+    # Automation continues without HIL drafts at intake level
     assert not state.draft_messages

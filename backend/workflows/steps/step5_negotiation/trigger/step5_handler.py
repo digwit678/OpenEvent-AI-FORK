@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date as dt_date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 from backend.workflows.common.datetime_parse import parse_all_dates
 from backend.workflows.common.timeutils import parse_ddmmyyyy
@@ -28,11 +31,14 @@ from backend.detection.intent.confidence import (
 )
 from backend.workflows.common.requirements import merge_client_profile
 from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
+from backend.workflows.common.general_qna import (
+    append_general_qna_to_primary,
+    present_general_room_qna,
+    _fallback_structured_body,
+)
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
-from backend.workflows.io import database as db_io
 from backend.workflows.io.tasks import enqueue_task, update_task_status
 from backend.workflows.nlu import detect_general_room_query
 # MIGRATED: from backend.workflows.nlu.semantic_matchers -> backend.detection.response.matchers
@@ -47,9 +53,34 @@ from backend.debug.trace import set_hil_open
 from backend.utils.profiler import profile_step
 from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
 
+# N2 refactoring: Constants and classification extracted to dedicated modules
+from .constants import (
+    MAX_COUNTER_PROPOSALS,
+    INTENT_ACCEPT,
+    INTENT_DECLINE,
+    INTENT_COUNTER,
+    INTENT_ROOM_SELECTION,
+    INTENT_CLARIFICATION,
+    OFFER_STATUS_ACCEPTED,
+    OFFER_STATUS_DECLINED,
+    SITE_VISIT_PROPOSED,
+)
+from .classification import (
+    classify_message as _classify_message,
+    collect_detected_intents as _collect_detected_intents,
+    iso_to_ddmmyyyy as _iso_to_ddmmyyyy,
+)
+
+# Billing gate helpers (N3 refactoring → O2 consolidated to common)
+from backend.workflows.common.billing_gate import (
+    refresh_billing as _refresh_billing,
+    flag_billing_accept_pending as _flag_billing_accept_pending,
+    billing_prompt_draft as _billing_prompt_draft,
+)
+
 __all__ = ["process"]
 
-MAX_COUNTERS = 3
+# N2: MAX_COUNTERS moved to constants.py as MAX_COUNTER_PROPOSALS
 
 
 def _menu_name_set() -> set[str]:
@@ -117,12 +148,44 @@ def process(state: WorkflowState) -> GroupResult:
     # Clear stale HIL requests from earlier steps (e.g., outdated offer drafts).
     _clear_stale_hil_requests(state, event_entry, keep_steps={5})
 
+    # -------------------------------------------------------------------------
+    # BILLING FLOW CAPTURE: Must run BEFORE pending HIL check!
+    # When awaiting_billing_for_accept=True, the client's message contains
+    # their billing address. We must capture it before any early returns.
+    # -------------------------------------------------------------------------
+    billing_req = event_entry.get("billing_requirements") or {}
+    in_billing_capture_mode = billing_req.get("awaiting_billing_for_accept", False)
+
+    if in_billing_capture_mode:
+        # Skip billing capture for synthetic deposit payment messages
+        # (their body is "I have paid the deposit." which would corrupt billing)
+        is_deposit_signal = (state.message.extras or {}).get("deposit_just_paid", False)
+        if not is_deposit_signal:
+            message_text = (state.message.body or "").strip()
+            if message_text:
+                event_entry.setdefault("event_data", {})["Billing Address"] = message_text
+                state.extras["persist"] = True
+                logger.debug("[BILLING_CAPTURE] Stored billing address from message: %s...", message_text[:80])
+
+    # Refresh billing details (parses event_data["Billing Address"] into structured fields)
+    billing_missing = _refresh_billing(event_entry)
+    state.extras["persist"] = True
+
+    # Clear awaiting_billing_for_accept once billing is complete
+    if not billing_missing and billing_req.get("awaiting_billing_for_accept"):
+        billing_req["awaiting_billing_for_accept"] = False
+        billing_req["last_missing"] = []
+        state.extras["persist"] = True
+        logger.debug("[BILLING_CAPTURE] Billing complete - cleared awaiting_billing_for_accept")
+
     # If a manager decision is already pending, keep waiting instead of spamming duplicates.
+    # BUT: Skip this check during billing flow - we need to continue to confirmation gate.
     pending_decision = event_entry.get("negotiation_pending_decision")
     pending_hil = [
         req for req in (event_entry.get("pending_hil_requests") or []) if req.get("step") == 5
     ]
-    if pending_decision or pending_hil:
+    if (pending_decision or pending_hil) and not event_entry.get("offer_accepted"):
+        # Only block on pending HIL if NOT in offer acceptance flow
         state.set_thread_state("Waiting on HIL")
         set_hil_open(thread_id, True)
         payload = {
@@ -137,43 +200,6 @@ def process(state: WorkflowState) -> GroupResult:
         return GroupResult(action="negotiation_hil_waiting", payload=payload, halt=True)
 
     if merge_client_profile(event_entry, state.user_info or {}):
-        state.extras["persist"] = True
-
-    billing_req = event_entry.get("billing_requirements") or {}
-    print(f"[Step5][DEBUG] awaiting_billing_for_accept={billing_req.get('awaiting_billing_for_accept')}")
-    if billing_req.get("awaiting_billing_for_accept"):
-        # Skip billing capture for synthetic deposit payment messages
-        # (their body is "I have paid the deposit." which would corrupt billing)
-        is_deposit_signal = (state.message.extras or {}).get("deposit_just_paid", False)
-        print(f"[Step5][DEBUG] is_deposit_signal={is_deposit_signal}")
-        if not is_deposit_signal:
-            message_text = (state.message.body or "").strip()
-            print(f"[Step5][DEBUG] message_text={repr(message_text[:100] if message_text else '')}")
-            if message_text:
-                event_entry.setdefault("event_data", {})["Billing Address"] = message_text
-                state.extras["persist"] = True
-                print(f"[Step5][DEBUG] ✅ Captured billing address: {message_text[:50]}...")
-                # FORCE SAVE: Ensure billing is persisted immediately
-                # This fixes the bug where deferred persistence wasn't saving billing
-                try:
-                    db_io.save_db(state.db, state.db_path)
-                    print(f"[Step5][DEBUG] ✅ FORCE SAVED billing to database")
-                except Exception as save_err:
-                    print(f"[Step5][ERROR] Failed to force save billing: {save_err}")
-
-    billing_missing = _refresh_billing(event_entry)
-    state.extras["persist"] = True
-    # FORCE SAVE after billing refresh to ensure billing_details is persisted
-    try:
-        db_io.save_db(state.db, state.db_path)
-        print(f"[Step5][DEBUG] ✅ FORCE SAVED after billing refresh (billing_missing={billing_missing})")
-    except Exception as save_err:
-        print(f"[Step5][ERROR] Failed to save after billing refresh: {save_err}")
-
-    # Clear awaiting_billing_for_accept once billing is complete
-    if not billing_missing and billing_req.get("awaiting_billing_for_accept"):
-        billing_req["awaiting_billing_for_accept"] = False
-        billing_req["last_missing"] = []
         state.extras["persist"] = True
 
     # -------------------------------------------------------------------------
@@ -200,8 +226,6 @@ def process(state: WorkflowState) -> GroupResult:
 
         if gate_status.ready_for_hil:
             # All prerequisites met - continue to HIL
-            print(f"[Step5] Confirmation gate passed: billing_complete={gate_status.billing_complete}, "
-                  f"deposit_required={gate_status.deposit_required}, deposit_paid={gate_status.deposit_paid}")
             # Use the existing _handle_accept flow
             response = _handle_accept(event_entry)
             # _handle_accept returns {"draft": {"body": ...}, ...}
@@ -394,6 +418,21 @@ def process(state: WorkflowState) -> GroupResult:
         return result
 
     if classification == "accept":
+        # Mark offer as accepted - this MUST be set for billing flow bypass to work
+        # (Bug fix: step5 was missing this, causing offer_accepted=None during billing)
+        event_entry["offer_accepted"] = True
+        state.extras["persist"] = True
+
+        # ---------------------------------------------------------------------
+        # COMBINED ACCEPT + BILLING: Capture billing from same message
+        # When client sends "Yes, I accept. Billing: [address]", the billing
+        # info is in user_info but wasn't being captured before refresh check.
+        # ---------------------------------------------------------------------
+        billing_from_message = user_info.get("billing_address")
+        if billing_from_message and str(billing_from_message).strip():
+            event_entry.setdefault("event_data", {})["Billing Address"] = str(billing_from_message).strip()
+            state.extras["persist"] = True
+
         billing_missing = _refresh_billing(event_entry)
         if billing_missing:
             _flag_billing_accept_pending(event_entry, billing_missing)
@@ -453,7 +492,7 @@ def process(state: WorkflowState) -> GroupResult:
 
     if classification == "counter":
         negotiation_state["counter_count"] = int(negotiation_state.get("counter_count") or 0) + 1
-        if negotiation_state["counter_count"] > MAX_COUNTERS:
+        if negotiation_state["counter_count"] > MAX_COUNTER_PROPOSALS:
             manual_id = negotiation_state.get("manual_review_task_id")
             if not manual_id:
                 manual_payload = {
@@ -470,8 +509,8 @@ def process(state: WorkflowState) -> GroupResult:
                 negotiation_state["manual_review_task_id"] = manual_id
             draft = {
                 "body": append_footer(
-                    "Thanks for the suggestions — I’ve escalated this to our manager to review pricing. "
-                    "We’ll get back to you shortly.",
+                    "Thanks for the suggestions. I've escalated this to our manager to review pricing. "
+                    "We'll get back to you shortly.",
                     step=5,
                     next_step=5,
                     thread_state="Awaiting Client Response",
@@ -523,7 +562,7 @@ def process(state: WorkflowState) -> GroupResult:
     # Clarification by default.
     clarification = {
         "body": append_footer(
-            "Happy to clarify any part of the proposal — let me know which detail you’d like more information on.",
+            "Happy to clarify any part of the proposal. Let me know which detail you'd like more information on.",
             step=5,
             next_step=5,
             thread_state="Awaiting Client Response",
@@ -550,49 +589,6 @@ def process(state: WorkflowState) -> GroupResult:
     if deferred_general_qna:
         _append_deferred_general_qna(state, event_entry, qna_classification, thread_id)
     return result
-
-
-def _collect_detected_intents(message_text: str) -> List[Tuple[str, float]]:
-    lowered = (message_text or "").lower()
-    intents: List[Tuple[str, float]] = []
-
-    if is_room_selection(lowered):
-        intents.append(("room_selection", 0.85))
-
-    accept, accept_conf, _ = matches_acceptance_pattern(lowered)
-    if accept:
-        intents.append(("accept", accept_conf))
-
-    decline, decline_conf, _ = matches_decline_pattern(lowered)
-    if decline:
-        intents.append(("decline", decline_conf))
-
-    counter, counter_conf, _ = matches_counter_pattern(lowered)
-    if counter:
-        intents.append(("counter", counter_conf))
-
-    if re.search(r"\bchf\s*\d", lowered) or re.search(r"\d+\s*(?:franc|price|total)", lowered):
-        intents.append(("counter", 0.65))
-
-    if "?" in lowered:
-        intents.append(("clarification", 0.6))
-
-    return intents
-
-
-def _classify_message(message_text: str) -> Tuple[str, float]:
-    lowered = (message_text or "").lower()
-    candidates = _collect_detected_intents(lowered)
-
-    if candidates:
-        best = max(candidates, key=lambda item: item[1])
-        if best[1] > 0.4:
-            return best
-
-    if "?" in lowered:
-        return "clarification", 0.6
-
-    return "clarification", 0.3
 
 
 def _ask_classification_clarification(
@@ -684,7 +680,34 @@ def _detect_structural_change(
     if not in_site_visit_mode and (new_iso_date or new_ddmmyyyy):
         candidate = new_ddmmyyyy or _iso_to_ddmmyyyy(new_iso_date)
         if candidate and candidate != event_entry.get("chosen_date"):
-            return 2, "negotiation_changed_date"
+            # -------------------------------------------------------------------------
+            # HALLUCINATION GUARD: Verify the date actually appears in the message
+            # LLM may hallucinate dates (e.g., today's date) for messages without dates.
+            # Only treat as date change if the date appears in the actual message text.
+            # -------------------------------------------------------------------------
+            if message_text:
+                date_in_message = False
+                # Check if DD.MM.YYYY format appears
+                if candidate and candidate in message_text:
+                    date_in_message = True
+                # Check if ISO format appears
+                elif new_iso_date and new_iso_date in message_text:
+                    date_in_message = True
+                else:
+                    # Parse dates from message directly and compare
+                    parsed_dates = list(parse_all_dates(message_text, fallback_year=dt_date.today().year))
+                    parsed_iso = {d.isoformat() for d in parsed_dates}
+                    if new_iso_date and new_iso_date in parsed_iso:
+                        date_in_message = True
+
+                if not date_in_message:
+                    # Date was likely hallucinated by LLM - skip date change detection
+                    # Let the requirements/room/product checks below handle it
+                    pass
+                else:
+                    return 2, "negotiation_changed_date"
+            else:
+                return 2, "negotiation_changed_date"
 
     # Fallback: parse dates directly from message text (same as Step 2/3/4)
     # This catches cases where user_info wasn't populated with the new date
@@ -794,71 +817,7 @@ def _apply_hil_negotiation_decision(state: WorkflowState, event_entry: Dict[str,
     }
     return GroupResult(action="negotiation_hil_approved", payload=payload, halt=False)
 
-
-def _refresh_billing(event_entry: Dict[str, Any]) -> list[str]:
-    """Parse and persist billing details, returning missing required fields."""
-
-    update_billing_details(event_entry)
-    details = event_entry.get("billing_details") or {}
-    missing = missing_billing_fields(event_entry)
-    has_filled_required = len(missing) < 5
-    display = format_billing_display(details, (event_entry.get("event_data") or {}).get("Billing Address"))
-    if display and has_filled_required:
-        event_entry.setdefault("event_data", {})["Billing Address"] = display
-
-    validation = event_entry.setdefault("billing_validation", {})
-    if missing:
-        validation["missing"] = list(missing)
-    else:
-        validation.pop("missing", None)
-    return missing
-
-
-def _flag_billing_accept_pending(event_entry: Dict[str, Any], missing_fields: list[str]) -> None:
-    gate = event_entry.setdefault("billing_requirements", {})
-    gate["awaiting_billing_for_accept"] = True
-    gate["last_missing"] = list(missing_fields)
-
-
-def _auto_accept_if_billing_ready(
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-    thread_id: str,
-    missing_fields: list[str],
-) -> Optional[GroupResult]:
-    gate = event_entry.get("billing_requirements") or {}
-    if not gate.get("awaiting_billing_for_accept"):
-        return None
-    if missing_fields:
-        gate["last_missing"] = list(missing_fields)
-        return None
-
-    gate["awaiting_billing_for_accept"] = False
-    gate["last_missing"] = []
-    return _start_hil_acceptance(
-        state,
-        event_entry,
-        thread_id,
-        audit_label="offer_accept_pending_hil_auto",
-        action="negotiation_accept_pending_hil",
-    )
-
-
-def _billing_prompt_draft(missing_fields: list[str], *, step: int) -> Dict[str, Any]:
-    prompt = (
-        "Thanks for confirming — I need the billing address before I can send this for approval.\n"
-        f"{billing_prompt_for_missing_fields(missing_fields)} "
-        "Example: \"Helvetia Labs, Bahnhofstrasse 1, 8001 Zurich, Switzerland\". "
-        "As soon as I have it, I'll forward the offer automatically."
-    )
-    return {
-        "body_markdown": prompt,
-        "step": step,
-        "topic": "billing_details_required",
-        "next_step": "Await billing details",
-        "thread_state": "Awaiting Client",
-        "requires_approval": False,
-    }
+# NOTE: _auto_accept_if_billing_ready was removed (dead code) - replaced by confirmation_gate.py
 
 
 def _start_hil_acceptance(
@@ -982,7 +941,7 @@ def _offer_summary_lines(event_entry: Dict[str, Any], *, include_cta: bool = Tru
     intro_date = chosen_date if chosen_date != "Date TBD" else "your requested date"
     lines: list[str] = []
     if manager_requested:
-        lines.append(f"Great — {intro_room} on {intro_date} is ready for manager review.")
+        lines.append(f"Great, {intro_room} on {intro_date} is ready for manager review.")
     lines.append(f"Offer draft for {chosen_date} · {room}")
     lines.append("")
 
@@ -1166,7 +1125,7 @@ def _handle_decline(event_entry: Dict[str, Any]) -> Dict[str, Any]:
     event_entry["offer_status"] = "Declined"
     return {
         "body": append_footer(
-            "Thank you for letting me know. I’ve noted the cancellation — we’d be happy to help with future events anytime.",
+            "Thank you for letting me know. I've noted the cancellation. We'd be happy to help with future events anytime.",
             step=5,
             next_step=7,
             thread_state="In Progress",
@@ -1175,16 +1134,6 @@ def _handle_decline(event_entry: Dict[str, Any]) -> Dict[str, Any]:
         "topic": "negotiation_decline",
         "requires_approval": True,
     }
-
-
-def _iso_to_ddmmyyyy(raw: Optional[str]) -> Optional[str]:
-    if not raw:
-        return None
-    match = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", raw.strip())
-    if not match:
-        return None
-    year, month, day = match.groups()
-    return f"{day}.{month}.{year}"
 
 
 def _determine_offer_total(event_entry: Dict[str, Any]) -> float:
@@ -1247,169 +1196,11 @@ def _present_general_room_qna(
     classification: Dict[str, Any],
     thread_id: Optional[str],
 ) -> GroupResult:
-    """Handle general Q&A at Step 5 using the same pattern as Step 2."""
-    subloop_label = "general_q_a"
-    state.extras["subloop"] = subloop_label
-    resolved_thread_id = thread_id or state.thread_id
-
-    if thread_id:
-        set_subloop(thread_id, subloop_label)
-
-    # Extract fresh from current message (multi-turn Q&A fix)
-    message = state.message
-    subject = (message.subject if message else "") or ""
-    body = (message.body if message else "") or ""
-    message_text = f"{subject}\n{body}".strip() or body or subject
-
-    scan = state.extras.get("general_qna_scan")
-    # Force fresh extraction for multi-turn Q&A
-    ensure_qna_extraction(state, message_text, scan, force_refresh=True)
-    extraction = state.extras.get("qna_extraction")
-
-    # Clear stale qna_cache AFTER extraction
-    if isinstance(event_entry, dict):
-        event_entry.pop("qna_cache", None)
-
-    structured = build_structured_qna_result(state, extraction) if extraction else None
-
-    if structured and structured.handled:
-        rooms = structured.action_payload.get("db_summary", {}).get("rooms", [])
-        date_lookup: Dict[str, str] = {}
-        for entry in rooms:
-            iso_date = entry.get("date") or entry.get("iso_date")
-            if not iso_date:
-                continue
-            try:
-                parsed = datetime.fromisoformat(iso_date)
-            except ValueError:
-                try:
-                    parsed = datetime.strptime(iso_date, "%Y-%m-%d")
-                except ValueError:
-                    continue
-            label = parsed.strftime("%d.%m.%Y")
-            date_lookup.setdefault(label, parsed.date().isoformat())
-
-        candidate_dates = sorted(date_lookup.keys(), key=lambda label: date_lookup[label])[:5]
-        actions = [
-            {
-                "type": "select_date",
-                "label": f"Confirm {label}",
-                "date": label,
-                "iso_date": date_lookup[label],
-            }
-            for label in candidate_dates
-        ]
-
-        body_markdown = (structured.body_markdown or _fallback_structured_body(structured.action_payload)).strip()
-        footer_body = append_footer(
-            body_markdown,
-            step=5,
-            next_step=5,
-            thread_state="Awaiting Client",
-        )
-
-        draft_message = {
-            "body": footer_body,
-            "body_markdown": body_markdown,
-            "step": 5,
-            "next_step": 5,
-            "thread_state": "Awaiting Client",
-            "topic": "general_room_qna",
-            "candidate_dates": candidate_dates,
-            "actions": actions,
-            "subloop": subloop_label,
-            "headers": ["Availability overview"],
-        }
-
-        state.add_draft_message(draft_message)
-        update_event_metadata(
-            event_entry,
-            thread_state="Awaiting Client",
-            current_step=5,
-            candidate_dates=candidate_dates,
-        )
-        state.set_thread_state("Awaiting Client")
-        state.record_subloop(subloop_label)
-        state.intent_detail = "event_intake_with_question"
-        state.extras["persist"] = True
-
-        # Store minimal last_general_qna context for follow-up detection only
-        if extraction and isinstance(event_entry, dict):
-            q_values = extraction.get("q_values") or {}
-            event_entry["last_general_qna"] = {
-                "topic": structured.action_payload.get("qna_subtype"),
-                "date_pattern": q_values.get("date_pattern"),
-                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
-            }
-
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "candidate_dates": candidate_dates,
-            "draft_messages": state.draft_messages,
-            "thread_state": state.thread_state,
-            "context": state.context_snapshot,
-            "persisted": True,
-            "general_qna": True,
-            "structured_qna": structured.handled,
-            "qna_select_result": structured.action_payload,
-            "structured_qna_debug": structured.debug,
-            "actions": actions,
-        }
-        if extraction:
-            payload["qna_extraction"] = extraction
-        return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
-
-    # Fallback if structured Q&A failed
-    fallback_prompt = "[STRUCTURED_QNA_FALLBACK]\nI couldn't load the structured Q&A context for this request. Please review extraction logs."
-    draft_message = {
-        "step": 5,
-        "topic": "general_room_qna",
-        "body": f"{fallback_prompt}\n\n---\nStep: 5 Negotiation · Next: 5 Negotiation · State: Awaiting Client",
-        "body_markdown": fallback_prompt,
-        "next_step": 5,
-        "thread_state": "Awaiting Client",
-        "headers": ["Availability overview"],
-        "requires_approval": False,
-        "subloop": subloop_label,
-        "actions": [],
-        "candidate_dates": [],
-    }
-    state.add_draft_message(draft_message)
-    update_event_metadata(
-        event_entry,
-        thread_state="Awaiting Client",
-        current_step=5,
-        candidate_dates=[],
+    """Handle general Q&A at Step 5 - delegates to shared implementation."""
+    return present_general_room_qna(
+        state, event_entry, classification, thread_id,
+        step_number=5, step_name="Negotiation"
     )
-    state.set_thread_state("Awaiting Client")
-    state.record_subloop(subloop_label)
-    state.intent_detail = "event_intake_with_question"
-    state.extras["structured_qna_fallback"] = True
-    structured_payload = structured.action_payload if structured else {}
-    structured_debug = structured.debug if structured else {"reason": "missing_structured_context"}
-
-    payload = {
-        "client_id": state.client_id,
-        "event_id": event_entry.get("event_id"),
-        "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "candidate_dates": [],
-        "draft_messages": state.draft_messages,
-        "thread_state": state.thread_state,
-        "context": state.context_snapshot,
-        "persisted": True,
-        "general_qna": True,
-        "structured_qna": False,
-        "structured_qna_fallback": True,
-        "qna_select_result": structured_payload,
-        "structured_qna_debug": structured_debug,
-    }
-    if extraction:
-        payload["qna_extraction"] = extraction
-    return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
 
 
 def _append_deferred_general_qna(

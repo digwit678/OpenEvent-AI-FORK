@@ -457,7 +457,7 @@ def _room_info_lookup() -> Dict[str, Dict[str, Any]]:
     from pathlib import Path
     import json
 
-    data_path = Path(__file__).resolve().parents[1] / "room_info.json"
+    data_path = Path(__file__).resolve().parents[1] / "data" / "rooms.json"
     if not data_path.exists():
         return {}
     with data_path.open("r", encoding="utf-8") as handle:

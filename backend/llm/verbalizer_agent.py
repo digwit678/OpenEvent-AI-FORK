@@ -6,8 +6,9 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.utils.openai_key import load_openai_api_key
+from backend.llm.client import get_openai_client, is_llm_available
 from backend.ux.verb_rubric import enforce as enforce_rubric
+from backend.workflows.io.config_store import get_currency_code
 
 logger = logging.getLogger(__name__)
 
@@ -216,13 +217,8 @@ def _build_prompt_payload(
 def _call_verbalizer(payload: Dict[str, Any]) -> str:
     deterministic = os.getenv("OPENAI_TEST_MODE") == "1"
     temperature = 0.0 if deterministic else 0.2
-    try:
-        from openai import OpenAI  # type: ignore
-    except Exception as exc:  # pragma: no cover - import guard
-        raise RuntimeError(f"OpenAI SDK unavailable: {exc}") from exc
 
-    api_key = load_openai_api_key()
-    client = OpenAI(api_key=api_key)
+    client = get_openai_client()
     response = client.responses.create(
         model=os.getenv("OPENAI_VERBALIZER_MODEL", "gpt-4o-mini"),
         input=[
@@ -290,9 +286,8 @@ def verbalize_room_offer(
         return fallback_text
 
     # Check if LLM is available
-    api_key = load_openai_api_key(required=False)
-    if not api_key:
-        logger.debug("verbalize_room_offer: no API key, using fallback")
+    if not is_llm_available():
+        logger.debug("verbalize_room_offer: LLM not available, using fallback")
         return fallback_text
 
     try:
@@ -334,6 +329,9 @@ def _build_room_offer_prompt(
     else:
         locale_instruction = "Write the response in English. "
 
+    # Get currency code from venue config
+    currency = get_currency_code()
+
     system_content = f"""You are OpenEvent's professional event manager for a premium venue.
 
 {locale_instruction}Your task is to present room options and offer details to a client in a concise, competent, and direct tone.
@@ -346,15 +344,14 @@ STYLE GUIDELINES:
 STRICT RULES:
 1. You MUST include ALL dates exactly as provided (format: DD.MM.YYYY)
 2. You MUST include ALL room names exactly as provided
-3. You MUST include ALL prices exactly as provided (format: CHF XX or CHF XX.XX)
+3. You MUST include ALL prices exactly as provided (format: {currency} XX or {currency} XX.XX)
 4. You MUST include the participant count if provided
 5. You MUST NOT invent any new dates, prices, room names, or numeric values
 6. You MUST NOT change any numbers, dates, or prices
 7. You MAY:
    - Add a brief, professional greeting
-   - Recommend rooms based on matched preferences
    - Explain differences between rooms briefly
-   - Reorder or group items for clarity
+8. ROOM ORDERING: If a "recommended_room" is specified in the facts, you MUST present that room FIRST as the primary recommendation. The client explicitly requested this room.
 
 Keep the response concise (under 120 words)."""
 

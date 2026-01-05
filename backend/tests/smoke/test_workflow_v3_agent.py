@@ -1,10 +1,15 @@
-from openai import OpenAI
+"""Smoke test for OpenAI client connectivity via centralized singleton."""
 
-from backend.utils.openai_key import load_openai_api_key
+import pytest
+
+from backend.llm.client import get_openai_client, is_llm_available
+
 
 def test_agent_smoke():
-    key = load_openai_api_key()
-    assert len(key) > 20
-    client = OpenAI(api_key=key)
+    """Verify OpenAI client can connect and list models."""
+    if not is_llm_available():
+        pytest.skip("LLM not available (no API key or stub mode)")
+
+    client = get_openai_client()
     first = next(iter(client.models.list().data), None)
-    assert first is not None
+    assert first is not None, "Should be able to list at least one model"

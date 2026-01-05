@@ -1,0 +1,256 @@
+{
+  "rooms": [
+    {
+      "id": "atelier-room-a",
+      "name": "Room A",
+      "calendar_id": "atelier-room-a",
+      "capacity_min": 12,
+      "capacity_max": 40,
+      "capacity_optimal": 15,
+      "capacity_by_layout": {
+        "theatre": 40,
+        "u_shape": 22,
+        "workshop": 28
+      },
+      "buffer_before_min": 30,
+      "buffer_after_min": 30,
+      "max_parallel_events": 1,
+      "features": [
+        "parking",
+        "screen",
+        "WiFi included",
+        "projector",
+        "Whiteboard",
+        "Adjustable lighting",
+        "stage",
+        "Climate control",
+        "Flip chart",
+        "Natural daylight"
+      ],
+      "services": [
+        "coffee service",
+        "water station"
+      ],
+      "equipment": [
+        "Beamer/Projector",
+        "Screen",
+        "Sound system",
+        "Microphone (upon request)"
+      ],
+      "setup_options": [
+        "U-shape (up to 15 people)",
+        "Theater style (up to 20 people)",
+        "Boardroom (up to 12 people)",
+        "Standing reception (up to 25 people)"
+      ],
+      "best_for": [
+        "Small meetings",
+        "Workshops",
+        "Training sessions",
+        "Brainstorming sessions"
+      ],
+      "size_sqm": 45,
+      "hourly_rate": 80,
+      "half_day_rate": 300,
+      "full_day_rate": 500
+    },
+    {
+      "id": "atelier-room-b",
+      "name": "Room B",
+      "calendar_id": "atelier-room-b",
+      "capacity_min": 20,
+      "capacity_max": 60,
+      "capacity_optimal": 25,
+      "capacity_by_layout": {
+        "theatre": 60,
+        "classroom": 36,
+        "workshop": 32
+      },
+      "buffer_before_min": 30,
+      "buffer_after_min": 30,
+      "max_parallel_events": 1,
+      "features": [
+        "parking",
+        "background music",
+        "screen",
+        "Floor-to-ceiling windows",
+        "WiFi included",
+        "projector",
+        "Modern design",
+        "Climate control",
+        "Natural daylight",
+        "Multiple whiteboards",
+        "sound_system",
+        "Flip charts"
+      ],
+      "services": [
+        "coffee service"
+      ],
+      "equipment": [
+        "Large screen (75 inch)",
+        "Beamer/Projector",
+        "Professional sound system",
+        "2 wireless microphones",
+        "Video conferencing setup"
+      ],
+      "setup_options": [
+        "U-shape (up to 20 people)",
+        "Theater style (up to 30 people)",
+        "Boardroom (up to 18 people)",
+        "Classroom style (up to 24 people)",
+        "Standing reception (up to 40 people)"
+      ],
+      "best_for": [
+        "Medium-sized workshops",
+        "Team events",
+        "Presentations",
+        "Seminars",
+        "Hybrid meetings"
+      ],
+      "size_sqm": 75,
+      "hourly_rate": 120,
+      "half_day_rate": 450,
+      "full_day_rate": 750
+    },
+    {
+      "id": "atelier-room-c",
+      "name": "Room C",
+      "calendar_id": "atelier-room-c",
+      "capacity_min": 30,
+      "capacity_max": 80,
+      "capacity_optimal": 40,
+      "capacity_by_layout": {
+        "theatre": 80,
+        "banquet": 56,
+        "workshop": 40
+      },
+      "buffer_before_min": 45,
+      "buffer_after_min": 45,
+      "max_parallel_events": 1,
+      "features": [
+        "Acoustic panels",
+        "background music",
+        "screen",
+        "bar area",
+        "WiFi included",
+        "Spacious open floor plan",
+        "Separate breakout area",
+        "Natural daylight from multiple sides",
+        "stage",
+        "Climate control",
+        "Multiple whiteboards",
+        "sound_system",
+        "Premium atmosphere"
+      ],
+      "services": [
+        "water station",
+        "finger food catering"
+      ],
+      "equipment": [
+        "Premium 85-inch screen",
+        "High-end beamer/projector",
+        "Professional conference sound system",
+        "4 wireless microphones",
+        "Advanced video conferencing",
+        "Recording capability"
+      ],
+      "setup_options": [
+        "U-shape (up to 30 people)",
+        "Theater style (up to 50 people)",
+        "Boardroom (up to 25 people)",
+        "Classroom style (up to 40 people)",
+        "Banquet style (up to 35 people)",
+        "Standing reception (up to 70 people)"
+      ],
+      "best_for": [
+        "Large conferences",
+        "Company events",
+        "Product launches",
+        "Panel discussions",
+        "Networking events",
+        "Galas and celebrations"
+      ],
+      "size_sqm": 120,
+      "hourly_rate": 180,
+      "half_day_rate": 650,
+      "full_day_rate": 1100
+    },
+    {
+      "id": "atelier-room-d",
+      "name": "Room D",
+      "calendar_id": "atelier-room-d",
+      "capacity_min": 10,
+      "capacity_max": 26,
+      "capacity_by_layout": {
+        "boardroom": 16,
+        "workshop": 22
+      },
+      "buffer_before_min": 20,
+      "buffer_after_min": 20,
+      "max_parallel_events": 1,
+      "features": [
+        "projector",
+        "screen"
+      ],
+      "services": [
+        "coffee service"
+      ],
+      "equipment": [],
+      "setup_options": [],
+      "best_for": []
+    },
+    {
+      "id": "atelier-room-e",
+      "name": "Room E",
+      "calendar_id": "atelier-room-e",
+      "capacity_min": 40,
+      "capacity_max": 120,
+      "capacity_by_layout": {
+        "theatre": 120,
+        "banquet": 80
+      },
+      "buffer_before_min": 60,
+      "buffer_after_min": 60,
+      "max_parallel_events": 1,
+      "features": [
+        "stage",
+        "background music",
+        "sound_system",
+        "parking"
+      ],
+      "services": [
+        "coffee service",
+        "finger food catering"
+      ],
+      "equipment": [],
+      "setup_options": [],
+      "best_for": []
+    },
+    {
+      "id": "atelier-room-f",
+      "name": "Room F",
+      "calendar_id": "atelier-room-f",
+      "capacity_min": 18,
+      "capacity_max": 45,
+      "capacity_by_layout": {
+        "theatre": 45,
+        "u_shape": 20,
+        "workshop": 30
+      },
+      "buffer_before_min": 30,
+      "buffer_after_min": 30,
+      "max_parallel_events": 1,
+      "features": [
+        "projector",
+        "parking",
+        "screen"
+      ],
+      "services": [
+        "coffee service"
+      ],
+      "equipment": [],
+      "setup_options": [],
+      "best_for": []
+    }
+  ]
+}

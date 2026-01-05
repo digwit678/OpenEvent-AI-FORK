@@ -241,6 +241,6 @@ test_stuff()
 ## References
 
 - `CLAUDE.md` - Project guidance and workflow documentation
-- `docs/TEAM_GUIDE.md` - Known issues and fixes
+- `docs/guides/TEAM_GUIDE.md` - Known issues and fixes
 - `backend/workflow/specs/` - V4 workflow specifications
 - `tests/TEST_INVENTORY.md` - Current test inventory

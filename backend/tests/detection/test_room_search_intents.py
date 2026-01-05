@@ -8,7 +8,7 @@ Tests the new room search intent categories added to the detection system:
 - CONFIRM_BOOKING: Strong confirmation signals
 
 References:
-- docs/plans/DETECTION_IMPROVEMENT_PLAN.md
+- docs/plans/completed/DONE__DETECTION_IMPROVEMENT_PLAN.md
 - Industry best practices for booking intent classification
 """
 

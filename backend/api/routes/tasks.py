@@ -13,9 +13,12 @@ DEPENDS ON:
     - backend/workflows/common/pricing.py  # Rate calculations for task summaries
 """
 
+import logging
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from backend.workflow_email import (
     load_db as wf_load_db,
@@ -207,7 +210,7 @@ async def approve_task(task_id: str, request: TaskDecisionRequest):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to approve task: {exc}") from exc
-    print(f"[WF] task approved id={task_id}")
+    logger.info("Task approved: %s", task_id)
     assistant_text = result.get("res", {}).get("assistant_draft_text")
     return {
         "task_id": task_id,
@@ -228,7 +231,7 @@ async def reject_task(task_id: str, request: TaskDecisionRequest):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to reject task: {exc}") from exc
-    print(f"[WF] task rejected id={task_id}")
+    logger.info("Task rejected: %s", task_id)
     assistant_text = result.get("res", {}).get("assistant_draft_text")
     return {
         "task_id": task_id,
@@ -249,5 +252,5 @@ async def cleanup_tasks(request: TaskCleanupRequest):
         wf_save_db(db)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to cleanup tasks: {exc}") from exc
-    print(f"[WF] tasks cleanup removed={removed}")
+    logger.info("Tasks cleanup: removed=%d", removed)
     return {"removed": removed}

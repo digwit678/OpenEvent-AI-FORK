@@ -15,7 +15,7 @@ def _data_root() -> Path:
 
 @lru_cache(maxsize=1)
 def _rooms_payload() -> Dict[str, Any]:
-    path = _data_root() / "room_info.json"
+    path = _data_root() / "data" / "rooms.json"
     if not path.exists():
         return {}
     with path.open("r", encoding="utf-8") as handle:
@@ -31,7 +31,7 @@ def _room_entries() -> Iterable[Dict[str, Any]]:
 
 
 def _catering_payload() -> Dict[str, Any]:
-    path = _data_root() / "catering_menu.json"
+    path = _data_root() / "data" / "products.json"
     if not path.exists():
         return {}
     with path.open("r", encoding="utf-8") as handle:
@@ -56,8 +56,11 @@ def _feature_matches(feature: str, entry: Dict[str, Any]) -> bool:
 
 
 def _max_capacity(entry: Dict[str, Any]) -> Optional[int]:
-    block = entry.get("capacity") or {}
-    value = block.get("max")
+    # Support both flat (capacity_max) and nested (capacity.max) formats
+    value = entry.get("capacity_max")
+    if value is None:
+        block = entry.get("capacity") or {}
+        value = block.get("max")
     if isinstance(value, (int, float)):
         try:
             return int(value)
@@ -116,15 +119,18 @@ def list_room_features(room_id: str) -> List[str]:
     return []
 
 
-_PRODUCT_CATALOG: List[Dict[str, Any]] = [
-    {"name": "Projector & Screen", "category": "av", "rooms": ["Room A", "Room B", "Room C"]},
-    {"name": "Wireless Microphones (pair)", "category": "av", "rooms": ["Room B", "Room C"]},
-    {"name": "Flip Chart Pack", "category": "equipment", "rooms": ["Room A", "Room B", "Room C"]},
-    {"name": "Hybrid Video Kit", "category": "av", "rooms": ["Room B", "Room C"]},
-    {"name": "Stage Lighting Kit", "category": "lighting", "rooms": ["Room C"]},
-    {"name": "Breakout Furniture Set", "category": "furniture", "rooms": ["Room C"]},
-    {"name": "Facilitator Supplies Bundle", "category": "supplies", "rooms": ["Room A", "Room B"]},
-]
+# Database-backed product catalog accessor - see config_store.py for defaults
+from backend.workflows.io.config_store import get_product_room_map
+
+
+def _get_product_catalog() -> List[Dict[str, Any]]:
+    """Load product catalog from database config (with fallback defaults)."""
+    return get_product_room_map()
+
+
+# Legacy constant - now loads from database config
+# Kept for backward compatibility but prefer using _get_product_catalog() for fresh data
+_PRODUCT_CATALOG: List[Dict[str, Any]] = _get_product_catalog()
 
 
 def list_products(

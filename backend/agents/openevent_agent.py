@@ -7,9 +7,25 @@ from typing import Any, Dict, List, Optional
 from backend.workflow_email import process_msg as workflow_process_msg
 from backend.agents.guardrails import safe_envelope
 from backend.workflows.common.prompts import FOOTER_SEPARATOR
-from backend.utils.openai_key import load_openai_api_key
+from backend.llm.client import get_openai_client, is_llm_available
+from backend.workflows.io.config_store import get_venue_name
 
 logger = logging.getLogger(__name__)
+
+
+def _build_agent_system_prompt() -> str:
+    """Build the agent system prompt with dynamic venue name."""
+    venue_name = get_venue_name()
+    return (
+        f"You are OpenEvent's professional event manager for {venue_name}. "
+        "Follow Workflow v3 strictly: Step 2 (date) → Step 3 (room) → Step 4 "
+        "(offer) → Step 5 (negotiation) → Step 6 (transition) → Step 7 "
+        "(confirmation), honouring detours via caller_step and hash checks. "
+        "Style: Be professional, concise, and direct. No fluff or over-enthusiasm. "
+        "Always reply with JSON in the schema {assistant_text, requires_hil, "
+        "action, payload}. Preserve provided facts verbatim (menus, dates, "
+        "prices). Never mutate the database directly—call the provided tools."
+    )
 
 
 class OpenEventAgent:
@@ -20,6 +36,7 @@ class OpenEventAgent:
     breaking the existing deterministic behaviour relied upon by tests.
     """
 
+    # Legacy static prompt (use _get_system_prompt() method for dynamic venue)
     _SYSTEM_PROMPT = (
         "You are OpenEvent's professional event manager for The Atelier. "
         "Follow Workflow v3 strictly: Step 2 (date) → Step 3 (room) → Step 4 "
@@ -30,6 +47,10 @@ class OpenEventAgent:
         "action, payload}. Preserve provided facts verbatim (menus, dates, "
         "prices). Never mutate the database directly—call the provided tools."
     )
+
+    def _get_system_prompt(self) -> str:
+        """Get system prompt with dynamic venue name from config."""
+        return _build_agent_system_prompt()
 
     def __init__(self) -> None:
         self._sdk_available = False
@@ -42,17 +63,14 @@ class OpenEventAgent:
 
     def _initialise_sdk(self) -> None:
         try:  # pragma: no cover - optional dependency probe
-            from openai import OpenAI  # type: ignore
-
-            api_key = load_openai_api_key(required=False)
-            if not api_key:
+            if not is_llm_available():
                 self._client = None
                 self._sdk_available = False
                 self._chat_supported = False
                 logger.info("OpenAI API key missing; using workflow fallback.")
                 return
 
-            self._client = OpenAI(api_key=api_key)
+            self._client = get_openai_client()
             self._sdk_available = hasattr(self._client, "agents")
             self._chat_supported = hasattr(self._client, "chat")
             if self._sdk_available:
@@ -75,7 +93,7 @@ class OpenEventAgent:
         try:
             response = self._client.agents.create(  # type: ignore[attr-defined]
                 model="gpt-4.1-mini",
-                instructions=self._SYSTEM_PROMPT,
+                instructions=self._get_system_prompt(),
                 tools=[
                     {"type": "function", "function": {"name": "tool_suggest_dates"}},
                     {"type": "function", "function": {"name": "tool_persist_confirmed_date"}},
@@ -215,7 +233,7 @@ class OpenEventAgent:
 
         history: List[Dict[str, Any]] = session.get("history", []) or []
         messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": self._SYSTEM_PROMPT},
+            {"role": "system", "content": self._get_system_prompt()},
             *history,
             {"role": "user", "content": message.get("body", "")},
         ]
@@ -385,12 +403,8 @@ class OpenEventAgent:
                 or draft.get("prompt")
                 or ""
             )
-            print(
-                "[WF][DEBUG][EmailCompose] body_chosen=",
-                chosen_field or "none",
-                "| len=",
-                len(source_value),
-            )
+            logger.debug("[WF][DEBUG][EmailCompose] body_chosen=%s | len=%d",
+                        chosen_field or "none", len(source_value))
             body_markdown = draft.get("body_markdown") or draft.get("body_md")
             footer = draft.get("footer") or ""
             body_text = None

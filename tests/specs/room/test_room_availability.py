@@ -7,8 +7,8 @@ import importlib
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 
-room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.process")
-from backend.workflows.steps.step3_room_availability.trigger.process import process as room_process
+room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
+from backend.workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
 
 from ...utils.seeds import set_seed
 
@@ -58,11 +58,19 @@ def test_lock_room_records_hash():
 
 
 def _build_room_state(tmp_path: Path) -> WorkflowState:
-    msg = IncomingMessage(msg_id="msg-1", from_name=None, from_email=None, subject=None, body=None, ts=None)
+    msg = IncomingMessage(
+        msg_id="msg-1",
+        from_name=None,
+        from_email=None,
+        subject=None,
+        body="Checking room availability.",
+        ts=None,
+    )
     state = WorkflowState(message=msg, db_path=tmp_path / "events.json", db={"events": []})
     state.event_id = "EVT-1"
     state.current_step = 3
     state.user_info = {}
+    state.confidence = 0.99
     return state
 
 

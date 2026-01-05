@@ -15,7 +15,8 @@ import pytest
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.types import IncomingMessage, WorkflowState
 
-room_module = importlib.import_module("backend.workflows.groups.room_availability.trigger.process")
+room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
+selection_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.selection")
 handle_select_room_action = room_module.handle_select_room_action
 
 
@@ -62,7 +63,7 @@ def test_room_selection_sets_locked_room_and_advances_to_step4(
         state.event_entry["selected_room_status"] = status
         return state.event_entry
 
-    monkeypatch.setattr(room_module, "update_event_room", fake_update_room)
+    monkeypatch.setattr(selection_module, "update_event_room", fake_update_room)
 
     # Execute room selection
     result = handle_select_room_action(state, room="Room B", status="Available", date="2026-02-07")

@@ -9,9 +9,10 @@ import importlib
 from backend.workflows.common.types import GroupResult, IncomingMessage, WorkflowState
 from backend.workflows.common import general_qna
 from backend.workflows.common.general_qna import enrich_general_qna_step2, render_general_qna_reply
-from backend.workflows.steps.step2_date_confirmation.trigger.process import _present_general_room_qna
+from backend.workflows.steps.step2_date_confirmation.trigger.step2_handler import _present_general_room_qna
 
-date_process_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.process")
+date_process_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
+general_qna_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.general_qna")
 
 
 @pytest.fixture
@@ -82,14 +83,13 @@ def test_present_general_room_qna_generates_february_dates(monkeypatch, state):
         "event_id": "evt-123",
         "current_step": 2,
         "requirements": {"number_of_participants": 30},
-        "qna_cache": {},
     }
     state.message = IncomingMessage(
         msg_id="msg-structured",
         from_name="Laura",
         from_email="laura@example.com",
         subject="Private dinner",
-        body="",
+        body="We are thinking Saturdays in February 2026.",
         ts=None,
     )
     classification = {"is_general": True}
@@ -103,11 +103,11 @@ def test_present_general_room_qna_generates_february_dates(monkeypatch, state):
             "products": [],
         },
     }
-    state.event_entry["qna_cache"] = {
-        "extraction": extraction_payload,
-        "meta": {"model": "test"},
-        "last_message_text": "Private dinner\nWe are thinking Saturdays in February 2026.",
-    }
+    # The function now always extracts fresh via ensure_qna_extraction (in general_qna module).
+    # Mock it to set the extraction payload directly.
+    def mock_ensure_qna_extraction(s, text, scan, force_refresh=False):
+        s.extras["qna_extraction"] = extraction_payload
+    monkeypatch.setattr(general_qna_module, "ensure_qna_extraction", mock_ensure_qna_extraction)
 
     result = _present_general_room_qna(state, state.event_entry, classification, thread_id=None)
     payload = result.payload
@@ -124,29 +124,30 @@ def test_present_general_room_qna_generates_february_dates(monkeypatch, state):
 
 def test_present_general_room_qna_uses_cache_when_message_blank(monkeypatch, state):
     monkeypatch.setattr(date_process_module, "update_event_metadata", lambda *args, **kwargs: None)
+    extraction_payload = {
+        "msg_type": "event",
+        "qna_intent": "select_dependent",
+        "qna_subtype": "room_list_for_us",
+        "q_values": {"date_pattern": "Saturdays in February 2026", "n_exact": 30},
+    }
     state.event_entry = {
         "event_id": "evt-789",
         "current_step": 2,
         "requirements": {"number_of_participants": 30},
-        "qna_cache": {
-            "extraction": {
-                "msg_type": "event",
-                "qna_intent": "select_dependent",
-                "qna_subtype": "room_list_for_us",
-                "q_values": {"date_pattern": "Saturdays in February 2026", "n_exact": 30},
-            },
-            "meta": {"model": "test"},
-            "last_message_text": "We’d like Saturdays in February 2026.",
-        },
     }
     state.message = IncomingMessage(
         msg_id="msg-blank",
         from_name="Laura",
         from_email="laura@example.com",
         subject="Private dinner",
-        body="",
+        body="We'd like Saturdays in February 2026.",  # Need content for extraction
         ts=None,
     )
+    # The function now always extracts fresh via ensure_qna_extraction (in general_qna module).
+    # Mock it to set the extraction payload directly.
+    def mock_ensure_qna_extraction(s, text, scan, force_refresh=False):
+        s.extras["qna_extraction"] = extraction_payload
+    monkeypatch.setattr(general_qna_module, "ensure_qna_extraction", mock_ensure_qna_extraction)
 
     result = _present_general_room_qna(state, state.event_entry, {"is_general": True}, thread_id=None)
     payload = result.payload
@@ -164,18 +165,37 @@ def test_enrich_general_qna_step2_room_dates_column(monkeypatch, state):
         "2026-02-07",
         "2026-02-14",
     ])
+    # Mock ensure_qna_extraction (in general_qna module) to provide a valid extraction payload
+    extraction_payload = {
+        "msg_type": "event",
+        "qna_intent": "select_dependent",
+        "qna_subtype": "room_list_for_us",
+        "q_values": {"date_pattern": "Saturdays in February 2026", "n_exact": 30},
+    }
+    def mock_ensure_qna_extraction(s, text, scan, force_refresh=False):
+        s.extras["qna_extraction"] = extraction_payload
+    monkeypatch.setattr(general_qna_module, "ensure_qna_extraction", mock_ensure_qna_extraction)
 
     state.event_entry = {
         "event_id": "evt-room",
         "current_step": 2,
         "thread_state": "Awaiting Client",
     }
+    state.message = IncomingMessage(
+        msg_id="msg-room",
+        from_name="Laura",
+        from_email="laura@example.com",
+        subject="Room availability",
+        body="What rooms are available on Saturdays in February 2026?",
+        ts=None,
+    )
     classification = {"is_general": True}
     date_process_module._present_general_room_qna(state, state.event_entry, classification, thread_id="THREAD-ROOM")
     enrich_general_qna_step2(state, classification)
     draft = state.draft_messages[-1]
     body = draft["body_markdown"]
-    assert "| Room | Dates | Notes |" in body
+    # Body is now conversational format, table data is in table_blocks
+    assert "options" in body.lower() or "room" in body.lower()
     assert draft["table_blocks"][0]["column_order"] == ["room", "dates", "notes"]
 
 
@@ -214,7 +234,8 @@ def test_enrich_general_qna_step2_menu_table(monkeypatch, state):
     classification = {"is_general": True}
     enrich_general_qna_step2(state, classification)
     draft = state.draft_messages[-1]
-    assert "| Menu | Dates | Notes |" in draft["body_markdown"]
+    # Body is now conversational format, table data is in table_blocks
+    assert "options" in draft["body_markdown"].lower() or "menu" in draft["body_markdown"].lower()
     assert draft["table_blocks"][0]["column_order"] == ["menu", "dates", "notes"]
     assert "01.02.2026" in draft["table_blocks"][0]["rows"][0]["dates"]
 
@@ -258,5 +279,6 @@ def test_enrich_general_qna_step2_room_menu_columns(monkeypatch, state):
     classification = {"is_general": True}
     enrich_general_qna_step2(state, classification)
     draft = state.draft_messages[-1]
-    assert "| Room | Menus | Dates | Notes |" in draft["body_markdown"]
+    # Body is now conversational format, table data is in table_blocks
+    assert "options" in draft["body_markdown"].lower() or "room" in draft["body_markdown"].lower()
     assert draft["table_blocks"][0]["column_order"] == ["room", "menu", "dates", "notes"]

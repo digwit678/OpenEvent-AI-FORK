@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from datetime import datetime
 from enum import Enum
 from typing import Literal, Optional
 
+logger = logging.getLogger(__name__)
+
+# Debug flag - set WF_DEBUG_STATE=1 to enable verbose workflow prints
+WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"
+
 try:  # pragma: no cover - optional dependency for CLI environments
-    from pydantic import BaseModel, EmailStr
+    from pydantic import BaseModel, EmailStr, Field
 except Exception:  # pragma: no cover - fallback when Pydantic is absent
     class BaseModel:  # type: ignore[override]
         """Lightweight stand-in mirroring the subset of Pydantic we rely on."""
@@ -27,6 +34,12 @@ except Exception:  # pragma: no cover - fallback when Pydantic is absent
             return self.dict()
 
     EmailStr = str  # type: ignore[assignment]
+
+    def Field(*args, default_factory=None, **kwargs):  # type: ignore[no-redef]
+        """Stub for Pydantic Field when Pydantic is absent."""
+        if default_factory is not None:
+            return default_factory()
+        return None
 
 
 class EventStatus(str, Enum):
@@ -114,17 +127,18 @@ class EventInformation(BaseModel):
             "billing_address",
         ]
 
-        print("\n=== IS_COMPLETE CHECK (RELAXED) ===")
-        for field in critical_fields:
-            value = getattr(self, field)
-            is_valid = not (value == "Not specified" or value is None or value == "")
-            print(f"{field}: '{value}' → {'✅' if is_valid else '❌'}")
+        if WF_DEBUG:
+            logger.debug("=== IS_COMPLETE CHECK (RELAXED) ===")
+            for field in critical_fields:
+                value = getattr(self, field)
+                is_valid = not (value == "Not specified" or value is None or value == "")
+                logger.debug("%s: '%s' → %s", field, value, 'PASS' if is_valid else 'FAIL')
 
         for field in critical_fields:
             value = getattr(self, field)
             if value == "Not specified" or value is None or value == "":
-                print(f"❌ FAILED: {field}")
-                print("===================================\n")
+                if WF_DEBUG:
+                    logger.debug("FAILED: %s", field)
                 return False
 
         if (
@@ -132,12 +146,12 @@ class EventInformation(BaseModel):
             or self.catering_preference is None
             or len(self.catering_preference) < 5
         ):
-            print("❌ FAILED: catering_preference")
-            print("===================================\n")
+            if WF_DEBUG:
+                logger.debug("FAILED: catering_preference")
             return False
 
-        print("✅ ALL CRITICAL CHECKS PASSED!")
-        print("===================================\n")
+        if WF_DEBUG:
+            logger.debug("ALL CRITICAL CHECKS PASSED")
         return True
 
     def to_dict(self) -> dict[str, str | Literal["Not specified"]]:
@@ -174,4 +188,4 @@ class ConversationState(BaseModel):
     event_id: Optional[str] = None
     workflow_type: Optional[str] = None
     is_complete: bool = False
-    created_at: datetime = datetime.now()
+    created_at: datetime = Field(default_factory=datetime.now)

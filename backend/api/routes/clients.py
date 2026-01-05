@@ -14,10 +14,13 @@ SECURITY NOTE:
     Set ENABLE_DANGEROUS_ENDPOINTS=true to enable (never in production!).
 """
 
+import logging
 import os
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from backend.workflow_email import (
     load_db as wf_load_db,
@@ -59,7 +62,7 @@ async def reset_client_data(request: ClientResetRequest):
     """
     # Production guard - enabled by default in development (when running main.py directly)
     # Disabled in production unless explicitly enabled
-    is_dev = os.getenv("ENABLE_DANGEROUS_ENDPOINTS", "true").lower() == "true"
+    is_dev = os.getenv("ENABLE_DANGEROUS_ENDPOINTS", "false").lower() == "true"
     if not is_dev:
         raise HTTPException(
             status_code=403,
@@ -116,7 +119,7 @@ async def reset_client_data(request: ClientResetRequest):
             db["events"] = [e for e in events if should_keep(e)]
             deleted_events = original_len - len(db["events"])
             if matched_event_ids:
-                print(f"[WF] reset matched events: {matched_event_ids}")
+                logger.debug("Reset matched events: %s", matched_event_ids)
 
         # Delete all tasks for this client
         tasks = db.get("tasks", {})
@@ -141,7 +144,7 @@ async def reset_client_data(request: ClientResetRequest):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to reset client data: {exc}") from exc
 
-    print(f"[WF] client reset email={email} events={deleted_events} tasks={deleted_tasks}")
+    logger.info("Client reset: email=%s events=%d tasks=%d", email, deleted_events, deleted_tasks)
     return {
         "email": email,
         "client_deleted": client_deleted,
@@ -161,7 +164,7 @@ async def continue_workflow(request: ClientContinueRequest):
     SECURITY: This endpoint is disabled by default.
     Set ENABLE_DANGEROUS_ENDPOINTS=true to enable (development only).
     """
-    is_dev = os.getenv("ENABLE_DANGEROUS_ENDPOINTS", "true").lower() == "true"
+    is_dev = os.getenv("ENABLE_DANGEROUS_ENDPOINTS", "false").lower() == "true"
     if not is_dev:
         raise HTTPException(
             status_code=403,
@@ -187,7 +190,7 @@ async def continue_workflow(request: ClientContinueRequest):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to continue workflow: {exc}") from exc
 
-    print(f"[WF] client continue email={email} action={result.get('action', 'unknown')}")
+    logger.info("Client continue: email=%s action=%s", email, result.get('action', 'unknown'))
     return {
         "email": email,
         "action": result.get("action"),

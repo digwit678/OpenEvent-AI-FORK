@@ -6,7 +6,9 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from backend.debug.hooks import trace_general_qa_status
+from backend.debug.hooks import set_subloop, trace_general_qa_status
+from backend.workflows.io.database import update_event_metadata
+from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.common.capacity import fits_capacity, layout_capacity
 from backend.workflows.common.catalog import list_catering, list_room_features
 from backend.workflows.common.fallback_reason import (
@@ -217,7 +219,7 @@ def _normalise_next_step_line(block_text: Optional[str], *, default_line: str = 
     line = f"- {candidate}"
     if "fast-track" not in line.lower():
         stripped = line.rstrip(".")
-        line = stripped + " — mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you."
+        line = stripped + ". Mention any other confirmed details (room/setup, catering) and I'll fast-track the next workflow step for you."
     return line
 
 
@@ -328,7 +330,7 @@ def _catering_recommendations(preferences: Dict[str, Any]) -> List[str]:
         if matched:
             descriptor = matched.get("description") or matched.get("category") or "Package"
             price = matched.get("price_per_person") or matched.get("price")
-            price_text = f" — CHF {price}" if price else ""
+            price_text = f" (CHF {price})" if price else ""
             selections.append(f"- {matched.get('name')}{price_text}: {descriptor}.")
         else:
             selections.append(f"- {label}.")
@@ -398,7 +400,7 @@ def _build_room_and_catering_sections(
         for rec in room_recs:
             bullet = f"- {rec['name']}"
             if rec["summary"]:
-                bullet += f" — {rec['summary']}"
+                bullet += f": {rec['summary']}"
             lines.append(bullet)
         sections.append("Rooms & Setup\n" + "\n".join(lines))
         headers.append("Rooms & Setup")
@@ -738,12 +740,12 @@ def _collect_room_rows(
             row["room"] = room_name
         if "menu" in select_fields:
             menus = sorted(payload["menus"])
-            row["menu"] = ", ".join(menus) if menus else "—"
+            row["menu"] = ", ".join(menus) if menus else "-"
         dates_sorted = sorted(payload["dates"], key=_date_sort_key)
-        row["dates"] = ", ".join(dates_sorted) if dates_sorted else "—"
+        row["dates"] = ", ".join(dates_sorted) if dates_sorted else "-"
         variation["dates"].add(tuple(dates_sorted))
         notes_list = payload["notes"]
-        row["notes"] = "; ".join(notes_list) if notes_list else "—"
+        row["notes"] = "; ".join(notes_list) if notes_list else "-"
         rows.append(row)
 
     return rows, dict(variation)
@@ -791,8 +793,8 @@ def _collect_menu_rows(
             notes = "; ".join(_dedup_preserve_order(notes_bits))
             rows.append({
                 "menu": name,
-                "notes": notes or "—",
-                "dates": ", ".join(display_dates) if display_dates else "—",
+                "notes": notes or "-",
+                "dates": ", ".join(display_dates) if display_dates else "-",
             })
             seen.add(key)
 
@@ -812,14 +814,14 @@ def _collect_menu_rows(
         notes = "; ".join(_dedup_preserve_order(notes_bits))
         rows.append({
             "menu": name,
-            "notes": notes or "—",
-            "dates": ", ".join(display_dates) if display_dates else "—",
+            "notes": notes or "-",
+            "dates": ", ".join(display_dates) if display_dates else "-",
         })
         seen.add(key)
 
     for row in rows:
-        row.setdefault("notes", "—")
-        row.setdefault("dates", ", ".join(display_dates) if display_dates else "—")
+        row.setdefault("notes", "-")
+        row.setdefault("dates", ", ".join(display_dates) if display_dates else "-")
 
     return rows, dict(variation)
 
@@ -834,10 +836,10 @@ def _compute_column_plan(
     constants: Dict[str, Any] = {}
 
     for field in select_fields:
-        if any(row.get(field) not in (None, "", "—") for row in rows):
+        if any(row.get(field) not in (None, "", "-") for row in rows):
             column_order.append(field)
 
-    has_dates = any(row.get("dates") not in (None, "", "—") for row in rows)
+    has_dates = any(row.get("dates") not in (None, "", "-") for row in rows)
     date_variations = {tuple(val) for val in variation.get("dates", set()) if val}
     if date_variations or has_dates:
         if "dates" not in column_order:
@@ -886,8 +888,8 @@ def _render_markdown_table(
     for row in rows:
         cells: List[str] = []
         for field in column_order:
-            value = row.get(field, "—")
-            cell = str(value if value not in (None, "") else "—")
+            value = row.get(field, "-")
+            cell = str(value if value not in (None, "") else "-")
             cells.append(cell)
         lines.append("| " + " | ".join(cells) + " |")
     return lines
@@ -1144,7 +1146,8 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
 
     if not table_rows:
         fallback_line = "I need a specific date before I can confirm availability."
-        body_lines = [CLIENT_AVAILABILITY_HEADER, fallback_line, "", "NEXT STEP:", next_step_line]
+        # Don't include header in body - it's set in headers[] and joined by _format_draft_text
+        body_lines = [fallback_line, "", next_step_line]
         body_markdown = "\n".join(body_lines).strip()
         footer_text = "Step: 2 Date Confirmation · Next: Room Availability · State: Awaiting Client"
         draft["body_markdown"] = body_markdown
@@ -1173,8 +1176,8 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
     for row in table_rows:
         display_row: Dict[str, str] = {}
         for field in column_order:
-            value = row.get(field, "—")
-            display_row[field] = str(value if value not in (None, "") else "—")
+            value = row.get(field, "-")
+            display_row[field] = str(value if value not in (None, "") else "-")
         display_rows.append(display_row)
 
     table_lines = _render_markdown_table(display_rows, column_order, select_fields)
@@ -1244,14 +1247,23 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
         draft["headers"] = [CLIENT_AVAILABILITY_HEADER]
         # Fall through to set table_blocks below without overwriting body_markdown
     else:
-        # No verbalized content - build raw table response
-        body_lines = [CLIENT_AVAILABILITY_HEADER]
+        # No verbalized content - build conversational response
+        # Note: Don't include CLIENT_AVAILABILITY_HEADER in body_lines - it's set
+        # in headers[] and _format_draft_text joins headers + body
+        # IMPORTANT: Tables are NOT included in chat messages per UX requirement.
+        # The table_blocks structure is set below for the frontend to render
+        # in a dedicated comparison section (not inline in chat).
+        body_lines = []
         if intro_text:
             body_lines.append(intro_text)
-        if table_lines:
-            body_lines.append("")
-            body_lines.extend(table_lines)
-        body_lines.extend(["", "NEXT STEP:", next_step_line])
+        # Add a brief summary instead of raw table
+        if display_rows:
+            room_count = len(display_rows)
+            if room_count == 1:
+                body_lines.append("I found 1 option that works for you.")
+            else:
+                body_lines.append(f"I found {room_count} options that work for you.")
+        body_lines.extend(["", next_step_line])
         body_markdown = "\n".join(body_lines).strip()
 
         # Preserve router Q&A content (catering, products, etc.) that was appended earlier
@@ -1411,8 +1423,8 @@ def _structured_table_blocks(db_summary: Dict[str, Any]) -> List[Dict[str, Any]]
         rows.append(
             {
                 "Room": name,
-                "Dates": ", ".join(sorted(payload["dates"])) if payload["dates"] else "—",
-                "Notes": "; ".join(sorted(payload["notes"])) if payload["notes"] else "—",
+                "Dates": ", ".join(sorted(payload["dates"])) if payload["dates"] else "-",
+                "Notes": "; ".join(sorted(payload["notes"])) if payload["notes"] else "-",
             }
         )
     if not rows:
@@ -1427,7 +1439,8 @@ def _structured_table_blocks(db_summary: Dict[str, Any]) -> List[Dict[str, Any]]
 
 
 def _fallback_structured_body(action_payload: Dict[str, Any]) -> str:
-    lines = [CLIENT_AVAILABILITY_HEADER]
+    # Don't include header here - it's set in headers[] and joined by _format_draft_text
+    lines = []
     summary = action_payload.get("db_summary") or {}
     rooms = summary.get("rooms") or []
     products = summary.get("products") or []
@@ -1552,4 +1565,278 @@ def append_general_qna_to_primary(state: WorkflowState) -> bool:
     return True
 
 
-__all__ = ["append_general_qna_to_primary", "render_general_qna_reply", "enrich_general_qna_step2"]
+# -----------------------------------------------------------------------------
+# Shared Q&A Handler for Steps 3, 4, 5, 7
+# -----------------------------------------------------------------------------
+
+
+def present_general_room_qna(
+    state: WorkflowState,
+    event_entry: dict,
+    classification: Dict[str, Any],
+    thread_id: Optional[str],
+    step_number: int,
+    step_name: str,
+) -> GroupResult:
+    """
+    Handle general Q&A using a unified pattern across workflow steps.
+
+    This shared implementation replaces duplicate ~170-line functions in
+    step3_handler, step4_handler, step5_handler, and step7_handler.
+
+    Args:
+        state: Current workflow state
+        event_entry: Event database record
+        classification: Q&A classification result
+        thread_id: Optional thread identifier
+        step_number: Current step number (3, 4, 5, or 7)
+        step_name: Human-readable step name for messages (e.g., "Room Availability")
+
+    Returns:
+        GroupResult with action "general_rooms_qna"
+    """
+    subloop_label = "general_q_a"
+    state.extras["subloop"] = subloop_label
+    resolved_thread_id = thread_id or state.thread_id
+
+    if thread_id:
+        set_subloop(thread_id, subloop_label)
+
+    # Extract fresh from current message (multi-turn Q&A fix)
+    message = state.message
+    subject = (message.subject if message else "") or ""
+    body = (message.body if message else "") or ""
+    message_text = f"{subject}\n{body}".strip() or body or subject
+
+    # -------------------------------------------------------------------------
+    # CATERING/PRODUCT Q&A ROUTING FIX
+    # Check if this is a catering or product question based on classification
+    # secondary types. Route to route_general_qna for proper handling.
+    # -------------------------------------------------------------------------
+    secondary_types = classification.get("secondary") or []
+    catering_types = {"catering_for", "products_for"}
+    is_catering_question = bool(set(secondary_types) & catering_types)
+
+    if is_catering_question:
+        # Use route_general_qna for catering/product questions - it has proper handling
+        msg_payload = {
+            "subject": subject,
+            "body": body,
+            "thread_id": thread_id or state.thread_id,
+            "msg_id": message.msg_id if message else "",
+        }
+        qna_result = route_general_qna(
+            msg_payload,
+            event_entry,
+            event_entry,
+            state.db,
+            classification,
+        )
+        # Build response from route_general_qna result
+        post_blocks = qna_result.get("post_step") or []
+        pre_blocks = qna_result.get("pre_step") or []
+        all_blocks = pre_blocks + post_blocks
+
+        if all_blocks:
+            first_block = all_blocks[0]
+            body_markdown = first_block.get("body", "")
+            topic = first_block.get("topic", "catering_for")
+            footer_body = append_footer(
+                body_markdown,
+                step=step_number,
+                next_step=step_number,
+                thread_state="Awaiting Client",
+            )
+            draft_message = {
+                "body": footer_body,
+                "body_markdown": body_markdown,
+                "step": step_number,
+                "next_step": step_number,
+                "thread_state": "Awaiting Client",
+                "topic": topic,
+                "subloop": subloop_label,
+                "headers": ["Availability overview"],
+                "router_qna_appended": True,
+            }
+            state.add_draft_message(draft_message)
+            update_event_metadata(
+                event_entry,
+                thread_state="Awaiting Client",
+                current_step=step_number,
+            )
+            state.set_thread_state("Awaiting Client")
+            state.record_subloop(subloop_label)
+            state.extras["persist"] = True
+
+            payload = {
+                "client_id": state.client_id,
+                "event_id": event_entry.get("event_id"),
+                "intent": state.intent.value if state.intent else None,
+                "confidence": round(state.confidence or 0.0, 3),
+                "draft_messages": state.draft_messages,
+                "thread_state": state.thread_state,
+                "context": state.context_snapshot,
+                "persisted": True,
+                "general_qna": True,
+                "catering_qna": True,
+                "qna_router_result": qna_result,
+            }
+            return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
+
+    scan = state.extras.get("general_qna_scan")
+    # Force fresh extraction for multi-turn Q&A
+    ensure_qna_extraction(state, message_text, scan, force_refresh=True)
+    extraction = state.extras.get("qna_extraction")
+
+    # Clear stale qna_cache AFTER extraction
+    if isinstance(event_entry, dict):
+        event_entry.pop("qna_cache", None)
+
+    structured = build_structured_qna_result(state, extraction) if extraction else None
+
+    if structured and structured.handled:
+        rooms = structured.action_payload.get("db_summary", {}).get("rooms", [])
+        date_lookup: Dict[str, str] = {}
+        for entry in rooms:
+            iso_date = entry.get("date") or entry.get("iso_date")
+            if not iso_date:
+                continue
+            try:
+                parsed = datetime.fromisoformat(iso_date)
+            except ValueError:
+                try:
+                    parsed = datetime.strptime(iso_date, "%Y-%m-%d")
+                except ValueError:
+                    continue
+            label = parsed.strftime("%d.%m.%Y")
+            date_lookup.setdefault(label, parsed.date().isoformat())
+
+        candidate_dates = sorted(date_lookup.keys(), key=lambda lbl: date_lookup[lbl])[:5]
+        actions = [
+            {
+                "type": "select_date",
+                "label": f"Confirm {label}",
+                "date": label,
+                "iso_date": date_lookup[label],
+            }
+            for label in candidate_dates
+        ]
+
+        body_markdown = (structured.body_markdown or _fallback_structured_body(structured.action_payload)).strip()
+        footer_body = append_footer(
+            body_markdown,
+            step=step_number,
+            next_step=step_number,
+            thread_state="Awaiting Client",
+        )
+
+        draft_message = {
+            "body": footer_body,
+            "body_markdown": body_markdown,
+            "step": step_number,
+            "next_step": step_number,
+            "thread_state": "Awaiting Client",
+            "topic": "general_room_qna",
+            "candidate_dates": candidate_dates,
+            "actions": actions,
+            "subloop": subloop_label,
+            "headers": ["Availability overview"],
+        }
+
+        state.add_draft_message(draft_message)
+        update_event_metadata(
+            event_entry,
+            thread_state="Awaiting Client",
+            current_step=step_number,
+            candidate_dates=candidate_dates,
+        )
+        state.set_thread_state("Awaiting Client")
+        state.record_subloop(subloop_label)
+        state.intent_detail = "event_intake_with_question"
+        state.extras["persist"] = True
+
+        # Store minimal last_general_qna context for follow-up detection only
+        if extraction and isinstance(event_entry, dict):
+            q_values = extraction.get("q_values") or {}
+            event_entry["last_general_qna"] = {
+                "topic": structured.action_payload.get("qna_subtype"),
+                "date_pattern": q_values.get("date_pattern"),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            }
+
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "candidate_dates": candidate_dates,
+            "draft_messages": state.draft_messages,
+            "thread_state": state.thread_state,
+            "context": state.context_snapshot,
+            "persisted": True,
+            "general_qna": True,
+            "structured_qna": structured.handled,
+            "qna_select_result": structured.action_payload,
+            "structured_qna_debug": structured.debug,
+            "actions": actions,
+        }
+        if extraction:
+            payload["qna_extraction"] = extraction
+        return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
+
+    # Fallback if structured Q&A failed
+    fallback_prompt = "[STRUCTURED_QNA_FALLBACK]\nI couldn't load the structured Q&A context for this request. Please review extraction logs."
+    draft_message = {
+        "step": step_number,
+        "topic": "general_room_qna",
+        "body": f"{fallback_prompt}\n\n---\nStep: {step_number} {step_name} · Next: {step_number} {step_name} · State: Awaiting Client",
+        "body_markdown": fallback_prompt,
+        "next_step": step_number,
+        "thread_state": "Awaiting Client",
+        "headers": ["Availability overview"],
+        "requires_approval": False,
+        "subloop": subloop_label,
+        "actions": [],
+        "candidate_dates": [],
+    }
+    state.add_draft_message(draft_message)
+    update_event_metadata(
+        event_entry,
+        thread_state="Awaiting Client",
+        current_step=step_number,
+        candidate_dates=[],
+    )
+    state.set_thread_state("Awaiting Client")
+    state.record_subloop(subloop_label)
+    state.intent_detail = "event_intake_with_question"
+    state.extras["structured_qna_fallback"] = True
+    structured_payload = structured.action_payload if structured else {}
+    structured_debug = structured.debug if structured else {"reason": "missing_structured_context"}
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "intent": state.intent.value if state.intent else None,
+        "confidence": round(state.confidence or 0.0, 3),
+        "candidate_dates": [],
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "context": state.context_snapshot,
+        "persisted": True,
+        "general_qna": True,
+        "structured_qna": False,
+        "structured_qna_fallback": True,
+        "qna_select_result": structured_payload,
+        "structured_qna_debug": structured_debug,
+    }
+    if extraction:
+        payload["qna_extraction"] = extraction
+    return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
+
+
+__all__ = [
+    "append_general_qna_to_primary",
+    "present_general_room_qna",
+    "render_general_qna_reply",
+    "enrich_general_qna_step2",
+]

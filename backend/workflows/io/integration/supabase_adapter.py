@@ -178,6 +178,7 @@ def upsert_client(
             client.table("clients") \
                 .update({"name": name}) \
                 .eq("id", existing.data["id"]) \
+                .eq("team_id", team_id) \
                 .execute()
             existing.data["name"] = name
         return existing.data
@@ -348,9 +349,11 @@ def update_event_metadata(event_id: str, **fields: Any) -> Dict[str, Any]:
         else:
             supabase_fields[key] = value
 
+    team_id = get_team_id()
     result = client.table("events") \
         .update(supabase_fields) \
         .eq("id", event_id) \
+        .eq("team_id", team_id) \
         .execute()
 
     return result.data[0] if result.data else {}
@@ -577,10 +580,12 @@ def get_room_by_id(room_id: str) -> Optional[Dict[str, Any]]:
         Room record or None
     """
     client = get_supabase_client()
+    team_id = get_team_id()
 
     result = client.table("rooms") \
         .select("*") \
         .eq("id", room_id) \
+        .eq("team_id", team_id) \
         .maybe_single() \
         .execute()
 
@@ -612,9 +617,11 @@ def create_offer(
         Offer UUID
     """
     client = get_supabase_client()
+    team_id = get_team_id()
     user_id = get_system_user_id()
 
     offer = {
+        "team_id": team_id,
         "offer_number": generate_offer_number(),
         "subject": "Event Offer",
         "offer_date": format_date_for_supabase(),
@@ -632,6 +639,7 @@ def create_offer(
     # Insert line items
     for item in line_items:
         item["offer_id"] = offer_id
+        item["team_id"] = team_id
         client.table("offer_line_items").insert(item).execute()
 
     return offer_id

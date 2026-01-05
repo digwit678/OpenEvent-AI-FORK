@@ -30,7 +30,7 @@ Run unit tests for both backend and frontend components.
 echo ""
 echo "=== Phase 2: Unit Testing ==="
 echo "→ Running backend smoke tests (essential v4 tests)..."
-./scripts/test-smoke.sh
+./scripts/tests/test-smoke.sh
 echo "✓ Backend smoke tests passed"
 ```
 
@@ -54,7 +54,7 @@ Run comprehensive workflow tests covering all 7 steps and edge cases.
 echo ""
 echo "=== Phase 3: Workflow Specification Tests ==="
 echo "→ Running complete v4 workflow test suite..."
-./scripts/test-all.sh
+./scripts/tests/test-all.sh
 echo "✓ All v4 workflow tests passed"
 ```
 
@@ -514,7 +514,7 @@ echo "================================================================"
 For rapid iteration, run just the essential smoke tests:
 
 ```bash
-./scripts/test-smoke.sh
+./scripts/tests/test-smoke.sh
 cd atelier-ai-frontend && npm test && cd ..
 echo "✓ Quick validation passed"
 ```
@@ -527,6 +527,6 @@ The validation can run in CI with stubbed LLM responses:
 export AGENT_MODE=stub
 export TZ=Europe/Zurich
 export PYTHONHASHSEED=1337
-./scripts/test-all.sh
+./scripts/tests/test-all.sh
 ```
 ## Document changes/new features in the DEV_CHANGELOG.md and new bugs in the TEAM_GUIDE.md 

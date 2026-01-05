@@ -209,3 +209,65 @@ def _canonical_product_key(product: str) -> str:
     if token in {"projector", "projection"}:
         return "projector"
     return token
+
+
+def get_max_capacity() -> int:
+    """Return the maximum capacity across all configured rooms."""
+    config_map = _config_by_name()
+    max_cap = 0
+    for config in config_map.values():
+        cap = _room_capacity(config)
+        if cap is not None and cap > max_cap:
+            max_cap = cap
+    return max_cap
+
+
+def any_room_fits_capacity(pax: int) -> bool:
+    """Check if any configured room can accommodate the given number of guests."""
+    if pax is None or pax <= 0:
+        return True
+    config_map = _config_by_name()
+    for config in config_map.values():
+        cap = _room_capacity(config)
+        if cap is not None and cap >= pax:
+            return True
+    return False
+
+
+def filter_rooms_by_capacity(
+    profiles: List[Dict[str, Any]],
+    pax: Optional[int],
+    *,
+    include_close_matches: bool = True,
+    close_match_threshold: float = 0.8,
+) -> List[Dict[str, Any]]:
+    """
+    Filter room profiles to only include rooms that fit the capacity.
+
+    Args:
+        profiles: List of room profile dicts from rank()
+        pax: Required capacity
+        include_close_matches: If True, include rooms within threshold of capacity
+        close_match_threshold: Rooms with capacity >= pax * threshold are "close"
+
+    Returns:
+        Filtered list of profiles. If none fit exactly, returns close matches.
+        If none are close, returns empty list.
+    """
+    if pax is None or pax <= 0:
+        return profiles
+
+    exact_fits = [p for p in profiles if p.get("capacity_fit", 0) == 1]
+    if exact_fits:
+        return exact_fits
+
+    if include_close_matches:
+        threshold = int(pax * close_match_threshold)
+        close_matches = [
+            p for p in profiles
+            if p.get("capacity") is not None and p["capacity"] >= threshold
+        ]
+        if close_matches:
+            return close_matches
+
+    return []

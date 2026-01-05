@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
+logger = logging.getLogger(__name__)
 
 from backend.workflows.common.requirements import merge_client_profile, requirements_hash
 from backend.workflows.common.billing import (
@@ -10,6 +13,32 @@ from backend.workflows.common.billing import (
     format_billing_display,
     missing_billing_fields,
     update_billing_details,
+)
+# Billing gate helpers (O2 consolidation)
+from backend.workflows.common.billing_gate import (
+    refresh_billing as _refresh_billing,
+    flag_billing_accept_pending as _flag_billing_accept_pending,
+    billing_prompt_draft as _billing_prompt_draft,
+)
+# Product operations helpers (O1 refactoring)
+from .product_ops import (
+    apply_product_operations as _apply_product_operations,
+    autofill_products_from_preferences as _autofill_products_from_preferences,
+    products_ready as _products_ready,
+    ensure_products_container as _ensure_products_container,
+    has_offer_update as _has_offer_update,
+    infer_participant_count as _infer_participant_count,
+    room_alias_map as _room_alias_map,
+    room_aliases as _room_aliases,
+    product_unavailable_in_room as _product_unavailable_in_room,
+    normalise_products as _normalise_products,
+    normalise_product_names as _normalise_product_names,
+    normalise_product_fields as _normalise_product_fields,
+    upsert_product as _upsert_product,
+    menu_name_set as _menu_name_set,
+    build_product_line_from_record as _build_product_line_from_record,
+    summarize_product_line as _summarize_product_line,
+    build_alternative_suggestions as _build_alternative_suggestions,
 )
 from backend.workflows.common.confirmation_gate import (
     auto_continue_if_ready,
@@ -19,7 +48,11 @@ from backend.workflows.common.types import GroupResult, WorkflowState
 # MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
 from backend.detection.intent.confidence import check_nonsense_gate
 from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.general_qna import append_general_qna_to_primary, _fallback_structured_body
+from backend.workflows.common.general_qna import (
+    append_general_qna_to_primary,
+    present_general_room_qna,
+    _fallback_structured_body,
+)
 from backend.workflows.change_propagation import (
     detect_change_type,
     detect_change_type_enhanced,
@@ -28,6 +61,7 @@ from backend.workflows.change_propagation import (
 from backend.workflows.qna.engine import build_structured_qna_result
 from backend.workflows.qna.extraction import ensure_qna_extraction
 from backend.workflows.io.database import append_audit_entry, update_event_metadata
+from backend.workflows.io.config_store import get_product_autofill_threshold
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.workflows.common.pricing import build_deposit_info, derive_room_rate, normalise_rate
 from backend.workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
@@ -49,6 +83,9 @@ from backend.utils.pseudolinks import (
 from backend.utils.page_snapshots import create_snapshot
 
 from ..llm.send_offer_llm import ComposeOffer
+
+# O3 refactoring: Offer compose/persist functions extracted to dedicated module
+from .compose import build_offer, _record_offer, _determine_offer_total
 
 __workflow_role__ = "trigger"
 
@@ -154,8 +191,8 @@ def process(state: WorkflowState) -> GroupResult:
 
         if gate_status.ready_for_hil:
             # All prerequisites met - continue to HIL
-            print(f"[Step4] Confirmation gate passed: billing_complete={gate_status.billing_complete}, "
-                  f"deposit_required={gate_status.deposit_required}, deposit_paid={gate_status.deposit_paid}")
+            logger.debug("[Step4] Confirmation gate passed: billing_complete=%s, deposit_required=%s, deposit_paid=%s",
+                        gate_status.billing_complete, gate_status.deposit_required, gate_status.deposit_paid)
             return _start_hil_acceptance_flow(
                 state,
                 event_entry,
@@ -290,16 +327,21 @@ def process(state: WorkflowState) -> GroupResult:
                 )
             # For requirements changes, clear the lock since room may no longer fit
             elif change_type.value == "requirements" and decision.next_step in (2, 3):
-                update_event_metadata(
-                    event_entry,
-                    date_confirmed=False if decision.next_step == 2 else None,
-                    room_eval_hash=None,
-                    locked_room_id=None,
-                )
+                # BUG FIX: Only set date_confirmed=False when going to Step 2
+                # Passing None would overwrite existing True value!
+                metadata_updates = {
+                    "room_eval_hash": None,
+                    "locked_room_id": None,
+                }
+                if decision.next_step == 2:
+                    metadata_updates["date_confirmed"] = False
+                update_event_metadata(event_entry, **metadata_updates)
 
             append_audit_entry(event_entry, 4, decision.next_step, f"{change_type.value}_change_detected")
 
             # Skip Q&A: return detour signal
+            # CRITICAL: Update event_entry BEFORE state.current_step so routing loop sees the change
+            update_event_metadata(event_entry, current_step=decision.next_step)
             state.current_step = decision.next_step
             state.set_thread_state("In Progress")
             state.extras["persist"] = True
@@ -473,14 +515,14 @@ def process(state: WorkflowState) -> GroupResult:
         )
         if any(phrase in message_body for phrase in skip_phrases):
             state.user_info["skip_products"] = True
-            print(f"[Step4] Detected skip products phrase in message")
+            logger.debug("[Step4] Detected skip products phrase in message")
     products_changed = _apply_product_operations(event_entry, state.user_info or {})
     if products_changed:
         state.extras["persist"] = True
     autofilled = _autofill_products_from_preferences(
         event_entry,
         state.user_info or {},
-        min_score=0.5,  # TODO(openevent): expose as configurable threshold
+        min_score=get_product_autofill_threshold(),
     )
     if autofilled:
         state.extras["persist"] = True
@@ -625,31 +667,7 @@ def process(state: WorkflowState) -> GroupResult:
     return result
 
 
-def build_offer(event_id: str, room_id: str, date_iso: str, pax: int) -> Dict[str, Any]:
-    """Render a deterministic offer summary used by the YAML flow harness."""
-
-    display_date = format_iso_date_to_ddmmyyyy(date_iso) or date_iso
-    room_label = room_id.replace("R-", "Room ") if room_id.startswith("R-") else room_id
-    body_lines = [
-        f"Offer sent for {room_label} on {display_date} for {pax} guests.",
-        "The status is Option. Please review and confirm.",
-    ]
-    body = "\n".join(body_lines)
-    assistant_draft = {"headers": ["Offer"], "body": body}
-    return {
-        "action": "send_reply",
-        "event_id": event_id,
-        "status": "Option",
-        "offer": {
-            "room_id": room_id,
-            "date": date_iso,
-            "pax": pax,
-        },
-        "res": {
-            "assistant_draft": assistant_draft,
-            "assistant_draft_text": body,
-        },
-    }
+# O3: build_offer moved to compose.py
 
 
 def _evaluate_preconditions(
@@ -830,362 +848,13 @@ def _has_capacity(event_entry: Dict[str, Any]) -> bool:
         return False
 
 
-def _products_ready(event_entry: Dict[str, Any]) -> bool:
-    products = event_entry.get("products") or []
-    selected = event_entry.get("selected_products") or []
-    products_state = event_entry.get("products_state") or {}
-    line_items = products_state.get("line_items") or []
-    skip_flag = bool(products_state.get("skip_products") or event_entry.get("products_skipped"))
-    return bool(products or selected or line_items or skip_flag)
-
-
-def _ensure_products_container(event_entry: Dict[str, Any]) -> None:
-    if "products" not in event_entry or not isinstance(event_entry["products"], list):
-        event_entry["products"] = []
-
-
-def _has_offer_update(user_info: Dict[str, Any]) -> bool:
-    update_keys = (
-        "products_add",
-        "products_remove",
-        "products_skip",
-        "skip_products",
-        "products_none",
-        "offer_total_override",
-        "room_rate",
-        "offer_id",
-    )
-    return any(bool(user_info.get(key)) for key in update_keys)
-
-
-def _autofill_products_from_preferences(
-    event_entry: Dict[str, Any],
-    user_info: Dict[str, Any],
-    *,
-    min_score: float = 0.5,
-) -> bool:
-    products_state = event_entry.setdefault("products_state", {})
-    if products_state.get("autofill_applied"):
-        return False
-
-    # Prevent autofill if products were already manually selected or modified.
-    if _has_offer_update(user_info):
-        return False
-
-    existing_products = event_entry.get("products") or []
-    if existing_products:
-        products_state["autofill_applied"] = True
-        return False
-
-    preferences = {}
-    event_prefs = event_entry.get("preferences")
-    if isinstance(event_prefs, dict):
-        preferences = dict(event_prefs)
-    elif isinstance(user_info.get("preferences"), dict):
-        preferences = dict(user_info["preferences"])
-    if not preferences:
-        return False
-
-    selected_room = event_entry.get("locked_room_id")
-    if not selected_room:
-        pending = event_entry.get("room_pending_decision") or {}
-        selected_room = pending.get("selected_room")
-    if not selected_room:
-        return False
-
-    breakdown_map = preferences.get("room_match_breakdown") or {}
-    breakdown = breakdown_map.get(selected_room)
-    if not isinstance(breakdown, dict):
-        return False
-
-    matches_detail = breakdown.get("matches_detail") or []
-    matched_names = breakdown.get("matched") or []
-    if not matches_detail and matched_names:
-        matches_detail = [{"product": name, "wish": None, "score": 1.0} for name in matched_names if name]
-
-    if not matches_detail:
-        return False
-
-    participants = _infer_participant_count(event_entry)
-    match_threshold = max(0.65, min_score)
-    additions: List[Dict[str, Any]] = []
-    summary_entries: List[Dict[str, Any]] = []
-    included_lower: Set[str] = set()
-
-    for entry in matches_detail:
-        product_name = entry.get("product")
-        if not product_name:
-            continue
-        score = float(entry.get("score") or 0.0)
-        if score < match_threshold:
-            continue
-        record = find_product(product_name)
-        if not record or _product_unavailable_in_room(record, selected_room):
-            continue
-        product_key = record.name.strip().lower()
-        if product_key in included_lower:
-            continue
-        item = _build_product_line_from_record(record, participants)
-        additions.append(item)
-        summary_entries.append(_summarize_product_line(record, entry.get("wish"), score, item))
-        included_lower.add(product_key)
-
-    if not additions:
-        # No confident matches; keep prompt logic in place.
-        return False
-
-    for item in additions:
-        _upsert_product(event_entry["products"], item)
-
-    alternatives_payload = _build_alternative_suggestions(
-        breakdown.get("alternatives") or [],
-        included_lower,
-        selected_room,
-        min_score=min_score,
-    )
-
-    products_state["autofill_summary"] = {
-        "matched": summary_entries,
-        "alternatives": alternatives_payload["products"],
-        "catering_alternatives": alternatives_payload["catering"],
-    }
-    products_state["autofill_applied"] = True
-    return True
-
-
-def _apply_product_operations(event_entry: Dict[str, Any], user_info: Dict[str, Any]) -> bool:
-    participant_count = _infer_participant_count(event_entry)
-    additions = _normalise_products(
-        user_info.get("products_add"),
-        participant_count=participant_count,
-    )
-    removals = _normalise_product_names(user_info.get("products_remove"))
-    changes = False
-
-    if additions:
-        for item in additions:
-            _upsert_product(event_entry["products"], item)
-        changes = True
-
-    if removals:
-        event_entry["products"] = [item for item in event_entry["products"] if item["name"].lower() not in removals]
-        changes = True
-
-    skip_flag = any(bool(user_info.get(key)) for key in ("products_skip", "skip_products", "products_none"))
-    if skip_flag:
-        products_state = event_entry.setdefault("products_state", {})
-        products_state["skip_products"] = True
-        changes = True
-
-    if changes:
-        products_state = event_entry.setdefault("products_state", {})
-        products_state.pop("awaiting_client_products", None)
-        summary = products_state.get("autofill_summary")
-        if summary is not None:
-            # Clear matched entries so the offer summary reflects the explicit product list.
-            summary["matched"] = []
-
-    return changes
-
-
-def _normalise_products(payload: Any, *, participant_count: Optional[int] = None) -> List[Dict[str, Any]]:
-    return normalise_product_payload(payload, participant_count=participant_count)
-
-
-def _normalise_product_names(payload: Any) -> List[str]:
-    if not payload:
-        return []
-    items = payload if isinstance(payload, list) else [payload]
-    names: List[str] = []
-    for raw in items:
-        if isinstance(raw, dict):
-            name = raw.get("name")
-        else:
-            name = raw
-        text = str(name or "").strip()
-        if text:
-            names.append(text.lower())
-    return names
-
-
-def _upsert_product(products: List[Dict[str, Any]], item: Dict[str, Any]) -> None:
-    """Add or update product in the products list. For existing products, increments quantity."""
-    for existing in products:
-        if existing["name"].lower() == item["name"].lower():
-            # Increment quantity instead of replacing it
-            existing["quantity"] = existing.get("quantity", 0) + item.get("quantity", 1)
-            existing["unit_price"] = item["unit_price"]
-            return
-    products.append(item)
-
-
-def _build_product_line_from_record(record: Any, participants: Optional[int]) -> Dict[str, Any]:
-    quantity = 1
-    if record.unit == "per_person" and participants:
-        quantity = max(1, int(participants))
-    item: Dict[str, Any] = {
-        "name": record.name,
-        "quantity": quantity,
-        "unit_price": float(record.base_price or 0.0),
-    }
-    if getattr(record, "product_id", None):
-        item["product_id"] = record.product_id
-    if getattr(record, "unit", None):
-        item["unit"] = record.unit
-    if getattr(record, "category", None):
-        item["category"] = record.category
-    return item
-
-
-def _summarize_product_line(
-    record: Any,
-    wish: Optional[str],
-    score: float,
-    item: Dict[str, Any],
-) -> Dict[str, Any]:
-    unit_price = float(item.get("unit_price") or 0.0)
-    quantity = int(item.get("quantity") or 1)
-    total = unit_price * quantity
-    return {
-        "name": record.name,
-        "category": record.category or "General",
-        "unit": record.unit,
-        "wish": wish,
-        "match_pct": int(round(score * 100)),
-        "unit_price": unit_price,
-        "quantity": quantity,
-        "total": round(total, 2),
-    }
-
-
-def _build_alternative_suggestions(
-    raw_alternatives: List[Dict[str, Any]],
-    included_lower: Set[str],
-    room_name: str,
-    *,
-    min_score: float,
-) -> Dict[str, List[Dict[str, Any]]]:
-    best_by_product: Dict[str, Dict[str, Any]] = {}
-    for entry in raw_alternatives:
-        product_name = entry.get("product")
-        if not product_name:
-            continue
-        score = float(entry.get("score") or 0.0)
-        if score < min_score:
-            continue
-        record = find_product(product_name)
-        if not record or _product_unavailable_in_room(record, room_name):
-            continue
-        key = record.name.strip().lower()
-        if key in included_lower:
-            continue
-        stored = best_by_product.get(key)
-        if stored and stored["score"] >= score:
-            continue
-        best_by_product[key] = {
-            "name": record.name,
-            "category": record.category or "General",
-            "unit": record.unit,
-            "unit_price": float(record.base_price or 0.0),
-            "score": score,
-            "wish": entry.get("wish"),
-        }
-
-    product_alternatives: List[Dict[str, Any]] = []
-    catering_alternatives: List[Dict[str, Any]] = []
-    for payload in sorted(best_by_product.values(), key=lambda item: item["score"], reverse=True):
-        formatted = {
-            "name": payload["name"],
-            "category": payload["category"],
-            "unit": payload["unit"],
-            "unit_price": payload["unit_price"],
-            "match_pct": int(round(payload["score"] * 100)),
-            "wish": payload.get("wish"),
-        }
-        category_lower = (payload["category"] or "").strip().lower()
-        if category_lower in {"catering", "beverages"}:
-            catering_alternatives.append(formatted)
-        else:
-            product_alternatives.append(formatted)
-
-    return {"products": product_alternatives, "catering": catering_alternatives}
-
-
-def _infer_participant_count(event_entry: Dict[str, Any]) -> Optional[int]:
-    requirements = event_entry.get("requirements") or {}
-    participants = requirements.get("number_of_participants")
-    if participants is None:
-        participants = (event_entry.get("event_data") or {}).get("Number of Participants")
-    if participants is None:
-        participants = (event_entry.get("captured") or {}).get("participants")
-    try:
-        return int(str(participants).strip())
-    except (TypeError, ValueError, AttributeError):
-        return None
-
-
-def _product_unavailable_in_room(record: Any, room_name: str) -> bool:
-    aliases = _room_aliases(room_name)
-    record_unavailable = {str(entry).strip().lower() for entry in getattr(record, "unavailable_in", [])}
-    return any(alias in record_unavailable for alias in aliases)
-
-
-@lru_cache(maxsize=1)
-def _room_alias_map() -> Dict[str, Set[str]]:
-    mapping: Dict[str, Set[str]] = {}
-    for record in load_room_catalog():
-        identifiers = {
-            record.name.strip().lower(),
-            (record.room_id or record.name).strip().lower(),
-        }
-        mapping[record.name] = identifiers
-    return mapping
-
-
-def _room_aliases(room_name: str) -> Set[str]:
-    lowered = (room_name or "").strip().lower()
-    aliases: Set[str] = {lowered}
-    for identifiers in _room_alias_map().values():
-        if lowered in identifiers:
-            aliases |= identifiers
-            break
-    return aliases
-
-
-def _menu_name_set() -> Set[str]:
-    return {
-        str(entry.get("menu_name") or "").strip().lower()
-        for entry in DINNER_MENU_OPTIONS
-        if entry.get("menu_name")
-    }
-
-
-def _normalise_product_fields(product: Dict[str, Any], *, menu_names: Optional[Set[str]] = None) -> Dict[str, Any]:
-    """Normalize product quantity/unit for pricing and display."""
-
-    menu_names = menu_names or _menu_name_set()
-    normalised = dict(product)
-    name = str(normalised.get("name") or "").strip()
-    unit = normalised.get("unit")
-    if not unit and name.lower() in menu_names:
-        unit = "per_event"
-    try:
-        quantity = float(normalised.get("quantity") or 1)
-    except (TypeError, ValueError):
-        quantity = 1
-    try:
-        unit_price = float(normalised.get("unit_price") or 0.0)
-    except (TypeError, ValueError):
-        unit_price = 0.0
-
-    if unit == "per_event":
-        quantity = 1
-
-    normalised["name"] = name or "Unnamed item"
-    normalised["unit"] = unit
-    normalised["quantity"] = quantity
-    normalised["unit_price"] = unit_price
-    return normalised
+# NOTE: Product operations functions moved to product_ops.py (O1 refactoring):
+# _products_ready, _ensure_products_container, _has_offer_update,
+# _autofill_products_from_preferences, _apply_product_operations, _normalise_products,
+# _normalise_product_names, _upsert_product, _build_product_line_from_record,
+# _summarize_product_line, _build_alternative_suggestions, _infer_participant_count,
+# _product_unavailable_in_room, _room_alias_map, _room_aliases, _menu_name_set,
+# _normalise_product_fields
 
 
 def _rebuild_pricing_inputs(event_entry: Dict[str, Any], user_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -1227,63 +896,10 @@ def _rebuild_pricing_inputs(event_entry: Dict[str, Any], user_info: Dict[str, An
     return pricing_inputs
 
 
-def _record_offer(
-    event_entry: Dict[str, Any],
-    pricing_inputs: Dict[str, Any],
-    user_info: Dict[str, Any],
-    thread_id: str,
-) -> Tuple[str, int, float]:
-    compose = ComposeOffer()
-    offer_payload = {
-        "offer_ready_to_generate": True,
-        "event_id": event_entry.get("event_id") or "unknown-event",
-        "pricing_inputs": pricing_inputs,
-        "user_info_final": event_entry.get("requirements", {}),
-        "selected_room": {"name": event_entry.get("locked_room_id")},
-    }
-    composed = compose.run(offer_payload)
-    offer_id = composed["offer_id"]
-    total_amount = composed["total_amount"]
+# Old product ops functions removed in O1 refactoring - now imported from product_ops.py
 
-    offer_sequence = int(event_entry.get("offer_sequence") or 0) + 1
-    timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
-    offers: List[Dict[str, Any]] = event_entry.setdefault("offers", [])
-    for existing in offers:
-        if existing.get("status") in {"Draft", "Sent"}:
-            existing["status"] = "Superseded"
-            existing["superseded_at"] = timestamp
-
-    # Reuse offer_id if provided explicitly (e.g., from counter updates) else append sequence token.
-    explicit_id = user_info.get("offer_id")
-    if explicit_id:
-        offer_id = explicit_id
-    else:
-        offer_id = f"{event_entry.get('event_id')}-OFFER-{offer_sequence}"
-
-    offer_entry = {
-        "offer_id": offer_id,
-        "version": offer_sequence,
-        "status": "Draft",
-        "created_at": timestamp,
-        "total_amount": total_amount,
-        "pricing_inputs": pricing_inputs,
-    }
-    offers.append(offer_entry)
-
-    event_entry["offer_sequence"] = offer_sequence
-    event_entry["current_offer_id"] = offer_id
-    event_entry["offer_status"] = "Draft"
-    event_entry["transition_ready"] = False
-
-    trace_db_write(
-        thread_id,
-        "Step4_Offer",
-        "db.offers.create",
-        {"offer_id": offer_id, "version": offer_sequence, "total": total_amount},
-    )
-
-    return offer_id, offer_sequence, total_amount
+# O3: _record_offer moved to compose.py
 
 
 def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, state: WorkflowState) -> List[str]:
@@ -1339,7 +955,7 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, sta
     manager_requested = bool((event_entry.get("flags") or {}).get("manager_requested"))
     if manager_requested:
         lines = [
-            f"Great — {intro_room} on {intro_date} is ready for manager review.",
+            f"Great, {intro_room} on {intro_date} is ready for manager review.",
             f"Offer draft for {chosen_date} · {room}",
         ]
     else:
@@ -1427,10 +1043,17 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, sta
 
     # Add deposit info on separate lines after total (if enabled)
     if deposit_required and deposit_amount:
-        lines.append("---")  # Separator between total and deposit
-        lines.append(f"Deposit to reserve: CHF {deposit_amount:,.2f} (required before confirmation)")
+        lines.append("")  # Blank line before deposit section
+        lines.append(f"**Deposit to reserve: CHF {deposit_amount:,.2f}** (required before confirmation)")
         if deposit_due_date:
-            lines.append(f"Deposit due by: {deposit_due_date}")
+            # Format date nicely (e.g., "12 January 2026" instead of "2026-01-12")
+            try:
+                due_dt = datetime.strptime(deposit_due_date, "%Y-%m-%d")
+                formatted_due_date = due_dt.strftime("%d %B %Y")
+            except (ValueError, TypeError):
+                formatted_due_date = deposit_due_date
+            lines.append("")  # Blank line to force new paragraph
+            lines.append(f"**Deposit due by:** {formatted_due_date}")
 
     lines.extend([
         "---",
@@ -1569,35 +1192,7 @@ def _default_menu_alternatives(event_entry: Dict[str, Any]) -> List[Dict[str, An
     return results
 
 
-def _determine_offer_total(event_entry: Dict[str, Any], fallback_total: float) -> float:
-    """Compute the total amount directly from products for consistency."""
-
-    try:
-        display_total = float(fallback_total)
-    except (TypeError, ValueError):
-        display_total = 0.0
-
-    computed_total = 0.0
-
-    pricing_inputs = event_entry.get("pricing_inputs") or {}
-    base_rate = normalise_rate(pricing_inputs.get("base_rate"))
-    if base_rate is None:
-        base_rate = derive_room_rate(event_entry)
-    if base_rate is not None:
-        computed_total += base_rate
-
-    for product in event_entry.get("products", []):
-        normalized = _normalise_product_fields(product, menu_names=_menu_name_set())
-        try:
-            quantity = float(normalized.get("quantity") or 0)
-            unit_price = float(normalized.get("unit_price") or 0.0)
-        except (TypeError, ValueError):
-            continue
-        computed_total += quantity * unit_price
-
-    if computed_total > 0:
-        return round(computed_total, 2)
-    return round(display_total, 2)
+# O3: _determine_offer_total moved to compose.py
 
 
 def _step_name(step: int) -> str:
@@ -1651,168 +1246,8 @@ def _normalize_quotes(text: str) -> str:
         text = text.replace(bad, repl)
     return text
 
-
-def _refresh_billing(event_entry: Dict[str, Any]) -> List[str]:
-    """Parse and persist billing details, returning missing required fields."""
-
-    update_billing_details(event_entry)
-    details = event_entry.get("billing_details") or {}
-    missing = missing_billing_fields(event_entry)
-    has_filled_required = len(missing) < 5
-    display = format_billing_display(details, (event_entry.get("event_data") or {}).get("Billing Address"))
-    if display and has_filled_required:
-        event_entry.setdefault("event_data", {})["Billing Address"] = display
-
-    validation = event_entry.setdefault("billing_validation", {})
-    if missing:
-        validation["missing"] = list(missing)
-    else:
-        validation.pop("missing", None)
-    return missing
-
-
-def _flag_billing_accept_pending(event_entry: Dict[str, Any], missing_fields: List[str]) -> None:
-    gate = event_entry.setdefault("billing_requirements", {})
-    gate["awaiting_billing_for_accept"] = True
-    gate["last_missing"] = list(missing_fields)
-
-
-def _check_deposit_payment_continuation(
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-    previous_step: int,
-    thread_id: str,
-    missing_fields: List[str],
-) -> Optional[GroupResult]:
-    """
-    Check if we should continue to HIL after deposit payment.
-
-    This handles the case where:
-    1. Client previously accepted the offer (offer_accepted = True)
-    2. Billing address was collected (no missing fields)
-    3. Deposit was required and is now paid
-
-    In this scenario, the deposit payment triggers continuation to HIL
-    without needing the message to be classified as acceptance.
-    """
-    # Check if offer was previously accepted
-    if not event_entry.get("offer_accepted"):
-        return None
-
-    # Check if billing is complete
-    if missing_fields:
-        return None
-
-    # Check deposit status
-    deposit_info = event_entry.get("deposit_info") or {}
-    deposit_required = deposit_info.get("deposit_required", False)
-    deposit_paid = deposit_info.get("deposit_paid", False)
-
-    # Only continue if deposit was required and is now paid
-    if not deposit_required or not deposit_paid:
-        return None
-
-    # All conditions met - continue to HIL
-    print(f"[Step4] Deposit payment continuation: offer_accepted=True, billing_complete=True, deposit_paid=True")
-
-    return _start_hil_acceptance_flow(
-        state,
-        event_entry,
-        previous_step,
-        thread_id,
-        audit_label="offer_accept_pending_hil_deposit_paid",
-        action="offer_accept_pending_hil",
-    )
-
-
-def _auto_accept_if_billing_ready(
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-    previous_step: int,
-    thread_id: str,
-    missing_fields: List[str],
-) -> Optional[GroupResult]:
-    gate = event_entry.get("billing_requirements") or {}
-    if not gate.get("awaiting_billing_for_accept"):
-        return None
-    if missing_fields:
-        gate["last_missing"] = list(missing_fields)
-        return None
-
-    gate["awaiting_billing_for_accept"] = False
-    gate["last_missing"] = []
-
-    # Check if deposit is required but not paid before auto-accepting
-    deposit_info = event_entry.get("deposit_info") or {}
-    deposit_required = deposit_info.get("deposit_required", False)
-    deposit_paid = deposit_info.get("deposit_paid", False)
-    deposit_amount = deposit_info.get("deposit_amount", 0)
-
-    if deposit_required and not deposit_paid and deposit_amount > 0:
-        # Friendly reminder: deposit must be paid before confirmation
-        deposit_reminder = {
-            "body_markdown": (
-                f"Thank you for providing your billing details! Before I can proceed with your booking, "
-                f"please complete the deposit payment of CHF {deposit_amount:,.2f}. "
-                f"Once the deposit is received, I'll immediately send your confirmation for final approval."
-            ),
-            "step": 4,
-            "topic": "deposit_reminder",
-            "next_step": "Awaiting deposit payment",
-            "thread_state": "Awaiting Client",
-            "requires_approval": False,
-        }
-        state.add_draft_message(deposit_reminder)
-        append_audit_entry(event_entry, previous_step, 4, "offer_accept_blocked_deposit_unpaid_auto")
-        update_event_metadata(
-            event_entry,
-            current_step=4,
-            thread_state="Awaiting Client",
-            transition_ready=False,
-        )
-        state.current_step = 4
-        state.set_thread_state("Awaiting Client")
-        set_hil_open(thread_id, False)
-        state.extras["persist"] = True
-
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "deposit_required": deposit_amount,
-            "draft_messages": state.draft_messages,
-            "thread_state": state.thread_state,
-            "context": state.context_snapshot,
-            "persisted": True,
-        }
-        return GroupResult(action="offer_accept_requires_deposit", payload=payload, halt=True)
-
-    return _start_hil_acceptance_flow(
-        state,
-        event_entry,
-        previous_step,
-        thread_id,
-        audit_label="offer_accept_pending_hil_auto",
-        action="offer_accept_pending_hil",
-    )
-
-
-def _billing_prompt_draft(missing_fields: List[str], *, step: int) -> Dict[str, Any]:
-    prompt = (
-        "Thanks for confirming — I need the billing address before I can send this for approval.\n"
-        f"{billing_prompt_for_missing_fields(missing_fields)} "
-        "Example: \"Helvetia Labs, Bahnhofstrasse 1, 8001 Zurich, Switzerland\". "
-        "As soon as I have it, I'll forward the offer automatically."
-    )
-    return {
-        "body_markdown": prompt,
-        "step": step,
-        "topic": "billing_details_required",
-        "next_step": "Await billing details",
-        "thread_state": "Awaiting Client",
-        "requires_approval": False,
-    }
+# NOTE: _check_deposit_payment_continuation and _auto_accept_if_billing_ready
+# were removed (dead code) - replaced by unified confirmation_gate.py
 
 
 def _manager_request_detected(state: WorkflowState, event_entry: Dict[str, Any]) -> bool:
@@ -1854,7 +1289,7 @@ def _auto_confirm_without_hil(
     billing_display = format_billing_display(event_entry.get("billing_details") or {}, (event_entry.get("event_data") or {}).get("Billing Address"))
 
     body_lines = [
-        f"Confirmed — {room_label} on {display_date} is locked in.",
+        f"Confirmed: {room_label} on {display_date} is locked in.",
     ]
     if billing_display:
         body_lines.append(f"Billing address: {billing_display}.")
@@ -1960,169 +1395,11 @@ def _present_general_room_qna(
     classification: Dict[str, Any],
     thread_id: Optional[str],
 ) -> GroupResult:
-    """Handle general Q&A at Step 4 using the same pattern as Step 2."""
-    subloop_label = "general_q_a"
-    state.extras["subloop"] = subloop_label
-    resolved_thread_id = thread_id or state.thread_id
-
-    if thread_id:
-        set_subloop(thread_id, subloop_label)
-
-    # Extract fresh from current message (multi-turn Q&A fix)
-    message = state.message
-    subject = (message.subject if message else "") or ""
-    body = (message.body if message else "") or ""
-    message_text = f"{subject}\n{body}".strip() or body or subject
-
-    scan = state.extras.get("general_qna_scan")
-    # Force fresh extraction for multi-turn Q&A
-    ensure_qna_extraction(state, message_text, scan, force_refresh=True)
-    extraction = state.extras.get("qna_extraction")
-
-    # Clear stale qna_cache AFTER extraction
-    if isinstance(event_entry, dict):
-        event_entry.pop("qna_cache", None)
-
-    structured = build_structured_qna_result(state, extraction) if extraction else None
-
-    if structured and structured.handled:
-        rooms = structured.action_payload.get("db_summary", {}).get("rooms", [])
-        date_lookup: Dict[str, str] = {}
-        for entry in rooms:
-            iso_date = entry.get("date") or entry.get("iso_date")
-            if not iso_date:
-                continue
-            try:
-                parsed = datetime.fromisoformat(iso_date)
-            except ValueError:
-                try:
-                    parsed = datetime.strptime(iso_date, "%Y-%m-%d")
-                except ValueError:
-                    continue
-            label = parsed.strftime("%d.%m.%Y")
-            date_lookup.setdefault(label, parsed.date().isoformat())
-
-        candidate_dates = sorted(date_lookup.keys(), key=lambda label: date_lookup[label])[:5]
-        actions = [
-            {
-                "type": "select_date",
-                "label": f"Confirm {label}",
-                "date": label,
-                "iso_date": date_lookup[label],
-            }
-            for label in candidate_dates
-        ]
-
-        body_markdown = (structured.body_markdown or _fallback_structured_body(structured.action_payload)).strip()
-        footer_body = append_footer(
-            body_markdown,
-            step=4,
-            next_step=4,
-            thread_state="Awaiting Client",
-        )
-
-        draft_message = {
-            "body": footer_body,
-            "body_markdown": body_markdown,
-            "step": 4,
-            "next_step": 4,
-            "thread_state": "Awaiting Client",
-            "topic": "general_room_qna",
-            "candidate_dates": candidate_dates,
-            "actions": actions,
-            "subloop": subloop_label,
-            "headers": ["Availability overview"],
-        }
-
-        state.add_draft_message(draft_message)
-        update_event_metadata(
-            event_entry,
-            thread_state="Awaiting Client",
-            current_step=4,
-            candidate_dates=candidate_dates,
-        )
-        state.set_thread_state("Awaiting Client")
-        state.record_subloop(subloop_label)
-        state.intent_detail = "event_intake_with_question"
-        state.extras["persist"] = True
-
-        # Store minimal last_general_qna context for follow-up detection only
-        if extraction and isinstance(event_entry, dict):
-            q_values = extraction.get("q_values") or {}
-            event_entry["last_general_qna"] = {
-                "topic": structured.action_payload.get("qna_subtype"),
-                "date_pattern": q_values.get("date_pattern"),
-                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
-            }
-
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "candidate_dates": candidate_dates,
-            "draft_messages": state.draft_messages,
-            "thread_state": state.thread_state,
-            "context": state.context_snapshot,
-            "persisted": True,
-            "general_qna": True,
-            "structured_qna": structured.handled,
-            "qna_select_result": structured.action_payload,
-            "structured_qna_debug": structured.debug,
-            "actions": actions,
-        }
-        if extraction:
-            payload["qna_extraction"] = extraction
-        return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
-
-    # Fallback if structured Q&A failed
-    fallback_prompt = "[STRUCTURED_QNA_FALLBACK]\nI couldn't load the structured Q&A context for this request. Please review extraction logs."
-    draft_message = {
-        "step": 4,
-        "topic": "general_room_qna",
-        "body": f"{fallback_prompt}\n\n---\nStep: 4 Offer · Next: 4 Offer · State: Awaiting Client",
-        "body_markdown": fallback_prompt,
-        "next_step": 4,
-        "thread_state": "Awaiting Client",
-        "headers": ["Availability overview"],
-        "requires_approval": False,
-        "subloop": subloop_label,
-        "actions": [],
-        "candidate_dates": [],
-    }
-    state.add_draft_message(draft_message)
-    update_event_metadata(
-        event_entry,
-        thread_state="Awaiting Client",
-        current_step=4,
-        candidate_dates=[],
+    """Handle general Q&A at Step 4 - delegates to shared implementation."""
+    return present_general_room_qna(
+        state, event_entry, classification, thread_id,
+        step_number=4, step_name="Offer"
     )
-    state.set_thread_state("Awaiting Client")
-    state.record_subloop(subloop_label)
-    state.intent_detail = "event_intake_with_question"
-    state.extras["structured_qna_fallback"] = True
-    structured_payload = structured.action_payload if structured else {}
-    structured_debug = structured.debug if structured else {"reason": "missing_structured_context"}
-
-    payload = {
-        "client_id": state.client_id,
-        "event_id": event_entry.get("event_id"),
-        "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "candidate_dates": [],
-        "draft_messages": state.draft_messages,
-        "thread_state": state.thread_state,
-        "context": state.context_snapshot,
-        "persisted": True,
-        "general_qna": True,
-        "structured_qna": False,
-        "structured_qna_fallback": True,
-        "qna_select_result": structured_payload,
-        "structured_qna_debug": structured_debug,
-    }
-    if extraction:
-        payload["qna_extraction"] = extraction
-    return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
 
 
 def _append_deferred_general_qna(

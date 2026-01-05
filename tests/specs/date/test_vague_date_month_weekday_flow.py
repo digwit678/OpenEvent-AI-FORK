@@ -6,7 +6,7 @@ from pathlib import Path
 
 from backend.debug.trace import BUS
 from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.steps.step2_date_confirmation.trigger.process import _present_candidate_dates
+from backend.workflows.steps.step2_date_confirmation.trigger.step2_handler import _present_candidate_dates
 
 
 
@@ -40,13 +40,13 @@ def test_vague_month_weekday_enumeration(monkeypatch, tmp_path):
         return list(deterministic)
 
     monkeypatch.setattr("backend.workflows.io.dates.next5", _fake_next5)
-    step2_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
+    # Patch at USE site (step2_handler imports these functions)
+    step2_handler = "backend.workflows.steps.step2_date_confirmation.trigger.step2_handler"
     monkeypatch.setattr(
-        step2_module,
-        "suggest_dates",
+        f"{step2_handler}.suggest_dates",
         lambda *_args, **_kwargs: ["07.02.2026", "14.02.2026", "21.02.2026", "28.02.2026", "07.03.2026"],
     )
-    monkeypatch.setattr(step2_module, "next_five_venue_dates", lambda *_a, **_k: [])
+    monkeypatch.setattr(f"{step2_handler}.next_five_venue_dates", lambda *_a, **_k: [])
 
     state = _state(tmp_path)
     state.thread_id = "vague-thread"
@@ -98,7 +98,7 @@ def test_vague_month_weekday_enumeration(monkeypatch, tmp_path):
 
 
 def test_vague_range_forces_candidates(monkeypatch, tmp_path):
-    step2_module = importlib.import_module("backend.workflows.groups.date_confirmation.trigger.process")
+    step2_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
     monkeypatch.setenv("DEBUG_TRACE", "1")
 
     state = _state(tmp_path)
@@ -121,6 +121,7 @@ def test_vague_range_forces_candidates(monkeypatch, tmp_path):
         "vague_weekday": "Saturday",
     }
 
+    # Patch at USE site (step2_handler imports these functions)
     monkeypatch.setattr(
         step2_module,
         "suggest_dates",

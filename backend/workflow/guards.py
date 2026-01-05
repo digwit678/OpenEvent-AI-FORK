@@ -4,12 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from backend.workflow.state import WorkflowStep, write_stage
 from backend.workflows.common.requirements import requirements_hash
 from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from backend.workflows.common.datetime_parse import to_iso_date
 from backend.workflows.steps.step1_intake.condition.checks import suggest_dates
-from backend.workflows.io.database import update_event_metadata
 
 if TYPE_CHECKING:
     from backend.workflows.common.types import WorkflowState
@@ -17,7 +15,11 @@ if TYPE_CHECKING:
 
 @dataclass
 class GuardSnapshot:
-    """Deterministic guard outcome for steps 2–4."""
+    """Deterministic guard outcome for steps 2–4.
+
+    This is a pure data structure - no side effects. The caller is responsible
+    for applying any metadata updates indicated by the snapshot fields.
+    """
 
     step2_required: bool
     step3_required: bool
@@ -26,6 +28,11 @@ class GuardSnapshot:
     room_eval_hash: Optional[str]
     chosen_date: Optional[str]
     candidate_dates: List[str]
+
+    # P2 extension: metadata update decisions (caller applies these)
+    forced_step: Optional[int] = None  # Step to force, if any
+    requirements_hash_changed: bool = False  # True if hash was recomputed
+    deposit_bypass: bool = False  # True if deposit payment bypass is active
 
 
 def _iso(value: Optional[str]) -> Optional[str]:
@@ -68,22 +75,21 @@ def _compute_candidate_dates(state: "WorkflowState", preferred_room: Optional[st
 def evaluate(state: "WorkflowState") -> GuardSnapshot:
     """
     Evaluate deterministic entry guards for Steps 2–4 and surface derived state.
+
+    This function is PURE - it returns a GuardSnapshot with all decisions but
+    does NOT modify state or event_entry. The caller is responsible for applying
+    any metadata updates indicated by the snapshot fields.
+
+    P2 refactoring: Side effects removed, decisions returned in snapshot.
     """
 
     event_entry = state.event_entry or {}
 
     # [DEPOSIT PAYMENT BYPASS] When deposit is just paid and offer was accepted,
     # skip guard-forced step changes so workflow proceeds to step 5.
-    # We always route to step 5 (even if gate not ready) because step 5 has the
-    # confirmation gate logic to check billing/deposit and generate appropriate responses.
     is_deposit_signal = (state.message.extras or {}).get("deposit_just_paid", False)
     if is_deposit_signal and event_entry.get("offer_accepted"):
-        # Ensure step is 5 for negotiation handler to process confirmation gate
-        if event_entry.get("current_step") != 5:
-            update_event_metadata(event_entry, current_step=5)
-            state.current_step = 5
-            state.extras["persist"] = True
-        # Return early with no forced steps
+        # Return early with deposit bypass flag - caller will force step 5
         return GuardSnapshot(
             step2_required=False,
             step3_required=False,
@@ -92,7 +98,10 @@ def evaluate(state: "WorkflowState") -> GuardSnapshot:
             room_eval_hash=event_entry.get("room_eval_hash"),
             chosen_date=_normalize_date(event_entry.get("chosen_date")),
             candidate_dates=[],
+            forced_step=5 if event_entry.get("current_step") != 5 else None,
+            deposit_bypass=True,
         )
+
     user_info = state.user_info or {}
 
     chosen_date = event_entry.get("chosen_date")
@@ -110,14 +119,15 @@ def evaluate(state: "WorkflowState") -> GuardSnapshot:
     elif normalized_user_date and normalized_user_date != normalized_chosen:
         step2_required = True
 
+    # Check if requirements_hash needs updating (pure computation, no side effect)
     requirements = event_entry.get("requirements") or {}
     req_hash = event_entry.get("requirements_hash")
+    requirements_hash_changed = False
     if requirements:
         computed_hash = requirements_hash(requirements)
         if req_hash != computed_hash:
             req_hash = computed_hash
-            update_event_metadata(event_entry, requirements_hash=req_hash)
-            state.extras["persist"] = True
+            requirements_hash_changed = True
     else:
         req_hash = None
 
@@ -149,12 +159,12 @@ def evaluate(state: "WorkflowState") -> GuardSnapshot:
             else:
                 step4_required = offer_status not in {"sent", "accepted", "accepted_final"}
 
+    # Compute candidate dates if step2 required (pure computation)
     if step2_required and not candidate_dates:
         preferred_room = requirements.get("preferred_room")
         candidate_dates = _compute_candidate_dates(state, preferred_room)
-        state.extras["step2_candidate_dates"] = candidate_dates
 
-    # Adjust current step ordering deterministically
+    # Determine forced step (pure computation, no side effect)
     forced_step: Optional[int] = None
     if step2_required:
         forced_step = 2
@@ -163,12 +173,10 @@ def evaluate(state: "WorkflowState") -> GuardSnapshot:
     elif step4_required:
         forced_step = 4
 
+    # Only indicate forced_step if it differs from current
     current_step = event_entry.get("current_step")
-    if forced_step and forced_step != current_step:
-        update_event_metadata(event_entry, current_step=forced_step)
-        write_stage(event_entry, current_step=WorkflowStep(f"step_{forced_step}"))
-        state.current_step = forced_step
-        state.extras["persist"] = True
+    if forced_step == current_step:
+        forced_step = None
 
     return GuardSnapshot(
         step2_required=step2_required,
@@ -178,6 +186,9 @@ def evaluate(state: "WorkflowState") -> GuardSnapshot:
         room_eval_hash=room_eval_hash,
         chosen_date=normalized_chosen,
         candidate_dates=candidate_dates,
+        forced_step=forced_step,
+        requirements_hash_changed=requirements_hash_changed,
+        deposit_bypass=False,
     )
 
 

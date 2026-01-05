@@ -29,9 +29,12 @@ Detour Flow:
 from __future__ import annotations
 
 import re
+import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 # Import enhanced detection from keyword_buckets
 # MIGRATED: from backend.workflows.nlu.keyword_buckets -> backend.detection.keywords.buckets
@@ -955,13 +958,54 @@ def detect_change_type_enhanced(
     # If we couldn't determine specific change type, try to infer from user_info
     if change_type is None:
         # Check what fields are present in user_info
-        if user_info.get("date") or user_info.get("event_date"):
-            change_type = ChangeType.DATE
-        elif user_info.get("room") or user_info.get("preferred_room"):
+        # -------------------------------------------------------------------------
+        # HALLUCINATION GUARD: LLM may hallucinate dates (e.g., today's date) for
+        # messages that don't contain explicit dates. Verify the date appears in
+        # the message text before classifying as DATE change.
+        # -------------------------------------------------------------------------
+        extracted_date = user_info.get("date") or user_info.get("event_date")
+        logger.debug("[CHANGE_PROP][GUARD] extracted_date=%s", extracted_date)
+        if extracted_date:
+            date_in_message = False
+            if message_text:
+                logger.debug("[CHANGE_PROP][GUARD] checking message_text=%s...", message_text[:100] if message_text else 'None')
+                # Check if the date appears directly in the message
+                if extracted_date in message_text:
+                    date_in_message = True
+                else:
+                    # Parse dates from message and check if extracted date matches
+                    from backend.workflows.common.datetime_parse import parse_all_dates
+                    from datetime import date as dt_date
+                    try:
+                        parsed_dates = list(parse_all_dates(message_text, fallback_year=dt_date.today().year))
+                        parsed_iso = {d.isoformat() for d in parsed_dates}
+                        # Check if ISO date format matches
+                        if extracted_date in parsed_iso:
+                            date_in_message = True
+                        # Also check DD.MM.YYYY format
+                        elif "-" in extracted_date:
+                            # Convert ISO to DD.MM.YYYY
+                            try:
+                                iso_parsed = dt_date.fromisoformat(extracted_date)
+                                ddmmyyyy = iso_parsed.strftime("%d.%m.%Y")
+                                if ddmmyyyy in message_text:
+                                    date_in_message = True
+                            except ValueError:
+                                pass
+                    except Exception:
+                        pass  # If parsing fails, be conservative
+            else:
+                # No message text to verify against - trust user_info
+                date_in_message = True
+
+            if date_in_message:
+                change_type = ChangeType.DATE
+            # If date was hallucinated, fall through to other checks below
+        if change_type is None and (user_info.get("room") or user_info.get("preferred_room")):
             change_type = ChangeType.ROOM
-        elif has_requirement_update(event_state, user_info):
+        elif change_type is None and has_requirement_update(event_state, user_info):
             change_type = ChangeType.REQUIREMENTS
-        elif has_product_update(user_info):
+        elif change_type is None and has_product_update(user_info):
             change_type = ChangeType.PRODUCTS
 
     # Extract old/new values

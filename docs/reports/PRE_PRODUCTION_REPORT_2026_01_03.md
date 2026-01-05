@@ -1,0 +1,249 @@
+# Pre-Production Report 03.01.26
+
+## Scope
+- Focused on production readiness items excluding ongoing test coverage and test structure consolidation work.
+- Reviewed backend API surface, debug tooling, runtime entrypoints, and upload handling.
+
+---
+
+## Completed Tasks
+
+### ✅ Task 5: Production Entrypoint Hygiene (Completed 2026-01-03)
+
+**Problem**: When `backend/main.py` runs directly, it performs several "developer convenience" actions that are dangerous in production:
+
+| Behavior | What it does | Production Risk |
+|----------|-------------|-----------------|
+| Auto Port Kill | Kills any process on port 8000 | Could kill other services on Hostinger |
+| Auto Frontend Launch | Spawns `npm run dev` | Wrong for production (should use pre-built frontend) |
+| Auto Browser Open | Opens localhost:3000 in browser | Fails/crashes on headless servers |
+| Auto Frontend Fix | Kills frontend + deletes `.next/` if unhealthy | Destroys production cache |
+
+**Root Cause**: These behaviors were controlled by environment variables, but they **defaulted to ENABLED** (`"1"`), meaning production deployments would accidentally trigger them unless explicitly disabled.
+
+**Solution Implemented**: Added `ENV` environment variable to control behavior:
+
+```python
+# backend/main.py (line 47-50)
+_IS_DEV = os.getenv("ENV", "dev").lower() in ("dev", "development", "local")
+```
+
+All 5 auto-behaviors now default based on `ENV`:
+- `ENV=dev` (default) → All conveniences enabled (testing works)
+- `ENV=prod` → All conveniences disabled (safe for Hostinger)
+
+**Files Modified**:
+- `backend/main.py`: Added `_IS_DEV` detection, updated 5 default values, added startup log
+
+**Why This Approach**:
+1. **No code divergence**: Same codebase for dev and prod - behavior controlled by environment
+2. **Fail-safe production**: Production is safe by default, not dangerous by default
+3. **Backward compatible**: Existing explicit env vars (e.g., `AUTO_FREE_BACKEND_PORT=1`) still override
+4. **Clear logging**: Startup shows `[Backend] Starting in DEV/PROD mode`
+
+**Testing**:
+```bash
+# Dev mode (default) - all conveniences enabled
+./scripts/dev/dev_server.sh  # Works as before
+
+# Prod mode - all conveniences disabled
+ENV=prod uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
+
+---
+
+### ✅ Task 2: Debug API Gating (Completed 2026-01-03)
+
+**Problem**: Debug endpoints exposed internal traces, live logs, and LLM diagnosis data. The `DEBUG_TRACE_DEFAULT` was set to "1" (enabled), meaning debug tracing was ON by default - a security concern for production.
+
+**Debug Endpoints Exposed (8 total):**
+- `GET /api/debug/threads/{thread_id}` - Full trace data
+- `GET /api/debug/threads/{thread_id}/timeline` - Timeline events
+- `GET /api/debug/threads/{thread_id}/report` - Comprehensive debug report
+- `GET /api/debug/threads/{thread_id}/llm-diagnosis` - LLM-optimized diagnosis
+- `GET /api/debug/live` - List all active thread IDs
+- Plus 3 more download/export endpoints
+
+**Solution Implemented**:
+
+1. **Updated `backend/debug/settings.py`** - Added ENV detection:
+   ```python
+   _IS_DEV = os.getenv("ENV", "dev").lower() in ("dev", "development", "local")
+   _DEFAULT_TRACE = os.getenv("DEBUG_TRACE_DEFAULT", "1" if _IS_DEV else "0")
+   ```
+
+2. **Updated `backend/main.py`** - Conditionally mount debug router:
+   ```python
+   if _IS_DEV:
+       app.include_router(debug_router)
+   ```
+
+**Result:**
+- `ENV=dev` (default) → Debug router mounted, tracing enabled
+- `ENV=prod` → Debug router NOT mounted (404 for all /api/debug/* routes), tracing disabled
+
+**Testing:**
+```bash
+# Verify in prod mode
+ENV=prod python3 -c "from backend.main import app; print([r.path for r in app.routes if '/debug/' in getattr(r, 'path', '')])"
+# Output: []  (no debug routes)
+```
+
+---
+
+### ✅ Task 3: Test-Data Endpoints Gating (Completed 2026-01-03)
+
+**Problem**: Test-data and Q&A endpoints exposed internal data and **full stack traces on error**:
+
+**Endpoints Exposed (5 total):**
+- `GET /api/test-data/rooms` - Room availability data
+- `GET /api/test-data/catering` - Catering menus catalog
+- `GET /api/test-data/catering/{slug}` - Specific menu details
+- `GET /api/test-data/qna` - Legacy Q&A endpoint
+- `GET /api/qna` - Universal Q&A endpoint (**returns traceback on error!**)
+
+**Security Issue**: The `/api/qna` endpoint returned full Python tracebacks:
+```python
+return {
+    "error": str(e),
+    "traceback": traceback.format_exc(),  # Exposes internal code paths!
+}
+```
+
+**Solution Implemented** - Updated `backend/main.py`:
+```python
+# Test-data router only mounted in dev mode (exposes internal data and tracebacks)
+if _IS_DEV:
+    app.include_router(test_data_router)
+```
+
+**Result:**
+- `ENV=dev` (default) → Test-data router mounted (all 5 endpoints)
+- `ENV=prod` → Test-data router NOT mounted (404 for all endpoints)
+
+---
+
+### ✅ Task 4: Upload Size Limits (Completed 2026-01-03)
+
+**Problem**: The upload endpoint in `backend/api/agent_router.py` read entire file contents into memory with no size limits:
+
+```python
+content = await file.read()  # Entire file loaded into memory - no limit!
+```
+
+A malicious actor could upload a multi-GB file and exhaust server memory.
+
+**Solution Implemented**:
+
+1. **Added configurable size limit** (default 10MB):
+   ```python
+   MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "10"))
+   MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+   ```
+
+2. **Added content-type allowlist**:
+   ```python
+   ALLOWED_UPLOAD_TYPES = {
+       "image/jpeg", "image/png", "image/gif", "image/webp",
+       "application/pdf",
+       "text/plain", "text/csv",
+       "application/json",
+   }
+   ```
+
+3. **Streaming validation** - reads in 64KB chunks, rejects before loading huge files:
+   ```python
+   chunk_size = 64 * 1024  # 64KB chunks
+   while True:
+       chunk = await file.read(chunk_size)
+       if not chunk:
+           break
+       total_size += len(chunk)
+       if total_size > MAX_UPLOAD_SIZE:
+           raise HTTPException(status_code=413, detail=f"File too large...")
+   ```
+
+**HTTP Status Codes**:
+- `413 Payload Too Large` - File exceeds size limit
+- `415 Unsupported Media Type` - Content type not in allowlist
+
+**Files Modified**:
+- `backend/api/agent_router.py`: Added `_validate_content_type()`, streaming size check, constants
+
+**Why This Approach**:
+1. **Memory protection**: Streaming validation means only 64KB in memory before rejection
+2. **Configurable**: `MAX_UPLOAD_SIZE_MB` env var for different deployment needs
+3. **Security**: Allowlist prevents uploading executables or unexpected file types
+4. **Non-breaking**: Endpoint not currently mounted - changes are future-ready
+
+**Note**: The agent router (`/api/agent/*`) is defined but not mounted in `backend/main.py`. These protections will be active when the router is integrated.
+
+---
+
+## Tasks (Remaining - Must Address Before Production)
+
+### ✅ Task 1: Authentication/Authorization (Completed 2026-01-03)
+
+**Problem**: API routes that mutate config or drive workflows were exposed without auth.
+
+**Solution Implemented**:
+- Created `backend/api/middleware/auth.py` with toggle-based auth
+- `AUTH_ENABLED=0` (default): No auth checks (dev/test unchanged)
+- `AUTH_ENABLED=1`: Enforces auth on all non-allowlisted routes
+- Supports `AUTH_MODE=api_key` (Bearer token) and `AUTH_MODE=supabase_jwt` (future)
+- Allowlist for public routes: `/health`, `/docs`, `/api/workflow/health`
+
+**Files Created**:
+- `backend/api/middleware/auth.py` - Auth middleware
+- `backend/tests/api/test_auth_middleware.py` - 24 tests
+
+**Production Usage**:
+```bash
+AUTH_ENABLED=1
+AUTH_MODE=api_key
+API_KEY=your-secret-key
+```
+
+---
+
+### ✅ Multi-Tenancy (Completed 2026-01-03)
+
+**Problem**: No tenant isolation - all data shared across teams.
+
+**Solution Implemented**:
+- Phase 1: Tenant context middleware (`X-Team-Id`, `X-Manager-Id` headers)
+- Phase 2: JSON DB per-team file routing + config layer integration
+- Phase 3: Supabase adapter team_id enforcement + RLS policies
+
+**Files Created**:
+- `backend/api/middleware/tenant_context.py`
+- `supabase/migrations/20260103000000_enable_rls_team_isolation.sql`
+- `docs/integration/MULTI_TENANCY_PRODUCTION.md`
+
+---
+
+## Proposed Solutions (Backend-Only, Hostinger, Supabase)
+
+6) Supabase integration readiness
+   - ✅ RLS policies created (`supabase/migrations/...`)
+   - ✅ All Supabase adapter functions filter by team_id
+   - ⏳ Enable `OE_INTEGRATION_MODE=supabase` and validate required env vars
+   - ⏳ Add migration step to backfill JSON data into Supabase before cutover
+
+## Notes on Deployment Context
+- Backend hosted on Hostinger; frontend is separate. Focus is API hardening, auth, and environment gating.
+- Supabase will replace JSON storage; ensure integration flags and adapters are treated as source-of-truth.
+- Multi-tenancy is still open; treat as a pre-production blocker if required for launch.
+
+## Tasks (Should Address Soon After Production)
+6) Add rate limiting for public-facing endpoints.
+   - Target: API layer (FastAPI middleware or gateway)
+   - Rationale: Mitigates abuse and accidental overload.
+
+7) Add structured error handling that avoids returning stack traces to clients.
+   - Target: `backend/api/routes/test_data.py` and any endpoints returning raw exceptions.
+
+## Notes
+- This report excludes the in-progress priorities:
+  - Priority 3: Add Steps 5-7 test coverage
+  - Priority 4: Consolidate test structure

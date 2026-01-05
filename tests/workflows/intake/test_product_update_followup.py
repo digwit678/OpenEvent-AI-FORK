@@ -20,7 +20,7 @@ def test_product_update_followup_skips_manual_review(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    intake_module = importlib.import_module("backend.workflows.groups.intake.trigger.process")
+    intake_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
 
     # Force classifier to downgrade confidence so heuristics kick in.
     monkeypatch.setattr(intake_module, "classify_intent", lambda _payload: (IntentLabel.NON_EVENT, 0.2))
@@ -96,7 +96,7 @@ def test_product_update_preserves_requirements_hash(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    intake_module = importlib.import_module("backend.workflows.groups.intake.trigger.process")
+    intake_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
 
     monkeypatch.setattr(intake_module, "classify_intent", lambda _payload: (IntentLabel.EVENT_REQUEST, 0.96))
 
@@ -174,7 +174,7 @@ def test_product_update_detected_when_intent_is_event_request(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    intake_module = importlib.import_module("backend.workflows.groups.intake.trigger.process")
+    intake_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
 
     # Classifier already thinks this is an event; heuristic product parser must still run.
     monkeypatch.setattr(intake_module, "classify_intent", lambda _payload: (IntentLabel.EVENT_REQUEST, 0.96))

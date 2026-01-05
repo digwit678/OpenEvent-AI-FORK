@@ -38,15 +38,15 @@ def extract_preferences(user_info: Dict[str, Any], raw_text: Optional[str] = Non
 
     wish_products = [item for item in raw_wish_products if item.lower() not in catering_lower]
 
+    # NOTE: layout is NOT added to product_sources - it's a room config descriptor.
+    # Room-type hints are handled separately via room_type_hint.
     product_sources: List[str] = list(wish_products)
-    layout = user_info.get("layout")
-    if isinstance(layout, str) and layout.strip():
-        layout_lower = layout.strip().lower()
-        if layout_lower not in {item.lower() for item in product_sources}:
-            product_sources.append(layout)
     notes = user_info.get("notes")
     if isinstance(notes, str) and notes.strip():
         product_sources.append(notes)
+
+    # Extract room_type_hint for room matching (separate from product matching)
+    room_type_hint = user_info.get("room_type_hint")
 
     product_tokens = normalize_products(product_sources)
 
@@ -85,8 +85,8 @@ def extract_preferences(user_info: Dict[str, Any], raw_text: Optional[str] = Non
         scoring_wishes = [token.title() for token in product_tokens]
     if not scoring_wishes and catering_tokens:
         scoring_wishes = [token.title() for token in catering_tokens]
-    if scoring_wishes:
-        recommendations = _score_rooms_by_products(scoring_wishes)
+    if scoring_wishes or room_type_hint:
+        recommendations = _score_rooms_by_products(scoring_wishes, room_type_hint=room_type_hint)
         if recommendations:
             preferences["room_recommendations"] = recommendations
             preferences["room_similarity"] = {entry["room"]: entry["score"] for entry in recommendations}
@@ -136,13 +136,10 @@ def _collect_wish_products(user_info: Dict[str, Any]) -> List[str]:
         cleaned = [fragment.strip(" .") for fragment in fragments if fragment and fragment.strip()]
         _append(cleaned)
 
-    layout_pref = user_info.get("layout")
-    if isinstance(layout_pref, str) and layout_pref.strip():
-        _append([layout_pref])
-
-    event_type = user_info.get("type")
-    if isinstance(event_type, str) and event_type.strip():
-        _append([event_type])
+    # NOTE: layout and type are NOT added to wish_products anymore.
+    # They are room-configuration descriptors (e.g., "conference room", "u-shape")
+    # not product requests. They're matched against room features separately
+    # in _score_rooms_by_products() via room_type_hint.
 
     return result[:10]
 
@@ -205,7 +202,10 @@ def _tokenize(text: str) -> List[str]:
     return re.findall(r"[a-z0-9]+", text.lower())
 
 
-def _score_rooms_by_products(wish_products: Sequence[str]) -> List[Dict[str, Any]]:
+def _score_rooms_by_products(
+    wish_products: Sequence[str],
+    room_type_hint: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     catalog = _room_catalog()
     rooms_data = {room["name"]: room for room in _load_rooms()}
     recommendations: List[Dict[str, Any]] = []
@@ -222,6 +222,21 @@ def _score_rooms_by_products(wish_products: Sequence[str]) -> List[Dict[str, Any
         room_all_features = room_features | room_services | room_layouts
 
         score = 0.0
+
+        # Match room_type_hint against room's best_for, setup_options, and equipment
+        if room_type_hint:
+            hint_normalized = _normalise_phrase(room_type_hint)
+            best_for = room_info.get("best_for") or []
+            setup_options = room_info.get("setup_options") or []
+            equipment = room_info.get("equipment") or []
+            matchable = best_for + setup_options + equipment
+
+            for option in matchable:
+                option_normalized = _normalise_phrase(option)
+                # Check if hint appears in option (e.g., "conference" in "hybrid meetings")
+                if hint_normalized in option_normalized or option_normalized in hint_normalized:
+                    score += 0.5  # Bonus for room type match
+                    break
         matched: List[str] = []  # Strong matches (>= 0.85)
         closest: List[str] = []  # Moderate matches (0.65-0.85) - "comes closest to your X"
         missing: List[str] = []
@@ -453,7 +468,7 @@ def _room_catalog() -> Dict[str, Dict[str, Any]]:
 
 @lru_cache(maxsize=1)
 def _load_rooms() -> List[Dict[str, Any]]:
-    path = Path(__file__).resolve().parents[2] / "rooms.json"
+    path = Path(__file__).resolve().parents[2] / "data" / "rooms.json"
     with path.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
     rooms = payload.get("rooms")

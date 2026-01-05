@@ -29,7 +29,7 @@ def _data_root() -> Path:
 def _room_catalog() -> Dict[str, Dict[str, Any]]:
     """Load the detailed room catalog from disk (memoized)."""
 
-    path = _data_root() / "room_info.json"
+    path = _data_root() / "data" / "rooms.json"
     if not path.exists():
         return {}
     with path.open("r", encoding="utf-8") as handle:

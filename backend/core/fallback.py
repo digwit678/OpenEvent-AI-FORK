@@ -17,8 +17,8 @@ USED BY:
     - backend/workflows/groups/*/trigger/*.py    # Step-specific fallbacks
 
 ENVIRONMENT:
-    OE_FALLBACK_DIAGNOSTICS=true   # Show full diagnostics (default in dev/staging)
-    OE_FALLBACK_DIAGNOSTICS=false  # Hide diagnostics (production)
+    OE_FALLBACK_DIAGNOSTICS=false  # Hide diagnostics (default, production-safe)
+    OE_FALLBACK_DIAGNOSTICS=true   # Show full diagnostics (dev/staging only)
 
 OUTPUT FORMAT (when diagnostics enabled):
 
@@ -38,8 +38,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-# Default to showing diagnostics in dev/staging
-SHOW_FALLBACK_DIAGNOSTICS = os.environ.get("OE_FALLBACK_DIAGNOSTICS", "true").lower() in (
+# Default to hiding diagnostics (production-safe). Set OE_FALLBACK_DIAGNOSTICS=true for dev.
+SHOW_FALLBACK_DIAGNOSTICS = os.environ.get("OE_FALLBACK_DIAGNOSTICS", "false").lower() in (
     "true",
     "1",
     "yes",
@@ -69,8 +69,27 @@ class FallbackContext:
     error_type: Optional[str] = None  # e.g., "TimeoutError"
     error_message: Optional[str] = None
 
+    # Failed conditions (what checks failed)
+    failed_conditions: list = field(default_factory=list)
+
     # Additional context
     context: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for serialization/logging."""
+        return {
+            "source": self.source,
+            "trigger": self.trigger,
+            "step": self.step,
+            "thread_id": self.thread_id,
+            "event_id": self.event_id,
+            "attempted": self.attempted,
+            "confidence": self.confidence,
+            "error_type": self.error_type,
+            "error_message": self.error_message,
+            "failed_conditions": self.failed_conditions,
+            "context": self.context,
+        }
 
     def format_diagnostic(self) -> str:
         """Format the diagnostic block for display."""
@@ -114,6 +133,10 @@ class FallbackContext:
             info_parts.append(f"Event: {self.event_id[:12]}")
         if info_parts:
             lines.append(" | ".join(info_parts))
+
+        # Failed conditions
+        if self.failed_conditions:
+            lines.append(f"Failed: {', '.join(self.failed_conditions)}")
 
         # Additional context
         if self.context:
@@ -167,6 +190,7 @@ def create_fallback_context(
     attempted: Optional[str] = None,
     confidence: Optional[float] = None,
     error: Optional[Exception] = None,
+    failed_conditions: Optional[list] = None,
     **context_kwargs: Any,
 ) -> FallbackContext:
     """
@@ -181,6 +205,7 @@ def create_fallback_context(
         attempted: What was attempted
         confidence: Confidence score
         error: Exception if this is an error fallback
+        failed_conditions: List of checks that failed
         **context_kwargs: Additional context key-value pairs
 
     Returns:
@@ -196,6 +221,7 @@ def create_fallback_context(
         confidence=confidence,
         error_type=type(error).__name__ if error else None,
         error_message=str(error) if error else None,
+        failed_conditions=failed_conditions or [],
         context=context_kwargs,
     )
 
@@ -305,3 +331,80 @@ def is_likely_fallback(message: str) -> bool:
     """
     message_lower = message.lower()
     return any(pattern in message_lower for pattern in KNOWN_FALLBACK_PATTERNS)
+
+
+# =============================================================================
+# Backward Compatibility Aliases
+# =============================================================================
+# These aliases support code that imports from the old fallback_reason module.
+# The canonical names are FallbackContext and wrap_fallback.
+
+# Alias for backward compatibility with fallback_reason.py imports
+FallbackReason = FallbackContext
+
+
+def format_fallback_diagnostic(context: FallbackContext) -> str:
+    """Format a fallback context into a diagnostic string (alias for context.format_diagnostic())."""
+    return context.format_diagnostic()
+
+
+def append_fallback_diagnostic(body: str, context: FallbackContext) -> str:
+    """
+    Append fallback diagnostic info to a message body.
+
+    Only appends if SHOW_FALLBACK_DIAGNOSTICS is True.
+    This is an alternative to wrap_fallback which prepends.
+    """
+    if not SHOW_FALLBACK_DIAGNOSTICS:
+        return body
+    diagnostic = context.format_diagnostic()
+    return body + "\n\n" + diagnostic
+
+
+def create_fallback_reason(
+    source: str,
+    trigger: str,
+    *,
+    failed_conditions: Optional[list] = None,
+    context: Optional[dict] = None,
+    original_error: Optional[str] = None,
+) -> FallbackContext:
+    """
+    Create a FallbackContext using the old FallbackReason API.
+
+    This is for backward compatibility with code using fallback_reason.py.
+    Prefer create_fallback_context for new code.
+    """
+    return FallbackContext(
+        source=source,
+        trigger=trigger,
+        failed_conditions=failed_conditions or [],
+        context=context or {},
+        error_message=original_error,
+    )
+
+
+# Alias factories with _reason suffix for backward compatibility
+def llm_disabled_reason(source: str) -> FallbackContext:
+    """Create a fallback for when LLM is disabled (backward compat alias)."""
+    return llm_disabled_fallback(source)
+
+
+def llm_exception_reason(source: str, error: Exception) -> FallbackContext:
+    """Create a fallback for LLM exceptions (backward compat alias)."""
+    return llm_exception_fallback(source, error)
+
+
+def empty_results_reason(
+    source: str,
+    rooms_count: int = 0,
+    dates_count: int = 0,
+    products_count: int = 0,
+) -> FallbackContext:
+    """Create a fallback for empty query results (backward compat alias)."""
+    return empty_results_fallback(
+        source,
+        rooms_count=rooms_count,
+        dates_count=dates_count,
+        products_count=products_count,
+    )

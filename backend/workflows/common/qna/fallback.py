@@ -47,8 +47,8 @@ def _structured_table_blocks(db_summary: Dict[str, Any]) -> List[Dict[str, Any]]
         rows.append(
             {
                 "Room": name,
-                "Dates": ", ".join(sorted(payload["dates"])) if payload["dates"] else "—",
-                "Notes": "; ".join(sorted(payload["notes"])) if payload["notes"] else "—",
+                "Dates": ", ".join(sorted(payload["dates"])) if payload["dates"] else "-",
+                "Notes": "; ".join(sorted(payload["notes"])) if payload["notes"] else "-",
             }
         )
     if not rows:
@@ -64,7 +64,8 @@ def _structured_table_blocks(db_summary: Dict[str, Any]) -> List[Dict[str, Any]]
 
 def _fallback_structured_body(action_payload: Dict[str, Any]) -> str:
     """Generate a fallback structured body when LLM verbalization fails."""
-    lines = [CLIENT_AVAILABILITY_HEADER]
+    # Don't include header here - it's set in headers[] and joined by _format_draft_text
+    lines = []
     summary = action_payload.get("db_summary") or {}
     rooms = summary.get("rooms") or []
     products = summary.get("products") or []

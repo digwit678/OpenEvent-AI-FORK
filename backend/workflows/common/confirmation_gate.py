@@ -172,7 +172,7 @@ def get_next_prompt(status: GateStatus, step: int = 5) -> Optional[Dict[str, Any
     # Prioritize: billing first if both missing (arbitrary but consistent)
     if not status.billing_complete:
         prompt = (
-            "Thanks for confirming — I need the billing address before I can send this for approval.\n"
+            "Thanks for confirming. I need the billing address before I can send this for approval.\n"
             f"{billing_prompt_for_missing_fields(status.billing_missing)} "
             'Example: "Helvetia Labs, Bahnhofstrasse 1, 8001 Zurich, Switzerland". '
             "As soon as I have it, I'll forward the offer automatically."
@@ -232,9 +232,17 @@ def auto_continue_if_ready(
     # Reload from database to get latest state
     status, fresh_entry = reload_and_check_gate(event_id, db_path)
 
-    # Update the passed event_entry with fresh data (mutates in place)
+    # IMPORTANT: Only update DEPOSIT-related fields from the fresh database entry.
+    # DO NOT use event_entry.update(fresh_entry) as that would overwrite billing
+    # data that was captured in memory but not yet persisted to disk.
+    # The caller in step5_handler has already captured billing from the user's message
+    # and we don't want to lose that by reloading old (stale) billing from disk.
     if fresh_entry:
-        event_entry.update(fresh_entry)
+        # Only sync deposit state from database (may have been updated via API)
+        if fresh_entry.get("deposit_info"):
+            event_entry["deposit_info"] = fresh_entry["deposit_info"]
+        if fresh_entry.get("deposit_state"):
+            event_entry["deposit_state"] = fresh_entry["deposit_state"]
 
     return status.ready_for_hil, status, fresh_entry
 

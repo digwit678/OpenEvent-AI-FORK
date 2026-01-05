@@ -10,6 +10,21 @@ Design Principles:
 2. Decision-friendly - highlight key comparisons and recommendations
 3. Complete & correct - all facts preserved, nothing invented
 4. UX-focused - no data dumps, clear next steps
+
+CRITICAL DESIGN RULE - Verbalization vs Info Page:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Chat/Email (verbalization) │ Clear, conversational, NOT overloaded.        │
+│                            │ NO tables, NO dense data.                      │
+│────────────────────────────┼────────────────────────────────────────────────│
+│ Info Page/Links            │ Tables, comparisons, full menus, room details  │
+│                            │ for those who want depth.                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Implementation:
+- Chat uses conversational prose: "I found 3 options that work for you."
+- Detailed data goes into table_blocks for frontend info section
+- Include info links for users who want more detail
+- NEVER put markdown tables directly in chat/email body text
 """
 
 from __future__ import annotations
@@ -18,8 +33,11 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
+
+from backend.workflows.io.config_store import get_venue_name, get_venue_city
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +135,67 @@ class MessageContext:
 # UX-Focused Prompt Templates
 # =============================================================================
 
+# Template for dynamic venue-specific prompt (use {venue_name} and {venue_city} placeholders)
+_SYSTEM_PROMPT_TEMPLATE = """You are OpenEvent's client communication assistant for {venue_name}, a premium event venue in {venue_city}."""
+
+
+def _build_system_prompt() -> str:
+    """Build the system prompt with dynamic venue config."""
+    venue_name = get_venue_name()
+    venue_city = get_venue_city()
+    return _SYSTEM_PROMPT_TEMPLATE.format(venue_name=venue_name, venue_city=venue_city) + _SYSTEM_PROMPT_BODY
+
+
+# Body of the system prompt (shared between dynamic and static versions)
+_SYSTEM_PROMPT_BODY = """
+
+Your role is to transform structured workflow messages into professional, concise, and human-like communication. You are a busy, competent event manager.
+
+CORE PRINCIPLES:
+1. **Be professional & direct** - Use clear, concise language. No fluff.
+2. **Help clients decide** - Highlight the best options with brief reasons.
+3. **Be complete but brief** - Every fact must appear, but avoid long paragraphs.
+4. **Show competence** - Acknowledge needs efficiently.
+5. **Guide next steps** - Make it crystal clear what happens next.
+
+STYLE GUIDELINES:
+- **Tone:** Professional, confident, and direct. Not "customer support robotic" but not "overly enthusiastic marketing".
+- **Structure:** Use SHORT paragraphs (2-3 sentences max). Add a blank line between each topic/section. Example structure:
+  * Opening line (acknowledge request or confirm action)
+  * [blank line]
+  * Main content (room options, pricing, etc.)
+  * [blank line]
+  * Call to action / next steps
+- **Formatting:** Use **bold** ONLY for dates and prices. Do not bold room names or random words.
+- **Language:** Use natural English/German. Avoid "AI-isms" (delve, underscore, seamless).
+- **Lists:** Do NOT use slash-separated lists (e.g., "date/time/venue") in sentences. Write full sentences.
+
+NEGATIVE CONSTRAINTS (STRICT):
+- DO NOT use: "delve", "underscore", "tapestry", "seamless", "elevate", "kindly", "please note", "I hope this finds you well", "game-changer", "testament".
+- DO NOT use em-dashes (—). Use regular dashes (-), commas, or colons instead.
+- DO NOT start with "Great news!" or "I am delighted to inform you".
+- DO NOT use excessive adjectives ("breathtaking", "stunning", "transformative").
+- DO NOT apologize excessively.
+- DO NOT write long unbroken text walls. Use short paragraphs (2-3 sentences max). Add blank lines between topics.
+
+HARD RULES (NEVER BREAK):
+1. ALL dates must appear exactly as provided (DD.MM.YYYY format)
+2. ALL prices must appear exactly as provided (CHF X.XX format)
+3. ALL room names must appear exactly as provided
+4. ALL participant counts must appear
+5. ALL product names must appear exactly as provided
+6. ALL product/pricing units MUST appear with prices: include "per event", "per person", "per hour", "per day", or any other unit provided. When you write a price, ALWAYS include its unit (e.g., "CHF 75.00 per event", not just "CHF 75.00")
+7. NEVER change units: keep the exact unit type provided - do not swap "per event" for "per person" or vice versa
+8. NEVER invent dates, prices, room names, or units not in the facts
+9. NEVER change any numbers or swap unit types
+10. PRESERVE ALL HTML links EXACTLY as provided - if you see <a href="...">text</a>, keep it exactly as-is. Format link as markdown [text](url) if the original is a raw URL
+11. ONLY suggest products/catering the client mentioned or that are truly essential for their request. DO NOT proactively push catering if they only asked for equipment (projector, sound, etc.)
+
+TRANSFORMATION EXAMPLES:"""
+
+
+# Legacy constant for backward compatibility (static version with default venue)
+# Note: Use _build_system_prompt() for dynamic venue-aware prompts
 UNIVERSAL_SYSTEM_PROMPT = """You are OpenEvent's client communication assistant for The Atelier, a premium event venue in Zurich.
 
 Your role is to transform structured workflow messages into professional, concise, and human-like communication. You are a busy, competent event manager.
@@ -130,16 +209,23 @@ CORE PRINCIPLES:
 
 STYLE GUIDELINES:
 - **Tone:** Professional, confident, and direct. Not "customer support robotic" but not "overly enthusiastic marketing".
-- **Structure:** Use short paragraphs. Use bullet points only for complex lists.
+- **Structure:** Use SHORT paragraphs (2-3 sentences max). Add a blank line between each topic/section. Example structure:
+  * Opening line (acknowledge request or confirm action)
+  * [blank line]
+  * Main content (room options, pricing, etc.)
+  * [blank line]
+  * Call to action / next steps
 - **Formatting:** Use **bold** ONLY for dates and prices. Do not bold room names or random words.
 - **Language:** Use natural English/German. Avoid "AI-isms" (delve, underscore, seamless).
 - **Lists:** Do NOT use slash-separated lists (e.g., "date/time/venue") in sentences. Write full sentences.
 
 NEGATIVE CONSTRAINTS (STRICT):
 - DO NOT use: "delve", "underscore", "tapestry", "seamless", "elevate", "kindly", "please note", "I hope this finds you well", "game-changer", "testament".
+- DO NOT use em-dashes (—). Use regular dashes (-), commas, or colons instead.
 - DO NOT start with "Great news!" or "I am delighted to inform you".
 - DO NOT use excessive adjectives ("breathtaking", "stunning", "transformative").
 - DO NOT apologize excessively.
+- DO NOT write long unbroken text walls. Use short paragraphs (2-3 sentences max). Add blank lines between topics.
 
 HARD RULES (NEVER BREAK):
 1. ALL dates must appear exactly as provided (DD.MM.YYYY format)
@@ -147,9 +233,12 @@ HARD RULES (NEVER BREAK):
 3. ALL room names must appear exactly as provided
 4. ALL participant counts must appear
 5. ALL product names must appear exactly as provided
-6. NEVER change units: "per event" stays "per event", "per person" stays "per person"
-7. NEVER invent dates, prices, room names, or units not in the facts
-8. NEVER change any numbers or swap unit types
+6. ALL product/pricing units MUST appear with prices: include "per event", "per person", "per hour", "per day", or any other unit provided. When you write a price, ALWAYS include its unit (e.g., "CHF 75.00 per event", not just "CHF 75.00")
+7. NEVER change units: keep the exact unit type provided - do not swap "per event" for "per person" or vice versa
+8. NEVER invent dates, prices, room names, or units not in the facts
+9. NEVER change any numbers or swap unit types
+10. PRESERVE ALL HTML links EXACTLY as provided - if you see <a href="...">text</a>, keep it exactly as-is. Format link as markdown [text](url) if the original is a raw URL
+11. ONLY suggest products/catering the client mentioned or that are truly essential for their request. DO NOT proactively push catering if they only asked for equipment (projector, sound, etc.)
 
 TRANSFORMATION EXAMPLES:
 
@@ -202,7 +291,7 @@ The rooms data includes:
 Example transformation:
 BEFORE: "Room A: Available, capacity 40, matched: [], closest: [Classic Apéro (closest to dinner)], missing: []"
 
-AFTER: "For your dinner event on **08.05.2026**, I recommend Room A — it's perfectly sized for your 40 guests. While we don't have a dedicated dinner package, our Classic Apéro comes closest to what you're looking for.
+AFTER: "For your dinner event on **08.05.2026**, I recommend Room A. It's perfectly sized for your 40 guests. While we don't have a dedicated dinner package, our Classic Apéro comes closest to what you're looking for.
 
 Shall I prepare an offer with the apéro option, or would you like to discuss other catering arrangements?" """,
 
@@ -315,16 +404,18 @@ def _contains_structured_content(text: str) -> bool:
     if "NEXT STEP:" in text_upper or "\nINFO:" in text_upper:
         return True
 
-    # Check for multiple consecutive bullet points (option lists)
+    # Check for multiple consecutive bullet points that are TRULY structured
+    # (e.g., product lists with prices, offer summaries with em-dashes)
+    # NOTE: Room availability lists with just "(capacity)" should be verbalized!
     bullet_count = sum(1 for line in lines if line.strip().startswith("- "))
     if bullet_count >= 3:
-        # Could be a product list or options list - check if it has structured format
-        # Look for patterns like "- Name — CHF X" or "- Date — Room (Status)"
-        structured_bullets = sum(
+        # Only treat as structured if it has pricing indicators (CHF + em-dash)
+        # This catches offer/product lists but NOT room availability lists
+        price_bullets = sum(
             1 for line in lines
-            if line.strip().startswith("- ") and ("—" in line or "CHF" in line or "(" in line)
+            if line.strip().startswith("- ") and "CHF" in line and "—" in line
         )
-        if structured_bullets >= 2:
+        if price_bullets >= 2:
             return True
 
     return False
@@ -365,36 +456,56 @@ def verbalize_message(
     # These are already processed by qna/verbalizer.py and contain structured data
     # that must be preserved exactly (tables, NEXT STEP blocks, etc.)
     if _contains_structured_content(fallback_text):
-        logger.debug(
-            f"universal_verbalizer: skipping structured content for step={context.step}, topic={context.topic}"
+        logger.warning(
+            f"[VERBALIZER_BYPASS] Skipping structured content: step={context.step}, topic={context.topic}"
         )
+        # Make bypass visible in dev mode
+        if os.getenv("OE_FALLBACK_DIAGNOSTICS", "").lower() in ("1", "true", "yes"):
+            return f"[VERBALIZER_BYPASS: structured_content] {fallback_text}"
         return fallback_text
 
     tone = _resolve_tone()
     if tone == "plain":
-        logger.debug(f"universal_verbalizer: plain tone, step={context.step}, topic={context.topic}")
+        logger.warning(f"[VERBALIZER_BYPASS] Plain tone mode: step={context.step}, topic={context.topic}")
+        if os.getenv("OE_FALLBACK_DIAGNOSTICS", "").lower() in ("1", "true", "yes"):
+            return f"[VERBALIZER_BYPASS: plain_tone] {fallback_text}"
         return fallback_text
 
     # Check if LLM is available
     from backend.utils.openai_key import load_openai_api_key
+    from backend.core.fallback import create_fallback_context, wrap_fallback
+
     api_key = load_openai_api_key(required=False)
     if not api_key:
-        logger.debug("universal_verbalizer: no API key, using fallback")
-        return fallback_text
+        ctx = create_fallback_context(
+            source="ux.verbalizer",
+            trigger="no_api_key",
+            step=context.step,
+            topic=context.topic,
+        )
+        return wrap_fallback(fallback_text, ctx)
 
     try:
         prompt_payload = _build_prompt(context, fallback_text, locale)
         llm_text = _call_llm(prompt_payload)
     except Exception as exc:
-        logger.warning(
-            f"universal_verbalizer: LLM call failed for step={context.step}, topic={context.topic}",
-            extra={"error": str(exc)},
+        ctx = create_fallback_context(
+            source="ux.verbalizer",
+            trigger="llm_call_failed",
+            step=context.step,
+            topic=context.topic,
+            error=exc,
         )
-        return fallback_text
+        return wrap_fallback(fallback_text, ctx)
 
     if not llm_text or not llm_text.strip():
-        logger.warning("universal_verbalizer: empty LLM response, using fallback")
-        return fallback_text
+        ctx = create_fallback_context(
+            source="ux.verbalizer",
+            trigger="empty_llm_response",
+            step=context.step,
+            topic=context.topic,
+        )
+        return wrap_fallback(fallback_text, ctx)
 
     # Verify hard facts preserved
     hard_facts = context.extract_hard_facts()
@@ -419,11 +530,20 @@ def verbalize_message(
             return patched_text
         else:
             # Patching didn't fully fix it - fall back to original text
+            missing_str = ", ".join(verification[1]) if verification[1] else "none"
+            invented_str = ", ".join(verification[2]) if verification[2] else "none"
+            ctx = create_fallback_context(
+                source="ux.verbalizer",
+                trigger="fact_verification_failed",
+                step=context.step,
+                topic=context.topic,
+                error=Exception(f"Missing: {missing_str}, Invented: {invented_str}"),
+            )
             logger.warning(
                 f"universal_verbalizer: patching failed for step={context.step}, topic={context.topic}, using fallback",
                 extra={"missing": verification[1], "invented": verification[2]},
             )
-            return fallback_text
+            return wrap_fallback(fallback_text, ctx)
 
     logger.debug(f"universal_verbalizer: success for step={context.step}, topic={context.topic}")
     return llm_text
@@ -463,7 +583,7 @@ from pathlib import Path
 
 _PROMPT_CACHE: Dict[str, Any] = {
     "ts": 0,
-    "data": (UNIVERSAL_SYSTEM_PROMPT, STEP_PROMPTS)
+    "data": None  # Lazy-loaded to use dynamic venue config from _build_system_prompt()
 }
 _CACHE_TTL = 30.0  # seconds
 
@@ -471,27 +591,33 @@ def _get_effective_prompts() -> Tuple[str, Dict[int, str]]:
     """
     Load effective prompts (DB overrides merged with defaults).
     Cached for performance.
+
+    Uses dynamic venue config for the default system prompt.
     """
     global _PROMPT_CACHE
     now = time.time()
-    
+
     if now - _PROMPT_CACHE["ts"] < _CACHE_TTL:
         return _PROMPT_CACHE["data"]
 
     try:
         # Avoid circular imports
         from backend.workflows.io.database import load_db
-        
-        # Load DB (best effort assumption on path)
-        db_path = Path("events_database.json")
-        if not db_path.exists():
-            return UNIVERSAL_SYSTEM_PROMPT, STEP_PROMPTS
-            
-        db = load_db(db_path)
+        from backend.workflow_email import DB_PATH
+
+        # Build dynamic default prompt with current venue config
+        default_system_prompt = _build_system_prompt()
+
+        # Load DB using canonical path
+        if not DB_PATH.exists():
+            return default_system_prompt, STEP_PROMPTS
+
+        db = load_db(DB_PATH)
         config = db.get("config", {}).get("prompts", {})
-        
-        system_prompt = config.get("system_prompt", UNIVERSAL_SYSTEM_PROMPT)
-        
+
+        # Use DB override if set, otherwise use dynamic venue-aware default
+        system_prompt = config.get("system_prompt") or default_system_prompt
+
         # Merge step prompts
         step_prompts = STEP_PROMPTS.copy()
         stored_steps = config.get("step_prompts", {})
@@ -500,13 +626,13 @@ def _get_effective_prompts() -> Tuple[str, Dict[int, str]]:
                 step_prompts[int(k)] = v
             except ValueError:
                 pass
-                
+
         _PROMPT_CACHE = {
             "ts": now,
             "data": (system_prompt, step_prompts)
         }
         return system_prompt, step_prompts
-        
+
     except Exception as exc:
         logger.warning(f"universal_verbalizer: failed to load prompts config: {exc}")
         # Return fallback (potentially stale cache or hard defaults)
@@ -609,8 +735,11 @@ def _format_facts_for_prompt(context: MessageContext) -> str:
         for p in context.products[:5]:  # Limit to top 5
             name = p.get("name", "Item")
             price = p.get("unit_price") or p.get("price")
+            unit = p.get("unit", "").replace("_", " ")  # per_event -> per event
             if price:
-                product_summary.append(f"{name} (CHF {float(price):.2f})")
+                # Always include unit with price to ensure LLM preserves it
+                unit_suffix = f" {unit}" if unit else ""
+                product_summary.append(f"{name} (CHF {float(price):.2f}{unit_suffix})")
             else:
                 product_summary.append(name)
         lines.append(f"- Products: {', '.join(product_summary)}")
@@ -621,28 +750,25 @@ def _format_facts_for_prompt(context: MessageContext) -> str:
 
 
 def _call_llm(payload: Dict[str, Any]) -> str:
-    """Call the LLM for verbalization."""
-    deterministic = os.getenv("OPENAI_TEST_MODE") == "1"
-    temperature = 0.0 if deterministic else 0.3  # Slightly higher for more natural variation
+    """Call the LLM for verbalization using configured provider."""
+    from backend.adapters.agent_adapter import get_adapter_for_provider
+    from backend.llm.provider_config import get_verbalization_provider
 
-    try:
-        from openai import OpenAI
-    except Exception as exc:
-        raise RuntimeError(f"OpenAI SDK unavailable: {exc}") from exc
+    # Get the verbalization provider from config (hybrid mode support)
+    provider = get_verbalization_provider()
+    adapter = get_adapter_for_provider(provider)
 
-    from backend.utils.openai_key import load_openai_api_key
-    api_key = load_openai_api_key()
-    client = OpenAI(api_key=api_key)
+    # Build prompt from payload
+    prompt = payload["user"]
 
-    response = client.responses.create(
-        model=os.getenv("OPENAI_VERBALIZER_MODEL", "gpt-4o-mini"),
-        input=[
-            {"role": "system", "content": payload["system"]},
-            {"role": "user", "content": payload["user"]},
-        ],
-        temperature=temperature,
+    # Call the adapter's complete method
+    # Note: json_mode=False because verbalization outputs prose, not JSON
+    return adapter.complete(
+        prompt=prompt,
+        system_prompt=payload["system"],
+        temperature=0.3,  # Slightly higher for natural variation
+        json_mode=False,  # Verbalization outputs prose, not JSON
     )
-    return getattr(response, "output_text", "").strip()
 
 
 def _verify_facts(
@@ -679,12 +805,23 @@ def _verify_facts(
                 # Parse DD.MM.YYYY
                 if "." in date:
                     parsed = datetime.strptime(date, "%d.%m.%Y")
+                    day = parsed.day
+                    # Ordinal suffix
+                    ordinal = (
+                        "th" if 11 <= day <= 13
+                        else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+                    )
                     alt_formats = [
                         parsed.strftime("%d/%m/%Y"),
                         parsed.strftime("%Y-%m-%d"),
                         parsed.strftime("%d %B %Y"),  # "08 May 2026"
                         parsed.strftime("%B %d, %Y"),  # "May 08, 2026"
                         parsed.strftime("%-d %B %Y"),  # "8 May 2026" (no leading zero)
+                        # Ordinal formats: "15th of February, 2026" or "15th February 2026"
+                        f"{day}{ordinal} of {parsed.strftime('%B')}, {parsed.year}",
+                        f"{day}{ordinal} of {parsed.strftime('%B')} {parsed.year}",
+                        f"{day}{ordinal} {parsed.strftime('%B')} {parsed.year}",
+                        f"{day}{ordinal} {parsed.strftime('%B')}, {parsed.year}",
                     ]
                     for alt in alt_formats:
                         if alt in llm_text or alt.lower() in text_lower:
@@ -703,14 +840,21 @@ def _verify_facts(
         # Also check for "Room X" variations
         room_variants = [room_lower, room_no_dot]
         if room_lower.startswith("room "):
-            # "Room B" -> also accept "room b", "Room B", "ROOM B"
-            room_variants.append(room_lower.replace("room ", ""))
+            # "Room B" -> also accept just "B" but only if it's a meaningful identifier
+            # (longer than 1 char to avoid matching single letters like "a" in any text)
+            suffix = room_lower.replace("room ", "")
+            if len(suffix) > 1:  # Only add if it's a meaningful identifier
+                room_variants.append(suffix)
 
         found = any(variant in text_lower for variant in room_variants)
         if not found:
             missing.append(f"room:{room}")
 
     # Check amounts - flexible matching for CHF values
+    # Normalize text for Swiss format (remove apostrophes used as thousands separator)
+    text_no_apostrophe = llm_text.replace("'", "")
+    text_no_apostrophe_lower = text_no_apostrophe.lower()
+
     for amount in hard_facts.get("amounts", []):
         amount_found = False
         # Extract numeric value
@@ -726,17 +870,17 @@ def _verify_facts(
                 f"CHF{numeric_no_decimal}",
                 f"{numeric} CHF",
                 f"{numeric_no_decimal} CHF",
-                # Also check with thousands separator
-                f"CHF {int(float(numeric)):,}".replace(",", "'"),  # Swiss format: 1'000
-                f"CHF {int(float(numeric)):,}".replace(",", ","),  # 1,000 format
             ]
             for pattern in patterns_to_check:
-                if pattern.upper() in text_normalized or pattern.lower() in text_lower:
+                # Check in normalized text (spaces removed) and apostrophe-removed text
+                if (pattern.upper() in text_normalized or
+                    pattern.lower() in text_lower or
+                    pattern.lower() in text_no_apostrophe_lower):
                     amount_found = True
                     break
 
             # Also check if the raw number appears (context may make it clear it's CHF)
-            if not amount_found and numeric in llm_text:
+            if not amount_found and (numeric in llm_text or numeric in text_no_apostrophe):
                 amount_found = True
 
         if not amount_found:
@@ -774,15 +918,22 @@ def _verify_facts(
             missing.append(f"product:{product_name}")
 
     # Check units - be flexible about phrasing
+    # Map each unit to acceptable alternatives
+    unit_alternatives = {
+        "per person": ["per guest", "each guest", "per head", "/person", "/ person", "per attendee", "per participant"],
+        "per event": ["flat fee", "fixed", "one-time", "/event", "/ event", "per booking", "flat rate"],
+        "per hour": ["/hour", "/ hour", "hourly", "per hr"],
+        "per day": ["/day", "/ day", "daily", "per 24 hours"],
+        "per night": ["/night", "/ night", "nightly"],
+        "per week": ["/week", "/ week", "weekly"],
+    }
     input_units = set(hard_facts.get("units", []))
     for unit in input_units:
         unit_found = unit in text_lower
         if not unit_found:
-            # Check alternative phrasings
-            if unit == "per person":
-                unit_found = any(alt in text_lower for alt in ["per guest", "each guest", "per head", "/person", "/ person"])
-            elif unit == "per event":
-                unit_found = any(alt in text_lower for alt in ["flat fee", "fixed", "one-time", "/event", "/ event"])
+            # Check alternative phrasings for this unit
+            alternatives = unit_alternatives.get(unit, [])
+            unit_found = any(alt in text_lower for alt in alternatives)
         if not unit_found:
             missing.append(f"unit:{unit}")
 
@@ -799,29 +950,34 @@ def _verify_facts(
         invented.append("unit:per event (should be per person)")
 
     # Check for invented dates (be lenient - only flag if clearly wrong)
+    # Skip this check if no dates were expected (empty context = nothing to invent against)
     date_pattern = re.compile(r"\b(\d{1,2}\.\d{1,2}\.\d{4})\b")
     valid_dates = set(hard_facts.get("dates", []))
-    for match in date_pattern.finditer(llm_text):
-        found_date = match.group(1)
-        if found_date not in valid_dates:
-            # Check if it's just a reformatted version of a valid date
-            is_reformat = False
-            try:
-                from datetime import datetime
-                found_parsed = datetime.strptime(found_date, "%d.%m.%Y")
-                for valid in valid_dates:
-                    valid_parsed = datetime.strptime(valid, "%d.%m.%Y")
-                    if found_parsed == valid_parsed:
-                        is_reformat = True
-                        break
-            except (ValueError, ImportError):
-                pass
-            if not is_reformat:
-                invented.append(f"date:{found_date}")
+    if valid_dates:  # Only check for invented dates if we have expected dates
+        for match in date_pattern.finditer(llm_text):
+            found_date = match.group(1)
+            if found_date not in valid_dates:
+                # Check if it's just a reformatted version of a valid date
+                is_reformat = False
+                try:
+                    from datetime import datetime
+                    found_parsed = datetime.strptime(found_date, "%d.%m.%Y")
+                    for valid in valid_dates:
+                        valid_parsed = datetime.strptime(valid, "%d.%m.%Y")
+                        if found_parsed == valid_parsed:
+                            is_reformat = True
+                            break
+                except (ValueError, ImportError):
+                    pass
+                if not is_reformat:
+                    invented.append(f"date:{found_date}")
 
     # Check for invented amounts - be more lenient
+    # Use apostrophe-removed text for matching Swiss format (1'500 -> 1500)
     amount_pattern = re.compile(r"\bCHF\s*(\d+(?:[.,]\d{1,2})?)\b", re.IGNORECASE)
     canonical_amounts = set()
+    canonical_floats: List[float] = []  # For calculating valid subtotals
+
     for amt in hard_facts.get("amounts", []):
         normalized = amt.replace(" ", "").upper().replace(",", ".")
         match = re.search(r"CHF(\d+(?:\.\d{1,2})?)", normalized)
@@ -831,34 +987,55 @@ def _verify_facts(
             canonical_amounts.add(re.sub(r"\.00$", "", val))
             # Also add rounded versions
             try:
-                canonical_amounts.add(str(int(float(val))))
+                float_val = float(val)
+                canonical_amounts.add(str(int(float_val)))
+                canonical_floats.append(float_val)
             except ValueError:
                 pass
 
-    for match in amount_pattern.finditer(llm_text):
-        found_amount = match.group(1).replace(",", ".")
-        found_no_decimal = re.sub(r"\.00$", "", found_amount)
-        found_int = str(int(float(found_amount))) if "." in found_amount else found_amount
+    # Get counts for calculating valid subtotals (count * unit_price)
+    counts: List[int] = []
+    for count_str in hard_facts.get("counts", []):
+        try:
+            counts.append(int(count_str))
+        except ValueError:
+            pass
 
-        if not any(f in canonical_amounts for f in [found_amount, found_no_decimal, found_int]):
-            # Only flag if it's not close to any canonical amount (allows for small rounding)
-            is_close = False
-            try:
-                found_val = float(found_amount)
-                for canonical in canonical_amounts:
-                    try:
-                        canonical_val = float(canonical)
-                        # Allow 1% tolerance for rounding
-                        if abs(found_val - canonical_val) / max(canonical_val, 1) < 0.01:
-                            is_close = True
-                            break
-                    except ValueError:
-                        pass
-            except ValueError:
-                pass
+    # Pre-calculate valid subtotals (count * per_person_amount)
+    # This allows amounts like "30 guests × CHF 18 = CHF 540"
+    for count in counts:
+        for price in canonical_floats:
+            subtotal = count * price
+            canonical_amounts.add(f"{subtotal:.2f}")
+            canonical_amounts.add(str(int(subtotal)))
 
-            if not is_close:
-                invented.append(f"amount:CHF {found_amount}")
+    # Search in apostrophe-removed text to handle Swiss format (CHF 1'500)
+    # Skip this check if no amounts were expected (empty context = nothing to invent against)
+    if canonical_amounts:
+        for match in amount_pattern.finditer(text_no_apostrophe):
+            found_amount = match.group(1).replace(",", ".")
+            found_no_decimal = re.sub(r"\.00$", "", found_amount)
+            found_int = str(int(float(found_amount))) if "." in found_amount else found_amount
+
+            if not any(f in canonical_amounts for f in [found_amount, found_no_decimal, found_int]):
+                # Only flag if it's not close to any canonical amount (allows for small rounding)
+                is_close = False
+                try:
+                    found_val = float(found_amount)
+                    for canonical in canonical_amounts:
+                        try:
+                            canonical_val = float(canonical)
+                            # Allow 1% tolerance for rounding
+                            if abs(found_val - canonical_val) / max(canonical_val, 1) < 0.01:
+                                is_close = True
+                                break
+                        except ValueError:
+                            pass
+                except ValueError:
+                    pass
+
+                if not is_close:
+                    invented.append(f"amount:CHF {found_amount}")
 
     ok = len(missing) == 0 and len(invented) == 0
     return (ok, missing, invented)
@@ -910,6 +1087,28 @@ def _patch_facts(
             patched = re.sub(r"\bper event\b", "per person", patched, flags=re.IGNORECASE)
             patched_something = True
             logger.debug("_patch_facts: fixed unit swap 'per event' -> 'per person'")
+
+    # --- Missing unit fixes ---
+    # If unit is missing (not swapped), try to append it after the product price
+    # This handles cases where LLM wrote "CHF 75.00" but should be "CHF 75.00 per event"
+    missing_units = [m for m in missing if m.startswith("unit:")]
+    if missing_units and len(input_units) == 1:
+        # Single unit type - safe to append after any product price
+        the_unit = list(input_units)[0]
+        # Check if output already has any unit-like phrase
+        has_any_unit = any(u in patched.lower() for u in ["per event", "per person", "per hour", "per day", "flat fee", "per guest"])
+        if not has_any_unit:
+            # Find product prices and append unit
+            # Pattern: CHF amount followed by word boundary (not already having a unit)
+            product_amounts = [amt for amt in hard_facts.get("amounts", []) if amt != f"CHF {hard_facts.get('total_amount', 0):.2f}"]
+            for amt in product_amounts:
+                # Only patch product prices, not total
+                # Match CHF XX.XX not followed by "per" or other unit words
+                pattern = rf"({re.escape(amt)})(?!\s*(?:per|flat|fixed|hourly|daily))"
+                if re.search(pattern, patched, re.IGNORECASE):
+                    patched = re.sub(pattern, rf"\1 {the_unit}", patched, flags=re.IGNORECASE)
+                    patched_something = True
+                    logger.debug(f"_patch_facts: added missing unit '{the_unit}' after {amt}")
 
     # --- Amount fixes ---
     # If an amount was invented (not in our canonical list), try to find and fix it
