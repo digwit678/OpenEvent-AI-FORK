@@ -236,15 +236,18 @@ When renaming becomes necessary:
 **Question:** What should our general strategy be for cleaning up old/stale data across all storage layers?
 
 **Current State (ad-hoc):**
-| Data Type | Storage | Current Cleanup | TTL |
-|-----------|---------|-----------------|-----|
-| Snapshots (info pages) | JSON / Supabase | TTL + max count | 7d (event) / 365d (Q&A) |
-| LLM analysis cache | In-memory | LRU eviction | None (bounded to 500) |
-| Events | JSON / Supabase | None | Indefinite |
-| Clients | JSON / Supabase | None | Indefinite |
-| HIL Tasks | JSON / Supabase | None | Indefinite |
-| Conversation state | In-memory dict | None | Until server restart |
-| Debug traces | Files | None | Indefinite |
+| Data Type | Storage | Current Cleanup | TTL | Notes |
+|-----------|---------|-----------------|-----|-------|
+| Snapshots (info pages) | JSON / Supabase | TTL + max count | 7d (event) / 365d (Q&A) | ✅ Implemented |
+| LLM analysis cache | In-memory | LRU eviction | Bounded to 500 | ✅ Implemented |
+| Events | JSON / Supabase | None | Indefinite | Keep for reporting |
+| Clients | JSON / Supabase | None | Indefinite | **DO NOT DELETE** - needed for memory/personalization |
+| Client Memory | JSON / Supabase | None | Indefinite | See CLIENT_MEMORY_PLAN_2026_01_03.md |
+| HIL Tasks | JSON / Supabase | None | Indefinite | Keep for audit trail |
+| Conversation state | In-memory dict | None | Until server restart | Needs timeout |
+| Debug traces | Files | None | Indefinite | Disable in prod |
+
+**Important:** Client data must be retained for personalization features. See `docs/reports/CLIENT_MEMORY_PLAN_2026_01_03.md` for the client memory/history plan.
 
 **Questions to Resolve:**
 
