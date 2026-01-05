@@ -72,11 +72,13 @@ nano /opt/openevent/.env
 
 Add these values:
 ```
-# LLM API Keys (both required for hybrid mode)
-OPENAI_API_KEY=sk-your-actual-key-here
-GOOGLE_API_KEY=AIza-your-gemini-key-here
+# ========== HYBRID MODE (recommended) ==========
+# Uses BOTH providers for optimal cost/quality:
+#   - Gemini: intent detection & entity extraction (cheaper)
+#   - OpenAI: client-facing verbalization (higher quality)
 
-# Hybrid mode: Gemini for detection, OpenAI for verbalization
+OPENAI_API_KEY=sk-your-openai-key-here
+GOOGLE_API_KEY=AIza-your-gemini-key-here
 AGENT_MODE=gemini
 
 # CORS - Allow Lovable frontend to connect
@@ -85,8 +87,9 @@ PYTHONDONTWRITEBYTECODE=1
 ```
 
 **Important:**
-- `GOOGLE_API_KEY` is required for hybrid mode (cost-efficient detection)
-- `OPENAI_API_KEY` is required for client-facing verbalization
+- **Both API keys are required** for hybrid mode
+- `AGENT_MODE=gemini` sets Gemini for detection; OpenAI is auto-used for verbalization
+- If you only have OpenAI, set `AGENT_MODE=openai` (works but costs more)
 - `ALLOWED_ORIGINS` enables CORS for Lovable!
 
 ---
