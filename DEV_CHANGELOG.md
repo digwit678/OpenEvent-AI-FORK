@@ -1,5 +1,11 @@
 # Development Changelog
 
+## 2026-01-05
+
+### Review: Production Readiness Gaps
+
+- Added remaining production gaps report (non-toggle items): `docs/reports/PROD_READINESS_GAPS_2026_01_05.md`
+
 ## 2026-01-03
 
 ### Authentication Middleware (Phases 1 & 2)
