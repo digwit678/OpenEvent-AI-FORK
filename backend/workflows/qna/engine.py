@@ -296,13 +296,18 @@ def _room_availability_to_dict(row: RoomAvailabilityRow) -> Dict[str, Any]:
 
 
 def _room_summary_to_dict(row: RoomSummary) -> Dict[str, Any]:
-    return {
+    result = {
         "room_id": row.room_id,
         "room_name": row.room_name,
         "capacity_max": row.capacity_max,
         "capacity_by_layout": dict(row.capacity_by_layout),
         "products": list(row.products),
     }
+    # Include room pricing for Q&A responses (e.g., "How much does Room A cost?")
+    if row.daily_rate is not None:
+        result["daily_rate"] = row.daily_rate
+        result["daily_rate_formatted"] = f"CHF {row.daily_rate:,.2f}"
+    return result
 
 
 def _product_record_to_dict(record) -> Dict[str, Any]:

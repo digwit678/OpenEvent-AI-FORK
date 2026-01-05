@@ -131,23 +131,25 @@ All unit types that may appear in product data:
 ## Known Bugs & Issues (2026-01-05)
 
 ### BUG-001: Post-HIL Step Mismatch
-**Status**: Open
+**Status**: Fixed (2026-01-05)
 **Severity**: Medium
 **Symptom**: After HIL approval at Step 5, thread routing thinks it's at Step 2 while event is at Step 5. Next client message gets blocked as "out of context".
-**Reproduction**: Complete booking flow → HIL approves offer → client sends follow-up → "Intent 'X' is only valid at steps {4, 5}, but current step is 2"
-**Root Cause**: Thread state not synced with event state after HIL task approval.
-**Files**: `backend/api/routes/tasks.py`, `backend/workflows/runtime/pre_route.py`
+**Root Cause**: `_ensure_event_record` was treating `site_visit_state.status == "proposed"` as a terminal state and creating a new event, when it's actually a mid-flow state.
+**Fix**: Changed site visit status check to only treat "completed", "declined", "no_show" as terminal states.
+**Files**: `backend/workflows/steps/step1_intake/trigger/step1_handler.py:1166-1175`
 
 ### BUG-002: Q&A Doesn't Answer Room Pricing
-**Status**: Open
+**Status**: Fixed (2026-01-05)
 **Severity**: Low
 **Symptom**: "How much does Room A cost?" returns room capacity info but not price.
-**Expected**: Should answer with room rental rate (e.g., CHF 500/day).
-**Files**: `backend/workflows/common/general_qna.py`, `backend/workflows/qna/router.py`
+**Root Cause**: `load_room_static` and `RoomSummary` didn't include room pricing data.
+**Fix**: Added `daily_rate` and `daily_rate_formatted` fields to room data structures and Q&A fallback formatter.
+**Files**: `backend/services/qna_readonly.py`, `backend/workflows/qna/engine.py`, `backend/workflows/qna/verbalizer.py`
 
 ### BUG-003: Hybrid Messages Ignore Q&A Part
-**Status**: Open
+**Status**: Fixed (2026-01-05)
 **Severity**: Medium
 **Symptom**: Message like "Book room for April 5 + do you have parking?" handles booking but drops parking question.
-**Expected**: Should answer both booking AND Q&A in same response.
-**Files**: `backend/detection/unified.py`, `backend/workflows/steps/step1_intake/trigger/step1_handler.py`
+**Root Cause**: Step 1 intake processed booking intent but didn't check for `qna_types` in unified detection.
+**Fix**: Added `generate_hybrid_qna_response()` function and hook in step 1 to append Q&A answers to booking responses.
+**Files**: `backend/workflows/qna/router.py`, `backend/workflows/steps/step1_intake/trigger/step1_handler.py`, `backend/api/routes/messages.py`

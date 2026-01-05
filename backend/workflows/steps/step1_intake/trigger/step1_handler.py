@@ -52,6 +52,7 @@ from ..billing_flow import handle_billing_capture
 from backend.workflows.common.datetime_parse import parse_first_date
 from backend.services.products import list_product_records, merge_product_requests, normalise_product_payload
 from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
+from backend.workflows.qna.router import generate_hybrid_qna_response
 
 # Extracted pure helpers (I1 refactoring)
 from .normalization import normalize_quotes as _normalize_quotes
@@ -1030,6 +1031,20 @@ def process(state: WorkflowState) -> GroupResult:
     state.thread_state = event_entry.get("thread_state")
     state.extras["persist"] = True
 
+    # Handle hybrid messages: booking intent + Q&A questions in same message
+    # e.g., "Book room for April 5 + what menu options do you have?"
+    unified_detection = state.extras.get("unified_detection") or {}
+    qna_types = unified_detection.get("qna_types") or []
+    hybrid_qna_response: Optional[str] = None
+    if qna_types:
+        message_text = state.message.body or ""
+        hybrid_qna_response = generate_hybrid_qna_response(
+            qna_types=qna_types,
+            message_text=message_text,
+            event_entry=event_entry,
+            db=state.db,
+        )
+
     payload = {
         "client_id": state.client_id,
         "event_id": state.event_id,
@@ -1042,6 +1057,7 @@ def process(state: WorkflowState) -> GroupResult:
         "caller_step": event_entry.get("caller_step"),
         "thread_state": event_entry.get("thread_state"),
         "draft_messages": state.draft_messages,
+        "hybrid_qna_response": hybrid_qna_response,  # Q&A answers to append to booking response
     }
     trace_state(
         _thread_id(state),
@@ -1163,13 +1179,15 @@ def _ensure_event_record(
                 "event_id": last_event.get("event_id"),
             })
 
-    # Site visit in progress or scheduled - don't reuse for new inquiries
-    # When site_visit_state.status is "proposed" or "scheduled", the event is mid-process
+    # Site visit terminal states - the booking is finalized, create new event for new inquiries
+    # "proposed" and "scheduled" are MID-FLOW states (client is actively engaged)
+    # Only treat completed/declined/no_show as terminal states
     visit_state = last_event.get("site_visit_state") or {}
-    if visit_state.get("status") in ("proposed", "scheduled"):
+    visit_status = visit_state.get("status")
+    if visit_status in ("completed", "declined", "no_show"):
         should_create_new = True
         trace_db_write(_thread_id(state), "Step1_Intake", "new_event_decision", {
-            "reason": f"site_visit_{visit_state.get('status')}",
+            "reason": f"site_visit_{visit_status}",
         })
 
     if should_create_new:

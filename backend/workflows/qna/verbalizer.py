@@ -88,9 +88,12 @@ def _fallback_answer(
             name = entry.get("room_name") or entry.get("room_id")
             cap = entry.get("capacity_max")
             status = entry.get("status")
+            rate_formatted = entry.get("daily_rate_formatted")
             descriptor = []
             if cap:
                 descriptor.append(f"capacity up to {cap}")
+            if rate_formatted:
+                descriptor.append(f"{rate_formatted}/day")
             if status:
                 descriptor.append(status)
             lines.append(f"- {name}{' (' + ', '.join(descriptor) + ')' if descriptor else ''}")

@@ -897,4 +897,90 @@ def _rooms_by_multiple_features_response(
     return lines
 
 
-__all__ = ["route_general_qna", "route_multi_variable_qna"]
+def generate_hybrid_qna_response(
+    qna_types: List[str],
+    message_text: str,
+    event_entry: Optional[Dict[str, Any]],
+    db: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """
+    Generate Q&A response text for hybrid messages (booking + Q&A).
+
+    Called from step handlers when unified detection finds qna_types alongside
+    a booking intent. Returns markdown text to append to the booking response,
+    or None if no Q&A types to process.
+
+    Args:
+        qna_types: List of Q&A types detected (e.g., ["catering_for", "free_dates"])
+        message_text: Original message text for context extraction
+        event_entry: Event record for context (attendees, room, etc.)
+        db: Database for date availability checks
+
+    Returns:
+        Markdown string with Q&A answers, or None if no answers generated
+    """
+    if not qna_types:
+        return None
+
+    # Filter out types that are handled by the main workflow (not pure Q&A)
+    pure_qna_types = [
+        t for t in qna_types
+        if t in {
+            "catering_for", "products_for", "free_dates", "room_features",
+            "rooms_by_feature", "parking_policy", "site_visit_overview", "general"
+        }
+    ]
+
+    if not pure_qna_types:
+        return None
+
+    extraction = _get_cached_extraction(event_entry)
+    requirements = _event_requirements(event_entry)
+    fallback_attendees = requirements.get("number_of_participants")
+    attendees = _extract_attendees(message_text, fallback_attendees, extraction)
+    layout = _extract_layout(message_text, requirements.get("seating_layout"), extraction)
+
+    response_parts: List[str] = []
+
+    for qna_type in pure_qna_types:
+        info_lines: List[str] = []
+
+        if qna_type == "catering_for":
+            info_lines = _catering_response(message_text, event_entry)
+            header = "Menu Options"
+        elif qna_type == "products_for":
+            info_lines = _products_response(event_entry)
+            header = "Available Products"
+        elif qna_type == "free_dates":
+            info_lines = _dates_response(message_text, event_entry, db)
+            header = "Available Dates"
+        elif qna_type == "room_features":
+            info_lines = _room_features_response(message_text, event_entry)
+            header = "Room Features"
+        elif qna_type == "rooms_by_feature":
+            info_lines = _rooms_by_feature_response(message_text, event_entry, attendees, layout, extraction)
+            header = "Rooms with Requested Features"
+        elif qna_type == "parking_policy":
+            info_lines = _parking_response()
+            header = "Parking Information"
+        elif qna_type == "site_visit_overview":
+            info_lines = _site_visit_response()
+            header = "Site Visit Information"
+        elif qna_type == "general":
+            info_lines = _general_response(event_entry)
+            header = "Additional Information"
+        else:
+            continue
+
+        if info_lines:
+            section = f"**{header}:**\n" + "\n".join(f"• {line}" if not line.startswith("•") else line for line in info_lines)
+            response_parts.append(section)
+
+    if not response_parts:
+        return None
+
+    # Join sections with spacing
+    return "\n\n---\n\n".join(response_parts)
+
+
+__all__ = ["route_general_qna", "route_multi_variable_qna", "generate_hybrid_qna_response"]

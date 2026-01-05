@@ -170,9 +170,19 @@ def _extract_workflow_reply(wf_res: Dict[str, Any]) -> tuple[str, List[Dict[str,
         draft = drafts[-1]
         text = _format_draft_text(draft)
         actions = draft.get("actions") or wf_res.get("actions") or []
-        return text.strip(), actions
-    text = wf_res.get("assistant_message") or ""
-    return text.strip(), wf_res.get("actions") or []
+    else:
+        text = wf_res.get("assistant_message") or ""
+        actions = wf_res.get("actions") or []
+
+    # Append hybrid Q&A response if present (handles booking + Q&A in same message)
+    # e.g., "Book room for April 5 + what menu options do you have?"
+    hybrid_qna = wf_res.get("hybrid_qna_response")
+    if hybrid_qna and text:
+        text = text.strip() + "\n\n---\n\n" + hybrid_qna
+    elif hybrid_qna:
+        text = hybrid_qna
+
+    return text.strip(), actions
 
 
 def _merge_field(current: Optional[str], candidate: Optional[str]) -> Optional[str]:

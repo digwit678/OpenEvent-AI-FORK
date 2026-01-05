@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from backend.services.rooms import RoomRecord, load_room_catalog
 from backend.workflows.common.catalog import list_products, list_room_features
+from backend.workflows.common.pricing import room_rate_for_name
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,7 @@ class RoomSummary:
     capacity_max: Optional[int]
     capacity_by_layout: Dict[str, int]
     products: List[str]
+    daily_rate: Optional[float] = None  # Room rental rate for Q&A pricing queries
 
 
 @dataclass(frozen=True)
@@ -122,6 +124,7 @@ def list_rooms_by_capacity(
                 capacity_max=max_cap,
                 capacity_by_layout=dict(record.capacity_by_layout),
                 products=list(product_requirements),
+                daily_rate=room_rate_for_name(record.name),
             )
         )
     return rows
@@ -190,13 +193,19 @@ def load_room_static(room_id: str) -> Dict[str, Any]:
 
     record = _catalog_lookup(room_id)
     features = list_room_features(room_id)
+    room_name = record.name if record else room_id
     summary: Dict[str, Any] = {
         "room_id": room_id,
-        "room_name": record.name if record else room_id,
+        "room_name": room_name,
         "capacity_max": record.capacity_max if record else None,
         "capacity_by_layout": dict(record.capacity_by_layout) if record else {},
         "features": features,
     }
+    # Add room pricing for Q&A responses
+    rate = room_rate_for_name(room_name)
+    if rate is not None:
+        summary["daily_rate"] = rate
+        summary["daily_rate_formatted"] = f"CHF {rate:,.2f}"
     info = _room_info_lookup().get(room_id.lower())
     if info:
         summary.update(
