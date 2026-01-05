@@ -88,7 +88,31 @@ async def lifespan(app: FastAPI):
             pass
     if cleared:
         logger.info("[Backend] Startup: cleared %d __pycache__ directories", cleared)
-    
+
+    # --- Startup: Validate hybrid mode configuration ---
+    # OpenEvent requires hybrid mode (Gemini + OpenAI) by default.
+    # This prevents accidental single-provider deployments.
+    try:
+        from backend.llm.provider_config import validate_hybrid_mode
+        is_production = not _IS_DEV
+        is_valid, msg, settings = validate_hybrid_mode(
+            raise_on_failure=is_production,  # Fail hard in production
+            is_production=is_production,
+        )
+        if is_valid:
+            logger.info("[Backend] %s", msg)
+        else:
+            # In dev mode, log error but continue
+            logger.error("[Backend] %s", msg)
+            logger.error("[Backend] ⚠️  Running in degraded mode - fix configuration!")
+    except RuntimeError as e:
+        # Production startup failure - this is intentional
+        logger.critical("[Backend] STARTUP BLOCKED: %s", e)
+        raise
+    except Exception as e:
+        # Unexpected error during validation - log but don't block startup
+        logger.warning("[Backend] Could not validate hybrid mode: %s", e)
+
     yield
     # --- Shutdown logic (if any) can go here ---
 

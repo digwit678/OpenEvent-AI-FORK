@@ -457,6 +457,155 @@ async def set_llm_provider_config(config: LLMProviderConfig):
 
 
 # ---------------------------------------------------------------------------
+# Hybrid Mode Enforcement Configuration Endpoints
+# ---------------------------------------------------------------------------
+
+class HybridEnforcementConfig(BaseModel):
+    """
+    Hybrid mode enforcement configuration.
+
+    By default (enabled=True), the system MUST run in hybrid mode.
+    Hybrid mode = using BOTH Gemini and OpenAI for different operations.
+
+    When enabled:
+    - Dev mode: Logs error but continues (for debugging)
+    - Production mode: BLOCKS startup if not in hybrid mode
+
+    When disabled (emergency bypass):
+    - Allows single-provider modes (OpenAI-only or Gemini-only)
+    - Should only be used as fallback if one provider is unavailable
+
+    IMPORTANT: Disabling enforcement is NOT recommended for production.
+    It bypasses cost optimization and reduces testing coverage.
+    """
+    enabled: bool = True
+
+
+@router.get("/hybrid-enforcement")
+async def get_hybrid_enforcement_config():
+    """
+    Get the current hybrid mode enforcement configuration.
+
+    Returns:
+        enabled: bool - Whether hybrid mode enforcement is active
+        is_hybrid: bool - Whether current config is actually hybrid
+        source: str - Where the setting came from
+        providers: dict - Current provider configuration
+    """
+    import os
+    from backend.llm.provider_config import (
+        get_llm_providers,
+        is_hybrid_mode,
+        is_hybrid_enforcement_enabled,
+    )
+
+    try:
+        db = wf_load_db()
+        enforcement_config = db.get("config", {}).get("hybrid_enforcement", {})
+
+        # Check database first
+        if "enabled" in enforcement_config:
+            enabled = enforcement_config["enabled"]
+            source = "database"
+            updated_at = enforcement_config.get("updated_at")
+        # Check environment variable
+        elif os.getenv("OE_BYPASS_HYBRID_ENFORCEMENT", "").lower() in ("1", "true", "yes"):
+            enabled = False
+            source = "environment (OE_BYPASS_HYBRID_ENFORCEMENT=1)"
+            updated_at = None
+        else:
+            enabled = True
+            source = "default"
+            updated_at = None
+
+        # Get current provider settings
+        settings = get_llm_providers(force_reload=True)
+        is_hybrid = is_hybrid_mode(settings)
+
+        return {
+            "enabled": enabled,
+            "is_hybrid": is_hybrid,
+            "source": source,
+            "updated_at": updated_at,
+            "providers": {
+                "intent_provider": settings.intent_provider,
+                "entity_provider": settings.entity_provider,
+                "verbalization_provider": settings.verbalization_provider,
+            },
+            "status": "✅ OK" if is_hybrid else ("⚠️ Bypassed" if not enabled else "❌ Violation"),
+        }
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load hybrid enforcement config: {exc}"
+        ) from exc
+
+
+@router.post("/hybrid-enforcement")
+async def set_hybrid_enforcement_config(config: HybridEnforcementConfig):
+    """
+    Set the hybrid mode enforcement configuration.
+
+    WARNING: Disabling enforcement is NOT recommended for production.
+    Only disable as emergency fallback if one LLM provider is unavailable.
+
+    When enforcement is enabled (default):
+    - Dev mode: Logs error if not in hybrid mode
+    - Production mode: BLOCKS startup if not in hybrid mode
+
+    When enforcement is disabled:
+    - Allows single-provider modes (OpenAI-only or Gemini-only)
+    - Logs warning that enforcement is bypassed
+    """
+    import os
+    from backend.llm.provider_config import (
+        get_llm_providers,
+        is_hybrid_mode,
+    )
+
+    try:
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+
+        db["config"]["hybrid_enforcement"] = {
+            "enabled": config.enabled,
+            "updated_at": _now_iso(),
+        }
+        wf_save_db(db)
+
+        # Check current hybrid status
+        settings = get_llm_providers(force_reload=True)
+        is_hybrid = is_hybrid_mode(settings)
+
+        status = "enabled" if config.enabled else "DISABLED (bypass mode)"
+        logger.warning(
+            "Hybrid mode enforcement %s. Current mode: %s",
+            status,
+            "hybrid" if is_hybrid else "single-provider"
+        )
+
+        if not config.enabled:
+            logger.warning(
+                "⚠️  HYBRID ENFORCEMENT BYPASSED - This should only be used for emergency fallback!"
+            )
+
+        return {
+            "status": "ok",
+            "enabled": config.enabled,
+            "is_hybrid": is_hybrid,
+            "message": (
+                f"Hybrid enforcement {status}. "
+                f"{'System is correctly in hybrid mode.' if is_hybrid else 'WARNING: Not in hybrid mode!'}"
+            ),
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save hybrid enforcement config: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
 # Prompt Configuration Endpoints
 # ---------------------------------------------------------------------------
 

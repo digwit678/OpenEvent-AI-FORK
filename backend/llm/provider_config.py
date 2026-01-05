@@ -124,3 +124,145 @@ def get_entity_provider() -> Provider:
 def get_verbalization_provider() -> Provider:
     """Get the provider for verbalization/draft composition."""
     return get_llm_providers().verbalization_provider
+
+
+# ============================================================================
+# HYBRID MODE ENFORCEMENT
+# ============================================================================
+# By default, the system MUST run in hybrid mode (using both Gemini and OpenAI).
+# This ensures:
+# - Cost efficiency (Gemini for intent/entity extraction)
+# - Quality (OpenAI for client-facing verbalization)
+# - Testing coverage (both LLM providers are exercised)
+#
+# OpenAI-only mode is ONLY allowed as a fallback if Gemini is unavailable.
+# To bypass this enforcement (NOT recommended), set:
+#   OE_BYPASS_HYBRID_ENFORCEMENT=1  (environment variable)
+#   OR config.hybrid_enforcement.enabled=false (database setting)
+# ============================================================================
+
+import logging as _logging
+_hybrid_logger = _logging.getLogger(__name__)
+
+
+def is_hybrid_mode(settings: Optional[LLMProviderSettings] = None) -> bool:
+    """
+    Check if the current configuration is in hybrid mode.
+
+    Hybrid mode means using BOTH Gemini and OpenAI for different operations.
+    This is the recommended configuration for production.
+
+    Returns True if:
+    - At least one of intent/entity/verbalization uses Gemini
+    - AND at least one uses OpenAI
+    - (i.e., not all same provider)
+
+    Returns False if all operations use the same provider (single-provider mode).
+    """
+    if settings is None:
+        settings = get_llm_providers()
+
+    providers_used = {
+        settings.intent_provider,
+        settings.entity_provider,
+        settings.verbalization_provider,
+    }
+
+    # Stub doesn't count - it's for testing only
+    providers_used.discard("stub")
+
+    # Hybrid = using more than one real provider
+    return len(providers_used) > 1
+
+
+def is_hybrid_enforcement_enabled() -> bool:
+    """
+    Check if hybrid mode enforcement is enabled.
+
+    Returns True by default. Set to False to allow single-provider modes.
+
+    To bypass enforcement:
+    - Set env var: OE_BYPASS_HYBRID_ENFORCEMENT=1
+    - OR set database config: config.hybrid_enforcement.enabled=false
+    """
+    # Check environment variable first (highest priority for emergency bypass)
+    env_bypass = os.getenv("OE_BYPASS_HYBRID_ENFORCEMENT", "").lower()
+    if env_bypass in ("1", "true", "yes"):
+        return False
+
+    # Check database config
+    try:
+        from backend.workflows.io.database import load_db
+        db = load_db()
+        enforcement_config = db.get("config", {}).get("hybrid_enforcement", {})
+        if "enabled" in enforcement_config:
+            return enforcement_config.get("enabled", True)
+    except Exception:
+        pass  # Database not available, use default
+
+    # Default: enforcement ON
+    return True
+
+
+def validate_hybrid_mode(*, raise_on_failure: bool = False, is_production: bool = False) -> tuple:
+    """
+    Validate that the system is running in hybrid mode.
+
+    This function should be called at startup to ensure proper configuration.
+
+    Args:
+        raise_on_failure: If True, raises RuntimeError on validation failure
+        is_production: If True, treat this as production (stricter enforcement)
+
+    Returns:
+        Tuple of (is_valid: bool, message: str, settings: LLMProviderSettings)
+
+    Raises:
+        RuntimeError: If raise_on_failure=True and validation fails
+    """
+    settings = get_llm_providers(force_reload=True)
+    enforcement_enabled = is_hybrid_enforcement_enabled()
+    hybrid = is_hybrid_mode(settings)
+
+    if hybrid:
+        msg = (
+            f"✅ Hybrid mode active: "
+            f"I:{settings.intent_provider[:3]}, "
+            f"E:{settings.entity_provider[:3]}, "
+            f"V:{settings.verbalization_provider[:3]} "
+            f"(source: {settings.source})"
+        )
+        return (True, msg, settings)
+
+    # Not in hybrid mode
+    single_provider = settings.intent_provider  # All same in single-provider mode
+
+    if not enforcement_enabled:
+        msg = (
+            f"⚠️  Single-provider mode ({single_provider}): "
+            f"Hybrid enforcement BYPASSED. "
+            f"This is only for emergency fallback. "
+            f"(source: {settings.source})"
+        )
+        _hybrid_logger.warning(msg)
+        return (True, msg, settings)  # Allowed but warned
+
+    # Enforcement enabled, but not in hybrid mode - this is a problem
+    msg = (
+        f"❌ HYBRID MODE REQUIRED: System configured for {single_provider}-only mode. "
+        f"OpenEvent requires hybrid mode (Gemini + OpenAI) for production. "
+        f"To bypass (emergency only): set OE_BYPASS_HYBRID_ENFORCEMENT=1"
+    )
+
+    if is_production:
+        _hybrid_logger.critical(msg)
+        # In production, this is a critical error
+        # TODO: Send email notification to developers
+        if raise_on_failure:
+            raise RuntimeError(msg)
+    else:
+        _hybrid_logger.error(msg)
+        if raise_on_failure:
+            raise RuntimeError(msg)
+
+    return (False, msg, settings)

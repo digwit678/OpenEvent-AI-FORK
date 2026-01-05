@@ -302,6 +302,38 @@ With 1,500 requests/day limit: `1500 / 2 = 750 messages/day` on free tier.
 #### Admin UI Toggle
 - **Global Deposit**: Configure at runtime via admin panel → Deposit Settings
 - **LLM Provider**: Configure at runtime via admin panel → LLM Settings
+- **Hybrid Enforcement**: Configure at runtime via admin panel or API
+
+#### Hybrid Mode Enforcement
+
+**By default, OpenEvent REQUIRES hybrid mode** (using both Gemini and OpenAI). This ensures:
+- Cost efficiency: Gemini for intent/entity extraction (75% cheaper)
+- Quality: OpenAI for client-facing verbalization
+- Test coverage: Both LLM providers are exercised
+
+| Mode | Behavior |
+|------|----------|
+| **Production** | Startup BLOCKED if not in hybrid mode |
+| **Development** | Error logged but continues (for debugging) |
+
+**Emergency bypass (NOT recommended for production):**
+```bash
+# Environment variable bypass
+export OE_BYPASS_HYBRID_ENFORCEMENT=1
+
+# Or via API
+curl -X POST http://localhost:8000/api/config/hybrid-enforcement \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}'
+```
+
+**Check current status:**
+```bash
+curl http://localhost:8000/api/config/hybrid-enforcement
+# Returns: {"enabled": true, "is_hybrid": true, "status": "✅ OK", ...}
+```
+
+> **⚠️ Warning:** Disabling enforcement should only be used as emergency fallback if one LLM provider (e.g., Google/Gemini) is unavailable. Re-enable as soon as possible.
 
 > **📚 Detailed Architecture:** For a complete breakdown of which extraction methods (Regex, NER, LLM) are used where, see [`docs/internal/LLM_EXTRACTION_ARCHITECTURE.md`](docs/internal/LLM_EXTRACTION_ARCHITECTURE.md)
 
