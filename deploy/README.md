@@ -133,6 +133,68 @@ Should return: `{"status":"ok"}`
 
 ---
 
+## Production Mode (IMPORTANT)
+
+When deploying for real clients, switch from dev to production mode:
+
+### Required Environment Variables
+
+Add these to `/opt/openevent/.env`:
+
+```bash
+# ========== PRODUCTION MODE ==========
+ENV=prod                      # Hides debug routes, removes db_path from health endpoint
+AUTH_ENABLED=1                # Requires API key for all endpoints (except health)
+RATE_LIMIT_ENABLED=1          # Prevents abuse
+TENANT_HEADER_ENABLED=0       # Disables header-based tenant switching
+
+# ========== ERROR ALERTING (optional) ==========
+# Get notified when AI fails and falls back to manual review
+ALERT_EMAIL_RECIPIENTS=ops@openevent.com,dev@openevent.com
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=alerts@example.com
+SMTP_PASS=your-smtp-password
+```
+
+### Quick Toggle Script
+
+```bash
+# Switch to production mode
+nano /opt/openevent/.env
+# Add: ENV=prod AUTH_ENABLED=1 RATE_LIMIT_ENABLED=1 TENANT_HEADER_ENABLED=0
+systemctl restart openevent
+
+# Verify production mode
+curl http://72.60.135.183:8000/api/workflow/health
+# Should return: {"ok": true}  (no db_path in prod)
+
+curl http://72.60.135.183:8000/api/events
+# Should return: 401 Unauthorized (auth required in prod)
+```
+
+### Production Checklist
+
+- [ ] `ENV=prod` set
+- [ ] `AUTH_ENABLED=1` set
+- [ ] `RATE_LIMIT_ENABLED=1` set
+- [ ] `TENANT_HEADER_ENABLED=0` set (never enable in prod)
+- [ ] API keys configured (OPENAI + GOOGLE for hybrid mode)
+- [ ] CORS origins set to your frontend domains only
+- [ ] (Optional) Error alerting configured with SMTP
+- [ ] Test: trigger a fallback and verify no client sees the error
+
+### Security Notes
+
+| Setting | Dev | Prod | Why |
+|---------|-----|------|-----|
+| `ENV` | dev | **prod** | Hides debug routes, db paths |
+| `AUTH_ENABLED` | 0 | **1** | Protects API from public access |
+| `RATE_LIMIT_ENABLED` | 0 | **1** | Prevents abuse |
+| `TENANT_HEADER_ENABLED` | 1 | **0** | Header spoofing risk |
+
+---
+
 ## Connect Lovable Frontend
 
 Once the backend is running, tell your colleague:
