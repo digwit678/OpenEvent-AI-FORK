@@ -216,8 +216,13 @@ def _snapshot_step_name(event_entry: Optional[Dict[str, Any]]) -> str:
 # _thread_identifier moved to backend.workflows.runtime.hil_tasks (W2 extraction)
 
 
-DB_PATH = Path(__file__).with_name("events_database.json")
-LOCK_PATH = Path(__file__).with_name(".events_db.lock")
+# Check if running on Vercel (read-only filesystem except /tmp)
+if os.getenv("VERCEL") == "1":
+    DB_PATH = Path("/tmp/events_database.json")
+    LOCK_PATH = Path("/tmp/.events_db.lock")
+else:
+    DB_PATH = Path(__file__).with_name("events_database.json")
+    LOCK_PATH = Path(__file__).with_name(".events_db.lock")
 
 enqueue_task = task_io.enqueue_task
 update_task_status = task_io.update_task_status
