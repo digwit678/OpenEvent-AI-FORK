@@ -403,7 +403,154 @@ When renaming becomes necessary:
 
 ---
 
-### DECISION-010: Free Local LLMs for Detection Tasks
+### DECISION-010: Missing Product Handling & HIL UX
+
+**Date Raised:** 2026-01-06
+**Context:** E2E testing revealed poor UX when client requests unavailable items
+**Status:** Open
+
+**Problem Statement:**
+When a client requests a product/equipment that isn't available in the room:
+1. System incorrectly claims it's included (bug: conflates features vs. equipment)
+2. No HIL notification to manager about special requests
+3. No way for manager to source items and add to offer
+4. Client thinks they're talking to manager, shouldn't need to "address manager by name"
+
+**Example Scenario (from E2E):**
+- Client: "Room B for workshop, need projector and flipchart"
+- System: "Room B meets requirements with projector and flipchart" ❌
+- Reality: Room B has projector (equipment) but flipchart is only listed as "feature" (not included by default)
+
+**Expected Behavior:**
+
+1. **Detection Phase:**
+   - Parse client requirements vs. room equipment
+   - Identify missing items clearly
+
+2. **Response to Client:**
+   > "Room B has a projector but unfortunately the flipchart is not included. Would you like me to check if I can source one? If I find one, I'll add it to your offer."
+
+3. **If Client Confirms:**
+   - Create HIL task: "Special Request: Flipchart for Event X"
+   - Manager sees task in queue (client doesn't see this)
+   - Manager can:
+     - **Found it**: Add product to offer with price, send confirmation to client
+     - **Not found**: Notify client, client decides to continue or cancel
+
+4. **Product Addition Flow:**
+   ```
+   Client confirms interest → Manager finds product →
+   Manager sends: "I found a flipchart at CHF X. Add to your offer?" →
+   Client confirms → Product added to offer →
+   If already at Step 4/5: Resend updated offer
+   If before Step 4: Add to pending products for offer generation
+   ```
+
+**Implementation Considerations:**
+
+1. **Data Model:**
+   - Clear distinction: `equipment` (included) vs. `features` (available but separate)
+   - Track `requested_items[]` and `missing_items[]` in event state
+   - Add `sourced_products[]` for manager-added items
+
+2. **HIL Task Type:**
+   - New type: `PRODUCT_SOURCING_REQUEST`
+   - Fields: product name, client request context, event_id
+
+3. **Offer Modification:**
+   - API for manager to add products to pending/active offers
+   - Re-trigger offer generation if already sent
+
+**Related: Client Cancellation Flow** (see DECISION-012)
+
+**Dependencies:**
+- Room data cleanup (features vs. equipment)
+- HIL task system extension
+- Offer modification capability
+
+---
+
+### DECISION-012: Client Event Cancellation Flow
+
+**Date Raised:** 2026-01-06
+**Context:** E2E testing - no way for client to cancel an event via email
+**Status:** Open
+
+**Problem Statement:**
+Clients cannot cancel events via email. This is a critical UX gap:
+- Client says "I need to cancel the booking" → System doesn't handle this
+- No cancellation intent detection
+- No cancellation confirmation flow
+- No handling of related site visits
+
+**Expected Behavior:**
+
+1. **Detection:**
+   - Detect cancellation intent: "cancel", "abort", "withdraw", "nevermind"
+   - Multilingual support (EN/DE/FR/IT/ES)
+
+2. **Cancellation Flow:**
+   ```
+   Client: "I need to cancel the booking"
+   System: "I understand you'd like to cancel. To confirm:
+            - Event: [date] at [room]
+            - Site visit scheduled: [date] (will be kept unless you want to cancel this too)
+
+            Please confirm: Cancel the event? (Site visit will remain scheduled)"
+   Client: "Yes, cancel"
+   System: "Your booking has been cancelled. [Site visit info if applicable]"
+   ```
+
+3. **Site Visit Handling:**
+   - **Site visit BEFORE event date**: Keep by default (client might want to see venue for future booking)
+   - **Site visit AFTER event date**: Auto-cancel (makes no sense without the event)
+   - **Explicit request to cancel site visit**: Respect client's wish
+
+4. **Event State:**
+   ```python
+   event_entry["thread_state"] = "Cancelled"
+   event_entry["cancellation_reason"] = "Client request"
+   event_entry["cancelled_at"] = timestamp
+   event_entry["cancelled_by"] = "client"  # vs "manager"
+   ```
+
+5. **Notifications:**
+   - HIL task: "Event Cancelled by Client: [event summary]"
+   - Manager can see cancellation in dashboard
+
+**Implementation Considerations:**
+
+1. **New Intent:**
+   - `IntentLabel.CANCEL_EVENT`
+   - Add to unified detection and step handlers
+
+2. **Cancellation Detection Patterns:**
+   ```python
+   CANCELLATION_SIGNALS = {
+       "en": ["cancel", "abort", "withdraw", "nevermind", "don't need"],
+       "de": ["stornieren", "absagen", "abbrechen", "zurückziehen"],
+       "fr": ["annuler", "abandonner", "renoncer"],
+       "it": ["annullare", "cancellare", "rinunciare"],
+       "es": ["cancelar", "anular", "desistir"],
+   }
+   ```
+
+3. **Confirmation Required:**
+   - Don't auto-cancel on first mention
+   - Require explicit confirmation (prevents accidents)
+
+4. **Deposit Handling:**
+   - If deposit paid → HIL task for refund decision
+   - Reference DECISION-001 for deposit change scenarios
+
+**Dependencies:**
+- Cancellation intent detection
+- Site visit linkage to main event
+- Deposit refund workflow
+
+---
+
+### DECISION-011: Free Local LLMs for Detection Tasks
 
 **Date Raised:** 2026-01-06
 **Context:** Multilingual confirmation detection - pattern-based vs. LLM sentiment
