@@ -56,6 +56,9 @@ from datetime import datetime
 from enum import Enum
 import logging
 
+from backend.services.rooms import get_room
+from backend.workflows.common.time_window import TimeWindow, windows_overlap
+
 logger = logging.getLogger(__name__)
 
 
@@ -64,6 +67,7 @@ class ConflictType(Enum):
     NONE = "none"
     SOFT = "soft"  # Option + Option
     HARD = "hard"  # Option + Confirm or Confirmed + anything
+    INVALID_ROOM = "invalid_room"  # Room doesn't exist in database
 
 
 def detect_room_conflict(
@@ -71,15 +75,22 @@ def detect_room_conflict(
     event_id: str,
     room_id: str,
     event_date: str,
+    event_entry: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """
-    Check if another event already has this room locked (Option/Confirmed) on this date.
+    Check if another event already has this room locked (Option/Confirmed) with overlapping time.
+
+    Uses TimeWindow for time-aware overlap detection:
+    - Same date, non-overlapping times = NO conflict
+    - Multi-day events properly handled
+    - Falls back to date-only comparison if no time info available
 
     Args:
         db: The database dict
         event_id: Current event ID (to exclude from conflict check)
         room_id: Room being requested
         event_date: Date being requested (ISO format YYYY-MM-DD)
+        event_entry: Optional current event dict (for time window extraction)
 
     Returns:
         Dict with conflict info if conflict exists, None otherwise.
@@ -92,9 +103,21 @@ def detect_room_conflict(
             "status": str  # "Option" or "Confirmed"
         }
     """
-    events = db.get("events") or {}
+    events = db.get("events") or []
 
-    for other_event_id, other_event in events.items():
+    # Support both list (production) and dict (tests) formats
+    if isinstance(events, dict):
+        event_items = events.items()
+    else:
+        # List format: each event has "event_id" key
+        event_items = [(e.get("event_id"), e) for e in events if isinstance(e, dict)]
+
+    # Build TimeWindow for current event (if event_entry provided)
+    current_window: Optional[TimeWindow] = None
+    if event_entry:
+        current_window = TimeWindow.from_event(event_entry)
+
+    for other_event_id, other_event in event_items:
         # Skip self
         if other_event_id == event_id:
             continue
@@ -106,17 +129,26 @@ def detect_room_conflict(
         if str(other_locked_room).lower() != str(room_id).lower():
             continue
 
-        # Check if same date
-        other_date = other_event.get("chosen_date") or other_event.get("Event Date")
-        if not other_date:
-            continue
-        if str(other_date) != str(event_date):
-            continue
-
         # Check status - only conflict if Option or Confirmed
         other_status = other_event.get("status") or other_event.get("Status") or "Lead"
         if other_status.lower() not in ("option", "confirmed"):
             continue
+
+        # TIME-AWARE OVERLAP DETECTION
+        # Build TimeWindow for other event
+        other_window = TimeWindow.from_event(other_event)
+
+        if current_window is not None and other_window is not None:
+            # Both have time info - use proper overlap detection
+            if not current_window.overlaps(other_window):
+                continue  # No time overlap = no conflict
+        else:
+            # Fallback to date-only comparison if no time info
+            other_date = other_event.get("chosen_date") or other_event.get("Event Date")
+            if not other_date:
+                continue
+            if str(other_date) != str(event_date):
+                continue
 
         # Found a conflict!
         other_client_id = other_event.get("client_id")
@@ -142,15 +174,21 @@ def get_available_rooms_on_date(
     event_id: str,
     event_date: str,
     exclude_statuses: Optional[List[str]] = None,
+    query_window: Optional[TimeWindow] = None,
 ) -> List[str]:
     """
-    Get rooms that are NOT locked (Option/Confirmed) by other events on this date.
+    Get rooms that are NOT locked (Option/Confirmed) by other events during the query time window.
+
+    Uses TimeWindow for time-aware availability check:
+    - Same date, non-overlapping times = room is available
+    - Falls back to date-only comparison if no time info
 
     Args:
         db: The database dict
         event_id: Current event ID (to exclude from check)
         event_date: Date to check
         exclude_statuses: Statuses to exclude (default: ["option", "confirmed"])
+        query_window: Optional TimeWindow for the time slot being queried
 
     Returns:
         List of available room IDs
@@ -162,22 +200,38 @@ def get_available_rooms_on_date(
     rooms_data = db.get("rooms") or {}
     all_rooms = set(rooms_data.keys())
 
-    # Find rooms locked by other events on this date
-    events = db.get("events") or {}
+    # Find rooms locked by other events during the query time window
+    events = db.get("events") or []
     locked_rooms = set()
 
-    for other_event_id, other_event in events.items():
-        if other_event_id == event_id:
-            continue
+    # Support both list (production) and dict (tests) formats
+    if isinstance(events, dict):
+        event_items = events.items()
+    else:
+        event_items = [(e.get("event_id"), e) for e in events if isinstance(e, dict)]
 
-        other_date = other_event.get("chosen_date") or other_event.get("Event Date")
-        if str(other_date) != str(event_date):
+    for other_event_id, other_event in event_items:
+        if other_event_id == event_id:
             continue
 
         other_status = (other_event.get("status") or other_event.get("Status") or "").lower()
         if other_status not in exclude_statuses:
             continue
 
+        # TIME-AWARE OVERLAP DETECTION
+        other_window = TimeWindow.from_event(other_event)
+
+        if query_window is not None and other_window is not None:
+            # Both have time info - use proper overlap detection
+            if not query_window.overlaps(other_window):
+                continue  # No time overlap = room is available for this time
+        else:
+            # Fallback to date-only comparison if no time info
+            other_date = other_event.get("chosen_date") or other_event.get("Event Date")
+            if str(other_date) != str(event_date):
+                continue
+
+        # This event overlaps - mark its room as locked
         other_room = other_event.get("locked_room_id")
         if other_room:
             locked_rooms.add(str(other_room).lower())
@@ -411,9 +465,15 @@ def detect_conflict_type(
     room_id: str,
     event_date: str,
     action: str = "select",  # "select" for becoming Option, "confirm" for confirming
+    event_entry: Optional[Dict[str, Any]] = None,
 ) -> Tuple[ConflictType, Optional[Dict[str, Any]]]:
     """
     Detect conflict type based on the action being taken.
+
+    CRITICAL: Also validates room existence - never skip this check!
+    A non-existent room returns INVALID_ROOM before any conflict checks.
+
+    Uses TimeWindow for time-aware overlap detection when event_entry is provided.
 
     Args:
         db: The database dict
@@ -421,11 +481,22 @@ def detect_conflict_type(
         room_id: Room being requested
         event_date: Date being requested
         action: "select" (becoming Option) or "confirm" (confirming booking)
+        event_entry: Optional current event dict (for time window extraction)
 
     Returns:
         Tuple of (ConflictType, conflict_info or None)
+        - INVALID_ROOM if room doesn't exist in database
+        - NONE if room exists and is available (or no time overlap)
+        - SOFT/HARD if room exists and has overlapping conflicts
     """
-    conflict_info = detect_room_conflict(db, event_id, room_id, event_date)
+    # CRITICAL: Verify room exists in database FIRST
+    # This is the centralized validation - ALL callers benefit from this check
+    room_record = get_room(room_id)
+    if room_record is None:
+        logger.warning(f"Room '{room_id}' does not exist in database - rejecting")
+        return ConflictType.INVALID_ROOM, {"room_id": room_id, "reason": "room_not_found"}
+
+    conflict_info = detect_room_conflict(db, event_id, room_id, event_date, event_entry)
 
     if not conflict_info:
         return ConflictType.NONE, None

@@ -328,6 +328,8 @@ def create_event_entry(db: Dict[str, Any], event_data: Dict[str, Any]) -> str:
         "caller_step": None,
         "thread_state": "In Progress",
         "chosen_date": None,
+        "end_date": None,           # DD.MM.YYYY for multi-day events
+        "end_date_iso": None,       # YYYY-MM-DD for multi-day events
         "date_confirmed": False,
         "locked_room_id": None,
         "requirements": {},
@@ -402,6 +404,8 @@ def ensure_event_defaults(event: Dict[str, Any]) -> None:
     event.setdefault("subflow_group", "intake")
     event.setdefault("thread_state", "In Progress")
     event.setdefault("chosen_date", None)
+    event.setdefault("end_date", None)       # DD.MM.YYYY for multi-day events
+    event.setdefault("end_date_iso", None)   # YYYY-MM-DD for multi-day events
     event.setdefault("date_confirmed", False)
     event.setdefault("locked_room_id", None)
     event.setdefault("requested_window", {})
@@ -754,20 +758,38 @@ def get_event_dates(
 def get_site_visits_on_date(
     db: Dict[str, Any],
     date_iso: str,
+    query_start_time: Optional[str] = None,
+    query_end_time: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """[OpenEvent Database] Get site visits scheduled on a specific date.
+    """[OpenEvent Database] Get site visits that overlap with a time window.
 
-    Used when booking an event - if there's a site visit on that day,
-    we allow the event but create a manager notification.
+    Used when booking an event - if there's a site visit overlapping with the
+    requested time, we allow the event but create a manager notification.
+
+    Time-aware overlap detection:
+    - If query times are provided, checks for actual time overlap
+    - Site visits without time_slot are assumed to be all-day
+    - Falls back to date-only comparison if no time info available
 
     Args:
         db: The database dict
         date_iso: Date to check (YYYY-MM-DD format)
+        query_start_time: Optional start time (HH:MM) for time-aware overlap
+        query_end_time: Optional end time (HH:MM) for time-aware overlap
 
     Returns:
-        List of event entries that have site visits on that date
+        List of event entries that have site visits overlapping with the query
     """
+    from backend.workflows.common.time_window import TimeWindow
+
     visits: List[Dict[str, Any]] = []
+
+    # Build query window if times provided
+    query_window: Optional[TimeWindow] = None
+    if query_start_time and query_end_time:
+        query_window = TimeWindow.from_date_and_times(
+            date_iso, query_start_time, query_end_time
+        )
 
     for event in db.get("events", []):
         sv_state = event.get("site_visit_state", {})
@@ -789,7 +811,35 @@ def get_site_visits_on_date(
         except (ValueError, IndexError):
             continue
 
-        if sv_date_iso == date_iso:
+        # Time-aware overlap check
+        if query_window is not None:
+            # Get site visit time slot (default to 1-hour if specified)
+            sv_time = sv_state.get("time_slot") or sv_state.get("confirmed_time")
+            if sv_time:
+                # Site visits typically last 1 hour
+                try:
+                    parts = sv_time.split(":")
+                    sv_start_hour = int(parts[0])
+                    sv_start_min = int(parts[1]) if len(parts) > 1 else 0
+                    sv_end_hour = sv_start_hour + 1  # 1-hour default duration
+                    sv_end_time = f"{sv_end_hour:02d}:{sv_start_min:02d}"
+                    sv_window = TimeWindow.from_date_and_times(
+                        sv_date_iso, sv_time, sv_end_time
+                    )
+                except (ValueError, IndexError):
+                    sv_window = TimeWindow.all_day(sv_date_iso)
+            else:
+                # No time specified - treat as all-day
+                sv_window = TimeWindow.all_day(sv_date_iso)
+
+            # Check overlap
+            if sv_window and not query_window.overlaps(sv_window):
+                continue  # No time overlap = no conflict
+
             visits.append(event)
+        else:
+            # Date-only comparison (backward compatibility)
+            if sv_date_iso == date_iso:
+                visits.append(event)
 
     return visits

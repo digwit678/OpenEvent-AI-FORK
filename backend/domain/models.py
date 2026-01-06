@@ -66,6 +66,7 @@ class EventInformation(BaseModel):
     date_email_received: str  # DD.MM.YYYY
     status: str = "Lead"
     event_date: Optional[str] = "Not specified"  # DD.MM.YYYY
+    end_date: Optional[str] = None  # DD.MM.YYYY for multi-day events
     name: Optional[str] = "Not specified"
     email: EmailStr
     phone: Optional[str] = "Not specified"

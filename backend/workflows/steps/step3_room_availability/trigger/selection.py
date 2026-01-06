@@ -78,6 +78,7 @@ def handle_select_room_action(
     event_id = event_entry["event_id"]
 
     # [SOFT CONFLICT CHECK] Detect if another client has an Option on this room/date
+    # Pass event_entry to enable time-aware overlap detection
     chosen_date = date or event_entry.get("chosen_date") or ""
     conflict_type, conflict_info = detect_conflict_type(
         db=state.db,
@@ -85,6 +86,7 @@ def handle_select_room_action(
         room_id=room,
         event_date=chosen_date,
         action="select",  # Client is selecting (becoming Option)
+        event_entry=event_entry,  # Enables time-aware conflict detection
     )
 
     # Handle soft conflict: NOTIFY client and ask if they insist
@@ -142,7 +144,14 @@ def handle_select_room_action(
         })
 
         # Create manager visibility task (non-blocking)
-        tasks = state.db.setdefault("tasks", {})
+        # Handle case where tasks might be a list (legacy format) instead of dict
+        raw_tasks = state.db.get("tasks")
+        if isinstance(raw_tasks, list):
+            # Convert list to dict if needed
+            tasks = {}
+            state.db["tasks"] = tasks
+        else:
+            tasks = state.db.setdefault("tasks", {})
         task_id = f"soft_conflict_{event_id}_{dt.now().strftime('%Y%m%d%H%M%S')}"
         tasks[task_id] = {
             "type": "soft_room_conflict_notification",
@@ -305,7 +314,9 @@ def handle_select_room_action(
         "context": state.context_snapshot,
         "persisted": True,
     }
-    return GroupResult(action="room_selected", payload=payload, halt=False)
+    # halt=True ensures the room selection message is shown before Step 4 asks about products
+    # Without halt, the routing loop continues and Step 4 replaces the message
+    return GroupResult(action="room_selected", payload=payload, halt=True)
 
 
 __all__ = [

@@ -752,6 +752,7 @@ class HandlePostOfferRoute(OpenEventAction):
                 room_id=room_id,
                 event_date=event_date,
                 action="confirm",  # Client is trying to confirm
+                event_entry=event_entry,  # Enables time-aware conflict detection
             )
 
             if conflict_type == ConflictType.HARD and conflict_info:

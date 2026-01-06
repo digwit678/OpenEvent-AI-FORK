@@ -20,6 +20,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from backend.detection.special.room_conflict import (
+    ConflictType,
+    detect_conflict_type,
+)
+
 from .shortcuts_types import ParsedIntent
 
 if TYPE_CHECKING:
@@ -44,40 +50,89 @@ def parse_room_intent(planner: "_ShortcutPlanner") -> None:
     if not room:
         return
 
-    if can_lock_room(planner, room):
+    can_lock, failure_reason = can_lock_room(planner, room)
+    if can_lock:
         intent = ParsedIntent("room_selection", {"room": room}, verifiable=True)
         planner.verifiable.append(intent)
     else:
+        # Pass the specific failure reason so the message can be tailored
+        reason = failure_reason or "room_requires_date"
         add_needs_input(
             planner,
             "availability",
-            {"room": room, "reason": "room_requires_date"},
-            reason="room_requires_date",
+            {"room": room, "reason": reason},
+            reason=reason,
         )
 
 
-def can_lock_room(planner: "_ShortcutPlanner", requested_room: str) -> bool:
+def can_lock_room(planner: "_ShortcutPlanner", requested_room: str) -> tuple:
     """Check if a requested room can be locked.
 
-    Room can be locked if there's a pending decision with matching room
-    and status is Available or Option.
+    Room can be locked if:
+    1. Room exists in the database (validated centrally via detect_conflict_type)
+    2. There's a pending decision with matching room and status Available/Option, OR
+    3. No pending decision but we can verify availability directly (for initial messages)
 
     Args:
         planner: The shortcuts planner instance
         requested_room: The room name to check
 
     Returns:
-        True if room can be locked, False otherwise
+        Tuple of (can_lock: bool, failure_reason: str or None)
+        - (True, None) if room can be locked
+        - (False, "room_not_found") if room doesn't exist
+        - (False, "room_unavailable") if room is booked
+        - (False, "room_requires_date") if need date to check
+        - (False, "room_conflict") if soft/hard conflict exists
     """
+    requested_normalized = str(requested_room).strip().lower()
+
+    # Path 1: Check pending decision from previous Step 3 run
     pending = planner.event.get("room_pending_decision") or {}
     selected = pending.get("selected_room")
     status = pending.get("selected_status")
-    if not selected:
-        return False
-    return (
-        selected.lower() == str(requested_room).strip().lower()
-        and status in {"Available", "Option"}
+    if selected and selected.lower() == requested_normalized:
+        if status in {"Available", "Option"}:
+            return True, None
+        return False, "room_unavailable"  # Room exists in pending but is unavailable
+
+    # Path 2: No pending decision - check availability directly (for initial messages)
+    # This allows shortcuts to fire on the very first message when client specifies a room
+    chosen_date = planner.event.get("chosen_date")
+    if not chosen_date:
+        return False, "room_requires_date"  # Need a date to check availability
+
+    # Use detect_conflict_type() which properly excludes our own event_id
+    # This prevents the bug where our newly created event is detected as a conflict
+    event_id = planner.event.get("event_id")
+    db = planner.state.db if hasattr(planner.state, "db") else {}
+
+    conflict_type, conflict_info = detect_conflict_type(
+        db=db,
+        event_id=event_id,  # Exclude our own event
+        room_id=requested_room,
+        event_date=chosen_date,
+        action="select",
+        event_entry=planner.event,  # Enables time-aware conflict detection
     )
+
+    # Check for invalid room first
+    if conflict_type == ConflictType.INVALID_ROOM:
+        return False, "room_not_found"
+
+    # Only allow if no conflict (NONE) - Available room
+    # If SOFT conflict (another client has Option), defer to Step 3 for conflict UI
+    # If HARD conflict (Confirmed booking), room is unavailable
+    if conflict_type == ConflictType.NONE:
+        planner.event["room_pending_decision"] = {
+            "selected_room": requested_room,
+            "selected_status": "Available",
+            "requirements_hash": planner.event.get("requirements_hash"),
+        }
+        return True, None
+
+    # SOFT or HARD conflict
+    return False, "room_conflict"
 
 
 # --------------------------------------------------------------------------
