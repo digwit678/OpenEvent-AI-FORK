@@ -822,6 +822,7 @@ function EmailThreadUIContent() {
           headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
+            ...currentTenantHeaders,
           },
           body: JSON.stringify({
             notes: taskNotes[task.task_id] || undefined,

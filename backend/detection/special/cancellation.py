@@ -33,6 +33,8 @@ CANCELLATION_SIGNALS_EN = [
 CANCELLATION_SIGNALS_DE = [
     r"\b(veranstaltung|buchung|reservierung|termin)\s+(stornieren|absagen|canceln)\b",
     r"\bstornieren\s+(wir\s+)?(die\s+)?(veranstaltung|buchung)\b",
+    r"\bstornieren\s+sie\s+(unsere\s+)?(die\s+)?(veranstaltung|buchung|reservierung)\b",  # "stornieren Sie unsere Reservierung"
+    r"\bbitte\s+(um\s+)?(stornierung|absage)\b",  # "Bitte um Stornierung"
     r"\bmöchten?\s+(die\s+)?(veranstaltung|buchung)\s+(stornieren|absagen)\b",
     r"\bmüssen\s+(leider\s+)?(stornieren|absagen)\b",
     r"\bbittet?\s+(um\s+)?stornierung\b",
