@@ -1,10 +1,9 @@
 # Environment files
 *.env
 !/.env
-!backend/.env
 
 # Local runtime databases
-backend/events_database.json
+events_database.json
 
 # OS files
 .DS_Store
@@ -29,9 +28,6 @@ manual_ux_conversation.json
 tests/artifacts/*.json
 
 # Local dev env & logs
-atelier-ai-frontend/.env.local
-atelier-ai-frontend/.next-dev.log
-atelier-ai-frontend/.ui-url
 backend-uvicorn.log
 
 # Test artifacts
@@ -72,5 +68,3 @@ node_modules/
 !.codex/skills/**
 .codex/config.toml
 .codex/lsp.json
-frontend/
-frontend/
