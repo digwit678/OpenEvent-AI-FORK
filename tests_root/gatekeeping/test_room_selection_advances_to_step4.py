@@ -15,8 +15,8 @@ import pytest
 from workflows.common.requirements import requirements_hash
 from workflows.common.types import IncomingMessage, WorkflowState
 
-room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
-selection_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.selection")
+room_module = importlib.import_module("workflows.steps.step3_room_availability.trigger.step3_handler")
+selection_module = importlib.import_module("workflows.steps.step3_room_availability.trigger.selection")
 handle_select_room_action = room_module.handle_select_room_action
 
 

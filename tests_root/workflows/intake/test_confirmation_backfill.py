@@ -19,7 +19,7 @@ def test_confirmation_backfill_infers_date_from_short_reply(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    intake_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
+    intake_module = importlib.import_module("workflows.steps.step1_intake.trigger.step1_handler")
 
     # Classifier recognizes this as a date confirmation already.
     monkeypatch.setattr(

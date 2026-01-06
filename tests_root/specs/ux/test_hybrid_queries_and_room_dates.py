@@ -9,8 +9,8 @@ import pytest
 from workflows.common.general_qna import enrich_general_qna_step2
 from workflows.common.types import IncomingMessage, WorkflowState
 
-date_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
-room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
+date_module = importlib.import_module("workflows.steps.step2_date_confirmation.trigger.step2_handler")
+room_module = importlib.import_module("workflows.steps.step3_room_availability.trigger.step3_handler")
 
 
 def _assert_no_full_menu_dump(text: str) -> None:

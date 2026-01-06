@@ -7,7 +7,7 @@ import importlib
 from workflows.common.requirements import requirements_hash
 from workflows.common.types import IncomingMessage, WorkflowState
 
-room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
+room_module = importlib.import_module("workflows.steps.step3_room_availability.trigger.step3_handler")
 from workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
 
 from ...utils.seeds import set_seed

@@ -78,8 +78,8 @@ def test_date_confirmation_falls_back_to_workflow_when_room_autorun_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    intake_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
-    date_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
+    intake_module = importlib.import_module("workflows.steps.step1_intake.trigger.step1_handler")
+    date_module = importlib.import_module("workflows.steps.step2_date_confirmation.trigger.step2_handler")
 
     # Force the short reply to map back into the automated date-follow-up path.
     monkeypatch.setattr(intake_module, "classify_intent", lambda _payload: (IntentLabel.NON_EVENT, 0.2))
@@ -100,7 +100,7 @@ def test_date_confirmation_falls_back_to_workflow_when_room_autorun_fails(
     def _boom(_state: WorkflowState) -> None:
         raise RuntimeError("room engine offline")
 
-    room_process_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.process")
+    room_process_module = importlib.import_module("workflows.steps.step3_room_availability.trigger.process")
     monkeypatch.setattr(room_process_module, "process", _boom)
 
     state = _build_state(tmp_path)
@@ -125,8 +125,8 @@ def test_general_qna_skipped_when_explicit_date_followup(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    intake_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
-    date_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
+    intake_module = importlib.import_module("workflows.steps.step1_intake.trigger.step1_handler")
+    date_module = importlib.import_module("workflows.steps.step2_date_confirmation.trigger.step2_handler")
 
     def _force_general(_message_text, _state):
         return {"is_general": True, "heuristics": {}, "parsed": {}, "constraints": {}}
@@ -137,7 +137,7 @@ def test_general_qna_skipped_when_explicit_date_followup(
         return GroupResult(action="room_autorun_success", payload={"rooms": []}, halt=True)
 
     # The autorun imports from trigger.process, not step3_handler
-    room_process_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.process")
+    room_process_module = importlib.import_module("workflows.steps.step3_room_availability.trigger.process")
     monkeypatch.setattr(room_process_module, "process", _rooms_stub)
 
     state = _build_state(tmp_path)

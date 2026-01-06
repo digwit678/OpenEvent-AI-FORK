@@ -98,7 +98,7 @@ def test_vague_month_weekday_enumeration(monkeypatch, tmp_path):
 
 
 def test_vague_range_forces_candidates(monkeypatch, tmp_path):
-    step2_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
+    step2_module = importlib.import_module("workflows.steps.step2_date_confirmation.trigger.step2_handler")
     monkeypatch.setenv("DEBUG_TRACE", "1")
 
     state = _state(tmp_path)

@@ -5,7 +5,7 @@ from domain import IntentLabel
 from workflows.common.types import IncomingMessage, WorkflowState
 
 
-offer_module = importlib.import_module("backend.workflows.steps.step4_offer.trigger.step4_handler")
+offer_module = importlib.import_module("workflows.steps.step4_offer.trigger.step4_handler")
 
 
 def _base_event_entry() -> dict:

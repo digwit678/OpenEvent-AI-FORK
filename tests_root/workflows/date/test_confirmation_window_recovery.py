@@ -32,7 +32,7 @@ def _event_entry_with_candidates(candidate_isos: list[str]) -> Dict[str, Any]:
 
 
 def test_resolve_confirmation_window_recovers_from_inverted_times(tmp_path: Path) -> None:
-    module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
+    module = importlib.import_module("workflows.steps.step2_date_confirmation.trigger.step2_handler")
 
     state = _build_state(tmp_path)
     state.user_info["date"] = "2027-03-12"
@@ -55,7 +55,7 @@ def test_resolve_confirmation_window_recovers_from_inverted_times(tmp_path: Path
 
 
 def test_relative_confirmation_accepts_weekday_only(tmp_path: Path) -> None:
-    module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
+    module = importlib.import_module("workflows.steps.step2_date_confirmation.trigger.step2_handler")
 
     state = _build_state(tmp_path)
     state.message.subject = "Re: Updated room options"
@@ -78,7 +78,7 @@ def test_relative_confirmation_accepts_weekday_only(tmp_path: Path) -> None:
 
 
 def test_relative_confirmation_handles_next_week_reference(tmp_path: Path) -> None:
-    module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
+    module = importlib.import_module("workflows.steps.step2_date_confirmation.trigger.step2_handler")
 
     state = _build_state(tmp_path)
     state.message.subject = "Re: New availability window"
@@ -99,7 +99,7 @@ def test_relative_confirmation_handles_next_week_reference(tmp_path: Path) -> No
 
 
 def test_relative_confirmation_handles_next_month_reference(tmp_path: Path) -> None:
-    module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
+    module = importlib.import_module("workflows.steps.step2_date_confirmation.trigger.step2_handler")
 
     state = _build_state(tmp_path)
     state.message.subject = "Re: Updated schedule"
@@ -122,7 +122,7 @@ def test_relative_confirmation_handles_next_month_reference(tmp_path: Path) -> N
 
 
 def test_relative_confirmation_handles_month_and_week_ordinal(tmp_path: Path) -> None:
-    module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
+    module = importlib.import_module("workflows.steps.step2_date_confirmation.trigger.step2_handler")
 
     state = _build_state(tmp_path)
     state.message.subject = "Re: Autumn dates"

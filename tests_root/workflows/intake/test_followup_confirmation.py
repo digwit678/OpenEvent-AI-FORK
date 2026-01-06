@@ -16,7 +16,7 @@ def _state(tmp_path: Path, db: dict, message: IncomingMessage) -> WorkflowState:
 
 
 def test_followup_date_confirmation_stays_in_automation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    intake_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
+    intake_module = importlib.import_module("workflows.steps.step1_intake.trigger.step1_handler")
 
     # Force the primary intent classifier to misclassify the short reply.
     monkeypatch.setattr(intake_module, "classify_intent", lambda _payload: (IntentLabel.NON_EVENT, 0.2))
@@ -70,7 +70,7 @@ def test_followup_confirmation_with_awaiting_client_response_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    intake_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
+    intake_module = importlib.import_module("workflows.steps.step1_intake.trigger.step1_handler")
 
     monkeypatch.setattr(intake_module, "classify_intent", lambda _payload: (IntentLabel.NON_EVENT, 0.2))
     monkeypatch.setattr(

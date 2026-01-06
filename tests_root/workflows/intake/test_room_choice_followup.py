@@ -24,7 +24,7 @@ def test_room_choice_reply_routes_without_manual_review(
     Step1 now handles room choice detection and capture directly via _detect_room_choice,
     returning action='room_choice_captured' when a valid room selection is found.
     """
-    intake_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
+    intake_module = importlib.import_module("workflows.steps.step1_intake.trigger.step1_handler")
 
     # Force classifier to downgrade confidence so heuristics kick in.
     monkeypatch.setattr(intake_module, "classify_intent", lambda _payload: (IntentLabel.NON_EVENT, 0.2))

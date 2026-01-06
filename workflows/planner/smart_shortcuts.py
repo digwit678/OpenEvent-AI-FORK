@@ -19,7 +19,7 @@ from workflows.common.datetime_parse import build_window_iso
 import importlib
 from workflows.steps.step1_intake.condition.checks import suggest_dates
 
-date_process_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.process")
+date_process_module = importlib.import_module("workflows.steps.step2_date_confirmation.trigger.process")
 ConfirmationWindow = getattr(date_process_module, "ConfirmationWindow")
 from workflows.io.database import append_audit_entry, update_event_metadata
 from services.products import normalise_product_payload

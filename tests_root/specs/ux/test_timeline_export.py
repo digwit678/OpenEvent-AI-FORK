@@ -20,14 +20,14 @@ def test_debug_trace_contract(tmp_path, monkeypatch):
     monkeypatch.setenv("DEBUG_TRACE", "1")
     monkeypatch.setenv("DEBUG_TRACE_DIR", str(tmp_path / "sessions"))
 
-    timeline_module = importlib.import_module("backend.debug.timeline")
+    timeline_module = importlib.import_module("debug.timeline")
     importlib.reload(timeline_module)
-    intake_trigger_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
+    intake_trigger_module = importlib.import_module("workflows.steps.step1_intake.trigger.step1_handler")
     monkeypatch.setattr(intake_trigger_module, "classify_intent", lambda _payload: (IntentLabel.EVENT_REQUEST, 0.99))
     monkeypatch.setattr(intake_trigger_module, "extract_user_information", lambda _payload: {"participants": 30, "event_date": None, "vague_month": "February", "vague_weekday": "Saturday", "vague_time_of_day": "evening"})
 
     # Reload main to ensure debug route is registered with the env toggle.
-    main = importlib.import_module("backend.main")
+    main = importlib.import_module("main")
     importlib.reload(main)
 
     thread_id = "trace-contract-thread"
@@ -75,7 +75,7 @@ def test_debug_trace_contract(tmp_path, monkeypatch):
     state.user_info = {"shortcut_capacity_ok": True}
     state.current_step = 3
 
-    room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
+    room_module = importlib.import_module("workflows.steps.step3_room_availability.trigger.step3_handler")
     monkeypatch.setattr(room_module, "evaluate_room_statuses", lambda *_: [{"Room A": "Available"}])
     monkeypatch.setattr(room_module, "_needs_better_room_alternatives", lambda *_: False)
 

@@ -9,7 +9,7 @@ from workflows.common.types import IncomingMessage, WorkflowState
 
 
 def test_curly_apostrophe_acceptance_routes_to_hil(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    intake_module = importlib.import_module("backend.workflows.steps.step1_intake.trigger.step1_handler")
+    intake_module = importlib.import_module("workflows.steps.step1_intake.trigger.step1_handler")
 
     # Force classifier to downgrade the intent so the heuristic must detect acceptance.
     monkeypatch.setattr(intake_module, "classify_intent", lambda _payload: (IntentLabel.NON_EVENT, 0.2))

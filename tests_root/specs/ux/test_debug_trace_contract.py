@@ -11,7 +11,7 @@ THREAD_ID = "contract-thread"
 
 def _reload_main(monkeypatch) -> Any:
     monkeypatch.setenv("DEBUG_TRACE", "1")
-    module = importlib.import_module("backend.main")
+    module = importlib.import_module("main")
     return importlib.reload(module)
 
 

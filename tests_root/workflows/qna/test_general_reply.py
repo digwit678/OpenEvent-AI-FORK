@@ -11,8 +11,8 @@ from workflows.common import general_qna
 from workflows.common.general_qna import enrich_general_qna_step2, render_general_qna_reply
 from workflows.steps.step2_date_confirmation.trigger.step2_handler import _present_general_room_qna
 
-date_process_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
-general_qna_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.general_qna")
+date_process_module = importlib.import_module("workflows.steps.step2_date_confirmation.trigger.step2_handler")
+general_qna_module = importlib.import_module("workflows.steps.step2_date_confirmation.trigger.general_qna")
 
 
 @pytest.fixture

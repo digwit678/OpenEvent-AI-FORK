@@ -15,11 +15,11 @@ def _reload_main() -> Any:
         del sys.modules[mod]
 
     # Reload settings first (to pick up new env var)
-    settings = importlib.import_module("backend.debug.settings")
+    settings = importlib.import_module("debug.settings")
     importlib.reload(settings)
 
     # Then reload main (which includes the routers)
-    module = importlib.import_module("backend.main")
+    module = importlib.import_module("main")
     return importlib.reload(module)
 
 

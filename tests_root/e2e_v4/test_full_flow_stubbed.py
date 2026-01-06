@@ -12,7 +12,7 @@ from workflows.steps.step3_room_availability.trigger.step3_handler import proces
 from workflows.steps.step4_offer.trigger.step4_handler import process as offer_process
 import importlib
 
-room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
+room_module = importlib.import_module("workflows.steps.step3_room_availability.trigger.step3_handler")
 
 
 def _build_state(tmp_path: Path) -> WorkflowState:

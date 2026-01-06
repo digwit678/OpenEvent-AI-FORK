@@ -18,7 +18,7 @@ from domain import IntentLabel
 from llm.client import get_openai_client
 
 try:  # pragma: no cover - optional dependency resolved at runtime
-    import google.generativeai as genai  # type: ignore
+    import google.genai as genai  # type: ignore
 except Exception:  # pragma: no cover - library may be unavailable in tests
     genai = None  # type: ignore
 

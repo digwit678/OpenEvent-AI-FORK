@@ -13,7 +13,7 @@ from workflows.steps.step4_offer.trigger.step4_handler import process as offer_p
 
 from ...utils.timezone import freeze_time
 
-room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
+room_module = importlib.import_module("workflows.steps.step3_room_availability.trigger.step3_handler")
 from workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
 from workflows.common.types import GroupResult
 
