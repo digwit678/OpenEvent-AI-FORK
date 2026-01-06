@@ -85,8 +85,16 @@ def explain_step7_gate(event_entry: Dict[str, Any]) -> Dict[str, Any]:
         missing.append("offer_status")
 
     event_data = event_entry.get("event_data") or {}
-    company = str(event_data.get("Company") or "").strip()
-    billing_address = str(event_data.get("Billing Address") or "").strip()
+    # Check canonical event_data fields first, then fall back to captured.billing
+    captured_billing = (event_entry.get("captured") or {}).get("billing") or {}
+    company = (
+        str(event_data.get("Company") or "").strip()
+        or str(captured_billing.get("company") or "").strip()
+    )
+    billing_address = (
+        str(event_data.get("Billing Address") or "").strip()
+        or str(captured_billing.get("address") or "").strip()
+    )
 
     if not company:
         missing.append("billing.company")

@@ -318,11 +318,8 @@ def test_out_of_context_should_still_persist_step1_updates(tmp_path: Path, monke
     assert "m-out-of-context" in (event_entry.get("msgs") or []), event_entry
 
 
-@pytest.mark.xfail(
-    reason="Step7 gatekeeping only checks canonical event_data fields and ignores captured billing/company values.",
-    strict=False,
-)
 def test_step7_gatekeeper_should_treat_captured_billing_as_ready() -> None:
+    """Fixed: Gatekeeper now checks captured.billing as fallback for event_data (Jan 2026)."""
     event_entry = {
         "date_confirmed": True,
         "chosen_date": "12.05.2026",
