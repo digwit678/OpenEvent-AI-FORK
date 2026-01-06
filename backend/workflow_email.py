@@ -14,7 +14,7 @@ from backend.workflows.common.types import GroupResult
 from backend.workflows.steps import step1_intake as intake
 # Step handlers moved to runtime/router.py (W3 extraction)
 from backend.workflows.io import database as db_io
-from backend.workflows.io.database import update_event_metadata
+from backend.workflows.io.database import update_event_metadata, FileLock
 from backend.workflows.io import tasks as task_io
 from backend.workflows.io.integration.config import is_hil_all_replies_enabled
 from backend.workflows.llm import adapter as llm_adapter
@@ -335,18 +335,21 @@ def _persist_if_needed(state: WorkflowState, path: Path, lock_path: Path) -> Non
         state.extras["_pending_save"] = True
 
 
-def _flush_pending_save(state: WorkflowState, path: Path, lock_path: Path) -> None:
+def _flush_pending_save(state: WorkflowState, path: Path, lock_path: Path, *, _lock_held: bool = False) -> None:
     """[OpenEvent Database] Flush debounced writes at the end of the turn."""
 
     if state.extras.pop("_pending_save", False):
-        db_io.save_db(state.db, path, lock_path=lock_path)
+        db_io.save_db(state.db, path, _lock_held=_lock_held)
 
 
 def _flush_and_finalize(result: GroupResult, state: WorkflowState, path: Path, lock_path: Path) -> Dict[str, Any]:
-    """Persist pending state and normalise the outgoing payload."""
+    """Persist pending state and normalise the outgoing payload.
+
+    Note: This is always called from within _process_msg_locked, so the DB lock is held.
+    """
 
     output = _finalize_output(result, state)
-    _flush_pending_save(state, path, lock_path)
+    _flush_pending_save(state, path, lock_path, _lock_held=True)
     return output
 
 
@@ -362,7 +365,15 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     # Resolve tenant-aware path (uses X-Team-Id header when TENANT_HEADER_ENABLED=1)
     path = _resolve_tenant_db_path(Path(db_path))
     lock_path = _resolve_lock_path(path)
-    db = db_io.load_db(path, lock_path=lock_path)
+
+    # Hold DB lock for entire read-modify-write cycle to prevent concurrent update loss
+    with FileLock(lock_path):
+        return _process_msg_locked(msg, path, lock_path)
+
+
+def _process_msg_locked(msg: Dict[str, Any], path: Path, lock_path: Path) -> Dict[str, Any]:
+    """Internal: process message while holding DB lock."""
+    db = db_io.load_db(path, _lock_held=True)  # Lock already held by process_msg
 
     message = IncomingMessage.from_dict(msg)
     state = WorkflowState(message=message, db_path=path, db=db)

@@ -18,7 +18,7 @@ from backend.utils.calendar_events import create_calendar_event
 __workflow_role__ = "Database"
 
 
-LOCK_TIMEOUT = 5.0
+LOCK_TIMEOUT = 60.0  # Allow up to 60s for message processing
 LOCK_SLEEP = 0.1
 STALE_LOCK_AGE_SECONDS = 300  # Consider lock stale if file is older than 5 minutes
 
@@ -49,7 +49,15 @@ def _cleanup_stale_lock(lock_path: Path) -> bool:
             content = f.read().strip()
 
         if not content:
-            # Empty lock file - likely corrupted, remove it
+            # Empty lock file - might be in process of being written (race condition)
+            # Check file age before removing - new files (<1s) might still be getting PID
+            try:
+                file_age = time.time() - lock_path.stat().st_mtime
+                if file_age < 1.0:
+                    # Lock file is very new - don't remove, might be getting written
+                    return False
+            except OSError:
+                pass  # File might have been removed already
             lock_path.unlink()
             logger.warning("Removed empty/corrupted lock file: %s", lock_path)
             return True
@@ -157,16 +165,29 @@ def lock_path_for(path: Path, default_lock: Optional[Path] = None) -> Path:
     return path.with_name(f".{path.name}.lock")
 
 
-def load_db(path: Path, lock_path: Optional[Path] = None) -> Dict[str, Any]:
-    """[OpenEvent Database] Load and validate the events database from disk."""
+def load_db(path: Path, lock_path: Optional[Path] = None, *, _lock_held: bool = False) -> Dict[str, Any]:
+    """[OpenEvent Database] Load and validate the events database from disk.
+
+    Args:
+        path: Path to the database JSON file
+        lock_path: Optional explicit lock path
+        _lock_held: If True, skip lock acquisition (caller already holds lock)
+    """
 
     path = Path(path)
     if not path.exists():
         return get_default_db()
-    lock_candidate = lock_path_for(path, lock_path)
-    with FileLock(lock_candidate):
+
+    def _do_load():
         with path.open("r", encoding="utf-8") as fh:
-            db = json_io.load(fh)
+            return json_io.load(fh)
+
+    if _lock_held:
+        db = _do_load()
+    else:
+        lock_candidate = lock_path_for(path, lock_path)
+        with FileLock(lock_candidate):
+            db = _do_load()
     if "events" not in db or not isinstance(db["events"], list):
         db["events"] = []
     if "clients" not in db or not isinstance(db["clients"], dict):
@@ -179,11 +200,17 @@ def load_db(path: Path, lock_path: Optional[Path] = None) -> Dict[str, Any]:
     return db
 
 
-def save_db(db: Dict[str, Any], path: Path, lock_path: Optional[Path] = None) -> None:
-    """[OpenEvent Database] Persist the database atomically with crash-safe semantics."""
+def save_db(db: Dict[str, Any], path: Path, lock_path: Optional[Path] = None, *, _lock_held: bool = False) -> None:
+    """[OpenEvent Database] Persist the database atomically with crash-safe semantics.
+
+    Args:
+        db: The database dict to persist
+        path: Path to the database JSON file
+        lock_path: Optional explicit lock path
+        _lock_held: If True, skip lock acquisition (caller already holds lock)
+    """
 
     path = Path(path)
-    lock_candidate = lock_path_for(path, lock_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     out_db = {
         "events": db.get("events", []),
@@ -191,7 +218,8 @@ def save_db(db: Dict[str, Any], path: Path, lock_path: Optional[Path] = None) ->
         "tasks": db.get("tasks", []),
         "config": db.get("config", {}),
     }
-    with FileLock(lock_candidate):
+
+    def _do_save():
         tmp_fd, tmp_path = tempfile.mkstemp(prefix=path.name, suffix=".tmp", dir=path.parent)
         try:
             with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
@@ -202,6 +230,13 @@ def save_db(db: Dict[str, Any], path: Path, lock_path: Optional[Path] = None) ->
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
+
+    if _lock_held:
+        _do_save()
+    else:
+        lock_candidate = lock_path_for(path, lock_path)
+        with FileLock(lock_candidate):
+            _do_save()
 
 
 def upsert_client(db: Dict[str, Any], email: str, name: Optional[str] = None) -> Dict[str, Any]:

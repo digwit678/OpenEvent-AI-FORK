@@ -334,11 +334,13 @@ def test_step7_gatekeeper_should_treat_captured_billing_as_ready() -> None:
     assert explain_step7_gate(event_entry)["ready"] is True
 
 
-@pytest.mark.xfail(
-    reason="DB lock is held only for load/save, not the full read-modify-write; concurrent turns can lose updates (last writer wins).",
-    strict=False,
-)
-def test_concurrent_process_msg_can_lose_updates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_concurrent_process_msg_should_not_lose_updates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fixed: process_msg now holds DB lock for entire read-modify-write cycle (Jan 2026).
+
+    Previously, concurrent process_msg calls could lose updates because the lock was
+    only held during individual load/save operations (last writer wins). Now the lock
+    is held for the entire process_msg duration, serializing concurrent access.
+    """
     from backend.workflow_email import process_msg
     from backend.workflows.io import database as db_io
 
@@ -357,29 +359,21 @@ def test_concurrent_process_msg_can_lose_updates(tmp_path: Path, monkeypatch: py
     )
     db_io.save_db(db, db_path, lock_path=db_io.lock_path_for(db_path))
 
-    original_load_db = db_io.load_db
-    barrier = threading.Barrier(2)
-
-    def load_db_with_barrier(path: Path, lock_path: Optional[Path] = None):  # type: ignore[override]
-        loaded = original_load_db(path, lock_path=lock_path)
-        barrier.wait()
-        return loaded
-
-    monkeypatch.setattr(db_io, "load_db", load_db_with_barrier)
-
     def worker(msg_id: str) -> None:
+        # Use different body text to avoid duplicate message detection
         process_msg(
             {
                 "msg_id": msg_id,
                 "from_name": "Client",
                 "from_email": "client@example.com",
                 "subject": "Re: booking",
-                "body": "Just checking in.",
+                "body": f"Just checking in for message {msg_id}.",  # Unique per message
                 "ts": "2026-01-01T00:00:00Z",
             },
             db_path=db_path,
         )
 
+    # Run two concurrent workers - with proper locking, both updates should persist
     t1 = threading.Thread(target=worker, args=("m1",))
     t2 = threading.Thread(target=worker, args=("m2",))
     t1.start()
@@ -387,9 +381,9 @@ def test_concurrent_process_msg_can_lose_updates(tmp_path: Path, monkeypatch: py
     t1.join()
     t2.join()
 
-    persisted = original_load_db(db_path, lock_path=db_io.lock_path_for(db_path))
+    persisted = db_io.load_db(db_path, lock_path=db_io.lock_path_for(db_path))
     msgs = persisted["events"][0].get("msgs") or []
-    assert set(msgs) == {"m1", "m2"}, msgs
+    assert set(msgs) == {"m1", "m2"}, f"Expected both messages to be persisted, got: {msgs}"
 
 
 def test_step1_can_overwrite_event_date_from_unanchored_date(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
