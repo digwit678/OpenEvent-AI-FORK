@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 from backend.debug import timeline
 from backend.debug.trace import BUS, REQUIREMENTS_MATCH_HELP, get_trace_summary
 from backend.workflow.state import get_thread_state
+from backend.workflow_email import load_db as wf_load_db
 
 REPORT_ROOT = Path(__file__).resolve().parents[2] / "tmp-debug" / "reports"
 
@@ -356,6 +357,28 @@ def _summary_as_of(
     return summary
 
 
+def _lookup_event_id(thread_id: str) -> Optional[str]:
+    """Look up event_id from database using thread_id.
+
+    Searches all team-specific event databases since we don't know the tenant context.
+    """
+    import glob
+    backend_dir = Path(__file__).resolve().parents[1]
+    db_pattern = str(backend_dir / "events*.json")
+
+    for db_file in glob.glob(db_pattern):
+        try:
+            with open(db_file) as f:
+                db = json.load(f)
+            events = db.get("events") or []
+            for event in events:
+                if event.get("thread_id") == thread_id:
+                    return event.get("event_id")
+        except Exception:
+            continue
+    return None
+
+
 def collect_trace_payload(
     thread_id: str,
     *,
@@ -385,6 +408,13 @@ def collect_trace_payload(
         confirmed = confirmed_map(state_snapshot)
         summary = get_trace_summary(thread_id)
         time_travel_meta = {"enabled": False}
+
+    # Add event_id from database if not already in state
+    if not state_snapshot.get("event_id"):
+        event_id = _lookup_event_id(thread_id)
+        if event_id:
+            state_snapshot = dict(state_snapshot)
+            state_snapshot["event_id"] = event_id
 
     filtered_events = filter_trace_events(raw_events, granularity, kinds)
     return {
