@@ -149,12 +149,20 @@ def _requirements_badges(
     badges: Dict[str, str] = {}
     score = 0.0
     for product in requested_products:
-        if product in {"u-shape", "u_shape", "ushape"}:
+        product_lower = product.lower().strip()
+        if product_lower in {"u-shape", "u_shape", "ushape"}:
             badge, value = _u_shape_badge(config, pax)
-        elif product in {"projector", "projection"}:
+        elif product_lower in {"projector", "projection", "beamer"}:
             badge, value = _projector_badge(config)
+        elif product_lower in {"flipchart", "flip chart", "flip charts", "flipcharts"}:
+            badge, value = _flipchart_badge(config)
+        elif product_lower in {"whiteboard", "white board", "whiteboards"}:
+            badge, value = _whiteboard_badge(config)
+        elif product_lower in {"microphone", "mic", "microphones", "mics"}:
+            badge, value = _microphone_badge(config)
         else:
-            badge, value = ("~", 0.0)
+            # Generic fallback - check features and equipment
+            badge, value = _generic_item_badge(config, product)
         badges[_canonical_product_key(product)] = badge
         score += value
     return badges, score
@@ -180,12 +188,92 @@ def _u_shape_badge(config: Dict[str, Any], pax: Optional[int]) -> Tuple[str, flo
     return "~", 0.5
 
 
+def _get_all_room_items(config: Dict[str, Any]) -> List[str]:
+    """
+    Get ALL items available in a room (both included and optional).
+
+    Combines 'features' and 'equipment' from room config into a single
+    searchable list of lowercase tokens.
+
+    Note: The data model uses 'features' and 'equipment' historically.
+    This function abstracts that into "all available items" for simpler logic.
+    """
+    room_amenities = _lower_tokens(config.get("features"))
+    room_technical_gear = _lower_tokens(config.get("equipment"))
+    return room_amenities + room_technical_gear
+
+
 def _projector_badge(config: Dict[str, Any]) -> Tuple[str, float]:
-    features = _lower_tokens(config.get("features"))
-    if any(token in {"projector", "beamer"} for token in features):
+    """Check if room has projector/beamer available."""
+    available_in_room = _get_all_room_items(config)
+    if any(token in {"projector", "beamer"} for token in available_in_room):
         return "✓", 1.0
-    if "screen" in features or "projection" in features:
+    if "screen" in available_in_room or "projection" in available_in_room:
         return "~", 0.5
+    return "✗", 0.0
+
+
+def _flipchart_badge(config: Dict[str, Any]) -> Tuple[str, float]:
+    """Check if room has flipchart available."""
+    available_in_room = _get_all_room_items(config)
+    # Match various spellings: "flip chart", "flipchart", "flip charts"
+    has_flipchart = any("flip" in token and "chart" in token for token in available_in_room)
+    if has_flipchart:
+        return "✓", 1.0
+    # Whiteboard as partial alternative
+    has_whiteboard = any("whiteboard" in token or "white board" in token for token in available_in_room)
+    if has_whiteboard:
+        return "~", 0.5
+    return "✗", 0.0
+
+
+def _whiteboard_badge(config: Dict[str, Any]) -> Tuple[str, float]:
+    """Check if room has whiteboard available."""
+    available_in_room = _get_all_room_items(config)
+    has_whiteboard = any("whiteboard" in token or "white board" in token for token in available_in_room)
+    if has_whiteboard:
+        return "✓", 1.0
+    # Flipchart as partial alternative
+    has_flipchart = any("flip" in token and "chart" in token for token in available_in_room)
+    if has_flipchart:
+        return "~", 0.5
+    return "✗", 0.0
+
+
+def _microphone_badge(config: Dict[str, Any]) -> Tuple[str, float]:
+    """Check if room has microphone available."""
+    available_in_room = _get_all_room_items(config)
+    has_mic = any("microphone" in token or "mic" in token for token in available_in_room)
+    if has_mic:
+        return "✓", 1.0
+    has_sound_system = any("sound system" in token or "sound_system" in token for token in available_in_room)
+    if has_sound_system:
+        return "~", 0.5
+    return "✗", 0.0
+
+
+def _generic_item_badge(config: Dict[str, Any], requested_item: str) -> Tuple[str, float]:
+    """
+    Generic check for any item requested by client.
+
+    Returns:
+        "✓" (1.0) - Item found in room (exact match)
+        "~" (0.5) - Partial match (item name is substring of available item)
+        "✗" (0.0) - Item not available in room
+    """
+    available_in_room = _get_all_room_items(config)
+    requested_item_lower = requested_item.lower().strip()
+
+    # Exact match in available items
+    if requested_item_lower in available_in_room:
+        return "✓", 1.0
+
+    # Partial match (requested item is substring of any available item)
+    for available_item in available_in_room:
+        if requested_item_lower in available_item:
+            return "~", 0.5
+
+    # Not available
     return "✗", 0.0
 
 
@@ -203,11 +291,18 @@ def _lower_tokens(values: Optional[Iterable[Any]]) -> List[str]:
 
 
 def _canonical_product_key(product: str) -> str:
+    """Normalize product names to canonical keys for consistent badge lookup."""
     token = str(product).strip().lower()
     if token in {"u_shape", "u-shape", "ushape"}:
         return "u-shape"
-    if token in {"projector", "projection"}:
+    if token in {"projector", "projection", "beamer"}:
         return "projector"
+    if token in {"flipchart", "flip chart", "flip charts", "flipcharts"}:
+        return "flipchart"
+    if token in {"whiteboard", "white board", "whiteboards"}:
+        return "whiteboard"
+    if token in {"microphone", "mic", "microphones", "mics"}:
+        return "microphone"
     return token
 
 
