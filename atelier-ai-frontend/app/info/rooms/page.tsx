@@ -76,9 +76,41 @@ function RoomsPageContent() {
           // Transform snapshot data to Room[] format
           const snapshotData = snapshot.data || {}
           const tableRows = snapshotData.table_rows || []
+          const verbalizerRooms = snapshotData.rooms || []
 
-          // If we have table_rows (full room data), use that
-          if (tableRows.length > 0) {
+          // Build a map of room statuses from table_rows
+          const statusByRoom: Record<string, string> = {}
+          for (const row of tableRows) {
+            const roomName = row.name || row.room
+            if (roomName && row.status) {
+              statusByRoom[roomName] = row.status
+            }
+          }
+
+          // Use verbalizerRooms as primary (has capacity), enrich with status from table_rows
+          if (verbalizerRooms.length > 0) {
+            const roomsFromVerbalizer = verbalizerRooms.map((room: any) => {
+              const roomName = room.name || room.id || 'Unknown'
+              // Build features from badges
+              const features = Object.entries(room.badges || {})
+                .filter(([_, v]) => v)
+                .map(([k, v]) => `${k}: ${v}`)
+
+              return {
+                name: roomName,
+                capacity: room.capacity || 0,
+                features,
+                status: (statusByRoom[roomName] || 'Available') as 'Available' | 'Option' | 'Unavailable',
+                price: room.price || 0,
+                description: room.hint || '',
+                equipment: room.requirements?.matched || [],
+                layout_options: room.alternatives || [],
+                menus: [],
+              }
+            })
+            setRooms(roomsFromVerbalizer)
+          } else if (tableRows.length > 0) {
+            // Fallback to table_rows only if no rooms array
             const roomsFromSnapshot = tableRows.map((row: any) => ({
               name: row.name || row.room || 'Unknown',
               capacity: row.capacity || 0,
@@ -91,23 +123,6 @@ function RoomsPageContent() {
               menus: row.menus || [],
             }))
             setRooms(roomsFromSnapshot)
-          } else {
-            // Fall back to verbalizer_rooms format
-            const verbalizerRooms = snapshotData.rooms || []
-            const roomsFromVerbalizer = verbalizerRooms.map((room: any) => ({
-              name: room.name || room.id || 'Unknown',
-              capacity: room.capacity || 0,
-              features: Object.entries(room.badges || {})
-                .filter(([_, v]) => v)
-                .map(([k, v]) => `${k}: ${v}`),
-              status: 'Available' as const,
-              price: 0,
-              description: room.hint || '',
-              equipment: room.requirements?.matched || [],
-              layout_options: room.alternatives || [],
-              menus: [],
-            }))
-            setRooms(roomsFromVerbalizer)
           }
           setLoading(false)
         })

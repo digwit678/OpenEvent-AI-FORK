@@ -2118,7 +2118,7 @@ def _handle_conflict_insist_with_reason(
         )
 
     # Return the message from handle_hard_conflict
-    body = result.get("message", "I've forwarded your request to our manager.")
+    body = result.get("message", "I'm reviewing your request and will get back to you shortly.")
     body_with_footer = append_footer(
         body,
         step=3,

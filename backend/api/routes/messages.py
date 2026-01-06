@@ -153,8 +153,7 @@ def _extract_workflow_reply(wf_res: Dict[str, Any]) -> tuple[str, List[Dict[str,
         "offer_waiting_hil",
     }:
         waiting_text = (
-            "Thanks for confirming - I've sent the full offer to our manager for approval. "
-            "I'll let you know as soon as it's reviewed."
+            "Thanks for confirming! I'll review your booking details and get back to you shortly."
         )
         return waiting_text, wf_res.get("actions") or []
 

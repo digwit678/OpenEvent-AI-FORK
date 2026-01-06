@@ -255,7 +255,7 @@ def _build_workflow_section(
         "room_selected": "Room Selected",
         "offer_sent": "Offer Sent",
         "detour_initiated": "Change Request Received",
-        "hil_forwarded": "Forwarded to Manager",
+        "hil_forwarded": "Pending Review",
     }
     header = header_map.get(action, "Update")
 
