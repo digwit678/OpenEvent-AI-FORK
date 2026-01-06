@@ -89,7 +89,10 @@ def update_calendar_event_status(event_id: str, old_status: str, new_status: str
 
 def _log_calendar_event(event_data: Dict[str, Any], action: str = "create") -> None:
     """Log calendar events to file for testing."""
-    log_dir = "tmp-cache/calendar_events"
+    if os.getenv("VERCEL") == "1":
+        log_dir = "/tmp/calendar_events"
+    else:
+        log_dir = "tmp-cache/calendar_events"
     os.makedirs(log_dir, exist_ok=True)
 
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
