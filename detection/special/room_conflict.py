@@ -56,8 +56,8 @@ from datetime import datetime
 from enum import Enum
 import logging
 
-from backend.services.rooms import get_room
-from backend.workflows.common.time_window import TimeWindow, windows_overlap
+from services.rooms import get_room
+from workflows.common.time_window import TimeWindow, windows_overlap
 
 logger = logging.getLogger(__name__)
 

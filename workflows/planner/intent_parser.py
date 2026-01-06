@@ -20,8 +20,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
-from backend.detection.special.room_conflict import (
+from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from detection.special.room_conflict import (
     ConflictType,
     detect_conflict_type,
 )

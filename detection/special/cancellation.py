@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from typing import Optional, Tuple
 
-from backend.detection.keywords.buckets import is_decline, detect_language
+from detection.keywords.buckets import is_decline, detect_language
 
 
 # Strong cancellation signals - explicit intent to cancel the EVENT (not just decline an offer)

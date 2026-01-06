@@ -15,7 +15,7 @@ in step1_handler.py because they depend on linked_event workflow state.
 import re
 
 from .normalization import normalize_quotes
-from backend.detection.keywords.buckets import is_confirmation, detect_language
+from detection.keywords.buckets import is_confirmation, detect_language
 
 
 def looks_like_offer_acceptance(text: str) -> bool:

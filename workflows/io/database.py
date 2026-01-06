@@ -815,7 +815,7 @@ def get_site_visits_on_date(
     Returns:
         List of event entries that have site visits overlapping with the query
     """
-    from backend.workflows.common.time_window import TimeWindow
+    from workflows.common.time_window import TimeWindow
 
     visits: List[Dict[str, Any]] = []
 

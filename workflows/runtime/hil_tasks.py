@@ -46,7 +46,7 @@ def _get_default_db_path() -> Path:
 
     # Resolve tenant-aware path
     try:
-        from backend.workflows.io.integration.config import get_team_id
+        from workflows.io.integration.config import get_team_id
 
         team_id = get_team_id()
         if team_id:
