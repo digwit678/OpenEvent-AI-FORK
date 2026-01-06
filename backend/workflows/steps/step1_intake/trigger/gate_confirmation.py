@@ -21,6 +21,9 @@ def looks_like_offer_acceptance(text: str) -> bool:
     """
     Heuristic: short, declarative acknowledgements without question marks
     that contain approval verbs.
+
+    Excludes date confirmations ("We confirm the date...") which should be
+    handled by the date confirmation flow, not offer acceptance.
     """
 
     if not text:
@@ -30,6 +33,15 @@ def looks_like_offer_acceptance(text: str) -> bool:
         return False
     if len(normalized) > 200:
         return False
+
+    # Exclude date-related confirmations (handled by date confirmation flow)
+    date_confirmation_re = re.compile(
+        r"\bconfirm(?:ed|s)?\b.*\b(?:date|day|time|datum)\b|"
+        r"\b(?:date|day|time|datum)\b.*\bconfirm(?:ed|s)?\b",
+        re.IGNORECASE
+    )
+    if date_confirmation_re.search(normalized):
+        return False  # This is a date confirmation, not offer acceptance
 
     accept_re = re.compile(
         r"\b("

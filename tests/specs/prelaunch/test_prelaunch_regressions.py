@@ -215,11 +215,8 @@ def test_step7_deposit_paid_with_payment_date_should_not_detour_to_step2() -> No
     assert result.action != "structural_change_detour", result.merged()
 
 
-@pytest.mark.xfail(
-    reason="Step1 acceptance heuristic can misclassify a date-confirmation message as offer acceptance and push to Step5/HIL.",
-    strict=False,
-)
 def test_step1_confirm_date_should_not_trigger_offer_acceptance(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fixed: looks_like_offer_acceptance now excludes date confirmations (Jan 2026)."""
     monkeypatch.setenv("AGENT_MODE", "stub")
     monkeypatch.setattr(step1_intake, "classify_intent", lambda _payload: (IntentLabel.EVENT_REQUEST, 0.99))
     monkeypatch.setattr(
