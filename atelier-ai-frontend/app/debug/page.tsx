@@ -6,6 +6,7 @@ import NavCard from '../components/debug/NavCard';
 import StatusBadges from '../components/debug/StatusBadges';
 import ProblemBanner, { detectProblems, Problem } from '../components/debug/ProblemBanner';
 import QuickDiagnosis from '../components/debug/QuickDiagnosis';
+import CancelEventButton from '../components/CancelEventButton';
 
 interface TraceSummary {
   current_step_major?: number;
@@ -47,6 +48,18 @@ function DebugLandingContent() {
   const [summary, setSummary] = useState<TraceSummary | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [dismissedProblems, setDismissedProblems] = useState<Set<string>>(new Set());
+
+  // Extract event_id from state for cancellation button
+  const eventId = useMemo(() => {
+    return (state.event_id as string) || (state.eventId as string) || null;
+  }, [state]);
+
+  // Check if site visit is scheduled (step >= 7 or flag set)
+  const hasSiteVisit = useMemo(() => {
+    const step = summary?.current_step_major;
+    const siteVisitFlag = state.site_visit_scheduled as boolean;
+    return (step && step >= 7) || siteVisitFlag || false;
+  }, [summary, state]);
 
   useEffect(() => {
     if (!threadId) {
@@ -286,6 +299,19 @@ function DebugLandingContent() {
           className="flex flex-wrap gap-3 pt-4 border-t border-slate-800"
           style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', paddingTop: '16px', borderTop: '1px solid #1e293b' }}
         >
+          {/* Cancel Event Button */}
+          {eventId && (
+            <CancelEventButton
+              eventId={eventId}
+              hasSiteVisit={hasSiteVisit}
+              currentStep={summary?.current_step_major}
+              darkTheme={true}
+              onCancel={(result) => {
+                console.log('Event cancelled:', result);
+                // Could add a toast notification here
+              }}
+            />
+          )}
           <a
             href={threadId ? `/api/debug/threads/${encodeURIComponent(threadId)}/llm-diagnosis` : '#'}
             target="_blank"

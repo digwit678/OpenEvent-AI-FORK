@@ -30,6 +30,8 @@ interface CancelEventButtonProps {
   onCancel?: (result: CancelResult) => void;
   /** Compact mode (just shows button, dialog on click) */
   compact?: boolean;
+  /** Use dark theme (for debug pages) */
+  darkTheme?: boolean;
 }
 
 interface CancelResult {
@@ -47,6 +49,7 @@ export default function CancelEventButton({
   currentStep,
   onCancel,
   compact = true,
+  darkTheme = false,
 }: CancelEventButtonProps) {
   const [showDialog, setShowDialog] = useState(false);
   const [confirmText, setConfirmText] = useState('');
@@ -111,12 +114,33 @@ export default function CancelEventButton({
     setResult(null);
   }, [isCancelling]);
 
+  // Theme-aware styles
+  const buttonStyle = darkTheme
+    ? "px-3 py-1.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/20 border border-red-500/30 rounded transition"
+    : "px-3 py-1.5 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 border border-red-300 rounded transition";
+
+  const dialogBgStyle = darkTheme
+    ? "bg-slate-800 border border-slate-700"
+    : "bg-white";
+
+  const textStyle = darkTheme
+    ? "text-slate-100"
+    : "text-gray-800";
+
+  const mutedTextStyle = darkTheme
+    ? "text-slate-400"
+    : "text-gray-500";
+
+  const inputStyle = darkTheme
+    ? "bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400"
+    : "border-gray-300";
+
   return (
     <>
       {/* Trigger Button */}
       <button
         onClick={() => setShowDialog(true)}
-        className="px-3 py-1.5 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 border border-red-300 rounded transition"
+        className={buttonStyle}
         title="Cancel this event"
       >
         Cancel Event
@@ -130,17 +154,17 @@ export default function CancelEventButton({
           role="presentation"
         >
           <div
-            className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4"
+            className={`${dialogBgStyle} rounded-lg shadow-xl max-w-md w-full mx-4`}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-labelledby="cancel-dialog-title"
           >
             {/* Header */}
-            <div className="p-4 border-b border-gray-200">
-              <h2 id="cancel-dialog-title" className="text-lg font-semibold text-gray-800">
+            <div className={`p-4 border-b ${darkTheme ? 'border-slate-700' : 'border-gray-200'}`}>
+              <h2 id="cancel-dialog-title" className={`text-lg font-semibold ${textStyle}`}>
                 Cancel Event
               </h2>
-              <p className="text-sm text-gray-500 mt-1">
+              <p className={`text-sm ${mutedTextStyle} mt-1`}>
                 This action cannot be undone. The event will be archived.
               </p>
             </div>
@@ -183,7 +207,7 @@ export default function CancelEventButton({
                 <>
                   {/* Reason (optional) */}
                   <div>
-                    <label htmlFor="cancel-reason" className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="cancel-reason" className={`block text-sm font-medium ${darkTheme ? 'text-slate-300' : 'text-gray-700'} mb-1`}>
                       Reason for cancellation (optional)
                     </label>
                     <textarea
@@ -192,15 +216,15 @@ export default function CancelEventButton({
                       onChange={(e) => setReason(e.target.value)}
                       placeholder="Client requested cancellation..."
                       rows={2}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      className={`w-full px-3 py-2 text-sm border rounded focus:ring-2 focus:ring-red-500 focus:border-red-500 ${inputStyle}`}
                       disabled={isCancelling}
                     />
                   </div>
 
                   {/* Confirmation input */}
                   <div>
-                    <label htmlFor="cancel-confirm" className="block text-sm font-medium text-gray-700 mb-1">
-                      Type <span className="font-mono bg-gray-100 px-1 rounded">CANCEL</span> to confirm
+                    <label htmlFor="cancel-confirm" className={`block text-sm font-medium ${darkTheme ? 'text-slate-300' : 'text-gray-700'} mb-1`}>
+                      Type <span className={`font-mono px-1 rounded ${darkTheme ? 'bg-slate-600' : 'bg-gray-100'}`}>CANCEL</span> to confirm
                     </label>
                     <input
                       id="cancel-confirm"
@@ -210,16 +234,16 @@ export default function CancelEventButton({
                       placeholder="CANCEL"
                       className={`w-full px-3 py-2 text-sm border rounded focus:ring-2 focus:ring-red-500 focus:border-red-500 font-mono ${
                         confirmText && !isConfirmValid
-                          ? 'border-red-300 bg-red-50'
+                          ? darkTheme ? 'border-red-500/50 bg-red-500/10' : 'border-red-300 bg-red-50'
                           : isConfirmValid
-                          ? 'border-green-300 bg-green-50'
-                          : 'border-gray-300'
+                          ? darkTheme ? 'border-green-500/50 bg-green-500/10' : 'border-green-300 bg-green-50'
+                          : inputStyle
                       }`}
                       disabled={isCancelling}
                       autoComplete="off"
                     />
                     {confirmText && !isConfirmValid && (
-                      <p className="text-xs text-red-600 mt-1">
+                      <p className="text-xs text-red-500 mt-1">
                         Please type CANCEL exactly (case-sensitive)
                       </p>
                     )}
@@ -229,11 +253,15 @@ export default function CancelEventButton({
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-gray-200 flex gap-2">
+            <div className={`p-4 border-t ${darkTheme ? 'border-slate-700' : 'border-gray-200'} flex gap-2`}>
               <button
                 onClick={handleClose}
                 disabled={isCancelling}
-                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition disabled:opacity-50"
+                className={`flex-1 px-4 py-2 text-sm font-medium rounded transition disabled:opacity-50 ${
+                  darkTheme
+                    ? 'text-slate-300 bg-slate-700 border border-slate-600 hover:bg-slate-600'
+                    : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                }`}
               >
                 {result ? 'Close' : 'Back'}
               </button>
