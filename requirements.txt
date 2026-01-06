@@ -4,13 +4,17 @@
 # Core web framework
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
-pydantic>=2.0.0
+pydantic[email]>=2.0.0
+email-validator>=2.0.0
 
 # OpenAI integration
 openai>=1.0.0
 
 # Google Gemini integration (optional - for AGENT_MODE=gemini)
 google-generativeai>=0.8.0
+
+# Form data support
+python-multipart>=0.0.6
 
 # Environment and configuration
 python-dotenv>=1.0.0

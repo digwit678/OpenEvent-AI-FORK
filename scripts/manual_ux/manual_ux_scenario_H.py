@@ -14,8 +14,8 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from backend.workflow_email import load_db, process_msg, save_db
-from backend.workflows.llm import adapter as llm_adapter
+from workflow_email import load_db, process_msg, save_db
+from workflows.llm import adapter as llm_adapter
 
 DB_PATH = Path(__file__).resolve().parents[1] / "manual_ux_scenario_H.json"
 

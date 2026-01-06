@@ -2,7 +2,7 @@
 
 All endpoints tested without frontend.
 
-**Last updated:** 2026-01-06 (added cancel endpoint + 25 config endpoints, total: 69)
+**Last updated:** 2026-01-05 (added 32 new endpoints, total: 45)
 
 ---
 
@@ -681,437 +681,6 @@ RESULT:   PASS (when ENABLE_DANGEROUS_ENDPOINTS=true)
 
 ---
 
-### SECTION 10: Event Cancellation
-
----
-
-### TEST 44: POST /api/event/{event_id}/cancel
-```
-INPUT:    curl -X POST http://localhost:8000/api/event/evt_abc123/cancel \
-            -H "Content-Type: application/json" \
-            -H "X-Team-Id: team-demo" \
-            -d '{"event_id":"evt_abc123","confirmation":"CANCEL","reason":"Client changed plans"}'
-
-EXPECTED: {status: "cancelled", event_id, previous_step, had_site_visit, cancellation_type, archived_at}
-
-OUTPUT:   {
-            "status": "cancelled",
-            "event_id": "evt_abc123",
-            "previous_step": 4,
-            "had_site_visit": false,
-            "cancellation_type": "standard",
-            "archived_at": "2026-01-06T..."
-          }
-
-NOTES:    Manager action to cancel an event. Requires exact "CANCEL" confirmation string.
-          Event is archived (not deleted) for audit trail. Sets thread_state to "Cancelled".
-RESULT:   PASS
-```
-
----
-
-### SECTION 11: Extended Configuration
-
----
-
-### TEST 45: GET /api/config/llm-provider
-```
-INPUT:    curl http://localhost:8000/api/config/llm-provider \
-            -H "X-Team-Id: team-demo"
-
-EXPECTED: {intent_provider, entity_provider, verbalization_provider, source}
-
-OUTPUT:   {
-            "intent_provider": "gemini",
-            "entity_provider": "gemini",
-            "verbalization_provider": "openai",
-            "source": "environment"
-          }
-
-NOTES:    Returns LLM provider settings for hybrid mode.
-          Default: Gemini for extraction (75% cheaper), OpenAI for verbalization (better quality).
-RESULT:   PASS
-```
-
----
-
-### TEST 46: POST /api/config/llm-provider
-```
-INPUT:    curl -X POST http://localhost:8000/api/config/llm-provider \
-            -H "Content-Type: application/json" \
-            -H "X-Team-Id: team-demo" \
-            -d '{"intent_provider":"gemini","entity_provider":"gemini","verbalization_provider":"openai"}'
-
-EXPECTED: {status: "ok", intent_provider, entity_provider, verbalization_provider, message}
-
-NOTES:    Valid providers: "openai", "gemini", "stub"
-RESULT:   PASS
-```
-
----
-
-### TEST 47: GET /api/config/hybrid-enforcement
-```
-INPUT:    curl http://localhost:8000/api/config/hybrid-enforcement \
-            -H "X-Team-Id: team-demo"
-
-EXPECTED: {enabled, is_hybrid, source, providers, status}
-
-OUTPUT:   {
-            "enabled": true,
-            "is_hybrid": true,
-            "source": "default",
-            "providers": {...},
-            "status": "✅ OK"
-          }
-
-NOTES:    Checks if system is correctly running in hybrid LLM mode (both Gemini + OpenAI).
-RESULT:   PASS
-```
-
----
-
-### TEST 48: POST /api/config/hybrid-enforcement
-```
-INPUT:    curl -X POST http://localhost:8000/api/config/hybrid-enforcement \
-            -H "Content-Type: application/json" \
-            -H "X-Team-Id: team-demo" \
-            -d '{"enabled": false}'
-
-EXPECTED: {status: "ok", enabled, is_hybrid, message}
-
-NOTES:    ⚠️ WARNING: Disabling enforcement is NOT recommended for production.
-          Only disable as emergency fallback if one LLM provider is unavailable.
-RESULT:   PASS
-```
-
----
-
-### TEST 49: GET /api/config/pre-filter
-```
-INPUT:    curl http://localhost:8000/api/config/pre-filter \
-            -H "X-Team-Id: team-demo"
-
-EXPECTED: {mode, source}
-
-OUTPUT:   {"mode": "legacy", "source": "default"}
-
-NOTES:    Pre-filter modes: "enhanced" (full keyword detection) or "legacy" (basic).
-RESULT:   PASS
-```
-
----
-
-### TEST 50: POST /api/config/pre-filter
-```
-INPUT:    curl -X POST http://localhost:8000/api/config/pre-filter \
-            -H "Content-Type: application/json" \
-            -H "X-Team-Id: team-demo" \
-            -d '{"mode": "enhanced"}'
-
-EXPECTED: {status: "ok", mode, message}
-
-NOTES:    Toggle between enhanced (can skip LLM calls) and legacy (always runs LLM).
-RESULT:   PASS
-```
-
----
-
-### TEST 51: GET /api/config/detection-mode
-```
-INPUT:    curl http://localhost:8000/api/config/detection-mode \
-            -H "X-Team-Id: team-demo"
-
-EXPECTED: {mode, source}
-
-OUTPUT:   {"mode": "unified", "source": "environment"}
-
-NOTES:    Detection modes: "unified" (ONE LLM call, ~$0.004/msg) or "legacy" (separate calls, ~$0.013/msg).
-RESULT:   PASS
-```
-
----
-
-### TEST 52: POST /api/config/detection-mode
-```
-INPUT:    curl -X POST http://localhost:8000/api/config/detection-mode \
-            -H "Content-Type: application/json" \
-            -H "X-Team-Id: team-demo" \
-            -d '{"mode": "unified"}'
-
-EXPECTED: {status: "ok", mode, message}
-
-NOTES:    "unified" is recommended for best accuracy and cost savings.
-RESULT:   PASS
-```
-
----
-
-### TEST 53: GET /api/config/hil-email
-```
-INPUT:    curl http://localhost:8000/api/config/hil-email \
-            -H "X-Team-Id: team-demo"
-
-EXPECTED: {enabled, manager_email, smtp_configured, smtp_host, from_email, source}
-
-OUTPUT:   {
-            "enabled": false,
-            "manager_email": null,
-            "smtp_configured": false,
-            ...
-          }
-
-NOTES:    HIL email sends notifications to Event Manager when tasks need approval.
-RESULT:   PASS
-```
-
----
-
-### TEST 54: POST /api/config/hil-email
-```
-INPUT:    curl -X POST http://localhost:8000/api/config/hil-email \
-            -H "Content-Type: application/json" \
-            -H "X-Team-Id: team-demo" \
-            -d '{"enabled": true, "manager_email": "manager@venue.com"}'
-
-EXPECTED: {status: "ok", enabled, manager_email, message}
-
-NOTES:    Configure email notifications for HIL tasks. In production, manager_email
-          should come from Supabase auth.
-RESULT:   PASS
-```
-
----
-
-### TEST 55: POST /api/config/hil-email/test
-```
-INPUT:    curl -X POST http://localhost:8000/api/config/hil-email/test \
-            -H "X-Team-Id: team-demo"
-
-EXPECTED: {success, error?} or full notification result
-
-NOTES:    Send a test HIL email notification to verify configuration.
-RESULT:   PASS
-```
-
----
-
-### TEST 56: GET /api/config/venue
-```
-INPUT:    curl http://localhost:8000/api/config/venue \
-            -H "X-Team-Id: team-demo"
-
-EXPECTED: {name, city, timezone, currency_code, operating_hours, from_email, from_name, frontend_url, source}
-
-OUTPUT:   {
-            "name": "Das Atelier",
-            "city": "Zurich",
-            "timezone": "Europe/Zurich",
-            "currency_code": "CHF",
-            ...
-          }
-
-NOTES:    Venue settings for multi-tenant / white-label deployments.
-RESULT:   PASS
-```
-
----
-
-### TEST 57: POST /api/config/venue
-```
-INPUT:    curl -X POST http://localhost:8000/api/config/venue \
-            -H "Content-Type: application/json" \
-            -H "X-Team-Id: team-demo" \
-            -d '{"name": "My Venue", "city": "Geneva", "currency_code": "EUR"}'
-
-EXPECTED: {status: "ok", config, message}
-
-NOTES:    Only provided fields are updated. Affects AI prompts, emails, and currency formatting.
-RESULT:   PASS
-```
-
----
-
-### TEST 58: GET /api/config/site-visit
-```
-INPUT:    curl http://localhost:8000/api/config/site-visit \
-            -H "X-Team-Id: team-demo"
-
-EXPECTED: {blocked_dates, default_slots, weekdays_only, min_days_ahead, source}
-
-OUTPUT:   {
-            "blocked_dates": [],
-            "default_slots": [10, 14, 16],
-            "weekdays_only": true,
-            "min_days_ahead": 2,
-            "source": "database"
-          }
-
-NOTES:    Settings for site visit scheduling.
-RESULT:   PASS
-```
-
----
-
-### TEST 59: POST /api/config/site-visit
-```
-INPUT:    curl -X POST http://localhost:8000/api/config/site-visit \
-            -H "Content-Type: application/json" \
-            -H "X-Team-Id: team-demo" \
-            -d '{"blocked_dates": ["2026-01-01", "2026-12-25"], "default_slots": [9, 11, 14, 16]}'
-
-EXPECTED: {status: "ok", config, message}
-
-NOTES:    Configure blocked dates (holidays), available hours, weekday restrictions.
-RESULT:   PASS
-```
-
----
-
-### TEST 60: GET /api/config/managers
-```
-INPUT:    curl http://localhost:8000/api/config/managers \
-            -H "X-Team-Id: team-demo"
-
-EXPECTED: {names, source}
-
-OUTPUT:   {"names": ["John", "Sarah"], "source": "database"}
-
-NOTES:    Manager names for escalation detection (when clients ask to speak with manager).
-RESULT:   PASS
-```
-
----
-
-### TEST 61: POST /api/config/managers
-```
-INPUT:    curl -X POST http://localhost:8000/api/config/managers \
-            -H "Content-Type: application/json" \
-            -H "X-Team-Id: team-demo" \
-            -d '{"names": ["John", "Sarah", "Michael"]}'
-
-EXPECTED: {status: "ok", config, message}
-
-NOTES:    Register manager names for escalation detection.
-RESULT:   PASS
-```
-
----
-
-### TEST 62: GET /api/config/products
-```
-INPUT:    curl http://localhost:8000/api/config/products \
-            -H "X-Team-Id: team-demo"
-
-EXPECTED: {autofill_min_score, source}
-
-OUTPUT:   {"autofill_min_score": 0.5, "source": "database"}
-
-NOTES:    Product autofill threshold for offer generation (0.0-1.0).
-RESULT:   PASS
-```
-
----
-
-### TEST 63: POST /api/config/products
-```
-INPUT:    curl -X POST http://localhost:8000/api/config/products \
-            -H "Content-Type: application/json" \
-            -H "X-Team-Id: team-demo" \
-            -d '{"autofill_min_score": 0.3}'
-
-EXPECTED: {status: "ok", config, message}
-
-NOTES:    Lower score = more suggestions, higher = stricter matching.
-RESULT:   PASS
-```
-
----
-
-### TEST 64: GET /api/config/menus
-```
-INPUT:    curl http://localhost:8000/api/config/menus \
-            -H "X-Team-Id: team-demo"
-
-EXPECTED: {dinner_options, source}
-
-NOTES:    Returns dinner menu options for catering.
-RESULT:   PASS
-```
-
----
-
-### TEST 65: POST /api/config/menus
-```
-INPUT:    curl -X POST http://localhost:8000/api/config/menus \
-            -H "Content-Type: application/json" \
-            -H "X-Team-Id: team-demo" \
-            -d '{"dinner_options": [{"menu_name": "Garden Trio", "courses": 3, "price": "CHF 92", ...}]}'
-
-EXPECTED: {status: "ok", config, message}
-
-NOTES:    Configure dinner menu options. Set to empty array to reset to defaults.
-RESULT:   PASS
-```
-
----
-
-### TEST 66: GET /api/config/catalog
-```
-INPUT:    curl http://localhost:8000/api/config/catalog \
-            -H "X-Team-Id: team-demo"
-
-EXPECTED: {product_room_map, source}
-
-NOTES:    Product-to-room availability mapping.
-RESULT:   PASS
-```
-
----
-
-### TEST 67: POST /api/config/catalog
-```
-INPUT:    curl -X POST http://localhost:8000/api/config/catalog \
-            -H "Content-Type: application/json" \
-            -H "X-Team-Id: team-demo" \
-            -d '{"product_room_map": [{"name": "Projector", "category": "av", "rooms": ["Room A"]}]}'
-
-EXPECTED: {status: "ok", config, message}
-
-NOTES:    Configure which products are available in which rooms.
-RESULT:   PASS
-```
-
----
-
-### TEST 68: GET /api/config/faq
-```
-INPUT:    curl http://localhost:8000/api/config/faq \
-            -H "X-Team-Id: team-demo"
-
-EXPECTED: {items, source}
-
-NOTES:    Venue-specific FAQ items for Q&A page.
-RESULT:   PASS
-```
-
----
-
-### TEST 69: POST /api/config/faq
-```
-INPUT:    curl -X POST http://localhost:8000/api/config/faq \
-            -H "Content-Type: application/json" \
-            -H "X-Team-Id: team-demo" \
-            -d '{"items": [{"category": "Parking", "question": "Where can guests park?", "answer": "Underground parking..."}]}'
-
-EXPECTED: {status: "ok", config, message}
-
-NOTES:    Configure FAQ entries with category, question, answer.
-RESULT:   PASS
-```
-
----
-
 ## Summary
 
 ### Core Endpoints (Always Available)
@@ -1135,70 +704,44 @@ RESULT:   PASS
 | 15 | `/api/events/{id}` | GET | Events | Get event |
 | 16 | `/api/event/{id}/deposit` | GET | Events | Deposit status |
 | 17 | `/api/event/deposit/pay` | POST | Events | Mark paid |
-| 18 | `/api/event/{id}/cancel` | POST | Events | Cancel event |
-| 19 | `/api/config/global-deposit` | GET | Config | Get deposit cfg |
-| 20 | `/api/config/global-deposit` | POST | Config | Set deposit cfg |
-| 21 | `/api/config/hil-mode` | GET | Config | Get HIL mode |
-| 22 | `/api/config/hil-mode` | POST | Config | Toggle HIL |
-| 23 | `/api/config/llm-provider` | GET | Config | Get LLM providers |
-| 24 | `/api/config/llm-provider` | POST | Config | Set LLM providers |
-| 25 | `/api/config/hybrid-enforcement` | GET | Config | Get hybrid status |
-| 26 | `/api/config/hybrid-enforcement` | POST | Config | Toggle enforcement |
-| 27 | `/api/config/pre-filter` | GET | Config | Get pre-filter mode |
-| 28 | `/api/config/pre-filter` | POST | Config | Set pre-filter mode |
-| 29 | `/api/config/detection-mode` | GET | Config | Get detection mode |
-| 30 | `/api/config/detection-mode` | POST | Config | Set detection mode |
-| 31 | `/api/config/hil-email` | GET | Config | Get HIL email cfg |
-| 32 | `/api/config/hil-email` | POST | Config | Set HIL email cfg |
-| 33 | `/api/config/hil-email/test` | POST | Config | Test HIL email |
-| 34 | `/api/config/venue` | GET | Config | Get venue settings |
-| 35 | `/api/config/venue` | POST | Config | Set venue settings |
-| 36 | `/api/config/site-visit` | GET | Config | Get site visit cfg |
-| 37 | `/api/config/site-visit` | POST | Config | Set site visit cfg |
-| 38 | `/api/config/managers` | GET | Config | Get manager names |
-| 39 | `/api/config/managers` | POST | Config | Set manager names |
-| 40 | `/api/config/products` | GET | Config | Get product cfg |
-| 41 | `/api/config/products` | POST | Config | Set product cfg |
-| 42 | `/api/config/menus` | GET | Config | Get catering menus |
-| 43 | `/api/config/menus` | POST | Config | Set catering menus |
-| 44 | `/api/config/catalog` | GET | Config | Get product-room map |
-| 45 | `/api/config/catalog` | POST | Config | Set product-room map |
-| 46 | `/api/config/faq` | GET | Config | Get FAQ items |
-| 47 | `/api/config/faq` | POST | Config | Set FAQ items |
-| 48 | `/api/config/prompts` | GET | Config | Get prompts |
-| 49 | `/api/config/prompts` | POST | Config | Set prompts |
-| 50 | `/api/config/prompts/history` | GET | Config | Prompt history |
-| 51 | `/api/config/prompts/revert/{idx}` | POST | Config | Revert prompts |
-| 52 | `/api/qna` | GET | Data | Q&A queries |
-| 53 | `/api/test-data/rooms` | GET | Data | Room data |
-| 54 | `/api/test-data/catering` | GET | Data | Catering menus |
-| 55 | `/api/test-data/catering/{slug}` | GET | Data | Menu details |
-| 56 | `/api/test-data/qna` | GET | Data | Legacy Q&A |
-| 57 | `/api/snapshots` | GET | Snapshots | List |
-| 58 | `/api/snapshots/{id}` | GET | Snapshots | Get snapshot |
-| 59 | `/api/snapshots/{id}/data` | GET | Snapshots | Data only |
+| 18 | `/api/config/global-deposit` | GET | Config | Get deposit cfg |
+| 19 | `/api/config/global-deposit` | POST | Config | Set deposit cfg |
+| 20 | `/api/config/hil-mode` | GET | Config | Get HIL mode |
+| 21 | `/api/config/hil-mode` | POST | Config | Toggle HIL |
+| 22 | `/api/config/prompts` | GET | Config | Get prompts |
+| 23 | `/api/config/prompts` | POST | Config | Set prompts |
+| 24 | `/api/config/prompts/history` | GET | Config | Prompt history |
+| 25 | `/api/config/prompts/revert/{idx}` | POST | Config | Revert prompts |
+| 26 | `/api/qna` | GET | Data | Q&A queries |
+| 27 | `/api/test-data/rooms` | GET | Data | Room data |
+| 28 | `/api/test-data/catering` | GET | Data | Catering menus |
+| 29 | `/api/test-data/catering/{slug}` | GET | Data | Menu details |
+| 30 | `/api/test-data/qna` | GET | Data | Legacy Q&A |
+| 31 | `/api/snapshots` | GET | Snapshots | List |
+| 32 | `/api/snapshots/{id}` | GET | Snapshots | Get snapshot |
+| 33 | `/api/snapshots/{id}/data` | GET | Snapshots | Data only |
 
 ### Debug Endpoints (DEBUG_TRACE_ENABLED=true)
 
 | # | Endpoint | Method | Notes |
 |---|----------|--------|-------|
-| 60 | `/api/debug/threads/{id}` | GET | Full trace |
-| 61 | `/api/debug/threads/{id}/timeline` | GET | Timeline events |
-| 62 | `/api/debug/threads/{id}/timeline/download` | GET | JSONL download |
-| 63 | `/api/debug/threads/{id}/timeline/text` | GET | Text format |
-| 64 | `/api/debug/threads/{id}/report` | GET | Debug report |
-| 65 | `/api/debug/threads/{id}/llm-diagnosis` | GET | LLM diagnosis |
-| 66 | `/api/debug/live` | GET | Active threads |
-| 67 | `/api/debug/threads/{id}/live` | GET | Live logs |
+| 34 | `/api/debug/threads/{id}` | GET | Full trace |
+| 35 | `/api/debug/threads/{id}/timeline` | GET | Timeline events |
+| 36 | `/api/debug/threads/{id}/timeline/download` | GET | JSONL download |
+| 37 | `/api/debug/threads/{id}/timeline/text` | GET | Text format |
+| 38 | `/api/debug/threads/{id}/report` | GET | Debug report |
+| 39 | `/api/debug/threads/{id}/llm-diagnosis` | GET | LLM diagnosis |
+| 40 | `/api/debug/live` | GET | Active threads |
+| 41 | `/api/debug/threads/{id}/live` | GET | Live logs |
 
 ### Dev-Only Endpoints (ENABLE_DANGEROUS_ENDPOINTS=true)
 
 | # | Endpoint | Method | Notes |
 |---|----------|--------|-------|
-| 68 | `/api/client/reset` | POST | Reset client data |
-| 69 | `/api/client/continue` | POST | Bypass dev prompt |
+| 42 | `/api/client/reset` | POST | Reset client data |
+| 43 | `/api/client/continue` | POST | Bypass dev prompt |
 
-**Total: 69 endpoints** (59 core + 8 debug + 2 dev-only)
+**Total: 43 endpoints** (33 core + 8 debug + 2 dev-only)
 
 ---
 

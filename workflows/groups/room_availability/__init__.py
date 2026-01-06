@@ -1,0 +1,90 @@
+"""
+DEPRECATED: Use backend.workflows.steps.step3_room_availability instead.
+
+This module re-exports from the new canonical location for backwards compatibility.
+"""
+
+import warnings as _warnings
+
+_warnings.warn(
+    "backend.workflows.groups.room_availability is deprecated. "
+    "Use backend.workflows.steps.step3_room_availability instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+from workflows.steps.step3_room_availability import (
+    process,
+    room_status_on_date,
+    summarize_room_statuses,
+    RequestedWindow,
+    now_iso,
+    parse_date,
+    parse_time,
+    parse_iso_datetime,
+    to_utc,
+    overlaps,
+    to_display_time,
+    to_display_date,
+    format_date_label,
+    load_rooms_config,
+    ensure_logs,
+    append_log,
+    build_requested_windows,
+    parse_participants,
+    build_candidate_rooms,
+    room_capacity_ok,
+    collect_conflicts,
+    near_miss_suggestions,
+    evaluate_room,
+    evaluate_candidate_rooms,
+    choose_decision,
+    select_best_fit,
+    outcome_from_decision,
+    build_options_for_reply,
+    derive_room_label,
+    ensure_comms,
+    human_review,
+    compose_reply,
+    run_availability_workflow,
+    evaluate_room_statuses,
+    handle_select_room_action,
+)
+
+__all__ = [
+    "process",
+    "room_status_on_date",
+    "summarize_room_statuses",
+    "RequestedWindow",
+    "now_iso",
+    "parse_date",
+    "parse_time",
+    "parse_iso_datetime",
+    "to_utc",
+    "overlaps",
+    "to_display_time",
+    "to_display_date",
+    "format_date_label",
+    "load_rooms_config",
+    "ensure_logs",
+    "append_log",
+    "build_requested_windows",
+    "parse_participants",
+    "build_candidate_rooms",
+    "room_capacity_ok",
+    "collect_conflicts",
+    "near_miss_suggestions",
+    "evaluate_room",
+    "evaluate_candidate_rooms",
+    "choose_decision",
+    "select_best_fit",
+    "outcome_from_decision",
+    "build_options_for_reply",
+    "derive_room_label",
+    "ensure_comms",
+    "human_review",
+    "compose_reply",
+    "run_availability_workflow",
+    "evaluate_room_statuses",
+    "handle_select_room_action",
+]
