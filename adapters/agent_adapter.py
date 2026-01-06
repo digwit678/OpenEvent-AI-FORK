@@ -17,7 +17,11 @@ logger = logging.getLogger(__name__)
 from domain import IntentLabel
 from llm.client import get_openai_client
 
+import warnings
+
 try:  # pragma: no cover - optional dependency resolved at runtime
+    # Suppress deprecation warning until migration to google-genai SDK is complete
+    warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
     import google.generativeai as genai  # type: ignore
 except Exception:  # pragma: no cover - library may be unavailable in tests
     genai = None  # type: ignore
