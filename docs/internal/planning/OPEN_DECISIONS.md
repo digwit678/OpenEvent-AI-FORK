@@ -403,6 +403,54 @@ When renaming becomes necessary:
 
 ---
 
+### DECISION-010: Free Local LLMs for Detection Tasks
+
+**Date Raised:** 2026-01-06
+**Context:** Multilingual confirmation detection - pattern-based vs. LLM sentiment
+**Status:** Open
+
+**Question:** Should we use free local LLMs (e.g., Ollama/Llama 3) for detection tasks that don't require instant responses?
+
+**Background:**
+Currently, detection tasks use:
+1. **Pattern-based regex** - Fast, free, but needs explicit patterns per language
+2. **Cloud LLMs (Claude/Gemini)** - Universal understanding, but API costs
+
+Since the system will implement response timers to appear more human-like (not instant replies), speed is less critical.
+
+**Options:**
+
+| Option | Cost | Speed | Languages | Setup |
+|--------|------|-------|-----------|-------|
+| **A: Pattern-based** (current) | Free | Instant | Explicit only | None |
+| **B: Cloud LLM fallback** | $0.001-0.01/msg | ~1-2s | Any | Already integrated |
+| **C: Local LLM (Ollama)** | Free | ~2-5s | Any | Server setup |
+| **D: Hugging Face models** | Free | ~0.5-1s | Model-dependent | Python package |
+
+**Use Cases for Local LLM:**
+1. **Confirmation detection** - "Is this a yes/no/negotiation?"
+2. **Sentiment fallback** - When patterns don't match
+3. **Language detection** - More accurate than regex
+4. **Intent disambiguation** - Low-confidence cases
+
+**Considerations:**
+- Response timers mean 2-5s LLM latency is acceptable
+- Ollama requires ~4-8GB RAM for small models
+- Can run alongside main server or on separate machine
+- Zero marginal cost after setup
+
+**Current Implementation:**
+- Pattern-based for confirmation detection (EN/DE/FR/IT/ES)
+- Cloud LLM for complex intent classification
+- No local LLM integration
+
+**Dependencies:**
+- Hardware resources for local LLM
+- Ollama or similar runtime setup
+- Evaluation of model accuracy vs. cloud LLMs
+
+---
+
 ## Resolved Decisions
 
 (Move decisions here once resolved, with date and rationale)
