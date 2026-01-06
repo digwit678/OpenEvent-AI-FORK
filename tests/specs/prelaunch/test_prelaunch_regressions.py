@@ -442,3 +442,52 @@ def test_step1_can_overwrite_event_date_from_unanchored_date(monkeypatch: pytest
     persisted = db_io.load_db(db_path, lock_path=db_io.lock_path_for(db_path))
     evt = persisted["events"][0]
     assert evt.get("chosen_date") == "12.05.2026", evt
+
+
+# =============================================================================
+# Multilingual Confirmation Detection (Jan 2026)
+# =============================================================================
+
+@pytest.mark.parametrize("text,expected", [
+    # English
+    ("sounds good", True),
+    ("looks good", True),
+    ("all good", True),
+    ("proceed", True),
+    ("let's do it", True),
+    ("confirm", True),
+    # German
+    ("einverstanden", True),
+    ("perfekt", True),
+    ("machen wir so", True),
+    ("passt", True),
+    # French
+    ("d'accord", True),
+    ("parfait", True),
+    ("c'est bon", True),
+    ("allons-y", True),
+    # Italian
+    ("va bene", True),
+    ("perfetto", True),
+    ("procediamo", True),
+    ("d'accordo", True),
+    # Spanish
+    ("perfecto", True),
+    ("de acuerdo", True),
+    ("adelante", True),
+    ("vale", True),
+    # Should NOT match (questions)
+    ("What date?", False),
+    ("Do you have availability?", False),
+    ("Can we change the room?", False),
+    # Should NOT match (date confirmations - handled separately)
+    ("We confirm the date", False),
+    ("I confirm the day", False),
+    ("Confirmed the time", False),
+    # Should NOT match (too long)
+    ("This is a very long message that goes on and on about many different topics and contains lots of words " * 3, False),
+])
+def test_multilingual_acceptance_detection(text: str, expected: bool) -> None:
+    """Multilingual confirmation detection supports EN, DE, FR, IT, ES (Jan 2026)."""
+    from backend.workflows.steps.step1_intake.trigger.gate_confirmation import looks_like_offer_acceptance
+    assert looks_like_offer_acceptance(text) == expected, f"Failed for: {text!r}"

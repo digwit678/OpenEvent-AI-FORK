@@ -15,12 +15,16 @@ in step1_handler.py because they depend on linked_event workflow state.
 import re
 
 from .normalization import normalize_quotes
+from backend.detection.keywords.buckets import is_confirmation, detect_language
 
 
 def looks_like_offer_acceptance(text: str) -> bool:
     """
     Heuristic: short, declarative acknowledgements without question marks
     that contain approval verbs.
+
+    Supports multilingual detection (EN, DE, FR, IT, ES) via centralized
+    is_confirmation() from backend.detection.keywords.buckets.
 
     Excludes date confirmations ("We confirm the date...") which should be
     handled by the date confirmation flow, not offer acceptance.
@@ -35,53 +39,18 @@ def looks_like_offer_acceptance(text: str) -> bool:
         return False
 
     # Exclude date-related confirmations (handled by date confirmation flow)
+    # Multilingual: date/day/time/datum (EN/DE), jour/date (FR), data/giorno (IT), fecha/día (ES)
     date_confirmation_re = re.compile(
-        r"\bconfirm(?:ed|s)?\b.*\b(?:date|day|time|datum)\b|"
-        r"\b(?:date|day|time|datum)\b.*\bconfirm(?:ed|s)?\b",
+        r"\bconfirm(?:ed|s|é|ato|ado)?\b.*\b(?:date|day|time|datum|jour|data|giorno|fecha|día)\b|"
+        r"\b(?:date|day|time|datum|jour|data|giorno|fecha|día)\b.*\bconfirm(?:ed|s|é|ato|ado)?\b",
         re.IGNORECASE
     )
     if date_confirmation_re.search(normalized):
         return False  # This is a date confirmation, not offer acceptance
 
-    accept_re = re.compile(
-        r"\b("
-        r"accept(?:ed)?|"
-        r"approv(?:e|ed|al)|"
-        r"confirm(?:ed)?|"
-        r"proceed|continue|go ahead|"
-        r"send (?:it|to client)|please send|ok to send|"
-        r"all good|looks good|sounds good|good to go|"
-        r"(?:that'?s|thats) fine|fine for me"
-        r")\b"
-    )
-    if accept_re.search(normalized):
-        return True
-
-    # Fallback to legacy tokens for odd phrasing.
-    accept_tokens = (
-        "accept",
-        "accepted",
-        "confirm",
-        "confirmed",
-        "approve",
-        "approved",
-        "continue",
-        "please send",
-        "send it",
-        "send to client",
-        "ok to send",
-        "go ahead",
-        "proceed",
-        "that's fine",
-        "thats fine",
-        "fine for me",
-        "sounds good",
-        "good to go",
-        "ok thats fine",
-        "ok that's fine",
-        "all good",
-    )
-    return any(token in normalized for token in accept_tokens)
+    # Use centralized multilingual confirmation detection
+    language = detect_language(text)
+    return is_confirmation(text, language)
 
 
 def looks_like_billing_fragment(text: str) -> bool:

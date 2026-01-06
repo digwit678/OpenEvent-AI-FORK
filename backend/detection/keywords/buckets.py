@@ -209,15 +209,20 @@ PURE_QA_SIGNALS_EN = [
 
 # Confirmation signals
 CONFIRMATION_SIGNALS_EN = [
-    r"^(yes|ok|okay|sure|perfect|great|sounds?\s+good)\b",
+    r"^(yes|ok|okay|sure|perfect|great)\b",
+    r"\b(sounds?|looks?)\s+good\b",
+    r"\ball\s+good\b",
     r"\blet'?s?\s+(do\s+it|proceed|go\s+ahead)\b",
     r"\bplease\s+proceed\b",
-    r"\bthat\s+works?\b",
+    r"\b(that\s+)?works?(\s+for\s+me)?\b",
     r"\bconfirm(ed)?\b",
     r"\bagree(d)?\b",
     r"\baccept(ed)?\b",
     r"\bbook\s+it\b",
     r"\bgo\s+ahead\b",
+    r"\bproceed\b",
+    r"\bgood\s+to\s+go\b",
+    r"\bfine(\s+for\s+me)?\b",
 ]
 
 # Decline signals
@@ -306,6 +311,73 @@ DECLINE_SIGNALS_DE = [
     r"\bkein\s+interesse\s+mehr\b",
     r"\babbrechen\b",
     r"\bzurückziehen\b",
+]
+
+
+# =============================================================================
+# FRENCH KEYWORD BUCKETS
+# =============================================================================
+
+CONFIRMATION_SIGNALS_FR = [
+    r"^(oui|ok|okay|d'accord|parfait|super|entendu)\b",
+    r"\bça\s+(me\s+)?va\b",              # "ça va", "ça me va"
+    r"\bon\s+fait\s+comme\s+ça\b",
+    r"\bconfirmé\b",
+    r"\bbon\s+pour\s+moi\b",
+    r"\bc'est\s+(bon|parfait|ok)\b",
+    r"\bprocédons\b",
+    r"\ballons-?y\b",
+]
+
+DECLINE_SIGNALS_FR = [
+    r"\bannuler\b",
+    r"\bpas\s+intéressé\b",
+    r"\bon\s+renonce\b",
+    r"\brefuser\b",
+]
+
+
+# =============================================================================
+# ITALIAN KEYWORD BUCKETS
+# =============================================================================
+
+CONFIRMATION_SIGNALS_IT = [
+    r"^(sì|si|ok|okay|perfetto|va\s+bene|ottimo)\b",
+    r"\bprocediamo\b",
+    r"\bconfermato\b",
+    r"\bd'accordo\b",
+    r"\bbenissimo\b",
+    r"\bfacciamo\s+così\b",
+    r"\bandiamo\b",
+]
+
+DECLINE_SIGNALS_IT = [
+    r"\bannullare\b",
+    r"\bnon\s+interessa\b",
+    r"\brinunciare\b",
+    r"\bdeclinare\b",
+]
+
+
+# =============================================================================
+# SPANISH KEYWORD BUCKETS
+# =============================================================================
+
+CONFIRMATION_SIGNALS_ES = [
+    r"^(sí|si|ok|okay|perfecto|vale|claro|muy\s+bien)\b",
+    r"\bde\s+acuerdo\b",
+    r"\bconfirmado\b",
+    r"\bestupendo\b",
+    r"\bprocedamos\b",
+    r"\badelante\b",
+    r"\bvamos\b",
+]
+
+DECLINE_SIGNALS_ES = [
+    r"\bcancelar\b",
+    r"\bno\s+interesa\b",
+    r"\brechazar\b",
+    r"\brenunciar\b",
 ]
 
 
@@ -438,29 +510,59 @@ class ChangeIntentResult:
 # =============================================================================
 
 def detect_language(text: str) -> str:
-    """Detect if text is primarily English, German, or mixed."""
+    """Detect if text is primarily English, German, French, Italian, Spanish or mixed."""
     text_lower = text.lower()
 
-    # German-specific markers
-    de_markers = [
-        r"\b(und|oder|aber|für|mit|bei|können|möchten|gerne|bitte)\b",
-        r"\b(der|die|das|den|dem|des)\b",
-        r"\b(ich|wir|Sie|uns|Ihnen)\b",
-    ]
-    # English-specific markers
-    en_markers = [
-        r"\b(and|or|but|for|with|can|could|would|please)\b",
-        r"\b(the|a|an)\b",
-        r"\b(I|we|you|us|them)\b",
-    ]
+    # Language-specific markers
+    lang_markers = {
+        "de": [
+            r"\b(und|oder|aber|für|mit|bei|können|möchten|gerne|bitte)\b",
+            r"\b(der|die|das|den|dem|des)\b",
+            r"\b(ich|wir|Sie|uns|Ihnen)\b",
+        ],
+        "en": [
+            r"\b(and|or|but|for|with|can|could|would|please)\b",
+            r"\b(the|a|an)\b",
+            r"\b(I|we|you|us|them)\b",
+        ],
+        "fr": [
+            r"\b(et|ou|mais|pour|avec|pouvez|voulez|merci)\b",
+            r"\b(le|la|les|un|une|des|du)\b",
+            r"\b(je|nous|vous|ils|elles)\b",
+            r"\b(s'il\s+vous\s+plaît|svp)\b",
+        ],
+        "it": [
+            r"\b(e|o|ma|per|con|potete|voglio|grazie|prego)\b",
+            r"\b(il|la|lo|gli|le|un|una)\b",
+            r"\b(io|noi|voi|loro)\b",
+        ],
+        "es": [
+            r"\b(y|o|pero|para|con|pueden|quiero|gracias)\b",
+            r"\b(el|la|los|las|un|una)\b",
+            r"\b(yo|nosotros|ustedes|ellos)\b",
+            r"\b(por\s+favor)\b",
+        ],
+    }
 
-    de_count = sum(1 for pattern in de_markers if re.search(pattern, text_lower))
-    en_count = sum(1 for pattern in en_markers if re.search(pattern, text_lower))
+    # Count matches for each language
+    counts = {}
+    for lang, patterns in lang_markers.items():
+        counts[lang] = sum(1 for p in patterns if re.search(p, text_lower, re.IGNORECASE))
 
-    if de_count > en_count + 2:
-        return "de"
-    elif en_count > de_count + 2:
-        return "en"
+    # Find best match
+    max_count = max(counts.values()) if counts else 0
+    if max_count == 0:
+        return "mixed"
+
+    best_langs = [lang for lang, count in counts.items() if count == max_count]
+
+    # If clear winner (count > others + 2), return it
+    if len(best_langs) == 1:
+        best = best_langs[0]
+        others_max = max((c for l, c in counts.items() if l != best), default=0)
+        if counts[best] > others_max + 1:
+            return best
+
     return "mixed"
 
 
@@ -636,23 +738,35 @@ def is_pure_qa(text: str, language: str = "mixed") -> bool:
 
 
 def is_confirmation(text: str, language: str = "mixed") -> bool:
-    """Check if text is a confirmation/acceptance."""
+    """Check if text is a confirmation/acceptance (multilingual: EN/DE/FR/IT/ES)."""
     patterns = []
     if language in ("en", "mixed"):
         patterns.extend(CONFIRMATION_SIGNALS_EN)
     if language in ("de", "mixed"):
         patterns.extend(CONFIRMATION_SIGNALS_DE)
+    if language in ("fr", "mixed"):
+        patterns.extend(CONFIRMATION_SIGNALS_FR)
+    if language in ("it", "mixed"):
+        patterns.extend(CONFIRMATION_SIGNALS_IT)
+    if language in ("es", "mixed"):
+        patterns.extend(CONFIRMATION_SIGNALS_ES)
 
     return any(re.search(p, text.lower()) for p in patterns)
 
 
 def is_decline(text: str, language: str = "mixed") -> bool:
-    """Check if text is a decline/cancellation."""
+    """Check if text is a decline/cancellation (multilingual: EN/DE/FR/IT/ES)."""
     patterns = []
     if language in ("en", "mixed"):
         patterns.extend(DECLINE_SIGNALS_EN)
     if language in ("de", "mixed"):
         patterns.extend(DECLINE_SIGNALS_DE)
+    if language in ("fr", "mixed"):
+        patterns.extend(DECLINE_SIGNALS_FR)
+    if language in ("it", "mixed"):
+        patterns.extend(DECLINE_SIGNALS_IT)
+    if language in ("es", "mixed"):
+        patterns.extend(DECLINE_SIGNALS_ES)
 
     return any(re.search(p, text.lower()) for p in patterns)
 
