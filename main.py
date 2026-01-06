@@ -158,6 +158,10 @@ app.add_middleware(AuthMiddleware)
 _raw_allowed_origins = os.getenv("ALLOWED_ORIGINS")
 if _raw_allowed_origins:
     allowed_origins = [origin.strip() for origin in _raw_allowed_origins.split(",") if origin.strip()]
+    # CRITICAL: Remove "*" if present, as it causes a crash when allow_credentials=True
+    if "*" in allowed_origins:
+        allowed_origins = [o for o in allowed_origins if o != "*"]
+        
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
