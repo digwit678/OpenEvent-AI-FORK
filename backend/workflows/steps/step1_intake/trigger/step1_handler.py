@@ -877,8 +877,18 @@ def process(state: WorkflowState) -> GroupResult:
     # The subject contains system-generated timestamps (e.g., "Client follow-up (2025-12-24 17:18)")
     # which were incorrectly triggering DATE change detection.
     message_text = state.message.body or ""
-    if in_billing_flow:
-        # In billing flow, don't detect changes - just continue with billing capture
+
+    # Skip date change detection for deposit payment messages
+    # "We paid the deposit on 02.01.2026" - the date is payment date, not event date
+    import re
+    _deposit_date_pattern = re.compile(
+        r'\b(paid|payment|transferred|deposit)\b.*\b\d{1,2}[./]\d{1,2}[./]\d{2,4}\b|\b\d{1,2}[./]\d{1,2}[./]\d{2,4}\b.*\b(paid|payment|transferred|deposit)\b',
+        re.IGNORECASE
+    )
+    is_deposit_date_context = bool(message_text and _deposit_date_pattern.search(message_text))
+    if in_billing_flow or is_deposit_date_context:
+        # In billing flow or deposit payment context, don't detect date changes
+        # "We paid the deposit on 02.01.2026" - the date is payment date, not event date
         change_type = None
     else:
         enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
@@ -961,8 +971,8 @@ def process(state: WorkflowState) -> GroupResult:
                     )
 
     # Fallback: legacy logic for cases not handled by change propagation
-    # Skip during billing flow - billing addresses shouldn't trigger date changes
-    elif new_date and new_date != event_entry.get("chosen_date") and not in_billing_flow:
+    # Skip during billing flow or deposit payment context - these dates shouldn't trigger event date changes
+    elif new_date and new_date != event_entry.get("chosen_date") and not in_billing_flow and not is_deposit_date_context:
         if (
             previous_step not in (None, 1, 2)
             and event_entry.get("caller_step") is None
@@ -1122,8 +1132,17 @@ def _ensure_event_record(
     message_text = (state.message.body or "") + " " + (state.message.subject or "")
     is_date_change_request = has_revision_signal(message_text)
 
+    # Check if message is a deposit/payment date mention (not event date)
+    # "We paid the deposit on 02.01.2026" - payment dates should NOT trigger new events
+    import re
+    _deposit_date_pattern = re.compile(
+        r'\b(paid|payment|transferred|deposit)\b.*\b\d{1,2}[./]\d{1,2}[./]\d{2,4}\b|\b\d{1,2}[./]\d{1,2}[./]\d{2,4}\b.*\b(paid|payment|transferred|deposit)\b',
+        re.IGNORECASE
+    )
+    is_deposit_payment_date = bool(message_text and _deposit_date_pattern.search(message_text))
+
     if new_date_is_actual and existing_date_is_actual and new_event_date != existing_event_date:
-        if is_date_change_request:
+        if is_date_change_request or is_deposit_payment_date:
             # This is a date CHANGE on existing event - don't create new event
             trace_db_write(_thread_id(state), "Step1_Intake", "date_change_detected", {
                 "reason": "date_change_request",

@@ -110,13 +110,24 @@ def evaluate(state: "WorkflowState") -> GuardSnapshot:
     normalized_user_date = _normalize_date(user_date)
     normalized_chosen = _normalize_date(chosen_date)
 
+    # Check if message is a deposit/payment date mention (not event date)
+    # "We paid the deposit on 02.01.2026" - payment dates should NOT trigger step 2
+    import re
+    message_text = (state.message.body or "") if state.message else ""
+    _deposit_date_pattern = re.compile(
+        r'\b(paid|payment|transferred|deposit)\b.*\b\d{1,2}[./]\d{1,2}[./]\d{2,4}\b|\b\d{1,2}[./]\d{1,2}[./]\d{2,4}\b.*\b(paid|payment|transferred|deposit)\b',
+        re.IGNORECASE
+    )
+    is_deposit_payment_date = bool(message_text and _deposit_date_pattern.search(message_text))
+
     # Step 2 guard -----------------------------------------------------------
     step2_required = False
     candidate_dates: List[str] = []
 
     if not chosen_date or not date_confirmed:
         step2_required = True
-    elif normalized_user_date and normalized_user_date != normalized_chosen:
+    elif normalized_user_date and normalized_user_date != normalized_chosen and not is_deposit_payment_date:
+        # Date differs from chosen_date, but skip if it's a deposit payment date
         step2_required = True
 
     # Check if requirements_hash needs updating (pure computation, no side effect)

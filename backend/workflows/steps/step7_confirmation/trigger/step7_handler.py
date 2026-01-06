@@ -107,7 +107,7 @@ def process(state: WorkflowState) -> GroupResult:
         )
     # -------------------------------------------------------------------------
 
-    structural = _detect_structural_change(state.user_info, event_entry)
+    structural = _detect_structural_change(state.user_info, event_entry, message_text)
     if structural:
         # Handle structural change detour BEFORE Q&A
         target_step, reason = structural
@@ -203,16 +203,28 @@ def process(state: WorkflowState) -> GroupResult:
     return result
 
 
-def _detect_structural_change(user_info: Dict[str, Any], event_entry: Dict[str, Any]) -> Optional[tuple]:
+def _detect_structural_change(
+    user_info: Dict[str, Any], event_entry: Dict[str, Any], message_text: str = ""
+) -> Optional[tuple]:
     """Detect structural changes (date/room/participants/products) that require detour."""
+    import re
+
     # Skip date change detection when in site visit mode
     # Dates mentioned are for the site visit, not event date changes
     visit_state = event_entry.get("site_visit_state") or {}
     in_site_visit_mode = visit_state.get("status") in {"proposed"}
 
+    # Skip date change detection for deposit payment messages
+    # "We paid the deposit on 02.01.2026" - the date is payment date, not event date
+    deposit_date_pattern = re.compile(
+        r'\b(paid|payment|transferred|deposit)\b.*\b\d{1,2}[./]\d{1,2}[./]\d{2,4}\b|\b\d{1,2}[./]\d{1,2}[./]\d{2,4}\b.*\b(paid|payment|transferred|deposit)\b',
+        re.IGNORECASE
+    )
+    is_deposit_date_mention = bool(message_text and deposit_date_pattern.search(message_text))
+
     new_iso_date = user_info.get("date")
     new_ddmmyyyy = user_info.get("event_date")
-    if not in_site_visit_mode and (new_iso_date or new_ddmmyyyy):
+    if not in_site_visit_mode and not is_deposit_date_mention and (new_iso_date or new_ddmmyyyy):
         candidate = new_ddmmyyyy or iso_to_ddmmyyyy(new_iso_date)
         if candidate and candidate != event_entry.get("chosen_date"):
             return 2, "confirmation_changed_date"

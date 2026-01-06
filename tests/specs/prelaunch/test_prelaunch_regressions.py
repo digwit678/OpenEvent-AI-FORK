@@ -131,11 +131,8 @@ def test_out_of_context_should_not_drop_message_with_billing(tmp_path: Path) -> 
     )
 
 
-@pytest.mark.xfail(
-    reason="Step5 date-change fallback treats any differing date in quoted history as change request.",
-    strict=False,
-)
 def test_step5_quoted_history_date_should_not_trigger_change() -> None:
+    """Fixed: _strip_quoted_lines now removes attribution headers like 'On ... wrote:' (Jan 2026)."""
     event_entry = {
         "chosen_date": "12.05.2026",
         "locked_room_id": "Room A",
@@ -186,11 +183,8 @@ def test_shortcuts_should_not_reconfirm_date_when_already_confirmed() -> None:
     assert state.event_entry.get("current_step") == 5, state.event_entry
 
 
-@pytest.mark.xfail(
-    reason="Step7 structural change detection treats any extracted date as event-date change, even for deposit payment dates.",
-    strict=False,
-)
 def test_step7_deposit_paid_with_payment_date_should_not_detour_to_step2() -> None:
+    """Fixed: _detect_structural_change skips date check for deposit payment context (Jan 2026)."""
     os.environ.setdefault("AGENT_MODE", "stub")
     msg = IncomingMessage(
         msg_id="m",
@@ -404,12 +398,8 @@ def test_concurrent_process_msg_can_lose_updates(tmp_path: Path, monkeypatch: py
     assert set(msgs) == {"m1", "m2"}, msgs
 
 
-@pytest.mark.xfail(
-    reason="Step1 can treat any differing extracted date as an event-date change (e.g., deposit/payment dates).",
-    strict=False,
-)
 def test_step1_can_overwrite_event_date_from_unanchored_date(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Desired: unanchored dates in deposit/payment context must not overwrite chosen_date."""
+    """Fixed: Guards and step handlers now skip date change detection for deposit payment context (Jan 2026)."""
     from backend.workflow_email import process_msg
     from backend.workflows.io import database as db_io
     from backend.workflows.common.requirements import requirements_hash

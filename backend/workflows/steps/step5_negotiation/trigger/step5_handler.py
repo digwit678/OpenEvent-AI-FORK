@@ -653,6 +653,35 @@ def _ask_classification_clarification(
     return GroupResult(action="negotiation_clarification", payload=payload, halt=True)
 
 
+def _strip_quoted_lines(text: str) -> str:
+    """Strip email quoted lines and attribution headers from text.
+
+    This prevents false positive date/change detection from email history.
+    Removes:
+    - Lines starting with ">" (quoted content)
+    - Attribution lines like "On Tue, 14.02.2026 you wrote:" (contain dates from history)
+
+    Example:
+        "Thanks!\n\nOn Tue, 14.02.2026 you wrote:\n> Event Date: 14.02.2026"
+        → "Thanks!\n\n"
+    """
+    import re
+    lines = text.split('\n')
+    cleaned = []
+    # Pattern for attribution lines: "On <date/day> ... wrote:" (case-insensitive)
+    attribution_pattern = re.compile(r'^on\s+.*wrote\s*:\s*$', re.IGNORECASE)
+    for line in lines:
+        stripped = line.strip()
+        # Skip quoted lines
+        if stripped.startswith('>'):
+            continue
+        # Skip attribution lines
+        if attribution_pattern.match(stripped):
+            continue
+        cleaned.append(line)
+    return '\n'.join(cleaned)
+
+
 def _detect_structural_change(
     user_info: Dict[str, Any],
     event_entry: Dict[str, Any],
@@ -711,12 +740,14 @@ def _detect_structural_change(
 
     # Fallback: parse dates directly from message text (same as Step 2/3/4)
     # This catches cases where user_info wasn't populated with the new date
+    # IMPORTANT: Strip quoted lines to avoid false positives from email history
     if not in_site_visit_mode and message_text:
+        clean_text = _strip_quoted_lines(message_text)
         chosen_date_raw = event_entry.get("chosen_date")  # e.g., "14.02.2026"
         if chosen_date_raw:
             chosen_parsed = parse_ddmmyyyy(chosen_date_raw)
             chosen_iso = chosen_parsed.isoformat() if chosen_parsed else None
-            message_dates = list(parse_all_dates(message_text, fallback_year=dt_date.today().year))
+            message_dates = list(parse_all_dates(clean_text, fallback_year=dt_date.today().year))
             # Check if any date in the message differs from the current chosen_date
             for msg_date in message_dates:
                 msg_iso = msg_date.isoformat()
