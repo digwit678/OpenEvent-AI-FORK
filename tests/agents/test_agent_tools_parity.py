@@ -21,13 +21,13 @@ import json
 import pytest
 from typing import Any, Dict, List, Optional
 
-from backend.agents import (
+from agents import (
     execute_tool_call,
     validate_tool_call,
     StepToolPolicy,
     ToolExecutionError,
 )
-from backend.agents.chatkit_runner import ENGINE_TOOL_ALLOWLIST, TOOL_DEFINITIONS
+from agents.chatkit_runner import ENGINE_TOOL_ALLOWLIST, TOOL_DEFINITIONS
 
 
 # ==============================================================================

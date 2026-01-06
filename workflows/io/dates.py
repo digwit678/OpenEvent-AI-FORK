@@ -8,8 +8,8 @@ try:  # Python >= 3.9
 except ImportError:  # pragma: no cover
     ZoneInfo = None  # type: ignore[misc,assignment]
 
-from backend.workflows.steps.step1_intake.condition.checks import blackout_days
-from backend.workflows.io.config_store import get_timezone
+from workflows.steps.step1_intake.condition.checks import blackout_days
+from workflows.io.config_store import get_timezone
 
 
 def _get_default_timezone() -> str:

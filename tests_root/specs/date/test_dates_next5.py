@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from backend.workflows.io import dates
+from workflows.io import dates
 
 
 def _reset_blackouts(monkeypatch, blocked):

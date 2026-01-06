@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.workflows.common.billing import missing_billing_fields
+from workflows.common.billing import missing_billing_fields
 
 
 @dataclass
@@ -121,7 +121,7 @@ def reload_and_check_gate(
     Returns:
         Tuple of (GateStatus, fresh_event_entry)
     """
-    from backend.workflows.io.database import load_db
+    from workflows.io.database import load_db
 
     # Default database path
     default_path = Path(__file__).resolve().parents[2] / "events_database.json"
@@ -164,7 +164,7 @@ def get_next_prompt(status: GateStatus, step: int = 5) -> Optional[Dict[str, Any
     Returns:
         Draft message dict or None if ready for HIL
     """
-    from backend.workflows.common.billing import billing_prompt_for_missing_fields
+    from workflows.common.billing import billing_prompt_for_missing_fields
 
     if status.ready_for_hil:
         return None

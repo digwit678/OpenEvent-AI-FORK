@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from backend.debug.reporting import collect_trace_payload, filter_trace_events, generate_report
-from backend.debug.trace import BUS
-from backend.debug import timeline
+from debug.reporting import collect_trace_payload, filter_trace_events, generate_report
+from debug.trace import BUS
+from debug import timeline
 from fastapi.responses import PlainTextResponse
 
 

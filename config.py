@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict
 
-from backend.utils import json_io
+from utils import json_io
 
 _DEFAULT_PROFILE = "v1-current"
 

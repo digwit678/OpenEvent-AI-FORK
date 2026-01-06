@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from backend.domain import IntentLabel, TaskType
-from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.steps import step5_negotiation as negotiation_close
+from domain import IntentLabel, TaskType
+from workflows.common.types import IncomingMessage, WorkflowState
+from workflows.steps import step5_negotiation as negotiation_close
 
 
 def _make_state(body: str, *, event_overrides: dict | None = None, user_info: dict | None = None) -> WorkflowState:

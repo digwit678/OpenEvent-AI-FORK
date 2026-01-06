@@ -39,12 +39,12 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 # NOTE: domain, conversation_manager imports moved to routes/messages.py
-from backend.legacy.session_store import active_conversations  # Used in root endpoint
+from legacy.session_store import active_conversations  # Used in root endpoint
 # NOTE: adapter imports moved to routes/messages.py
 # NOTE: workflow imports moved to routes/messages.py
-from backend.utils import json_io
-from backend.api.middleware import TenantContextMiddleware, AuthMiddleware
-from backend.api.middleware.request_limits import RequestSizeLimitMiddleware
+from utils import json_io
+from api.middleware import TenantContextMiddleware, AuthMiddleware
+from api.middleware.request_limits import RequestSizeLimitMiddleware
 
 # Environment mode detection: dev vs prod
 # In dev mode, auto-launch/kill conveniences are enabled by default
@@ -53,13 +53,13 @@ _IS_DEV = os.getenv("ENV", "dev").lower() in ("dev", "development", "local")
 
 os.environ.setdefault("AGENT_MODE", os.environ.get("AGENT_MODE_DEFAULT", "openai"))
 
-from backend.workflow_email import DB_PATH as WF_DB_PATH
+from workflow_email import DB_PATH as WF_DB_PATH
 # NOTE: process_msg, load_db, save_db moved to routes/messages.py
 # NOTE: Most debug imports moved to routes/debug.py
-from backend.api.debug import debug_generate_report  # Still used in _persist_debug_reports
-from backend.debug.settings import is_trace_enabled
-from backend.debug.trace import BUS
-from backend.api.routes import (
+from api.debug import debug_generate_report  # Still used in _persist_debug_reports
+from debug.settings import is_trace_enabled
+from debug.trace import BUS
+from api.routes import (
     tasks_router,
     events_router,
     config_router,
@@ -94,7 +94,7 @@ async def lifespan(app: FastAPI):
     # OpenEvent requires hybrid mode (Gemini + OpenAI) by default.
     # This prevents accidental single-provider deployments.
     try:
-        from backend.llm.provider_config import validate_hybrid_mode
+        from llm.provider_config import validate_hybrid_mode
         is_production = not _IS_DEV
         is_valid, msg, settings = validate_hybrid_mode(
             raise_on_failure=is_production,  # Fail hard in production

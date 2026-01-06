@@ -6,7 +6,7 @@ These functions handle product add/remove operations, autofill from preferences,
 and product normalization during offer preparation.
 
 Usage:
-    from backend.workflows.steps.step4_offer.trigger.product_ops import (
+    from workflows.steps.step4_offer.trigger.product_ops import (
         apply_product_operations,
         autofill_products_from_preferences,
     )
@@ -21,9 +21,9 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Set
 
-from backend.services.products import find_product, normalise_product_payload
-from backend.services.rooms import load_room_catalog
-from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
+from services.products import find_product, normalise_product_payload
+from services.rooms import load_room_catalog
+from workflows.common.menu_options import DINNER_MENU_OPTIONS
 
 
 # -----------------------------------------------------------------------------

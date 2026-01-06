@@ -7,8 +7,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.menu_options import (
+from workflows.common.prompts import append_footer
+from workflows.common.menu_options import (
     ALLOW_CONTEXTUAL_HINTS,
     build_menu_title,
     extract_menu_request,
@@ -18,43 +18,43 @@ from backend.workflows.common.menu_options import (
     normalize_menu_for_display,
     select_menu_options,
 )
-from backend.workflows.common.capture import capture_workflow_requirements
-from backend.workflows.common.requirements import requirements_hash
-from backend.workflows.common.sorting import rank_rooms, RankedRoom
-from backend.workflows.common.room_rules import find_better_room_dates
-from backend.workflows.common.types import GroupResult, WorkflowState
-# MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
-from backend.detection.intent.confidence import check_nonsense_gate
-from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
-from backend.workflows.common.general_qna import (
+from workflows.common.capture import capture_workflow_requirements
+from workflows.common.requirements import requirements_hash
+from workflows.common.sorting import rank_rooms, RankedRoom
+from workflows.common.room_rules import find_better_room_dates
+from workflows.common.types import GroupResult, WorkflowState
+# MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
+from detection.intent.confidence import check_nonsense_gate
+from workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
+from workflows.common.general_qna import (
     append_general_qna_to_primary,
     present_general_room_qna,
     _fallback_structured_body,
 )
-from backend.workflows.change_propagation import (
+from workflows.change_propagation import (
     ChangeType,
     detect_change_type,
     detect_change_type_enhanced,
     route_change_on_updated_variable,
 )
-from backend.workflows.qna.engine import build_structured_qna_result
-from backend.workflows.qna.extraction import ensure_qna_extraction
-from backend.workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
-from backend.workflows.io.config_store import get_catering_teaser_products, get_currency_code
-# MIGRATED: from backend.workflows.common.conflict -> backend.detection.special.room_conflict
-from backend.detection.special.room_conflict import (
+from workflows.qna.engine import build_structured_qna_result
+from workflows.qna.extraction import ensure_qna_extraction
+from workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
+from workflows.io.config_store import get_catering_teaser_products, get_currency_code
+# MIGRATED: from workflows.common.conflict -> backend.detection.special.room_conflict
+from detection.special.room_conflict import (
     ConflictType,
     detect_conflict_type,
     compose_soft_conflict_warning,
 )
-from backend.debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate, trace_state, trace_step, set_subloop, trace_marker, trace_general_qa_status
-from backend.utils.profiler import profile_step
-from backend.utils.pseudolinks import generate_room_details_link, generate_qna_link
-from backend.utils.page_snapshots import create_snapshot
-from backend.workflow_verbalizer_test_hooks import render_rooms
-from backend.workflows.steps.step3_room_availability.db_pers import load_rooms_config
-from backend.workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
-from backend.rooms import rank as rank_rooms_profiles, get_max_capacity, any_room_fits_capacity
+from debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate, trace_state, trace_step, set_subloop, trace_marker, trace_general_qa_status
+from utils.profiler import profile_step
+from utils.pseudolinks import generate_room_details_link, generate_qna_link
+from utils.page_snapshots import create_snapshot
+from workflow_verbalizer_test_hooks import render_rooms
+from workflows.steps.step3_room_availability.db_pers import load_rooms_config
+from workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
+from rooms import rank as rank_rooms_profiles, get_max_capacity, any_room_fits_capacity
 
 from ..condition.decide import room_status_on_date
 from ..llm.analysis import summarize_room_statuses
@@ -251,7 +251,7 @@ def process(state: WorkflowState) -> GroupResult:
     # matches the already-confirmed chosen_date, skip the detour. This happens when
     # Step 2's finalize_confirmation internally calls Step 3 on the same message.
     if change_type == ChangeType.DATE and event_entry.get("date_confirmed"):
-        from backend.workflows.common.datetime_parse import parse_all_dates
+        from workflows.common.datetime_parse import parse_all_dates
         from datetime import date as dt_date
 
         chosen_date_raw = event_entry.get("chosen_date")  # e.g., "21.02.2026"
@@ -770,7 +770,7 @@ def process(state: WorkflowState) -> GroupResult:
     # If they mentioned equipment, they'll ask about catering if they want it.
     # Uses dynamic matching from product catalog (products.json) with synonyms.
     # -------------------------------------------------------------------------
-    from backend.services.products import text_matches_category
+    from services.products import text_matches_category
 
     client_prefs = event_entry.get("preferences") or {}
     wish_products = client_prefs.get("wish_products") or []
@@ -874,7 +874,7 @@ def process(state: WorkflowState) -> GroupResult:
     # Universal Verbalizer: transform to warm, human-like message
     # Only the recommended room (room_name) is a required fact.
     # Other rooms are mentioned in the fallback text for LLM context but not required.
-    from backend.workflows.common.prompts import verbalize_draft_body
+    from workflows.common.prompts import verbalize_draft_body
 
     body_markdown = verbalize_draft_body(
         body_markdown,
@@ -1127,7 +1127,7 @@ def _handle_capacity_exceeded(
     - Propose capacity change (reduce to fit largest room)
     - Offer alternatives (split event, external venue)
     """
-    from backend.workflows.common.prompts import verbalize_draft_body
+    from workflows.common.prompts import verbalize_draft_body
 
     display_date = _format_display_date(chosen_date) if chosen_date else "your requested date"
 
@@ -1705,7 +1705,7 @@ def _dates_in_month_weekday_wrapper(
     *,
     limit: int,
 ) -> List[str]:
-    from backend.workflows.io import dates as dates_module
+    from workflows.io import dates as dates_module
 
     return dates_module.dates_in_month_weekday(month_hint, weekday_hint, limit=limit)
 
@@ -1717,7 +1717,7 @@ def _closest_alternatives_wrapper(
     *,
     limit: int,
 ) -> List[str]:
-    from backend.workflows.io import dates as dates_module
+    from workflows.io import dates as dates_module
 
     return dates_module.closest_alternatives(anchor_iso, weekday_hint, month_hint, limit=limit)
 
@@ -1869,7 +1869,7 @@ def _collect_alternative_dates(
     *,
     count: int = 7,
 ) -> List[str]:
-    from backend.workflows.common.catalog import list_free_dates
+    from workflows.common.catalog import list_free_dates
 
     try:
         alt = list_free_dates(count=count, db=state.db, preferred_room=preferred_room)

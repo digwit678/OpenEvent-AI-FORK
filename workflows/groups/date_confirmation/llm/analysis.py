@@ -4,7 +4,7 @@ DEPRECATED: Use backend.workflows.steps.step2_date_confirmation.llm.analysis ins
 This module re-exports from the new canonical location for backwards compatibility.
 """
 
-from backend.workflows.steps.step2_date_confirmation.llm.analysis import (
+from workflows.steps.step2_date_confirmation.llm.analysis import (
     compose_date_confirmation_reply,
 )
 

@@ -7,20 +7,20 @@ from datetime import datetime, time
 logger = logging.getLogger(__name__)
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.requirements import build_requirements, merge_client_profile, requirements_hash
-from backend.workflows.common.timeutils import format_ts_to_ddmmyyyy, format_iso_date_to_ddmmyyyy
-from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.change_propagation import (
+from workflows.common.prompts import append_footer
+from workflows.common.requirements import build_requirements, merge_client_profile, requirements_hash
+from workflows.common.timeutils import format_ts_to_ddmmyyyy, format_iso_date_to_ddmmyyyy
+from workflows.common.types import GroupResult, WorkflowState
+from workflows.change_propagation import (
     detect_change_type,
     detect_change_type_enhanced,
     route_change_on_updated_variable,
 )
-from backend.detection.keywords.buckets import has_revision_signal
+from detection.keywords.buckets import has_revision_signal
 import json
 
-from backend.domain import IntentLabel
-from backend.debug.hooks import (
+from domain import IntentLabel
+from debug.hooks import (
     trace_db_write,
     trace_entity,
     trace_marker,
@@ -29,7 +29,7 @@ from backend.debug.hooks import (
     trace_state,
     trace_step,
 )
-from backend.workflows.io.database import (
+from workflows.io.database import (
     append_history,
     append_audit_entry,
     context_snapshot,
@@ -47,13 +47,13 @@ from ..db_pers.tasks import enqueue_manual_review_task
 from ..condition.checks import is_event_request
 import re
 from ..llm.analysis import classify_intent, extract_user_information
-from backend.workflows.nlu.preferences import extract_preferences
-from backend.services import client_memory
+from workflows.nlu.preferences import extract_preferences
+from services import client_memory
 from ..billing_flow import handle_billing_capture
-from backend.workflows.common.datetime_parse import parse_first_date
-from backend.services.products import list_product_records, merge_product_requests, normalise_product_payload
-from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
-from backend.workflows.qna.router import generate_hybrid_qna_response
+from workflows.common.datetime_parse import parse_first_date
+from services.products import list_product_records, merge_product_requests, normalise_product_payload
+from workflows.common.menu_options import DINNER_MENU_OPTIONS
+from workflows.qna.router import generate_hybrid_qna_response
 
 # Extracted pure helpers (I1 refactoring)
 from .normalization import normalize_quotes as _normalize_quotes

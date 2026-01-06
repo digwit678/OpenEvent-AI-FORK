@@ -13,7 +13,7 @@ Usage:
 import os
 from typing import Any, Dict, Optional
 
-from backend.workflows.common.types import GroupResult
+from workflows.common.types import GroupResult
 
 
 def is_dev_test_mode_enabled() -> bool:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from backend.domain import IntentLabel
-from backend.workflows.common.types import IncomingMessage, WorkflowState
+from domain import IntentLabel
+from workflows.common.types import IncomingMessage, WorkflowState
 import importlib
 
 offer_module = importlib.import_module("backend.workflows.steps.step4_offer.trigger.step4_handler")

@@ -21,11 +21,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-from backend.workflows.common.datetime_parse import build_window_iso
-from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
-from backend.workflows.io.config_store import get_timezone
-from backend.workflows.steps.step1_intake.condition.checks import suggest_dates
-from backend.workflows.steps.step2_date_confirmation.trigger.types import ConfirmationWindow
+from workflows.common.datetime_parse import build_window_iso
+from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from workflows.io.config_store import get_timezone
+from workflows.steps.step1_intake.condition.checks import suggest_dates
+from workflows.steps.step2_date_confirmation.trigger.types import ConfirmationWindow
 
 if TYPE_CHECKING:
     from .shortcuts_types import ParsedIntent, PlannerResult
@@ -39,7 +39,7 @@ def _get_date_process_module():
     """Lazy-load the Step 2 process module."""
     global date_process_module
     if date_process_module is None:
-        from backend.workflows.steps.step2_date_confirmation.trigger import process as mod
+        from workflows.steps.step2_date_confirmation.trigger import process as mod
         date_process_module = mod
     return date_process_module
 

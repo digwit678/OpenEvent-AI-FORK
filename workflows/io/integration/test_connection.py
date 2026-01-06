@@ -36,14 +36,14 @@ def test_config() -> bool:
     """Test configuration loading."""
     print_header("1. Configuration Check")
 
-    from backend.workflows.io.integration.config import (
+    from workflows.io.integration.config import (
         INTEGRATION_CONFIG,
         reload_config,
     )
 
     # Reload to pick up any env changes
     reload_config()
-    from backend.workflows.io.integration.config import INTEGRATION_CONFIG
+    from workflows.io.integration.config import INTEGRATION_CONFIG
 
     print(f"  Mode: {INTEGRATION_CONFIG.mode}")
     print(f"  Supabase URL: {INTEGRATION_CONFIG.supabase_url or '(not set)'}")
@@ -75,7 +75,7 @@ def test_supabase_connection() -> bool:
         print_check("supabase-py installed", False, "Run: pip install supabase")
         return False
 
-    from backend.workflows.io.integration.config import INTEGRATION_CONFIG
+    from workflows.io.integration.config import INTEGRATION_CONFIG
 
     if not INTEGRATION_CONFIG.supabase_url or not INTEGRATION_CONFIG.supabase_key:
         print_check("Credentials set", False, "Set OE_SUPABASE_URL and OE_SUPABASE_KEY")
@@ -98,7 +98,7 @@ def test_table_access() -> dict:
     """Test access to required tables."""
     print_header("3. Table Access Check")
 
-    from backend.workflows.io.integration.config import INTEGRATION_CONFIG
+    from workflows.io.integration.config import INTEGRATION_CONFIG
 
     if not INTEGRATION_CONFIG.supabase_url or not INTEGRATION_CONFIG.supabase_key:
         print("  Skipped (no credentials)")
@@ -148,7 +148,7 @@ def test_team_lookup() -> bool:
     """Test team lookup by ID."""
     print_header("4. Team Verification")
 
-    from backend.workflows.io.integration.config import INTEGRATION_CONFIG
+    from workflows.io.integration.config import INTEGRATION_CONFIG
 
     if not INTEGRATION_CONFIG.team_id:
         print("  Skipped (OE_TEAM_ID not set)")
@@ -186,7 +186,7 @@ def test_schema_columns() -> dict:
     """Check if required integration columns exist."""
     print_header("5. Integration Schema Check")
 
-    from backend.workflows.io.integration.config import INTEGRATION_CONFIG
+    from workflows.io.integration.config import INTEGRATION_CONFIG
 
     if not INTEGRATION_CONFIG.supabase_url or not INTEGRATION_CONFIG.supabase_key:
         print("  Skipped (no credentials)")

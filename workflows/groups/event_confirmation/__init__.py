@@ -13,7 +13,7 @@ _warnings.warn(
     stacklevel=2,
 )
 
-from backend.workflows.steps.step7_confirmation import (
+from workflows.steps.step7_confirmation import (
     WorkflowNode,
     OpenEventAction,
     LLMNode,

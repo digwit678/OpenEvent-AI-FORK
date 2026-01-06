@@ -18,7 +18,7 @@ MIGRATION: Extracted from main.py in Phase C refactoring (2025-12-18).
 from fastapi import APIRouter
 from typing import Optional
 
-from backend.utils.page_snapshots import (
+from utils.page_snapshots import (
     get_snapshot,
     get_snapshot_data,
     list_snapshots,

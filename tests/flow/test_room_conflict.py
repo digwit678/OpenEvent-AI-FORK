@@ -14,8 +14,8 @@ import pytest
 pytestmark = pytest.mark.v4
 from datetime import datetime
 
-# MIGRATED: from backend.workflows.common.conflict -> backend.detection.special.room_conflict
-from backend.detection.special.room_conflict import (
+# MIGRATED: from workflows.common.conflict -> backend.detection.special.room_conflict
+from detection.special.room_conflict import (
     ConflictType,
     detect_room_conflict,
     detect_conflict_type,

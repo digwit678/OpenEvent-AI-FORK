@@ -15,10 +15,10 @@ from typing import Any, Dict
 
 import pytest
 
-from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.steps.step1_intake import process as process_intake
-from backend.workflows.steps.step2_date_confirmation.trigger.process import process as process_date
-from backend.workflows.steps.step3_room_availability.trigger.process import process as process_room
+from workflows.common.types import IncomingMessage, WorkflowState
+from workflows.steps.step1_intake import process as process_intake
+from workflows.steps.step2_date_confirmation.trigger.process import process as process_date
+from workflows.steps.step3_room_availability.trigger.process import process as process_room
 
 
 @pytest.fixture

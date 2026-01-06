@@ -22,13 +22,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from backend.utils import json_io
+from utils import json_io
 
 
 def _use_supabase() -> bool:
     """Check if Supabase snapshots are enabled (lazy import to avoid circular deps)."""
     try:
-        from backend.workflows.io.integration.config import INTEGRATION_CONFIG
+        from workflows.io.integration.config import INTEGRATION_CONFIG
         return INTEGRATION_CONFIG.use_supabase_snapshots
     except ImportError:
         return False
@@ -136,7 +136,7 @@ def create_snapshot(
 
     # Route to Supabase if enabled
     if _use_supabase():
-        from backend.workflows.io.integration import supabase_snapshots
+        from workflows.io.integration import supabase_snapshots
         return supabase_snapshots.create_snapshot(
             snapshot_type=snapshot_type,
             data=data,
@@ -182,7 +182,7 @@ def get_snapshot(snapshot_id: str) -> Optional[Dict[str, Any]]:
     """
     # Route to Supabase if enabled
     if _use_supabase():
-        from backend.workflows.io.integration import supabase_snapshots
+        from workflows.io.integration import supabase_snapshots
         return supabase_snapshots.get_snapshot(snapshot_id)
 
     storage = _load_snapshots()
@@ -208,7 +208,7 @@ def get_snapshot_data(snapshot_id: str) -> Optional[Any]:
     """
     # Route to Supabase if enabled
     if _use_supabase():
-        from backend.workflows.io.integration import supabase_snapshots
+        from workflows.io.integration import supabase_snapshots
         return supabase_snapshots.get_snapshot_data(snapshot_id)
 
     snapshot = get_snapshot(snapshot_id)
@@ -229,7 +229,7 @@ def list_snapshots(
     """
     # Route to Supabase if enabled
     if _use_supabase():
-        from backend.workflows.io.integration import supabase_snapshots
+        from workflows.io.integration import supabase_snapshots
         return supabase_snapshots.list_snapshots(
             snapshot_type=snapshot_type,
             event_id=event_id,
@@ -268,7 +268,7 @@ def delete_snapshot(snapshot_id: str) -> bool:
     """Delete a specific snapshot."""
     # Route to Supabase if enabled
     if _use_supabase():
-        from backend.workflows.io.integration import supabase_snapshots
+        from workflows.io.integration import supabase_snapshots
         return supabase_snapshots.delete_snapshot(snapshot_id)
 
     storage = _load_snapshots()
@@ -290,7 +290,7 @@ def cleanup_all_expired() -> int:
     """
     # Route to Supabase if enabled
     if _use_supabase():
-        from backend.workflows.io.integration import supabase_snapshots
+        from workflows.io.integration import supabase_snapshots
         return supabase_snapshots.cleanup_all_expired()
 
     storage = _load_snapshots()
@@ -319,7 +319,7 @@ def delete_snapshots_for_event(event_id: str) -> int:
     """
     # Route to Supabase if enabled
     if _use_supabase():
-        from backend.workflows.io.integration import supabase_snapshots
+        from workflows.io.integration import supabase_snapshots
         return supabase_snapshots.delete_snapshots_for_event(event_id)
 
     storage = _load_snapshots()

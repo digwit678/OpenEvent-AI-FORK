@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.chatkit import build_client_tool_message
+from chatkit import build_client_tool_message
 
 
 def test_confirm_offer_message_builds_default() -> None:

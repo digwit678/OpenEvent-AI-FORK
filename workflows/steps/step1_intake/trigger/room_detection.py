@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Optional
 
-from backend.workflows.io.database import load_rooms
+from workflows.io.database import load_rooms
 from .normalization import normalize_room_token
 
 

@@ -1,15 +1,15 @@
 """
 DEPRECATED: Use backend.core.fallback instead.
 
-This module re-exports from backend.core.fallback for backward compatibility.
+This module re-exports from core.fallback for backward compatibility.
 All fallback logic is now consolidated in backend/core/fallback.py.
 
 Migration guide:
     # Old import:
-    from backend.utils.fallback import create_fallback_context, wrap_fallback
+    from utils.fallback import create_fallback_context, wrap_fallback
 
     # New import:
-    from backend.core.fallback import create_fallback_context, wrap_fallback
+    from core.fallback import create_fallback_context, wrap_fallback
 """
 
 import warnings
@@ -20,7 +20,7 @@ warnings.warn(
     stacklevel=2,
 )
 
-from backend.core.fallback import (
+from core.fallback import (
     # Core exports
     FallbackContext,
     SHOW_FALLBACK_DIAGNOSTICS,

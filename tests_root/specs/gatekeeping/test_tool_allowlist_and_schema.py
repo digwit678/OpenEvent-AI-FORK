@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from backend.agents import execute_tool_call, ToolExecutionError
-from backend.agents.openevent_agent import OpenEventAgent
+from agents import execute_tool_call, ToolExecutionError
+from agents.openevent_agent import OpenEventAgent
 
 
 def test_tool_schema_blocks_missing_required_fields():

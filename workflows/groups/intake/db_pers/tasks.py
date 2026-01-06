@@ -4,7 +4,7 @@ DEPRECATED: Use backend.workflows.steps.step1_intake.db_pers.tasks instead.
 This module re-exports from the new canonical location for backwards compatibility.
 """
 
-from backend.workflows.steps.step1_intake.db_pers.tasks import (
+from workflows.steps.step1_intake.db_pers.tasks import (
     enqueue_task,
     enqueue_manual_review_task,
     enqueue_missing_event_date_task,

@@ -15,12 +15,12 @@ from __future__ import annotations
 from datetime import datetime as dt
 from typing import Any, Dict, List, Optional
 
-from backend.debug.hooks import trace_db_write, trace_state
-from backend.detection.special.room_conflict import ConflictType, detect_conflict_type
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
-from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.io.database import update_event_metadata, update_event_room
+from debug.hooks import trace_db_write, trace_state
+from detection.special.room_conflict import ConflictType, detect_conflict_type
+from workflows.common.prompts import append_footer
+from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from workflows.common.types import GroupResult, WorkflowState
+from workflows.io.database import update_event_metadata, update_event_room
 
 
 def _thread_id(state: WorkflowState) -> str:

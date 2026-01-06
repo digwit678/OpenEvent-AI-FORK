@@ -199,7 +199,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # In Supabase JWT mode, also set tenant context from claims
             # This integrates with multi-tenancy (overrides X-Team-Id header)
             if claims.get("team_id"):
-                from backend.api.middleware.tenant_context import CURRENT_TEAM_ID
+                from api.middleware.tenant_context import CURRENT_TEAM_ID
                 CURRENT_TEAM_ID.set(claims["team_id"])
 
             return await call_next(request)

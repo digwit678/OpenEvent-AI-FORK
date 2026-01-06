@@ -5,7 +5,7 @@ Toggle between JSON-based storage (current) and Supabase (integration).
 
 Usage:
     # Check current mode
-    from backend.workflows.io.integration import is_integration_mode
+    from workflows.io.integration import is_integration_mode
 
     if is_integration_mode():
         # Use Supabase adapter
@@ -123,7 +123,7 @@ def get_team_id() -> Optional[str]:
     """
     # Try request context first (set by TenantContextMiddleware)
     try:
-        from backend.api.middleware.tenant_context import get_request_team_id
+        from api.middleware.tenant_context import get_request_team_id
 
         request_team_id = get_request_team_id()
         if request_team_id is not None:
@@ -144,7 +144,7 @@ def get_system_user_id() -> Optional[str]:
     """
     # Try request context first (set by TenantContextMiddleware)
     try:
-        from backend.api.middleware.tenant_context import get_request_manager_id
+        from api.middleware.tenant_context import get_request_manager_id
 
         request_manager_id = get_request_manager_id()
         if request_manager_id is not None:
@@ -169,7 +169,7 @@ def _get_hil_setting_from_db() -> Optional[bool]:
     """
     try:
         # Import here to avoid circular dependency
-        from backend.workflow_email import load_db as wf_load_db
+        from workflow_email import load_db as wf_load_db
         db = wf_load_db()
         hil_config = db.get("config", {}).get("hil_mode", {})
         if "enabled" in hil_config:

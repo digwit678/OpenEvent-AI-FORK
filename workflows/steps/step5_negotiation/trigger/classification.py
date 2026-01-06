@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from typing import List, Optional, Tuple
 
-from backend.detection.response.matchers import (
+from detection.response.matchers import (
     is_room_selection,
     matches_acceptance_pattern,
     matches_counter_pattern,

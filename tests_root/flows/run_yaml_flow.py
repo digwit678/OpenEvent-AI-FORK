@@ -5,10 +5,10 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from backend.workflow_email import approve_task_and_send, process_msg
-from backend.workflows.common.menu_options import build_menu_payload, extract_menu_request, format_menu_line
-from backend.workflows.io import database as db_io
-from backend.workflow_verbalizer_test_hooks import render_rooms
+from workflow_email import approve_task_and_send, process_msg
+from workflows.common.menu_options import build_menu_payload, extract_menu_request, format_menu_line
+from workflows.io import database as db_io
+from workflow_verbalizer_test_hooks import render_rooms
 from tests.stubs.dates_and_rooms import room_status_on_date as stub_room_status
 from tests.stubs.dates_and_rooms import suggest_dates as stub_suggest_dates
 from tests.stubs.dates_and_rooms import load_rooms_config as stub_load_rooms_config
@@ -210,7 +210,7 @@ class FlowHarness:
         raise AssertionError(f"Unknown system_call {name}")
 
     def _build_offer(self, event: Dict[str, Any], args: Dict[str, Any]) -> Dict[str, Any]:
-        from backend.workflows.steps.step4_offer.trigger.step4_handler import build_offer
+        from workflows.steps.step4_offer.trigger.step4_handler import build_offer
 
         result = build_offer(
             event.get("event_id"),

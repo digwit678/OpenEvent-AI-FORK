@@ -17,14 +17,14 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflow.guards import evaluate as evaluate_guards
-from backend.workflows.planner import maybe_run_smart_shortcuts
-from backend.detection.pre_filter import pre_filter, PreFilterResult, is_enhanced_mode
-from backend.detection.unified import run_unified_detection, UnifiedDetectionResult, is_unified_mode
-from backend.domain import TaskType
-from backend.workflows.io.tasks import enqueue_task
-from backend.workflows.io.config_store import get_manager_names
+from workflows.common.types import GroupResult, WorkflowState
+from workflow.guards import evaluate as evaluate_guards
+from workflows.planner import maybe_run_smart_shortcuts
+from detection.pre_filter import pre_filter, PreFilterResult, is_enhanced_mode
+from detection.unified import run_unified_detection, UnifiedDetectionResult, is_unified_mode
+from domain import TaskType
+from workflows.io.tasks import enqueue_task
+from workflows.io.config_store import get_manager_names
 
 
 # =============================================================================
@@ -228,7 +228,7 @@ def check_out_of_context(
     intent = unified_result.intent if unified_result else "unknown"
     logger.warning("[PRE_ROUTE] Out-of-context message detected - no response")
 
-    from backend.debug.hooks import trace_marker
+    from debug.hooks import trace_marker
     trace_marker(
         state.thread_id,
         "OUT_OF_CONTEXT_IGNORED",
@@ -313,7 +313,7 @@ def handle_manager_escalation(
         }
 
     # Create task using the db from state (already loaded)
-    from backend.workflows.io.database import lock_path_for, save_db
+    from workflows.io.database import lock_path_for, save_db
 
     task_id = enqueue_task(
         state.db,
@@ -356,7 +356,7 @@ def handle_manager_escalation(
         },
     )
 
-    from backend.debug.hooks import trace_marker
+    from debug.hooks import trace_marker
     trace_marker(
         state.thread_id,
         "MANAGER_ESCALATION_DETECTED",
@@ -413,7 +413,7 @@ def check_duplicate_message(
                     },
                 },
             )
-            from backend.debug.hooks import trace_marker  # pylint: disable=import-outside-toplevel
+            from debug.hooks import trace_marker  # pylint: disable=import-outside-toplevel
 
             trace_marker(
                 state.thread_id,

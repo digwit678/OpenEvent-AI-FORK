@@ -34,11 +34,11 @@ import re
 import time
 from typing import Any, Dict, Optional
 
-from backend.llm.client import get_openai_client, is_llm_available
-from backend.workflows.common.types import WorkflowState
+from llm.client import get_openai_client, is_llm_available
+from workflows.common.types import WorkflowState
 
 # Import consolidated pattern from keyword_buckets (single source of truth)
-from backend.detection.keywords.buckets import ACTION_REQUEST_PATTERNS
+from detection.keywords.buckets import ACTION_REQUEST_PATTERNS
 
 # Note: _detect_qna_types is imported lazily inside detect_general_room_query()
 # to avoid circular import with backend.llm.intent_classifier
@@ -429,7 +429,7 @@ def detect_general_room_query(msg_text: str, state: WorkflowState) -> Dict[str, 
 
     # Detect secondary Q&A types (catering_for, products_for, etc.)
     # Lazy import to avoid circular import with backend.detection.intent.classifier
-    from backend.detection.intent.classifier import _detect_qna_types  # pylint: disable=import-outside-toplevel
+    from detection.intent.classifier import _detect_qna_types  # pylint: disable=import-outside-toplevel
     secondary_types = _detect_qna_types(text)
 
     detection = {

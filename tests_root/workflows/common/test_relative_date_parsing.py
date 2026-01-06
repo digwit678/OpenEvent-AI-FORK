@@ -1,6 +1,6 @@
 from datetime import date
 
-from backend.workflows.common.datetime_parse import parse_first_date
+from workflows.common.datetime_parse import parse_first_date
 
 
 def test_parse_first_date_prefers_numeric() -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from backend.workflows.nlu import (
+from workflows.nlu import (
     detect_general_room_query,
     reset_general_qna_cache,
 )

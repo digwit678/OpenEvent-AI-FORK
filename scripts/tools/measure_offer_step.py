@@ -14,12 +14,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.utils.runtime import reset_runtime_state
-from backend.workflow_email import process_msg
+from utils.runtime import reset_runtime_state
+from workflow_email import process_msg
 
 
 def _configure_stub(mapping: Dict[str, Dict[str, Any]]) -> None:
-    from backend.workflows.llm import adapter as llm_adapter
+    from workflows.llm import adapter as llm_adapter
 
     agent = llm_adapter.adapter
 

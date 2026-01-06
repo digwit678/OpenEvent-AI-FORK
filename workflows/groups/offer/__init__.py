@@ -13,7 +13,7 @@ _warnings.warn(
     stacklevel=2,
 )
 
-from backend.workflows.steps.step4_offer import (
+from workflows.steps.step4_offer import (
     WorkflowNode,
     OpenEventAction,
     LLMNode,

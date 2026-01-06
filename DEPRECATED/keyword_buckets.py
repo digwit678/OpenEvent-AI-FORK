@@ -2,8 +2,8 @@
 DEPRECATED: This module has been moved to backend/detection/keywords/buckets.py
 
 Please update your imports:
-    OLD: from backend.workflows.nlu.keyword_buckets import ...
-    NEW: from backend.detection.keywords.buckets import ...
+    OLD: from workflows.nlu.keyword_buckets import ...
+    NEW: from detection.keywords.buckets import ...
 
 This file will be removed in a future version.
 
@@ -17,7 +17,7 @@ and target-specific patterns. Patterns are organized by language and function.
 Based on UX analysis for comprehensive coverage of venue booking change scenarios.
 
 Usage:
-    from backend.detection.keywords.buckets import (
+    from detection.keywords.buckets import (
         CHANGE_VERBS_EN, CHANGE_VERBS_DE,
         REVISION_MARKERS_EN, REVISION_MARKERS_DE,
         TARGET_PATTERNS, PURE_QA_SIGNALS,

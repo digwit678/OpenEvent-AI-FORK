@@ -37,8 +37,8 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # Import enhanced detection from keyword_buckets
-# MIGRATED: from backend.workflows.nlu.keyword_buckets -> backend.detection.keywords.buckets
-from backend.detection.keywords.buckets import (
+# MIGRATED: from workflows.nlu.keyword_buckets -> backend.detection.keywords.buckets
+from detection.keywords.buckets import (
     DetourMode,
     MessageIntent,
     ChangeIntentResult,
@@ -773,7 +773,7 @@ def compute_offer_hash(offer_payload: Dict[str, Any]) -> str:
     Returns:
         SHA256 hash of the offer
     """
-    from backend.workflows.common.requirements import stable_hash
+    from workflows.common.requirements import stable_hash
 
     # Extract relevant fields for offer hash
     offer_subset = {
@@ -974,7 +974,7 @@ def detect_change_type_enhanced(
                     date_in_message = True
                 else:
                     # Parse dates from message and check if extracted date matches
-                    from backend.workflows.common.datetime_parse import parse_all_dates
+                    from workflows.common.datetime_parse import parse_all_dates
                     from datetime import date as dt_date
                     try:
                         parsed_dates = list(parse_all_dates(message_text, fallback_year=dt_date.today().year))

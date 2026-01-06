@@ -8,8 +8,8 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.main import app
-from backend.api.middleware.tenant_context import (
+from main import app
+from api.middleware.tenant_context import (
     CURRENT_TEAM_ID,
     CURRENT_MANAGER_ID,
     get_request_team_id,
@@ -89,7 +89,7 @@ class TestConfigIntegration:
 
     def test_get_team_id_uses_contextvar_when_set(self):
         """get_team_id() should return contextvar value when set."""
-        from backend.workflows.io.integration.config import get_team_id
+        from workflows.io.integration.config import get_team_id
 
         # Set contextvar
         CURRENT_TEAM_ID.set("test-team-from-header")
@@ -101,7 +101,7 @@ class TestConfigIntegration:
 
     def test_get_team_id_falls_back_to_env_when_contextvar_none(self):
         """get_team_id() should fall back to env var when contextvar is None."""
-        from backend.workflows.io.integration.config import (
+        from workflows.io.integration.config import (
             get_team_id,
             INTEGRATION_CONFIG,
         )
@@ -113,7 +113,7 @@ class TestConfigIntegration:
 
     def test_get_system_user_id_uses_contextvar_when_set(self):
         """get_system_user_id() should return contextvar value when set."""
-        from backend.workflows.io.integration.config import get_system_user_id
+        from workflows.io.integration.config import get_system_user_id
 
         CURRENT_MANAGER_ID.set("test-manager-from-header")
         try:
@@ -124,7 +124,7 @@ class TestConfigIntegration:
 
     def test_get_system_user_id_falls_back_to_env_when_contextvar_none(self):
         """get_system_user_id() should fall back to env var when contextvar is None."""
-        from backend.workflows.io.integration.config import (
+        from workflows.io.integration.config import (
             get_system_user_id,
             INTEGRATION_CONFIG,
         )
@@ -136,7 +136,7 @@ class TestConfigIntegration:
 
     def test_contextvar_takes_priority_over_env_var(self):
         """Contextvar should take priority even when env var is set."""
-        from backend.workflows.io.integration.config import get_team_id
+        from workflows.io.integration.config import get_team_id
 
         # Even if env var has a value, contextvar should win
         CURRENT_TEAM_ID.set("header-team-id")
@@ -152,7 +152,7 @@ class TestJSONDBRouting:
 
     def test_adapter_uses_default_path_when_no_team_id(self):
         """Adapter should use default path when team_id is None."""
-        from backend.workflows.io.integration.adapter import JSONDatabaseAdapter
+        from workflows.io.integration.adapter import JSONDatabaseAdapter
 
         CURRENT_TEAM_ID.set(None)
         adapter = JSONDatabaseAdapter()
@@ -163,7 +163,7 @@ class TestJSONDBRouting:
 
     def test_adapter_uses_team_path_when_team_id_set(self):
         """Adapter should use per-team path when team_id is set."""
-        from backend.workflows.io.integration.adapter import JSONDatabaseAdapter
+        from workflows.io.integration.adapter import JSONDatabaseAdapter
 
         CURRENT_TEAM_ID.set("test-team-123")
         try:
@@ -177,7 +177,7 @@ class TestJSONDBRouting:
 
     def test_adapter_path_changes_with_contextvar(self):
         """Path should change dynamically as contextvar changes."""
-        from backend.workflows.io.integration.adapter import JSONDatabaseAdapter
+        from workflows.io.integration.adapter import JSONDatabaseAdapter
 
         adapter = JSONDatabaseAdapter()
         adapter.initialize()
@@ -199,7 +199,7 @@ class TestJSONDBRouting:
 
     def test_same_adapter_instance_different_paths(self):
         """Same adapter instance should resolve different paths per team."""
-        from backend.workflows.io.integration.adapter import JSONDatabaseAdapter
+        from workflows.io.integration.adapter import JSONDatabaseAdapter
 
         adapter = JSONDatabaseAdapter()
         adapter.initialize()

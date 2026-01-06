@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.workflows.common.sorting import rank_rooms, ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION
+from workflows.common.sorting import rank_rooms, ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION
 
 
 def test_rank_rooms_by_preferences_prioritises_available_and_hints():

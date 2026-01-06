@@ -10,8 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from backend.workflows.common.sorting import RankedRoom
-from backend.workflows.common.types import WorkflowState
+from workflows.common.sorting import RankedRoom
+from workflows.common.types import WorkflowState
 
 
 @dataclass

@@ -4,11 +4,11 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from backend.workflow_email import process_msg as workflow_process_msg
-from backend.agents.guardrails import safe_envelope
-from backend.workflows.common.prompts import FOOTER_SEPARATOR
-from backend.llm.client import get_openai_client, is_llm_available
-from backend.workflows.io.config_store import get_venue_name
+from workflow_email import process_msg as workflow_process_msg
+from agents.guardrails import safe_envelope
+from workflows.common.prompts import FOOTER_SEPARATOR
+from llm.client import get_openai_client, is_llm_available
+from workflows.io.config_store import get_venue_name
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ class OpenEventAgent:
             return dict(cached)
 
         # Import locally to avoid circular import during module initialisation.
-        from backend.agents import chatkit_runner as _runner  # pylint: disable=import-outside-toplevel
+        from agents import chatkit_runner as _runner  # pylint: disable=import-outside-toplevel
 
         state_snapshot = session.get("state", {}) or {}
         result = _runner.execute_tool_call(tool_name, tool_call_id, arguments, state_snapshot, db)
@@ -229,7 +229,7 @@ class OpenEventAgent:
             self._hydrate_session_from_payload(session, seeded.get("payload", {}))
             return seeded
 
-        from backend.agents import chatkit_runner as _runner  # pylint: disable=import-outside-toplevel
+        from agents import chatkit_runner as _runner  # pylint: disable=import-outside-toplevel
 
         history: List[Dict[str, Any]] = session.get("history", []) or []
         messages: List[Dict[str, Any]] = [
@@ -338,7 +338,7 @@ class OpenEventAgent:
 
     def _hydrate_session_from_db(self, session: Dict[str, Any]) -> None:
         try:
-            from backend.workflow_email import get_default_db  # pylint: disable=import-outside-toplevel
+            from workflow_email import get_default_db  # pylint: disable=import-outside-toplevel
         except Exception:
             return
 

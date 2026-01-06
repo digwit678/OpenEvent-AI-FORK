@@ -91,7 +91,7 @@ def _scan_backend_for_violations() -> List[Tuple[Path, int, str]]:
 @pytest.mark.v4
 def test_no_runtime_imports_from_deprecated_groups():
     """
-    Verify that no runtime code imports from backend.workflows.groups.*.
+    Verify that no runtime code imports from workflows.groups.*.
 
     The groups hierarchy is DEPRECATED. All runtime imports must use
     backend.workflows.steps.* instead. This test enforces the boundary.

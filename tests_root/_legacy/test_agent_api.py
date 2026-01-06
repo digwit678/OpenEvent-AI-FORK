@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from backend.main import app
-from backend.agents.guardrails import safe_envelope
+from main import app
+from agents.guardrails import safe_envelope
 
 
 def test_safe_envelope_validates_schema() -> None:

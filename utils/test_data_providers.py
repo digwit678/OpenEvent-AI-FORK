@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Dict, Any, List, Optional
 
-from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
-from backend.workflows.steps.step3_room_availability.db_pers import load_rooms_config
+from workflows.common.menu_options import DINNER_MENU_OPTIONS
+from workflows.steps.step3_room_availability.db_pers import load_rooms_config
 
 
 def get_rooms_for_display(date: Optional[str] = None, capacity: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -137,7 +137,7 @@ def get_catering_menu_details(menu_slug: str) -> Optional[Dict[str, Any]]:
 
 def get_qna_items(category: Optional[str] = None, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Get Q&A items, optionally filtered by category and other parameters."""
-    from backend.workflows.io.config_store import get_faq_items as load_faq_items
+    from workflows.io.config_store import get_faq_items as load_faq_items
 
     filters = filters or {}
 

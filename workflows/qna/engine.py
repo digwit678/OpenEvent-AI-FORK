@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
-from backend.services.qna_readonly import (
+from services.qna_readonly import (
     RoomAvailabilityRow,
     RoomSummary,
     fetch_product_repertoire,
@@ -12,9 +12,9 @@ from backend.services.qna_readonly import (
     list_rooms_by_capacity,
     load_room_static,
 )
-from backend.workflows.common.types import WorkflowState
-from backend.workflows.qna.context_builder import EffectiveVariable, QnAContext, build_qna_context
-from backend.workflows.qna.verbalizer import render_qna_answer
+from workflows.common.types import WorkflowState
+from workflows.qna.context_builder import EffectiveVariable, QnAContext, build_qna_context
+from workflows.qna.verbalizer import render_qna_answer
 
 
 @dataclass

@@ -12,8 +12,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from backend.ux.verbalizer_payloads import RoomOfferFacts
-from backend.workflows.io.config_store import get_currency_regex
+from ux.verbalizer_payloads import RoomOfferFacts
+from workflows.io.config_store import get_currency_regex
 
 logger = logging.getLogger(__name__)
 

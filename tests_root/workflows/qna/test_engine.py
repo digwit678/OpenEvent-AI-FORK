@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from backend.services.qna_readonly import RoomAvailabilityRow, RoomSummary
-from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.qna.engine import StructuredQnAResult, build_structured_qna_result
+from services.qna_readonly import RoomAvailabilityRow, RoomSummary
+from workflows.common.types import IncomingMessage, WorkflowState
+from workflows.qna.engine import StructuredQnAResult, build_structured_qna_result
 
 
 @pytest.fixture

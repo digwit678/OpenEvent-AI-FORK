@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from backend.agents.openevent_agent import OpenEventAgent
+from agents.openevent_agent import OpenEventAgent
 
 
 def test_email_composer_prefers_body_markdown(caplog):

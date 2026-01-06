@@ -60,7 +60,7 @@ RELATED TESTS:
 """
 
 # Will export all patterns from buckets.py when migrated
-# from backend.detection.keywords.buckets import (
+# from detection.keywords.buckets import (
 #     CHANGE_VERBS_EN, CHANGE_VERBS_DE,
 #     CONFIRMATION_SIGNALS_EN, CONFIRMATION_SIGNALS_DE,
 #     # ... etc

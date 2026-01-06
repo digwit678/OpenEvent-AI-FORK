@@ -10,7 +10,7 @@ Security considerations:
 - Suspicious patterns are flagged for review
 
 Usage:
-    from backend.workflows.llm.sanitize import sanitize_for_llm, sanitize_message
+    from workflows.llm.sanitize import sanitize_for_llm, sanitize_message
 
     # Sanitize a single field
     safe_text = sanitize_for_llm(user_input, max_length=2000)

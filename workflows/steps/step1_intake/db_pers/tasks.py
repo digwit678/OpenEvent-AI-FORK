@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from backend.domain import TaskStatus, TaskType
-from backend.workflows.io.tasks import enqueue_task as _enqueue_task
-from backend.workflows.io.tasks import update_task_status as _update_task_status
+from domain import TaskStatus, TaskType
+from workflows.io.tasks import enqueue_task as _enqueue_task
+from workflows.io.tasks import update_task_status as _update_task_status
 
 __workflow_role__ = "db_pers"
 

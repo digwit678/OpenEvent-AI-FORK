@@ -11,8 +11,8 @@ Tests change detection and routing across all workflow steps (2-7) to ensure:
 from __future__ import annotations
 
 import pytest
-from backend.workflows.change_propagation import ChangeType, detect_change_type, route_change_on_updated_variable
-from backend.workflows.common.requirements import requirements_hash
+from workflows.change_propagation import ChangeType, detect_change_type, route_change_on_updated_variable
+from workflows.common.requirements import requirements_hash
 
 
 # ============================================================================

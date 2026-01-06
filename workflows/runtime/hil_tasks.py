@@ -21,15 +21,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from backend.domain import TaskStatus, TaskType
+from domain import TaskStatus, TaskType
 
 if TYPE_CHECKING:
-    from backend.workflows.common.types import WorkflowState
-from backend.workflows.io import database as db_io
-from backend.workflows.io import tasks as task_io
-from backend.workflows.io.database import update_event_metadata
-from backend.workflow.state import WorkflowStep, write_stage
-from backend.debug.trace import set_hil_open
+    from workflows.common.types import WorkflowState
+from workflows.io import database as db_io
+from workflows.io import tasks as task_io
+from workflows.io.database import update_event_metadata
+from workflow.state import WorkflowStep, write_stage
+from debug.trace import set_hil_open
 
 # Re-export from task_io for backwards compatibility
 list_pending_tasks = task_io.list_pending_tasks
@@ -221,9 +221,9 @@ def approve_task_and_send(
 
         # If offer was accepted and deposit is paid (or not required), continue workflow
         if offer_accepted and (not deposit_required or deposit_paid):
-            from backend.workflows.common.types import IncomingMessage, WorkflowState
-            from backend.workflows.steps import step5_negotiation as negotiation_group
-            from backend.workflows.steps.step6_transition import process as process_transition
+            from workflows.common.types import IncomingMessage, WorkflowState
+            from workflows.steps import step5_negotiation as negotiation_group
+            from workflows.steps.step6_transition import process as process_transition
 
             logger.info("[HIL] Step 4 offer approved with deposit paid, continuing to site visit")
 
@@ -270,9 +270,9 @@ def approve_task_and_send(
     if step_num == 5:
         pending_decision = target_event.get("negotiation_pending_decision")
         if pending_decision:
-            from backend.workflows.common.types import IncomingMessage, WorkflowState
-            from backend.workflows.steps import step5_negotiation as negotiation_group
-            from backend.workflows.steps.step6_transition import process as process_transition
+            from workflows.common.types import IncomingMessage, WorkflowState
+            from workflows.steps import step5_negotiation as negotiation_group
+            from workflows.steps.step6_transition import process as process_transition
 
             hil_message = IncomingMessage.from_dict(
                 {
@@ -475,8 +475,8 @@ def reject_task_and_send(
     if step_num == 5:
         pending_decision = target_event.get("negotiation_pending_decision")
         if pending_decision:
-            from backend.workflows.common.types import IncomingMessage, WorkflowState
-            from backend.workflows.steps import step5_negotiation as negotiation_group
+            from workflows.common.types import IncomingMessage, WorkflowState
+            from workflows.steps import step5_negotiation as negotiation_group
 
             hil_message = IncomingMessage.from_dict(
                 {
@@ -748,7 +748,7 @@ def _notify_hil_email(task: Dict[str, Any], event_entry: Dict[str, Any]) -> None
     notification to the Event Manager (in addition to frontend panel).
     """
     try:
-        from backend.services.hil_email_notification import (
+        from services.hil_email_notification import (
             is_hil_email_enabled,
             notify_hil_task_created,
         )

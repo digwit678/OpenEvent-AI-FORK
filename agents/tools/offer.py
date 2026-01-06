@@ -5,12 +5,12 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, validator
 
-from backend.workflows.steps.step4_offer.trigger.process import (
+from workflows.steps.step4_offer.trigger.process import (
     ComposeOffer,
     _record_offer,  # type: ignore
 )
-from backend.workflows.steps.step4_offer.llm.send_offer_llm import send_offer_email  # type: ignore
-from backend.workflows.common.catalog import list_products, list_catering
+from workflows.steps.step4_offer.llm.send_offer_llm import send_offer_email  # type: ignore
+from workflows.common.catalog import list_products, list_catering
 
 TOOL_SCHEMA: Dict[str, Dict[str, Any]] = {
     "tool_build_offer_draft": {

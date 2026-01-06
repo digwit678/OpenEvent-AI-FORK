@@ -7,8 +7,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from backend.services.products import list_product_records
-from backend.prefs.semantics import normalize_catering, normalize_products
+from services.products import list_product_records
+from prefs.semantics import normalize_catering, normalize_products
 
 PreferencePayload = Dict[str, Any]
 

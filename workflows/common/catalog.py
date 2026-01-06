@@ -120,7 +120,7 @@ def list_room_features(room_id: str) -> List[str]:
 
 
 # Database-backed product catalog accessor - see config_store.py for defaults
-from backend.workflows.io.config_store import get_product_room_map
+from workflows.io.config_store import get_product_room_map
 
 
 def _get_product_catalog() -> List[Dict[str, Any]]:
@@ -250,7 +250,7 @@ def list_free_dates(
     preferred = preferred_room or "Room A"
     if db is not None:
         try:
-            from backend.workflows.steps.step1_intake.condition.checks import suggest_dates
+            from workflows.steps.step1_intake.condition.checks import suggest_dates
         except Exception:
             suggest_dates = None  # type: ignore
         if suggest_dates is not None:

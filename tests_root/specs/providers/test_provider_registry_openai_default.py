@@ -1,5 +1,5 @@
-from backend.llm import provider_registry
-from backend.llm.providers.openai_provider import OpenAIProvider
+from llm import provider_registry
+from llm.providers.openai_provider import OpenAIProvider
 
 
 def test_default_provider_is_openai(monkeypatch):

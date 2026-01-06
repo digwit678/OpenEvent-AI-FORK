@@ -11,19 +11,19 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from backend.detection.unified import UnifiedDetectionResult
-from backend.workflows.common.site_visit_handler import (
+from detection.unified import UnifiedDetectionResult
+from workflows.common.site_visit_handler import (
     handle_site_visit_request,
     is_site_visit_intent,
 )
-from backend.workflows.common.site_visit_state import is_site_visit_active
-from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.steps import step2_date_confirmation as date_confirmation
-from backend.workflows.steps import step3_room_availability as room_availability
-from backend.workflows.steps.step4_offer.trigger import process as process_offer
-from backend.workflows.steps.step5_negotiation import process as process_negotiation
-from backend.workflows.steps.step6_transition import process as process_transition
-from backend.workflows.steps.step7_confirmation.trigger import process as process_confirmation
+from workflows.common.site_visit_state import is_site_visit_active
+from workflows.common.types import GroupResult, WorkflowState
+from workflows.steps import step2_date_confirmation as date_confirmation
+from workflows.steps import step3_room_availability as room_availability
+from workflows.steps.step4_offer.trigger import process as process_offer
+from workflows.steps.step5_negotiation import process as process_negotiation
+from workflows.steps.step6_transition import process as process_transition
+from workflows.steps.step7_confirmation.trigger import process as process_confirmation
 
 
 # Type aliases for callback functions

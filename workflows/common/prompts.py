@@ -104,7 +104,7 @@ def _verbalize_body(
 ) -> str:
     """Apply universal verbalization to message body."""
     try:
-        from backend.ux.universal_verbalizer import verbalize_step_message
+        from ux.universal_verbalizer import verbalize_step_message
 
         # Extract context values with defaults
         ctx = context or {}

@@ -24,14 +24,14 @@ import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.room_rules import site_visit_allowed
-from backend.workflows.common.site_visit_state import (
+from workflows.common.prompts import append_footer
+from workflows.common.room_rules import site_visit_allowed
+from workflows.common.site_visit_state import (
     get_site_visit_state,
     set_site_visit_date,
 )
-from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.io.database import append_audit_entry, update_event_metadata
+from workflows.common.types import GroupResult, WorkflowState
+from workflows.io.database import append_audit_entry, update_event_metadata
 
 from .helpers import base_payload
 

@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from backend.domain import IntentLabel
-from backend.workflows.llm import adapter as llm_adapter
+from domain import IntentLabel
+from workflows.llm import adapter as llm_adapter
 
 from ...utils.assertions import (
     assert_next_step_cue,

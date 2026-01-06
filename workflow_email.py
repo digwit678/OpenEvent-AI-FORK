@@ -7,34 +7,34 @@ from typing import Any, Dict, Optional, List
 from datetime import datetime
 import logging
 
-from backend.domain import TaskStatus, TaskType
+from domain import TaskStatus, TaskType
 
-from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.common.types import GroupResult
-from backend.workflows.steps import step1_intake as intake
+from workflows.common.types import IncomingMessage, WorkflowState
+from workflows.common.types import GroupResult
+from workflows.steps import step1_intake as intake
 # Step handlers moved to runtime/router.py (W3 extraction)
-from backend.workflows.io import database as db_io
-from backend.workflows.io.database import update_event_metadata
-from backend.workflows.io import tasks as task_io
-from backend.workflows.io.integration.config import is_hil_all_replies_enabled
-from backend.workflows.llm import adapter as llm_adapter
+from workflows.io import database as db_io
+from workflows.io.database import update_event_metadata
+from workflows.io import tasks as task_io
+from workflows.io.integration.config import is_hil_all_replies_enabled
+from workflows.llm import adapter as llm_adapter
 # maybe_run_smart_shortcuts moved to runtime/pre_route.py (P1 extraction)
-from backend.workflows.nlu import (
+from workflows.nlu import (
     detect_general_room_query,
     empty_general_qna_detection,
     quick_general_qna_scan,
 )
-from backend.workflows.qna.extraction import ensure_qna_extraction
-from backend.utils.profiler import profile_step
-from backend.workflow.state import stage_payload, WorkflowStep, write_stage
-from backend.debug.lifecycle import close_if_ended
-from backend.debug.settings import is_trace_enabled
+from workflows.qna.extraction import ensure_qna_extraction
+from utils.profiler import profile_step
+from workflow.state import stage_payload, WorkflowStep, write_stage
+from debug.lifecycle import close_if_ended
+from debug.settings import is_trace_enabled
 # set_hil_open moved to hil_tasks.py (W2 extraction)
 # evaluate_guards moved to runtime/pre_route.py (P1 extraction)
-from backend.debug.state_store import STATE_STORE
+from debug.state_store import STATE_STORE
 
 # Import HIL task APIs from runtime module (W2 extraction)
-from backend.workflows.runtime.hil_tasks import (
+from workflows.runtime.hil_tasks import (
     approve_task_and_send,
     reject_task_and_send,
     cleanup_tasks,
@@ -45,10 +45,10 @@ from backend.workflows.runtime.hil_tasks import (
 )
 
 # Import router from runtime module (W3 extraction)
-from backend.workflows.runtime.router import run_routing_loop
+from workflows.runtime.router import run_routing_loop
 
 # Import pre-route pipeline from runtime module (P1 extraction)
-from backend.workflows.runtime.pre_route import run_pre_route_pipeline
+from workflows.runtime.pre_route import run_pre_route_pipeline
 
 logger = logging.getLogger(__name__)
 WF_DEBUG = os.getenv("WF_DEBUG_STATE") == "1"
@@ -172,8 +172,8 @@ def _debug_state(stage: str, state: WorkflowState, extra: Optional[Dict[str, Any
     subloop = state.extras.pop("subloop", None)
     if subloop:
         snapshot["subloop"] = subloop
-    from backend.debug.hooks import trace_state, set_subloop, clear_subloop  # pylint: disable=import-outside-toplevel
-    from backend.debug.state_store import STATE_STORE  # pylint: disable=import-outside-toplevel
+    from debug.hooks import trace_state, set_subloop, clear_subloop  # pylint: disable=import-outside-toplevel
+    from debug.state_store import STATE_STORE  # pylint: disable=import-outside-toplevel
 
     pending_hil = (event_entry or {}).get("pending_hil_requests") or []
     snapshot["hil_open"] = bool(pending_hil)
@@ -221,7 +221,7 @@ LOCK_PATH = Path(__file__).with_name(".events_db.lock")
 
 enqueue_task = task_io.enqueue_task
 update_task_status = task_io.update_task_status
-# list_pending_tasks is now imported from backend.workflows.runtime.hil_tasks
+# list_pending_tasks is now imported from workflows.runtime.hil_tasks
 get_default_db = db_io.get_default_db
 
 
@@ -301,7 +301,7 @@ def _resolve_tenant_db_path(base_path: Path) -> Path:
     Otherwise uses the default path.
     """
     try:
-        from backend.workflows.io.integration.config import get_team_id
+        from workflows.io.integration.config import get_team_id
 
         team_id = get_team_id()
         if team_id:
@@ -352,7 +352,7 @@ def _flush_and_finalize(result: GroupResult, state: WorkflowState, path: Path, l
 
 # _hil_signature, _enqueue_hil_tasks, _hil_action_type_for_step, _compose_hil_decision_reply,
 # approve_task_and_send, reject_task_and_send, cleanup_tasks, enqueue_hil_tasks
-# are now imported from backend.workflows.runtime.hil_tasks (W2 extraction)
+# are now imported from workflows.runtime.hil_tasks (W2 extraction)
 
 
 @profile_step("workflow.router.process_msg")
@@ -467,7 +467,7 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         state.add_draft_message(fallback_draft)
 
         # Trace this for debugging
-        from backend.debug.hooks import trace_marker
+        from debug.hooks import trace_marker
         trace_marker(
             state.thread_id,
             "EMPTY_REPLY_GUARD",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from backend.debug.hooks import trace_state
-from backend.debug.trace import BUS
+from debug.hooks import trace_state
+from debug.trace import BUS
 
 
 def test_billing_tracked_info(monkeypatch):

@@ -9,18 +9,18 @@ from typing import Any, AsyncGenerator, Callable, Dict, Iterable, List, Optional
 
 from pydantic import ValidationError
 
-from backend.agents.guardrails import safe_envelope
-from backend.agents.openevent_agent import OpenEventAgent
-from backend.workflows.io.config_store import get_venue_name
-from backend.utils.openai_key import SECRET_NAME, load_openai_api_key
-from backend.agents.tools.dates import (
+from agents.guardrails import safe_envelope
+from agents.openevent_agent import OpenEventAgent
+from workflows.io.config_store import get_venue_name
+from utils.openai_key import SECRET_NAME, load_openai_api_key
+from agents.tools.dates import (
     SuggestDatesInput,
     ParseDateIntentInput,
     tool_suggest_dates,
     tool_parse_date_intent,
     TOOL_SCHEMA as DATES_TOOL_SCHEMA,
 )
-from backend.agents.tools.rooms import (
+from agents.tools.rooms import (
     EvaluateRoomsInput,
     RoomStatusInput,
     CapacityCheckInput,
@@ -29,7 +29,7 @@ from backend.agents.tools.rooms import (
     tool_capacity_check,
     TOOL_SCHEMA as ROOMS_TOOL_SCHEMA,
 )
-from backend.agents.tools.offer import (
+from agents.tools.offer import (
     ComposeOfferInput,
     PersistOfferInput,
     ModifyProductInput,
@@ -47,9 +47,9 @@ from backend.agents.tools.offer import (
     tool_send_offer,
     TOOL_SCHEMA as OFFER_TOOL_SCHEMA,
 )
-from backend.agents.tools.negotiation import NegotiationInput, tool_negotiate_offer, TOOL_SCHEMA as NEGOTIATION_TOOL_SCHEMA
-from backend.agents.tools.transition import TransitionInput, tool_transition_sync, TOOL_SCHEMA as TRANSITION_TOOL_SCHEMA
-from backend.agents.tools.confirmation import ConfirmationInput, tool_classify_confirmation, TOOL_SCHEMA as CONFIRM_TOOL_SCHEMA
+from agents.tools.negotiation import NegotiationInput, tool_negotiate_offer, TOOL_SCHEMA as NEGOTIATION_TOOL_SCHEMA
+from agents.tools.transition import TransitionInput, tool_transition_sync, TOOL_SCHEMA as TRANSITION_TOOL_SCHEMA
+from agents.tools.confirmation import ConfirmationInput, tool_classify_confirmation, TOOL_SCHEMA as CONFIRM_TOOL_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -694,13 +694,13 @@ def load_default_db_for_tools() -> Dict[str, Any]:
         Database dict. If loading fails, returns a dict with an error flag
         so tools can report the issue instead of pretending there's no data.
     """
-    from backend.workflow_email import get_default_db  # pylint: disable=import-outside-toplevel
+    from workflow_email import get_default_db  # pylint: disable=import-outside-toplevel
 
     try:
         return get_default_db()
     except Exception as exc:
         # Return a db with error flag so tools can surface the issue
-        from backend.core.fallback import create_fallback_context
+        from core.fallback import create_fallback_context
         ctx = create_fallback_context(
             source="agents.chatkit_runner.load_db",
             trigger="db_load_failed",
@@ -740,7 +740,7 @@ async def _fallback_stream(
             "message": f"[Streaming mode unavailable: {fallback_reason}] Switching to workflow mode.",
         }
         yield f"data: {json.dumps(diagnostic)}\n\n"
-        from backend.core.fallback import create_fallback_context
+        from core.fallback import create_fallback_context
         ctx = create_fallback_context(
             source="agents.chatkit_runner.stream",
             trigger="sdk_unavailable",
@@ -773,7 +773,7 @@ async def run_streamed(thread_id: str, message: Dict[str, Any], state: Dict[str,
         return
 
     try:  # pragma: no cover - SDK path exercised only in integration runs
-        from backend.llm.client import get_openai_client
+        from llm.client import get_openai_client
 
         client = get_openai_client()
         allowed_tools = [{"type": "function", "function": {"name": tool}} for tool in policy.allowed_tools]

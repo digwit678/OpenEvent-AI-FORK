@@ -4,7 +4,7 @@ import importlib
 from pathlib import Path
 from typing import Any, Dict
 
-from backend.workflows.common.types import IncomingMessage, WorkflowState
+from workflows.common.types import IncomingMessage, WorkflowState
 
 
 def _build_state(tmp_path: Path) -> WorkflowState:

@@ -6,8 +6,8 @@ from datetime import datetime
 
 import pytest
 
-from backend.workflows.common.general_qna import enrich_general_qna_step2
-from backend.workflows.common.types import IncomingMessage, WorkflowState
+from workflows.common.general_qna import enrich_general_qna_step2
+from workflows.common.types import IncomingMessage, WorkflowState
 
 date_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.step2_handler")
 room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")

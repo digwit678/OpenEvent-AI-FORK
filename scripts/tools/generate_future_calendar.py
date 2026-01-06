@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List
 
-from backend.services.rooms import load_room_catalog
-from backend.utils import json_io
+from services.rooms import load_room_catalog
+from utils import json_io
 
 
 def _build_busy_slots(start_from: datetime) -> List[Dict[str, str]]:

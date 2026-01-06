@@ -40,11 +40,11 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backend.workflow_email import (
+from workflow_email import (
     load_db as wf_load_db,
     save_db as wf_save_db,
 )
-from backend.ux.universal_verbalizer import (
+from ux.universal_verbalizer import (
     UNIVERSAL_SYSTEM_PROMPT,
     STEP_PROMPTS as DEFAULT_STEP_PROMPTS,
     _build_system_prompt as build_dynamic_system_prompt,
@@ -298,7 +298,7 @@ async def set_hil_mode(config: HILModeConfig):
         wf_save_db(db)
 
         # Notify the integration config module to refresh
-        from backend.workflows.io.integration.config import refresh_hil_setting
+        from workflows.io.integration.config import refresh_hil_setting
         refresh_hil_setting()
 
         status = "enabled" if config.enabled else "disabled"
@@ -435,8 +435,8 @@ async def set_llm_provider_config(config: LLMProviderConfig):
         os.environ["VERBALIZER_PROVIDER"] = config.verbalization_provider.lower()
 
         # Reset caches to pick up new settings
-        from backend.adapters.agent_adapter import reset_agent_adapter
-        from backend.llm.provider_config import clear_provider_cache
+        from adapters.agent_adapter import reset_agent_adapter
+        from llm.provider_config import clear_provider_cache
         reset_agent_adapter()
         clear_provider_cache()
 
@@ -493,7 +493,7 @@ async def get_hybrid_enforcement_config():
         providers: dict - Current provider configuration
     """
     import os
-    from backend.llm.provider_config import (
+    from llm.provider_config import (
         get_llm_providers,
         is_hybrid_mode,
         is_hybrid_enforcement_enabled,
@@ -558,7 +558,7 @@ async def set_hybrid_enforcement_config(config: HybridEnforcementConfig):
     - Logs warning that enforcement is bypassed
     """
     import os
-    from backend.llm.provider_config import (
+    from llm.provider_config import (
         get_llm_providers,
         is_hybrid_mode,
     )
@@ -1081,7 +1081,7 @@ async def get_hil_email_config():
         source: str - Where the config came from
     """
     try:
-        from backend.services.hil_email_notification import get_hil_email_config as get_email_config
+        from services.hil_email_notification import get_hil_email_config as get_email_config
         config = get_email_config()
 
         return {
@@ -1164,7 +1164,7 @@ async def test_hil_email():
     Use this to verify email configuration is working correctly.
     """
     try:
-        from backend.services.hil_email_notification import (
+        from services.hil_email_notification import (
             is_hil_email_enabled,
             send_hil_notification,
         )
@@ -1248,7 +1248,7 @@ async def get_venue_config():
         Complete venue configuration with source info
     """
     try:
-        from backend.workflows.io.config_store import get_all_venue_config
+        from workflows.io.config_store import get_all_venue_config
 
         config = get_all_venue_config()
         return {
@@ -1364,7 +1364,7 @@ async def get_site_visit_config():
     - min_days_ahead: Minimum days before event
     """
     try:
-        from backend.workflows.io.config_store import get_all_site_visit_config
+        from workflows.io.config_store import get_all_site_visit_config
 
         config = get_all_site_visit_config()
         return {
@@ -1448,7 +1448,7 @@ async def get_manager_config():
     Returns registered manager names for escalation detection.
     """
     try:
-        from backend.workflows.io.config_store import get_all_manager_config
+        from workflows.io.config_store import get_all_manager_config
 
         config = get_all_manager_config()
         return {
@@ -1522,7 +1522,7 @@ async def get_product_config():
     Returns settings for product autofill in offer generation.
     """
     try:
-        from backend.workflows.io.config_store import get_all_product_config
+        from workflows.io.config_store import get_all_product_config
 
         config = get_all_product_config()
         return {
@@ -1620,7 +1620,7 @@ async def get_menus_config():
     If no custom menus are configured, returns built-in defaults.
     """
     try:
-        from backend.workflows.io.config_store import get_all_menus_config
+        from workflows.io.config_store import get_all_menus_config
 
         config = get_all_menus_config()
         return {
@@ -1733,7 +1733,7 @@ async def get_catalog_config():
     If no custom mapping is configured, returns built-in defaults.
     """
     try:
-        from backend.workflows.io.config_store import get_all_catalog_config
+        from workflows.io.config_store import get_all_catalog_config
 
         config = get_all_catalog_config()
         return {
@@ -1829,7 +1829,7 @@ async def get_faq_config():
     If no custom FAQ is configured, returns built-in defaults.
     """
     try:
-        from backend.workflows.io.config_store import get_all_faq_config
+        from workflows.io.config_store import get_all_faq_config
 
         config = get_all_faq_config()
         return {

@@ -72,7 +72,7 @@ def get_llm_providers(*, force_reload: bool = False) -> LLMProviderSettings:
 
     # Try database first
     try:
-        from backend.workflows.io.database import load_db
+        from workflows.io.database import load_db
         db = load_db()
         llm_config = db.get("config", {}).get("llm_provider", {})
 
@@ -192,7 +192,7 @@ def is_hybrid_enforcement_enabled() -> bool:
 
     # Check database config
     try:
-        from backend.workflows.io.database import load_db
+        from workflows.io.database import load_db
         db = load_db()
         enforcement_config = db.get("config", {}).get("hybrid_enforcement", {})
         if "enabled" in enforcement_config:

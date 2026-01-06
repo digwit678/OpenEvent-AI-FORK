@@ -17,12 +17,12 @@ import pytest
 from types import SimpleNamespace
 from typing import Any, Dict
 
-from backend.workflows.common.capture import (
+from workflows.common.capture import (
     split_statement_vs_question,
     capture_workflow_requirements,
 )
-from backend.workflows.qna.extraction import _normalize_qna_extraction
-from backend.workflows.qna.router import get_qna_requirements
+from workflows.qna.extraction import _normalize_qna_extraction
+from workflows.qna.router import get_qna_requirements
 
 
 # ==============================================================================

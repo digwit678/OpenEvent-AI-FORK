@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
-from backend.workflows.io.config_store import get_timezone
+from workflows.io.config_store import get_timezone
 
 
 def _get_venue_tz() -> ZoneInfo:

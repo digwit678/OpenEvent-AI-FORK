@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from backend.workflows.common.menu_options import (
+from workflows.common.menu_options import (
     MENU_CONTENT_CHAR_THRESHOLD,
     build_menu_title,
     extract_menu_request,
@@ -17,7 +17,7 @@ from backend.workflows.common.menu_options import (
     format_menu_line_short,
     select_menu_options,
 )
-from backend.utils.pseudolinks import generate_qna_link
+from utils.pseudolinks import generate_qna_link
 
 
 @pytest.mark.v4

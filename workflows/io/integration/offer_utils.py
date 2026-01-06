@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 import pytz
 
-from backend.workflows.io.config_store import get_timezone
+from workflows.io.config_store import get_timezone
 
 
 def _get_venue_tz() -> pytz.BaseTzInfo:

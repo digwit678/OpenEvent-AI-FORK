@@ -13,7 +13,7 @@ _warnings.warn(
     stacklevel=2,
 )
 
-from backend.workflows.steps.step5_negotiation import (
+from workflows.steps.step5_negotiation import (
     process,
     _handle_accept,
     _offer_summary_lines,

@@ -6,8 +6,8 @@ from typing import Dict, Any
 
 import pytest
 
-from backend.domain import IntentLabel
-from backend.workflows.common.types import GroupResult, IncomingMessage, WorkflowState
+from domain import IntentLabel
+from workflows.common.types import GroupResult, IncomingMessage, WorkflowState
 
 
 def _initial_event() -> Dict[str, Any]:

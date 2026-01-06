@@ -4,9 +4,9 @@ import os
 
 import pytest
 
-from backend.domain import TaskType
-from backend.workflow_email import load_db
-from backend.tests_integration.test_e2e_live_openai import LiveContext, _load_event, _process_message
+from domain import TaskType
+from workflow_email import load_db
+from tests_integration.test_e2e_live_openai import LiveContext, _load_event, _process_message
 
 
 @pytest.mark.integration

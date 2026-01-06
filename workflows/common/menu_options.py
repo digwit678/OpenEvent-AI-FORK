@@ -36,7 +36,7 @@ _THREE_COURSE_PATTERN = re.compile(r"(?:three|3)[-\s]?course")
 
 
 # Database-backed menu options accessor - see config_store.py for defaults
-from backend.workflows.io.config_store import get_dinner_menu_options
+from workflows.io.config_store import get_dinner_menu_options
 
 
 def _get_dinner_menus() -> Sequence[Dict[str, Any]]:

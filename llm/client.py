@@ -10,7 +10,7 @@ This ensures:
 4. Easier testing and mocking
 
 USAGE:
-    from backend.llm.client import get_openai_client, is_llm_available
+    from llm.client import get_openai_client, is_llm_available
 
     if is_llm_available():
         client = get_openai_client()

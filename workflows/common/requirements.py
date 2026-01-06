@@ -9,9 +9,9 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict
 
-from backend.workflows.io.database import append_audit_entry
-from backend.workflows.common.billing import update_billing_details
-from backend.utils import json_io
+from workflows.io.database import append_audit_entry
+from workflows.common.billing import update_billing_details
+from utils import json_io
 
 _STABLE_HASH_CACHE: Dict[str, str] = {}
 _CACHE_LIMIT = 256

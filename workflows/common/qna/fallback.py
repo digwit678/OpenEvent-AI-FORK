@@ -7,7 +7,7 @@ EXTRACTED FROM: backend/workflows/common/general_qna.py
 
 from typing import Any, Dict, List
 
-from backend.workflows.common.fallback_reason import (
+from workflows.common.fallback_reason import (
     SHOW_FALLBACK_DIAGNOSTICS,
     empty_results_reason,
     format_fallback_diagnostic,

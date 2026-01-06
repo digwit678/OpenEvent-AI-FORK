@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-from backend.domain.vocabulary import IntentLabel
+from domain.vocabulary import IntentLabel
 
 
 # =============================================================================
@@ -216,8 +216,8 @@ def run_unified_detection(
     Returns:
         UnifiedDetectionResult with all extracted information
     """
-    from backend.adapters.agent_adapter import get_adapter_for_provider
-    from backend.llm.provider_config import get_intent_provider
+    from adapters.agent_adapter import get_adapter_for_provider
+    from llm.provider_config import get_intent_provider
 
     # Build the prompt
     prompt = UNIFIED_DETECTION_PROMPT.format(
@@ -256,7 +256,7 @@ def run_unified_detection(
 
         # Merge qna_types from LLM with keyword-based detection
         # This ensures site_visit_request and other types are detected even if LLM misses them
-        from backend.detection.intent.classifier import _detect_qna_types
+        from detection.intent.classifier import _detect_qna_types
 
         llm_qna_types = data.get("qna_types", [])
         keyword_qna_types = _detect_qna_types(message.lower())
@@ -297,7 +297,7 @@ def run_unified_detection(
     except json.JSONDecodeError as e:
         logger.warning("[UNIFIED_DETECTION] JSON parse error with %s: %s", intent_provider, e)
         # Try fallback providers on JSON parse failure
-        from backend.llm.provider_config import get_fallback_providers
+        from llm.provider_config import get_fallback_providers
         for fallback in get_fallback_providers(intent_provider):
             try:
                 logger.info("[UNIFIED_DETECTION] Trying fallback provider: %s", fallback)
@@ -351,7 +351,7 @@ def run_unified_detection(
     except Exception as e:
         logger.warning("[UNIFIED_DETECTION] Error with %s: %s", intent_provider, e)
         # Try fallback on any error
-        from backend.llm.provider_config import get_fallback_providers
+        from llm.provider_config import get_fallback_providers
         for fallback in get_fallback_providers(intent_provider):
             try:
                 logger.info("[UNIFIED_DETECTION] Trying fallback provider: %s", fallback)
@@ -509,8 +509,8 @@ def _run_legacy_detection(
 
     Used as fallback if unified mode causes issues.
     """
-    from backend.detection.intent.classifier import classify_intent
-    from backend.detection.pre_filter import run_pre_filter
+    from detection.intent.classifier import classify_intent
+    from detection.pre_filter import run_pre_filter
 
     # Run keyword pre-filter
     pre_filter_result = run_pre_filter(message)
@@ -520,7 +520,7 @@ def _run_legacy_detection(
 
     # Merge qna_types from LLM with keyword-based detection
     # This ensures site_visit_request and other types are detected even if LLM misses them
-    from backend.detection.intent.classifier import _detect_qna_types
+    from detection.intent.classifier import _detect_qna_types
 
     llm_qna_types = intent_result.get("secondary", [])
     keyword_qna_types = _detect_qna_types(message.lower())

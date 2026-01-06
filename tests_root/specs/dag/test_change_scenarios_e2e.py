@@ -18,8 +18,8 @@ from typing import Any, Dict
 
 import pytest
 
-from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.change_propagation import (
+from workflows.common.types import IncomingMessage, WorkflowState
+from workflows.change_propagation import (
     ChangeType,
     route_change_on_updated_variable,
     detect_change_type,

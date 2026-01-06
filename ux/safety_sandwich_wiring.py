@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from backend.ux.verbalizer_payloads import (
+from ux.verbalizer_payloads import (
     RoomFact,
     MenuFact,
     RoomOfferFacts,
@@ -20,7 +20,7 @@ from backend.ux.verbalizer_payloads import (
 # Lazy import to avoid circular dependency with backend.llm.verbalizer_agent
 # which imports backend.ux.verb_rubric which imports this module
 def _get_verbalize_room_offer():
-    from backend.llm.verbalizer_agent import verbalize_room_offer
+    from llm.verbalizer_agent import verbalize_room_offer
     return verbalize_room_offer
 
 logger = logging.getLogger(__name__)

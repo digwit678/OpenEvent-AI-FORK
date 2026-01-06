@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from backend.domain import EventStatus
-from backend.workflows.io.database import ensure_event_defaults, update_event_metadata
+from domain import EventStatus
+from workflows.io.database import ensure_event_defaults, update_event_metadata
 
 
 class WorkflowStep(Enum):
@@ -140,6 +140,6 @@ def stage_payload(event_entry: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def get_thread_state(thread_id: str) -> Dict[str, Any]:
-    from backend.debug.state_store import STATE_STORE
+    from debug.state_store import STATE_STORE
 
     return STATE_STORE.get(thread_id)

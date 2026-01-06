@@ -11,7 +11,7 @@ Tests the routing logic in route_change_on_updated_variable() to ensure:
 from __future__ import annotations
 
 import pytest
-from backend.workflows.change_propagation import (
+from workflows.change_propagation import (
     ChangeType,
     NextStepDecision,
     route_change_on_updated_variable,

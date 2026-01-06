@@ -10,8 +10,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from backend.chatkit import server as chatkit_server
-from backend.agents.openevent_agent import OpenEventAgent
+from chatkit import server as chatkit_server
+from agents.openevent_agent import OpenEventAgent
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 

@@ -6,9 +6,9 @@ from functools import lru_cache
 import re
 from typing import Any, Dict, List, Optional, Sequence
 
-from backend.services.rooms import RoomRecord, load_room_catalog
-from backend.workflows.common.catalog import list_products, list_room_features
-from backend.workflows.common.pricing import room_rate_for_name
+from services.rooms import RoomRecord, load_room_catalog
+from workflows.common.catalog import list_products, list_room_features
+from workflows.common.pricing import room_rate_for_name
 
 
 @dataclass(frozen=True)

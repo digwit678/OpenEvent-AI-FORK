@@ -11,7 +11,7 @@ Tests the precise pattern recognition in detect_change_type() to ensure:
 from __future__ import annotations
 
 import pytest
-from backend.workflows.change_propagation import ChangeType, detect_change_type
+from workflows.change_propagation import ChangeType, detect_change_type
 
 
 class TestChangeIntentSignals:
@@ -515,7 +515,7 @@ class TestExpandedHeuristics:
 
     def test_regex_change_verb_near_product_noun(self):
         """Test regex pattern matching for change verbs near product nouns."""
-        from backend.workflows.change_propagation import extract_change_verbs_near_noun
+        from workflows.change_propagation import extract_change_verbs_near_noun
 
         # Positive cases
         assert extract_change_verbs_near_noun("upgrade the coffee package", ["coffee", "package"])

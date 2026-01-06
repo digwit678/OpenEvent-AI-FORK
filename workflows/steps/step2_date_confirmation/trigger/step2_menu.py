@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from backend.workflows.common.menu_options import (
+from workflows.common.menu_options import (
     build_menu_title,
     extract_menu_request,
     format_menu_line,
@@ -18,9 +18,9 @@ from backend.workflows.common.menu_options import (
     normalize_menu_for_display,
     select_menu_options,
 )
-from backend.utils.pseudolinks import generate_qna_link
-from backend.utils.page_snapshots import create_snapshot
-from backend.workflows.common.types import WorkflowState
+from utils.pseudolinks import generate_qna_link
+from utils.page_snapshots import create_snapshot
+from workflows.common.types import WorkflowState
 
 from .step2_utils import _format_label_text
 

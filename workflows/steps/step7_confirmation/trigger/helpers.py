@@ -8,7 +8,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
-from backend.workflows.common.types import WorkflowState
+from workflows.common.types import WorkflowState
 
 
 def iso_to_ddmmyyyy(raw: Optional[str]) -> Optional[str]:

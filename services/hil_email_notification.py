@@ -24,7 +24,7 @@ from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
 import logging
 
-from backend.workflows.io.config_store import (
+from workflows.io.config_store import (
     get_timezone,
     get_from_email,
     get_from_name,
@@ -57,7 +57,7 @@ def get_hil_email_config() -> Dict[str, Any]:
     Returns:
         Config dict with enabled, manager_email, smtp settings
     """
-    from backend.workflow_email import load_db
+    from workflow_email import load_db
 
     # Get venue-specific defaults from config store
     venue_from_email = get_from_email()
@@ -518,7 +518,7 @@ def notify_hil_task_created(
         }
         # Try to get offer total
         try:
-            from backend.workflows.steps.step5_negotiation.trigger.step5_handler import _determine_offer_total
+            from workflows.steps.step5_negotiation.trigger.step5_handler import _determine_offer_total
             event_summary["offer_total"] = _determine_offer_total(event_entry)
         except Exception:
             pass

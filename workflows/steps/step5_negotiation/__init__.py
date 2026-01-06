@@ -22,7 +22,7 @@ from .trigger.step5_handler import (
     _classify_message,
     _ask_classification_clarification,
 )
-from backend.workflows.io.database import update_event_metadata
+from workflows.io.database import update_event_metadata
 
 __all__ = [
     "process",

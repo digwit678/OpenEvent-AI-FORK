@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.io.database import append_audit_entry, update_event_metadata
-from backend.utils.profiler import profile_step
+from workflows.common.prompts import append_footer
+from workflows.common.types import GroupResult, WorkflowState
+from workflows.io.database import append_audit_entry, update_event_metadata
+from utils.profiler import profile_step
 
 __all__ = ["process"]
 

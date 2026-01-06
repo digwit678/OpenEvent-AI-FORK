@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from backend.workflows.common.billing import billing_prompt_for_missing_fields, empty_billing_details
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.types import WorkflowState
-from backend.workflows.io.database import update_event_billing
-from backend.workflows.nlu import parse_billing_address
+from workflows.common.billing import billing_prompt_for_missing_fields, empty_billing_details
+from workflows.common.prompts import append_footer
+from workflows.common.types import WorkflowState
+from workflows.io.database import update_event_billing
+from workflows.nlu import parse_billing_address
 
 
 def handle_billing_capture(state: WorkflowState, event_entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:

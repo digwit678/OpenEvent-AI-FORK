@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
+from workflows.common.menu_options import DINNER_MENU_OPTIONS
 
 
 def menu_price_value(raw: Any) -> Optional[float]:

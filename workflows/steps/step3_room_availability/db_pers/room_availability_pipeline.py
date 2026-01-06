@@ -8,16 +8,16 @@ from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from backend.utils.async_tools import run_io_tasks
+from utils.async_tools import run_io_tasks
 
 __workflow_role__ = "db_pers"
 
 from zoneinfo import ZoneInfo
 
-from backend.adapters.calendar_adapter import CalendarAdapter
-from backend.adapters.client_gui_adapter import ClientGUIAdapter
-from backend.workflows.io.database import load_db as _load_db, save_db as _save_db
-from backend.workflows.io.config_store import get_timezone, get_venue_name
+from adapters.calendar_adapter import CalendarAdapter
+from adapters.client_gui_adapter import ClientGUIAdapter
+from workflows.io.database import load_db as _load_db, save_db as _save_db
+from workflows.io.config_store import get_timezone, get_venue_name
 
 
 def _get_venue_tz() -> ZoneInfo:

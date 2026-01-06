@@ -13,13 +13,13 @@ Submodules:
 
 Usage:
     # Import constants
-    from backend.workflows.common.qna.constants import CLIENT_AVAILABILITY_HEADER
+    from workflows.common.qna.constants import CLIENT_AVAILABILITY_HEADER
 
     # Import utilities
-    from backend.workflows.common.qna.utils import _format_display_date
+    from workflows.common.qna.utils import _format_display_date
 
     # Import fallback functions
-    from backend.workflows.common.qna.fallback import _fallback_structured_body
+    from workflows.common.qna.fallback import _fallback_structured_body
 """
 
 # Re-export from submodules for convenience

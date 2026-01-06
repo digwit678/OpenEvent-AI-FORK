@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Optional
 
-from backend.workflows.nlu.parse_billing import parse_billing_address as _strict_parse_billing
+from workflows.nlu.parse_billing import parse_billing_address as _strict_parse_billing
 
 
 BillingDetails = Dict[str, Optional[str]]

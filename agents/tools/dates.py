@@ -6,9 +6,9 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, validator
 
-from backend.workflows.steps.step1_intake.condition.checks import suggest_dates
-from backend.workflows.common.datetime_parse import to_iso_date
-from backend.workflow_email import process_msg as workflow_process_msg
+from workflows.steps.step1_intake.condition.checks import suggest_dates
+from workflows.common.datetime_parse import to_iso_date
+from workflow_email import process_msg as workflow_process_msg
 
 TOOL_SCHEMA: Dict[str, Dict[str, Any]] = {
     "tool_suggest_dates": {

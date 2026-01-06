@@ -1,4 +1,4 @@
-from backend.workflows.nlu.response_normalizer import normalize_response
+from workflows.nlu.response_normalizer import normalize_response
 
 
 def test_normalize_yes_variants():

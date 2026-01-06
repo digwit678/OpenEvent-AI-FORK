@@ -19,9 +19,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from backend.workflows.common.requirements import requirements_hash
-from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
-from backend.workflows.io.database import append_audit_entry, update_event_metadata
+from workflows.common.requirements import requirements_hash
+from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from workflows.io.database import append_audit_entry, update_event_metadata
 
 from .shortcuts_flags import _budget_default_currency, _capture_budget_on_hil
 from .shortcuts_types import ParsedIntent

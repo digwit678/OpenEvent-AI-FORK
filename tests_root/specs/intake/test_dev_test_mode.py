@@ -10,7 +10,7 @@ import os
 import pytest
 from unittest.mock import patch
 
-from backend.workflows.steps.step1_intake.trigger.dev_test_mode import (
+from workflows.steps.step1_intake.trigger.dev_test_mode import (
     is_dev_test_mode_enabled,
     should_show_dev_choice,
     build_dev_choice_result,

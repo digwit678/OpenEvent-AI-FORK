@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from backend.domain import IntentLabel
-from backend.workflows.common.prompts import compose_footer, FOOTER_SEPARATOR
+from domain import IntentLabel
+from workflows.common.prompts import compose_footer, FOOTER_SEPARATOR
 
 
 @dataclass
@@ -241,7 +241,7 @@ class WorkflowState:
         # Store assistant response in client memory (if enabled)
         if self.client and body_markdown:
             try:
-                from backend.services import client_memory  # pylint: disable=import-outside-toplevel
+                from services import client_memory  # pylint: disable=import-outside-toplevel
                 client_memory.append_message(
                     self.client,
                     role="assistant",
@@ -252,7 +252,7 @@ class WorkflowState:
                 pass  # Don't fail workflow on memory storage errors
 
         try:
-            from backend.debug.hooks import trace_draft  # pylint: disable=import-outside-toplevel
+            from debug.hooks import trace_draft  # pylint: disable=import-outside-toplevel
         except Exception:
             trace_draft = None  # type: ignore[assignment]
 

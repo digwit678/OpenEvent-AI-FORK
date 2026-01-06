@@ -15,7 +15,7 @@ ok = compileall.compile_dir("backend", maxlevels=10, quiet=1)
 print("COMPILE_ALL_OK", bool(ok))
 
 print("== orchestrator samples ==")
-from backend.workflow_email import run_samples  # noqa: E402
+from workflow_email import run_samples  # noqa: E402
 
 capture = io.StringIO()
 with redirect_stdout(capture):
@@ -109,7 +109,7 @@ for root, _, files in os.walk("backend/workflows/groups"):
 print("DIRECT_DB_WRITES_IN_GROUPS", bad)
 
 print("== availability toggle ==")
-from backend.workflows.steps.step3_room_availability.trigger import evaluate_room_statuses  # noqa: E402
+from workflows.steps.step3_room_availability.trigger import evaluate_room_statuses  # noqa: E402
 
 db = {
     "events": [
@@ -134,7 +134,7 @@ except Exception:
     print("FASTAPI_SKIPPED")
 else:
     try:
-        import backend.main as appmod  # noqa: F401
+        import main as appmod  # noqa: F401
 
         print("FASTAPI_IMPORT_OK", bool(appmod))
     except Exception as exc:  # pragma: no cover - diagnostic output only

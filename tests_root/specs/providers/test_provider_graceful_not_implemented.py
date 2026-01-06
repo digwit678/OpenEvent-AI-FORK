@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 
-from backend.llm import provider_registry
-from backend.llm.providers.base import LLMProvider
-from backend.workflows.llm import adapter as llm_adapter
+from llm import provider_registry
+from llm.providers.base import LLMProvider
+from workflows.llm import adapter as llm_adapter
 
 
 class DummyProvider(LLMProvider):

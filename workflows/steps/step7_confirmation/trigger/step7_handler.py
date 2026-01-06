@@ -8,22 +8,22 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from backend.domain import EventStatus
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.requirements import merge_client_profile
-from backend.workflows.common.room_rules import site_visit_allowed
-from backend.workflows.common.types import GroupResult, WorkflowState
-# MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
-from backend.detection.intent.confidence import check_nonsense_gate
-from backend.workflows.common.general_qna import (
+from domain import EventStatus
+from workflows.common.prompts import append_footer
+from workflows.common.requirements import merge_client_profile
+from workflows.common.room_rules import site_visit_allowed
+from workflows.common.types import GroupResult, WorkflowState
+# MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
+from detection.intent.confidence import check_nonsense_gate
+from workflows.common.general_qna import (
     append_general_qna_to_primary,
     present_general_room_qna,
 )
-from backend.workflows.io.database import append_audit_entry, update_event_metadata
-from backend.workflows.nlu import detect_general_room_query
-from backend.debug.hooks import trace_marker
-from backend.utils.profiler import profile_step
-from backend.utils.page_snapshots import delete_snapshots_for_event
+from workflows.io.database import append_audit_entry, update_event_metadata
+from workflows.nlu import detect_general_room_query
+from debug.hooks import trace_marker
+from utils.profiler import profile_step
+from utils.page_snapshots import delete_snapshots_for_event
 
 # F1: Extracted modules
 from .classification import classify_message

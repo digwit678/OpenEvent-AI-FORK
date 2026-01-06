@@ -4,16 +4,16 @@ import re
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from backend.workflows.common.capacity import alternative_rooms, fits_capacity, layout_capacity
-from backend.workflows.common.catalog import (
+from workflows.common.capacity import alternative_rooms, fits_capacity, layout_capacity
+from workflows.common.catalog import (
     list_catering,
     list_free_dates,
     list_products,
     list_room_features,
     list_rooms_by_feature,
 )
-from backend.workflows.qna.templates import build_info_block, build_next_step_line
-from backend.debug.hooks import trace_qa_enter, trace_qa_exit
+from workflows.qna.templates import build_info_block, build_next_step_line
+from debug.hooks import trace_qa_enter, trace_qa_exit
 
 # Generic accessor for LLM-extracted Q&A requirements
 def get_qna_requirements(extraction: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -674,9 +674,9 @@ def route_multi_variable_qna(
 
     Returns None if no multi-variable Q&A detected, otherwise returns composed result.
     """
-    # MIGRATED: from backend.llm.intent_classifier -> backend.detection.intent.classifier
-    from backend.detection.intent.classifier import spans_multiple_steps
-    from backend.workflows.qna.conjunction import analyze_conjunction
+    # MIGRATED: from llm.intent_classifier -> backend.detection.intent.classifier
+    from detection.intent.classifier import spans_multiple_steps
+    from workflows.qna.conjunction import analyze_conjunction
 
     secondary: List[str] = list(classification.get("secondary") or [])
 
@@ -734,7 +734,7 @@ def _route_combined_qna(
     """
     Route Q&A with combined AND conditions.
     """
-    from backend.workflows.qna.conjunction import get_combined_conditions
+    from workflows.qna.conjunction import get_combined_conditions
 
     parts = conjunction.parts
     if not parts:
@@ -809,7 +809,7 @@ def _route_ranked_union_qna(
     Route Q&A with OR conditions (ranked union).
     Shows items matching ALL conditions first.
     """
-    from backend.workflows.qna.conjunction import get_union_conditions
+    from workflows.qna.conjunction import get_union_conditions
 
     parts = conjunction.parts
     if not parts:

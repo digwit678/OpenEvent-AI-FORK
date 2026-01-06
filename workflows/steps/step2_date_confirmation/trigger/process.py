@@ -13,7 +13,7 @@ from .step2_handler import (
     _present_general_room_qna,
     _candidate_dates_for_constraints,
 )
-from backend.workflows.qna.extraction import ensure_qna_extraction
+from workflows.qna.extraction import ensure_qna_extraction
 
 __all__ = [
     "process",

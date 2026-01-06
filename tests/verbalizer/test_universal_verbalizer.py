@@ -4,7 +4,7 @@ import os
 import pytest
 from unittest.mock import patch
 
-from backend.ux.universal_verbalizer import (
+from ux.universal_verbalizer import (
     MessageContext,
     verbalize_message,
     verbalize_step_message,

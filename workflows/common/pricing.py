@@ -6,8 +6,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from backend.utils import json_io
-from backend.workflows.steps.step3_room_availability.db_pers import load_rooms_config
+from utils import json_io
+from workflows.steps.step3_room_availability.db_pers import load_rooms_config
 
 
 # ---------------------------------------------------------------------------

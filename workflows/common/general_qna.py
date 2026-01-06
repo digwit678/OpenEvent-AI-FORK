@@ -6,21 +6,21 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from backend.debug.hooks import set_subloop, trace_general_qa_status
-from backend.workflows.io.database import update_event_metadata
-from backend.workflows.qna.extraction import ensure_qna_extraction
-from backend.workflows.common.capacity import fits_capacity, layout_capacity
-from backend.workflows.common.catalog import list_catering, list_room_features
-from backend.workflows.common.fallback_reason import (
+from debug.hooks import set_subloop, trace_general_qa_status
+from workflows.io.database import update_event_metadata
+from workflows.qna.extraction import ensure_qna_extraction
+from workflows.common.capacity import fits_capacity, layout_capacity
+from workflows.common.catalog import list_catering, list_room_features
+from workflows.common.fallback_reason import (
     SHOW_FALLBACK_DIAGNOSTICS,
     empty_results_reason,
     format_fallback_diagnostic,
 )
-from backend.workflows.common.menu_options import build_menu_payload, format_menu_line
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.qna.engine import build_structured_qna_result
-from backend.workflows.qna.router import route_general_qna
+from workflows.common.menu_options import build_menu_payload, format_menu_line
+from workflows.common.prompts import append_footer
+from workflows.common.types import GroupResult, WorkflowState
+from workflows.qna.engine import build_structured_qna_result
+from workflows.qna.router import route_general_qna
 
 # TODO(openevent-team): Move extended room descriptions to dedicated metadata instead of the products mapping workaround.
 

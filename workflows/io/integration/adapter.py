@@ -5,7 +5,7 @@ This is the main entry point for the integration layer. Import from here
 to get the correct implementation based on the current mode.
 
 Usage:
-    from backend.workflows.io.integration.adapter import db
+    from workflows.io.integration.adapter import db
 
     # These calls will route to JSON or Supabase based on OE_INTEGRATION_MODE
     client = db.upsert_client(email, name)
@@ -13,7 +13,7 @@ Usage:
 
 Or for more explicit control:
 
-    from backend.workflows.io.integration.adapter import (
+    from workflows.io.integration.adapter import (
         get_database_adapter,
         is_using_supabase,
     )
@@ -183,7 +183,7 @@ class JSONDatabaseAdapter(DatabaseAdapter):
             return
 
         from pathlib import Path
-        from backend.workflows.io import database
+        from workflows.io import database
 
         if self._db_path is None:
             self._db_path = Path(__file__).resolve().parents[3] / "events_database.json"
@@ -283,7 +283,7 @@ class JSONDatabaseAdapter(DatabaseAdapter):
     ) -> str:
         """Create a task in JSON format."""
         self.initialize()
-        from backend.workflows.io.tasks import create_task
+        from workflows.io.tasks import create_task
 
         db = self._load()
         task_id = create_task(
@@ -623,7 +623,7 @@ class _DatabaseProxy:
     Proxy that forwards calls to the current adapter.
 
     Allows usage like:
-        from backend.workflows.io.integration.adapter import db
+        from workflows.io.integration.adapter import db
         db.upsert_client(email, name)
     """
 

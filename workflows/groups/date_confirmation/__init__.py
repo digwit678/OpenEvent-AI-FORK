@@ -13,7 +13,7 @@ _warnings.warn(
     stacklevel=2,
 )
 
-from backend.workflows.steps.step2_date_confirmation import (
+from workflows.steps.step2_date_confirmation import (
     process,
     compose_date_confirmation_reply,
     is_valid_ddmmyyyy,

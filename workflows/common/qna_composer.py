@@ -11,9 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.qna.conjunction import (
+from workflows.common.prompts import append_footer
+from workflows.common.types import GroupResult, WorkflowState
+from workflows.qna.conjunction import (
     ConjunctionAnalysis,
     QnAPart,
     get_combined_conditions,

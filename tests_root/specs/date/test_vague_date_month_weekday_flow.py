@@ -4,9 +4,9 @@ import importlib
 from datetime import date
 from pathlib import Path
 
-from backend.debug.trace import BUS
-from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.steps.step2_date_confirmation.trigger.step2_handler import _present_candidate_dates
+from debug.trace import BUS
+from workflows.common.types import IncomingMessage, WorkflowState
+from workflows.steps.step2_date_confirmation.trigger.step2_handler import _present_candidate_dates
 
 
 

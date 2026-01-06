@@ -6,14 +6,14 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from backend.domain import IntentLabel
-from backend.workflows.common.requirements import requirements_hash
-from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.steps import step1_intake as intake
-from backend.workflows.steps.step2_date_confirmation.trigger.step2_handler import process as date_process
-from backend.workflows.steps.step4_offer.trigger.step4_handler import process as offer_process
-from backend.workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
-from backend.debug.lifecycle import close_if_ended
+from domain import IntentLabel
+from workflows.common.requirements import requirements_hash
+from workflows.common.types import IncomingMessage, WorkflowState
+from workflows.steps import step1_intake as intake
+from workflows.steps.step2_date_confirmation.trigger.step2_handler import process as date_process
+from workflows.steps.step4_offer.trigger.step4_handler import process as offer_process
+from workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
+from debug.lifecycle import close_if_ended
 
 
 def test_debug_trace_contract(tmp_path, monkeypatch):

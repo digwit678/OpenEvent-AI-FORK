@@ -12,20 +12,20 @@ from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Tuple
 import logging
 
-from backend.workflows.common.requirements import requirements_hash
-from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
-from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.common.datetime_parse import build_window_iso
+from workflows.common.requirements import requirements_hash
+from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from workflows.common.types import GroupResult, WorkflowState
+from workflows.common.datetime_parse import build_window_iso
 import importlib
-from backend.workflows.steps.step1_intake.condition.checks import suggest_dates
+from workflows.steps.step1_intake.condition.checks import suggest_dates
 
 date_process_module = importlib.import_module("backend.workflows.steps.step2_date_confirmation.trigger.process")
 ConfirmationWindow = getattr(date_process_module, "ConfirmationWindow")
-from backend.workflows.io.database import append_audit_entry, update_event_metadata
-from backend.services.products import normalise_product_payload
+from workflows.io.database import append_audit_entry, update_event_metadata
+from services.products import normalise_product_payload
 
 # Import from extracted modules and re-export for compatibility
-from backend.workflows.planner.shortcuts_flags import (
+from workflows.planner.shortcuts_flags import (
     _flag_enabled,
     _max_combined,
     _legacy_shortcuts_allowed,
@@ -40,12 +40,12 @@ from backend.workflows.planner.shortcuts_flags import (
     atomic_turns_enabled,
     shortcut_allow_date_room,
 )
-from backend.workflows.planner.shortcuts_gate import (
+from workflows.planner.shortcuts_gate import (
     _shortcuts_allowed,
     _coerce_participants,
     _debug_shortcut_gate,
 )
-from backend.workflows.planner.shortcuts_types import (
+from workflows.planner.shortcuts_types import (
     ParsedIntent,
     PlannerTelemetry,
     AtomicDecision,
@@ -56,12 +56,12 @@ from backend.workflows.planner.shortcuts_types import (
 )
 
 # S3: Import extracted handler modules
-from backend.workflows.planner.budget_parser import (
+from workflows.planner.budget_parser import (
     extract_budget_info as _extract_budget_info_impl,
     parse_budget_value as _parse_budget_value_impl,
     parse_budget_text as _parse_budget_text_impl,
 )
-from backend.workflows.planner.dag_guard import (
+from workflows.planner.dag_guard import (
     dag_guard as _dag_guard_impl,
     is_date_confirmed as _is_date_confirmed_impl,
     is_room_locked as _is_room_locked_impl,
@@ -69,7 +69,7 @@ from backend.workflows.planner.dag_guard import (
     set_dag_block as _set_dag_block_impl,
     ensure_prerequisite_prompt as _ensure_prerequisite_prompt_impl,
 )
-from backend.workflows.planner.date_handler import (
+from workflows.planner.date_handler import (
     normalize_time as _normalize_time_impl,
     time_from_iso as _time_from_iso_impl,
     window_to_payload as _window_to_payload_impl,
@@ -86,7 +86,7 @@ from backend.workflows.planner.date_handler import (
     should_execute_date_room_combo as _should_execute_date_room_combo_impl,
     execute_date_room_combo as _execute_date_room_combo_impl,
 )
-from backend.workflows.planner.product_handler import (
+from workflows.planner.product_handler import (
     format_money as _format_money_impl,
     missing_item_display as _missing_item_display_impl,
     products_state as _products_state_impl,
@@ -101,7 +101,7 @@ from backend.workflows.planner.product_handler import (
     apply_product_add as _apply_product_add_impl,
     load_catering_names as _load_catering_names_impl,
 )
-from backend.workflows.planner.choice_handler import (
+from workflows.planner.choice_handler import (
     load_choice_context as _load_choice_context_impl,
     maybe_handle_choice_context_reply as _maybe_handle_choice_context_reply_impl,
     parse_choice_selection as _parse_choice_selection_impl,
@@ -111,7 +111,7 @@ from backend.workflows.planner.choice_handler import (
     complete_choice_selection as _complete_choice_selection_impl,
     handle_choice_selection as _handle_choice_selection_impl,
 )
-from backend.workflows.planner.preask_handler import (
+from workflows.planner.preask_handler import (
     preask_feature_enabled as _preask_feature_enabled_impl,
     menu_preview_lines as _menu_preview_lines_impl,
     explicit_menu_requested as _explicit_menu_requested_impl,
@@ -126,7 +126,7 @@ from backend.workflows.planner.preask_handler import (
     maybe_preask_lines as _maybe_preask_lines_impl,
     finalize_preask_state as _finalize_preask_state_impl,
 )
-from backend.workflows.planner.intent_parser import (
+from workflows.planner.intent_parser import (
     parse_room_intent as _parse_room_intent_impl,
     parse_participants_intent as _parse_participants_intent_impl,
     parse_billing_intent as _parse_billing_intent_impl,
@@ -135,7 +135,7 @@ from backend.workflows.planner.intent_parser import (
     defer_intent as _defer_intent_impl,
     persist_pending_intents as _persist_pending_intents_impl,
 )
-from backend.workflows.planner.intent_executor import (
+from workflows.planner.intent_executor import (
     execute_intent as _execute_intent_impl,
     apply_room_selection as _apply_room_selection_impl,
     apply_participants_update as _apply_participants_update_impl,

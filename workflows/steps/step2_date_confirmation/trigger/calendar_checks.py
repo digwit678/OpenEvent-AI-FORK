@@ -4,7 +4,7 @@ Calendar availability checks for Step2 Date Confirmation workflow.
 Extracted from step2_handler.py for better modularity (D4 refactoring).
 
 Usage:
-    from backend.workflows.steps.step2_date_confirmation.trigger.calendar_checks import (
+    from workflows.steps.step2_date_confirmation.trigger.calendar_checks import (
         candidate_is_calendar_free,
         future_fridays_in_may_june,
         maybe_fuzzy_friday_candidates,
@@ -16,9 +16,9 @@ from __future__ import annotations
 from datetime import date, time, timedelta
 from typing import List, Optional
 
-from backend.services.availability import calendar_free
-from backend.workflows.common.datetime_parse import build_window_iso
-from backend.workflows.io.database import update_event_metadata  # D14a
+from services.availability import calendar_free
+from workflows.common.datetime_parse import build_window_iso
+from workflows.io.database import update_event_metadata  # D14a
 
 from .types import ConfirmationWindow  # D14a
 from .step2_utils import _to_time  # D14a

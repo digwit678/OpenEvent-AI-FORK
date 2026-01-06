@@ -2,8 +2,8 @@
 DEPRECATED: This module has been migrated to backend/detection/qna/general_qna.py
 
 Please update your imports:
-    OLD: from backend.workflows.nlu.general_qna_classifier import ...
-    NEW: from backend.detection.qna.general_qna import ...
+    OLD: from workflows.nlu.general_qna_classifier import ...
+    NEW: from detection.qna.general_qna import ...
 
 This file will be removed in a future release.
 """
@@ -22,12 +22,12 @@ try:
 except ImportError:  # pragma: no cover - OpenAI optional in local/dev runs
     OpenAI = None  # type: ignore[assignment]
 
-from backend.workflows.common.types import WorkflowState
-from backend.utils.openai_key import load_openai_api_key
+from workflows.common.types import WorkflowState
+from utils.openai_key import load_openai_api_key
 
 # Import consolidated pattern from keyword_buckets (single source of truth)
-# MIGRATED: from backend.workflows.nlu.keyword_buckets -> backend.detection.keywords.buckets
-from backend.detection.keywords.buckets import ACTION_REQUEST_PATTERNS
+# MIGRATED: from workflows.nlu.keyword_buckets -> backend.detection.keywords.buckets
+from detection.keywords.buckets import ACTION_REQUEST_PATTERNS
 
 # Note: _detect_qna_types is imported lazily inside detect_general_room_query()
 # to avoid circular import with backend.llm.intent_classifier
@@ -419,7 +419,7 @@ def detect_general_room_query(msg_text: str, state: WorkflowState) -> Dict[str, 
 
     # Detect secondary Q&A types (catering_for, products_for, etc.)
     # Lazy import to avoid circular import with backend.llm.intent_classifier
-    from backend.llm.intent_classifier import _detect_qna_types  # pylint: disable=import-outside-toplevel
+    from llm.intent_classifier import _detect_qna_types  # pylint: disable=import-outside-toplevel
     secondary_types = _detect_qna_types(text)
 
     detection = {

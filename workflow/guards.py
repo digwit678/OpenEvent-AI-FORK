@@ -4,13 +4,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from backend.workflows.common.requirements import requirements_hash
-from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
-from backend.workflows.common.datetime_parse import to_iso_date
-from backend.workflows.steps.step1_intake.condition.checks import suggest_dates
+from workflows.common.requirements import requirements_hash
+from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from workflows.common.datetime_parse import to_iso_date
+from workflows.steps.step1_intake.condition.checks import suggest_dates
 
 if TYPE_CHECKING:
-    from backend.workflows.common.types import WorkflowState
+    from workflows.common.types import WorkflowState
 
 
 @dataclass

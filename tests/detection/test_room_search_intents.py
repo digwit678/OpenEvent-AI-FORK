@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 
-# MIGRATED: from backend.llm.intent_classifier -> backend.detection.intent.classifier
-from backend.detection.intent.classifier import classify_intent, _detect_qna_types
+# MIGRATED: from llm.intent_classifier -> backend.detection.intent.classifier
+from detection.intent.classifier import classify_intent, _detect_qna_types
 
 
 # ==============================================================================

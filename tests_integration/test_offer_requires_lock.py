@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from backend.tests_integration.test_e2e_live_openai import LiveContext, _load_event, _process_message, _append_failure
+from tests_integration.test_e2e_live_openai import LiveContext, _load_event, _process_message, _append_failure
 
 
 @pytest.mark.integration

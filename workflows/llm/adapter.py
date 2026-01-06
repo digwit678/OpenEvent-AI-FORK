@@ -9,14 +9,14 @@ import re
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
-from backend.adapters.agent_adapter import AgentAdapter, StubAgentAdapter, get_agent_adapter, reset_agent_adapter
-from backend.domain import IntentLabel
-from backend.llm.provider_registry import get_provider, reset_provider_for_tests
-from backend.workflows.common.fallback_reason import create_fallback_reason
+from adapters.agent_adapter import AgentAdapter, StubAgentAdapter, get_agent_adapter, reset_agent_adapter
+from domain import IntentLabel
+from llm.provider_registry import get_provider, reset_provider_for_tests
+from workflows.common.fallback_reason import create_fallback_reason
 
-from backend.prefs.semantics import normalize_catering, normalize_products
-from backend.services.products import list_product_records, normalise_product_payload
-from backend.workflows.common.room_rules import (
+from prefs.semantics import normalize_catering, normalize_products
+from services.products import list_product_records, normalise_product_payload
+from workflows.common.room_rules import (
     USER_INFO_KEYS,
     clean_text,
     normalize_language,
@@ -24,14 +24,14 @@ from backend.workflows.common.room_rules import (
     normalize_room,
     sanitize_participants,
 )
-from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
-from backend.workflows.common.datetime_parse import (
+from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from workflows.common.datetime_parse import (
     parse_first_date,
     parse_time_range,
     month_name_to_number,
     weekday_name_to_number,
 )
-from backend.utils.dates import MONTH_INDEX_TO_NAME, from_hints
+from utils.dates import MONTH_INDEX_TO_NAME, from_hints
 
 adapter: AgentAdapter = get_agent_adapter()
 _LAST_CALL_METADATA: Dict[str, Any] = {}

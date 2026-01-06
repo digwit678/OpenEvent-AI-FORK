@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
-from backend.adapters.agent_adapter import get_agent_adapter
+from adapters.agent_adapter import get_agent_adapter
 
 from .base import LLMProvider
 

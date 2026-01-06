@@ -14,16 +14,16 @@ try:
 except ImportError:  # pragma: no cover
     from backports.zoneinfo import ZoneInfo  # type: ignore[assignment]
 
-from backend.domain import EventStatus, TaskStatus, TaskType
-from backend.workflows.io.database import last_event_for_email
-from backend.workflows.io.tasks import enqueue_task as _enqueue_task
-# MIGRATED: from backend.workflows.common.conflict -> backend.detection.special.room_conflict
-from backend.detection.special.room_conflict import (
+from domain import EventStatus, TaskStatus, TaskType
+from workflows.io.database import last_event_for_email
+from workflows.io.tasks import enqueue_task as _enqueue_task
+# MIGRATED: from workflows.common.conflict -> backend.detection.special.room_conflict
+from detection.special.room_conflict import (
     ConflictType,
     detect_conflict_type,
     handle_hard_conflict,
 )
-from backend.workflows.io.config_store import get_timezone
+from workflows.io.config_store import get_timezone
 
 from .. import OpenEventAction
 

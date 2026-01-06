@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from backend.workflows.nlu import detect_sequential_workflow_request
+from workflows.nlu import detect_sequential_workflow_request
 
 pytestmark = pytest.mark.v4
 

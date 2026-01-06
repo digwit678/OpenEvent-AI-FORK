@@ -13,9 +13,9 @@ from pathlib import Path
 import pytest
 from unittest.mock import MagicMock
 
-from backend.domain import IntentLabel
-from backend.workflows.common.types import GroupResult, WorkflowState, IncomingMessage
-from backend.workflows.steps.step6_transition.trigger.step6_handler import process, _collect_blockers
+from domain import IntentLabel
+from workflows.common.types import GroupResult, WorkflowState, IncomingMessage
+from workflows.steps.step6_transition.trigger.step6_handler import process, _collect_blockers
 
 pytestmark = pytest.mark.v4
 

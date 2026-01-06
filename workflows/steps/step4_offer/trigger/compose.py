@@ -17,9 +17,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
-from backend.debug.hooks import trace_db_write
-from backend.workflows.common.pricing import derive_room_rate, normalise_rate
-from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from debug.hooks import trace_db_write
+from workflows.common.pricing import derive_room_rate, normalise_rate
+from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 
 from .product_ops import menu_name_set as _menu_name_set, normalise_product_fields as _normalise_product_fields
 from ..llm.send_offer_llm import ComposeOffer

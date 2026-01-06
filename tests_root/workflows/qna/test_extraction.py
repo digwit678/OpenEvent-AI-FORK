@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.qna.extraction import ensure_qna_extraction
-from backend.workflow_email import _ensure_general_qna_classification
+from workflows.common.types import IncomingMessage, WorkflowState
+from workflows.qna.extraction import ensure_qna_extraction
+from workflow_email import _ensure_general_qna_classification
 
 
 def _make_state() -> WorkflowState:

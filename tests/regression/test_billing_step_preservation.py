@@ -12,8 +12,8 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from backend.workflows.common.types import WorkflowState, IncomingMessage
-from backend.workflows.runtime.pre_route import evaluate_pre_route_guards
+from workflows.common.types import WorkflowState, IncomingMessage
+from workflows.runtime.pre_route import evaluate_pre_route_guards
 
 
 def _make_state(thread_id: str, msg: str) -> WorkflowState:

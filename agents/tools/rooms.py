@@ -4,14 +4,14 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, validator
 
-from backend.workflows.steps.step3_room_availability.condition.decide import room_status_on_date
-from backend.workflows.steps.step3_room_availability.trigger.process import (
+from workflows.steps.step3_room_availability.condition.decide import room_status_on_date
+from workflows.steps.step3_room_availability.trigger.process import (
     evaluate_room_statuses,
     _flatten_statuses,  # type: ignore
     ROOM_OUTCOME_AVAILABLE,
     ROOM_OUTCOME_OPTION,
 )
-from backend.workflows.common.capacity import fits_capacity
+from workflows.common.capacity import fits_capacity
 
 TOOL_SCHEMA: Dict[str, Dict[str, Any]] = {
     "tool_room_status_on_date": {

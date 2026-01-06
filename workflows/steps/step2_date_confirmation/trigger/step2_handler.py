@@ -4,9 +4,9 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import re
 import logging
 
-from backend.domain import TaskStatus, TaskType
-from backend.workflows.io.config_store import get_timezone
-from backend.debug.hooks import (
+from domain import TaskStatus, TaskType
+from workflows.io.config_store import get_timezone
+from debug.hooks import (
     set_subloop,
     trace_db_read,
     trace_db_write,
@@ -17,7 +17,7 @@ from backend.debug.hooks import (
     trace_gate,
     trace_general_qa_status,
 )
-from backend.workflows.common.datetime_parse import (
+from workflows.common.datetime_parse import (
     build_window_iso,
     parse_all_dates,
     parse_first_date,
@@ -25,12 +25,12 @@ from backend.workflows.common.datetime_parse import (
     to_ddmmyyyy,
     to_iso_date,
 )
-from backend.workflows.common.prompts import append_footer, format_sections_with_headers, verbalize_draft_body
-from backend.workflows.common.capture import capture_user_fields, capture_workflow_requirements, promote_fields
-from backend.workflows.common.requirements import requirements_hash
-from backend.workflows.common.gatekeeper import refresh_gatekeeper
-from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
-from backend.workflows.common.menu_options import (
+from workflows.common.prompts import append_footer, format_sections_with_headers, verbalize_draft_body
+from workflows.common.capture import capture_user_fields, capture_workflow_requirements, promote_fields
+from workflows.common.requirements import requirements_hash
+from workflows.common.gatekeeper import refresh_gatekeeper
+from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from workflows.common.menu_options import (
     build_menu_payload,
     build_menu_title,
     extract_menu_request,
@@ -40,25 +40,25 @@ from backend.workflows.common.menu_options import (
     normalize_menu_for_display,
     select_menu_options,
 )
-from backend.utils.pseudolinks import generate_qna_link
-from backend.utils.page_snapshots import create_snapshot
-from backend.workflows.common.general_qna import (
+from utils.pseudolinks import generate_qna_link
+from utils.page_snapshots import create_snapshot
+from workflows.common.general_qna import (
     append_general_qna_to_primary,
     render_general_qna_reply,
     enrich_general_qna_step2,
     _fallback_structured_body,
 )
-from backend.workflows.change_propagation import (
+from workflows.change_propagation import (
     detect_change_type,
     detect_change_type_enhanced,
     route_change_on_updated_variable,
 )
-from backend.workflows.qna.router import route_general_qna
-from backend.workflows.common.types import GroupResult, WorkflowState
-# MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
-from backend.detection.intent.confidence import check_nonsense_gate
-from backend.workflows.steps.step1_intake.condition.checks import suggest_dates
-from backend.workflows.io.database import (
+from workflows.qna.router import route_general_qna
+from workflows.common.types import GroupResult, WorkflowState
+# MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
+from detection.intent.confidence import check_nonsense_gate
+from workflows.steps.step1_intake.condition.checks import suggest_dates
+from workflows.io.database import (
     append_audit_entry,
     link_event_to_client,
     load_db,
@@ -66,12 +66,12 @@ from backend.workflows.io.database import (
     tag_message,
     update_event_metadata,
 )
-from backend.workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
-from backend.utils.profiler import profile_step
-from backend.services.availability import next_five_venue_dates, validate_window
+from workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
+from utils.profiler import profile_step
+from services.availability import next_five_venue_dates, validate_window
 # D10: from_hints, MONTH_INDEX_TO_NAME now used in candidate_dates.py
-from backend.utils.calendar_events import update_calendar_event_status
-from backend.workflow.state import WorkflowStep, default_subflow, write_stage
+from utils.calendar_events import update_calendar_event_status
+from workflow.state import WorkflowStep, default_subflow, write_stage
 
 from ..condition.decide import is_valid_ddmmyyyy
 
@@ -1744,7 +1744,7 @@ def _finalize_confirmation(
     if event_entry.get("calendar_event_id"):
         try:
             update_calendar_event_status(event_entry.get("event_id", ""), event_entry.get("status", ""), "lead")
-            from backend.utils.calendar_events import create_calendar_event
+            from utils.calendar_events import create_calendar_event
 
             create_calendar_event(event_entry, "lead")
         except Exception as exc:  # pragma: no cover - best-effort calendar logging
@@ -1837,7 +1837,7 @@ def _finalize_confirmation(
     autorun_error: Optional[Dict[str, Any]] = None
     if next_step == 3:
         try:
-            from backend.workflows.steps.step3_room_availability.trigger.process import process as room_process
+            from workflows.steps.step3_room_availability.trigger.process import process as room_process
 
             room_result = room_process(state)
             if isinstance(room_result.payload, dict):

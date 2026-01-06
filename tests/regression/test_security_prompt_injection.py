@@ -10,7 +10,7 @@ import pytest
 
 # Mark all tests in this module as v4 (current workflow tests)
 pytestmark = pytest.mark.v4
-from backend.workflows.llm.sanitize import (
+from workflows.llm.sanitize import (
     sanitize_for_llm,
     sanitize_message,
     check_prompt_injection,

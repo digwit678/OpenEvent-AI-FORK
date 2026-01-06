@@ -22,7 +22,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, PlainTextResponse
 from typing import List, Optional
 
-from backend.api.debug import (
+from api.debug import (
     debug_get_trace,
     debug_get_timeline,
     debug_generate_report,
@@ -30,7 +30,7 @@ from backend.api.debug import (
     render_arrow_log,
     debug_llm_diagnosis,
 )
-from backend.debug.settings import is_trace_enabled
+from debug.settings import is_trace_enabled
 
 router = APIRouter(tags=["debug"])
 
@@ -130,7 +130,7 @@ if DEBUG_TRACE_ENABLED:
     @router.get("/api/debug/live")
     async def list_live_logs():
         """List all active thread IDs with live logs."""
-        from backend.debug import live_log
+        from debug import live_log
 
         threads = live_log.list_active_logs()
         return {
@@ -142,7 +142,7 @@ if DEBUG_TRACE_ENABLED:
     @router.get("/api/debug/threads/{thread_id}/live")
     async def get_live_log(thread_id: str):
         """Get the live log content for a thread."""
-        from backend.debug import live_log
+        from debug import live_log
 
         path = live_log.get_log_path(thread_id)
         if not path:

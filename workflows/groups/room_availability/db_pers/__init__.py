@@ -1,5 +1,5 @@
 """DEPRECATED: Use backend.workflows.steps.step3_room_availability.db_pers instead."""
-from backend.workflows.steps.step3_room_availability.db_pers.advanced import (
+from workflows.steps.step3_room_availability.db_pers.advanced import (
     RequestedWindow,
     append_log,
     build_candidate_rooms,

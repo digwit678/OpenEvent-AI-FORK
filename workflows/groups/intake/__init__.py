@@ -2,14 +2,14 @@
 DEPRECATED: Use backend.workflows.steps.step1_intake instead.
 
 This module re-exports from the new canonical location for backwards compatibility.
-All new code should import from backend.workflows.steps.step1_intake.
+All new code should import from workflows.steps.step1_intake.
 
 Migration:
-    OLD: from backend.workflows.groups.intake import process
-    NEW: from backend.workflows.steps.step1_intake import process
+    OLD: from workflows.groups.intake import process
+    NEW: from workflows.steps.step1_intake import process
 
-    OLD: from backend.workflows.groups.intake.condition.checks import suggest_dates
-    NEW: from backend.workflows.steps.step1_intake.condition.checks import suggest_dates
+    OLD: from workflows.groups.intake.condition.checks import suggest_dates
+    NEW: from workflows.steps.step1_intake.condition.checks import suggest_dates
 """
 
 import warnings as _warnings
@@ -23,7 +23,7 @@ _warnings.warn(
 )
 
 # Re-export everything from the new location
-from backend.workflows.steps.step1_intake import (
+from workflows.steps.step1_intake import (
     process,
     classify_intent,
     extract_user_information,

@@ -4,7 +4,7 @@ Constants for Step2 Date Confirmation workflow.
 Extracted from step2_handler.py for better modularity (D1 refactoring).
 
 Usage:
-    from backend.workflows.steps.step2_date_confirmation.trigger.constants import (
+    from workflows.steps.step2_date_confirmation.trigger.constants import (
         MONTH_NAME_TO_INDEX,
         WEEKDAY_NAME_TO_INDEX,
         AFFIRMATIVE_TOKENS,

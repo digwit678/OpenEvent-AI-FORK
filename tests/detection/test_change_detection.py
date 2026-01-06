@@ -1,4 +1,4 @@
-from backend.workflows.change_propagation import ChangeType, detect_change_type
+from workflows.change_propagation import ChangeType, detect_change_type
 
 
 def _base_event_state():

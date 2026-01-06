@@ -15,10 +15,10 @@ from pathlib import Path
 import pytest
 from unittest.mock import MagicMock, patch
 
-from backend.domain import IntentLabel
-from backend.workflows.common.types import GroupResult, WorkflowState, IncomingMessage
-from backend.workflows.steps.step5_negotiation.trigger.step5_handler import process
-from backend.workflows.steps.step5_negotiation.trigger.classification import (
+from domain import IntentLabel
+from workflows.common.types import GroupResult, WorkflowState, IncomingMessage
+from workflows.steps.step5_negotiation.trigger.step5_handler import process
+from workflows.steps.step5_negotiation.trigger.classification import (
     classify_message,
     collect_detected_intents,
 )

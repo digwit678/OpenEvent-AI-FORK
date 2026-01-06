@@ -9,10 +9,10 @@ from typing import Any, Dict, List
 
 from zoneinfo import ZoneInfo
 
-from backend.workflows.io.config_store import get_timezone
-from backend.workflows.conditions.checks import has_event_date as _has_event_date
-from backend.workflows.conditions.checks import is_event_request as _is_event_request
-from backend.workflows.steps.step3_room_availability.condition.decide import (
+from workflows.io.config_store import get_timezone
+from workflows.conditions.checks import has_event_date as _has_event_date
+from workflows.conditions.checks import is_event_request as _is_event_request
+from workflows.steps.step3_room_availability.condition.decide import (
     room_status_on_date as _room_status_on_date,
 )
 

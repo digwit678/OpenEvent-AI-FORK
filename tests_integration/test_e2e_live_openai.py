@@ -14,11 +14,11 @@ if str(_ROOT) not in sys.path:
 
 import pytest
 
-from backend.workflow_email import load_db, process_msg, save_db
-from backend.workflows.common.billing import update_billing_details
-from backend.workflows.common.gatekeeper import explain_step7_gate, refresh_gatekeeper
-from backend.workflows.llm import adapter as llm_adapter
-from backend.utils.openai_key import SECRET_NAME, load_openai_api_key
+from workflow_email import load_db, process_msg, save_db
+from workflows.common.billing import update_billing_details
+from workflows.common.gatekeeper import explain_step7_gate, refresh_gatekeeper
+from workflows.llm import adapter as llm_adapter
+from utils.openai_key import SECRET_NAME, load_openai_api_key
 
 from .utils_live import (
     _tmp_log_path,

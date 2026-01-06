@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from backend.utils import json_io
+from utils import json_io
 
 _CALENDAR_SINGLETON: Optional["CalendarAdapter"] = None
 

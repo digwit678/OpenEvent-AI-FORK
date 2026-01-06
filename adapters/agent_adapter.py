@@ -14,8 +14,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-from backend.domain import IntentLabel
-from backend.llm.client import get_openai_client
+from domain import IntentLabel
+from llm.client import get_openai_client
 
 try:  # pragma: no cover - optional dependency resolved at runtime
     import google.generativeai as genai  # type: ignore

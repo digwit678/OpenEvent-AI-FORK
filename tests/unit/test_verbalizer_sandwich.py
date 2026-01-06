@@ -42,7 +42,7 @@ import pytest
 from typing import Dict, List
 
 # Import the functions we're testing
-from backend.ux.universal_verbalizer import (
+from ux.universal_verbalizer import (
     _verify_facts,
     _patch_facts,
     MessageContext,

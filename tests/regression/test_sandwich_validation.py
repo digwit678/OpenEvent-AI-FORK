@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from backend.ux.verbalizer_payloads import RoomFact, MenuFact, RoomOfferFacts
-from backend.ux.verbalizer_safety import (
+from ux.verbalizer_payloads import RoomFact, MenuFact, RoomOfferFacts
+from ux.verbalizer_safety import (
     correct_output,
     verify_output,
     protect_terms,

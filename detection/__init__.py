@@ -17,10 +17,10 @@ STRUCTURE:
 QUICK REFERENCE:
 
     Intent Classification:
-        from backend.detection import classify_intent, is_gibberish, check_confidence
+        from detection import classify_intent, is_gibberish, check_confidence
 
     Response Detection:
-        from backend.detection import (
+        from detection import (
             matches_acceptance_pattern,
             matches_decline_pattern,
             matches_counter_pattern,
@@ -28,7 +28,7 @@ QUICK REFERENCE:
         )
 
     Change/Detour Detection:
-        from backend.detection import (
+        from detection import (
             detect_change_type,
             detect_change_type_enhanced,
             has_revision_signal,
@@ -36,20 +36,20 @@ QUICK REFERENCE:
         )
 
     Q&A Detection:
-        from backend.detection import (
+        from detection import (
             detect_general_room_query,
             detect_sequential_workflow_request
         )
 
     Special Detection:
-        from backend.detection import (
+        from detection import (
             looks_like_manager_request,
             detect_room_conflict,
             check_nonsense_gate
         )
 
     Keywords (source of truth):
-        from backend.detection.keywords import (
+        from detection.keywords import (
             CONFIRMATION_SIGNALS_EN, CONFIRMATION_SIGNALS_DE,
             CHANGE_VERBS_EN, CHANGE_VERBS_DE,
             REVISION_MARKERS_EN, REVISION_MARKERS_DE,
@@ -73,8 +73,8 @@ MIGRATION STATUS:
 
 # Exports will be added as modules are migrated
 # Example future exports:
-# from backend.detection.intent.classifier import classify_intent
-# from backend.detection.response.acceptance import matches_acceptance_pattern
+# from detection.intent.classifier import classify_intent
+# from detection.response.acceptance import matches_acceptance_pattern
 # etc.
 
 __all__ = [

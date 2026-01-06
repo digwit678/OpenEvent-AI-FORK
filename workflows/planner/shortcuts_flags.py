@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from typing import List
 
-from backend.config.flags import env_flag
+from config.flags import env_flag
 
 
 def shortcuts_enabled() -> bool:

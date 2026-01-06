@@ -3,9 +3,9 @@ from pathlib import Path
 import importlib
 import pytest
 
-from backend.domain import IntentLabel
-from backend.workflows.common.requirements import requirements_hash
-from backend.workflows.common.types import IncomingMessage, WorkflowState
+from domain import IntentLabel
+from workflows.common.requirements import requirements_hash
+from workflows.common.types import IncomingMessage, WorkflowState
 
 
 def test_curly_apostrophe_acceptance_routes_to_hil(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

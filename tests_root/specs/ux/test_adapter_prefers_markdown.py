@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from backend.adapters.client_gui_adapter import adapt_message
+from adapters.client_gui_adapter import adapt_message
 
 
 def test_adapter_prefers_body_markdown(caplog):

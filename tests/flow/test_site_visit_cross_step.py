@@ -8,7 +8,7 @@ IMPORTANT: Site visits are VENUE-WIDE (not room-specific).
 """
 import pytest
 
-from backend.workflows.common.site_visit_state import (
+from workflows.common.site_visit_state import (
     SiteVisitState,
     cancel_site_visit,
     complete_site_visit,
@@ -158,7 +158,7 @@ class TestSiteVisitIntentDetection:
 
     def test_site_visit_keywords_in_classifier(self):
         """site_visit_request keywords should be recognized."""
-        from backend.detection.intent.classifier import _detect_qna_types
+        from detection.intent.classifier import _detect_qna_types
 
         # Test various site visit request phrases
         test_phrases = [
@@ -176,7 +176,7 @@ class TestSiteVisitIntentDetection:
 
     def test_site_visit_step_mapping(self):
         """site_visit_request should map to step 0 (cross-step)."""
-        from backend.detection.intent.classifier import QNA_TYPE_TO_STEP
+        from detection.intent.classifier import QNA_TYPE_TO_STEP
 
         assert QNA_TYPE_TO_STEP.get("site_visit_request") == 0  # Cross-step
 
@@ -186,8 +186,8 @@ class TestSiteVisitHandler:
 
     def test_is_site_visit_intent_detection(self):
         """is_site_visit_intent should detect site visit from detection result."""
-        from backend.detection.unified import UnifiedDetectionResult
-        from backend.workflows.common.site_visit_handler import is_site_visit_intent
+        from detection.unified import UnifiedDetectionResult
+        from workflows.common.site_visit_handler import is_site_visit_intent
 
         # No detection result
         assert is_site_visit_intent(None) is False
@@ -214,7 +214,7 @@ class TestSiteVisitConflictDetection:
 
     def test_blocked_dates_includes_event_date(self):
         """Event date should be in blocked dates."""
-        from backend.workflows.common.site_visit_handler import _get_blocked_dates
+        from workflows.common.site_visit_handler import _get_blocked_dates
 
         # Provide empty db to avoid loading from file
         db = {"events": []}
@@ -225,7 +225,7 @@ class TestSiteVisitConflictDetection:
 
     def test_blocked_dates_handles_iso_format(self):
         """ISO format dates should also work."""
-        from backend.workflows.common.site_visit_handler import _get_blocked_dates
+        from workflows.common.site_visit_handler import _get_blocked_dates
 
         db = {"events": []}
         event_entry = {"user_info": {"date": "2026-03-20"}}
@@ -235,7 +235,7 @@ class TestSiteVisitConflictDetection:
 
     def test_slot_generation_excludes_blocked_dates(self):
         """Generated slots should not include blocked dates."""
-        from backend.workflows.common.site_visit_handler import _generate_visit_slots
+        from workflows.common.site_visit_handler import _generate_visit_slots
 
         event_entry = {"chosen_date": "15.02.2026"}
         blocked = {"2026-02-14", "2026-02-13"}  # Block dates before event
@@ -270,7 +270,7 @@ class TestSiteVisitConflictWithMultipleEvents:
 
     def test_get_event_dates_returns_all_dates(self):
         """get_event_dates should return dates from all events."""
-        from backend.workflows.io.database import get_event_dates
+        from workflows.io.database import get_event_dates
 
         db = self._create_mock_db([
             {"chosen_date": "10.02.2026"},
@@ -287,7 +287,7 @@ class TestSiteVisitConflictWithMultipleEvents:
 
     def test_get_event_dates_excludes_cancelled(self):
         """get_event_dates should exclude cancelled events."""
-        from backend.workflows.io.database import get_event_dates
+        from workflows.io.database import get_event_dates
 
         db = self._create_mock_db([
             {"chosen_date": "10.02.2026", "status": "Lead"},
@@ -304,7 +304,7 @@ class TestSiteVisitConflictWithMultipleEvents:
 
     def test_get_event_dates_can_include_cancelled(self):
         """get_event_dates with exclude_cancelled=False includes all."""
-        from backend.workflows.io.database import get_event_dates
+        from workflows.io.database import get_event_dates
 
         db = self._create_mock_db([
             {"chosen_date": "10.02.2026", "status": "Lead"},
@@ -319,7 +319,7 @@ class TestSiteVisitConflictWithMultipleEvents:
 
     def test_get_event_dates_excludes_specific_event(self):
         """get_event_dates should exclude specified event_id."""
-        from backend.workflows.io.database import get_event_dates
+        from workflows.io.database import get_event_dates
 
         db = self._create_mock_db([
             {"chosen_date": "10.02.2026"},
@@ -334,7 +334,7 @@ class TestSiteVisitConflictWithMultipleEvents:
 
     def test_blocked_dates_includes_all_events_from_db(self):
         """_get_blocked_dates should block all event dates from database."""
-        from backend.workflows.common.site_visit_handler import _get_blocked_dates
+        from workflows.common.site_visit_handler import _get_blocked_dates
 
         # Create db with multiple events
         db = self._create_mock_db([
@@ -357,7 +357,7 @@ class TestSiteVisitConflictWithMultipleEvents:
 
     def test_blocked_dates_with_db_loader_injection(self):
         """Test db loader injection for testing."""
-        from backend.workflows.common.site_visit_handler import (
+        from workflows.common.site_visit_handler import (
             _get_blocked_dates,
             set_db_loader,
         )
@@ -383,7 +383,7 @@ class TestSiteVisitConflictWithMultipleEvents:
 
     def test_slot_generation_avoids_all_event_dates(self):
         """Slot generation should avoid all event dates from database."""
-        from backend.workflows.common.site_visit_handler import _generate_visit_slots
+        from workflows.common.site_visit_handler import _generate_visit_slots
 
         # Current event is on 28.02.2026
         # Other events are on 20.02 and 21.02
@@ -403,7 +403,7 @@ class TestSiteVisitConflictWithMultipleEvents:
 
     def test_get_site_visits_on_date(self):
         """get_site_visits_on_date should find events with scheduled site visits."""
-        from backend.workflows.io.database import get_site_visits_on_date
+        from workflows.io.database import get_site_visits_on_date
 
         db = {
             "events": [
@@ -450,7 +450,7 @@ class TestSiteVisitConflictWithMultipleEvents:
 
     def test_conflict_rule_site_visit_blocked_on_event_day(self):
         """Site visits cannot be booked on event days."""
-        from backend.workflows.common.site_visit_handler import _get_blocked_dates
+        from workflows.common.site_visit_handler import _get_blocked_dates
 
         # Event on 15.02.2026
         db = self._create_mock_db([{"chosen_date": "15.02.2026"}])
@@ -463,7 +463,7 @@ class TestSiteVisitConflictWithMultipleEvents:
 
     def test_conflict_rule_event_allowed_on_site_visit_day(self):
         """Events CAN be booked on site visit days (triggers notification)."""
-        from backend.workflows.io.database import get_site_visits_on_date
+        from workflows.io.database import get_site_visits_on_date
 
         # Client has site visit scheduled for 10.02.2026
         db = {
@@ -503,7 +503,7 @@ class TestSiteVisitVenueWide:
 
     def test_deprecated_room_functions_return_none(self):
         """Deprecated room functions should return None/no-op."""
-        from backend.workflows.common.site_visit_state import (
+        from workflows.common.site_visit_state import (
             get_default_room_for_site_visit,
             get_site_visit_room,
             set_site_visit_room,

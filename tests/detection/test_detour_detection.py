@@ -14,8 +14,8 @@ Test ID format: DET_DETOUR_<category>_<number>_<description>
 import pytest
 from typing import Dict, Any, Optional
 
-# MIGRATED: from backend.workflows.nlu.keyword_buckets -> backend.detection.keywords.buckets
-from backend.detection.keywords.buckets import (
+# MIGRATED: from workflows.nlu.keyword_buckets -> backend.detection.keywords.buckets
+from detection.keywords.buckets import (
     DetourMode,
     MessageIntent,
     ChangeIntentResult,
@@ -27,14 +27,14 @@ from backend.detection.keywords.buckets import (
     is_decline,
     detect_language,
 )
-from backend.workflows.change_propagation import (
+from workflows.change_propagation import (
     ChangeType,
     EnhancedChangeResult,
     detect_change_type_enhanced,
     detect_change_with_fallback,
 )
-# MIGRATED: from backend.workflows.nlu.semantic_matchers -> backend.detection.response.matchers
-from backend.detection.response.matchers import (
+# MIGRATED: from workflows.nlu.semantic_matchers -> backend.detection.response.matchers
+from detection.response.matchers import (
     matches_change_pattern_enhanced,
     is_pure_qa_message,
 )
@@ -617,7 +617,7 @@ class TestBackwardCompatibility:
 # AMBIGUOUS TARGET RESOLUTION TESTS
 # =============================================================================
 
-from backend.workflows.change_propagation import (
+from workflows.change_propagation import (
     resolve_ambiguous_target,
     detect_change_type_enhanced_with_disambiguation,
     AmbiguousTargetResult,

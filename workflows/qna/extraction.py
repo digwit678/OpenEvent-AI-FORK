@@ -4,11 +4,11 @@ import json
 import os
 from typing import Any, Dict, Optional
 
-from backend.llm.client import get_openai_client, is_llm_available
-from backend.workflows.common.types import WorkflowState
-# MIGRATED: from backend.workflows.nlu.general_qna_classifier -> backend.detection.qna.general_qna
-from backend.detection.qna.general_qna import quick_general_qna_scan
-from backend.workflows.common.fallback_reason import (
+from llm.client import get_openai_client, is_llm_available
+from workflows.common.types import WorkflowState
+# MIGRATED: from workflows.nlu.general_qna_classifier -> backend.detection.qna.general_qna
+from detection.qna.general_qna import quick_general_qna_scan
+from workflows.common.fallback_reason import (
     create_fallback_reason,
     llm_disabled_reason,
     llm_exception_reason,

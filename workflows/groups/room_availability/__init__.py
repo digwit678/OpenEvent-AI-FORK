@@ -13,7 +13,7 @@ _warnings.warn(
     stacklevel=2,
 )
 
-from backend.workflows.steps.step3_room_availability import (
+from workflows.steps.step3_room_availability import (
     process,
     room_status_on_date,
     summarize_room_statuses,

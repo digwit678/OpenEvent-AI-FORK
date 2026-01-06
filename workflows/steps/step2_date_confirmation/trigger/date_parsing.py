@@ -6,7 +6,7 @@ Extracted from step2_handler.py for better modularity (D2 refactoring).
 All functions in this module are pure (no side effects, no DB access).
 
 Usage:
-    from backend.workflows.steps.step2_date_confirmation.trigger.date_parsing import (
+    from workflows.steps.step2_date_confirmation.trigger.date_parsing import (
         safe_parse_iso_date,
         iso_date_is_past,
         normalize_iso_candidate,
@@ -20,8 +20,8 @@ import re
 from datetime import date, datetime
 from typing import Any, List, Optional, Sequence
 
-from backend.workflows.common.datetime_parse import to_iso_date
-from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from workflows.common.datetime_parse import to_iso_date
+from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 
 from .constants import MONTH_NAME_TO_INDEX, WEEKDAY_NAME_TO_INDEX
 

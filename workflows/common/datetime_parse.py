@@ -6,8 +6,8 @@ import re
 from datetime import date, datetime, time, timedelta
 from typing import List, Optional, Tuple
 
-from backend.workflows.common.relative_dates import resolve_relative_date
-from backend.workflows.io.config_store import get_timezone
+from workflows.common.relative_dates import resolve_relative_date
+from workflows.io.config_store import get_timezone
 
 from zoneinfo import ZoneInfo
 

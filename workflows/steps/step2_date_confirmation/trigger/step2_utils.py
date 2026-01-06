@@ -19,7 +19,7 @@ from collections import Counter
 from datetime import datetime, time
 from typing import Any, Counter as CounterType, Dict, List, Optional, Sequence, Tuple
 
-from backend.debug.hooks import trace_gate  # D13d
+from debug.hooks import trace_gate  # D13d
 
 from .constants import (
     AFFIRMATIVE_TOKENS,
@@ -30,7 +30,7 @@ from .constants import (
 )
 from .types import ConfirmationWindow
 from .date_parsing import clean_weekdays_hint as _clean_weekdays_hint
-from backend.workflows.common.datetime_parse import parse_first_date
+from workflows.common.datetime_parse import parse_first_date
 
 
 # =============================================================================

@@ -41,10 +41,10 @@ import re
 from functools import lru_cache
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from backend.services.rooms import load_room_catalog
+from services.rooms import load_room_catalog
 
 # Import comprehensive keyword buckets for enhanced detection
-from backend.detection.keywords.buckets import (
+from detection.keywords.buckets import (
     CHANGE_VERBS_EN,
     CHANGE_VERBS_DE,
     REVISION_MARKERS_EN,

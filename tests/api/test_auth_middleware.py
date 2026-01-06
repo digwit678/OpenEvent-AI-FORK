@@ -4,7 +4,7 @@ import os
 import pytest
 from unittest.mock import patch
 
-from backend.api.middleware.auth import (
+from api.middleware.auth import (
     AuthMiddleware,
     _extract_bearer_token,
     _validate_api_key,
@@ -104,7 +104,7 @@ class TestContextVars:
 def test_client():
     """Create test client with fresh app instance."""
     from fastapi.testclient import TestClient
-    from backend.main import app
+    from main import app
     return TestClient(app)
 
 

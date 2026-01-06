@@ -4,7 +4,7 @@ import os
 import pytest
 from unittest.mock import patch
 
-from backend.ux.safety_sandwich_wiring import (
+from ux.safety_sandwich_wiring import (
     verbalize_room_response,
     verbalize_offer_response,
 )

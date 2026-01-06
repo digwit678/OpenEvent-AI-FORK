@@ -31,21 +31,21 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from backend.detection.unified import UnifiedDetectionResult
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.site_visit_state import (
+from detection.unified import UnifiedDetectionResult
+from workflows.common.prompts import append_footer
+from workflows.common.site_visit_state import (
     get_site_visit_state,
     set_site_visit_date,
     start_site_visit_flow,
 )
-from backend.workflows.io.config_store import (
+from workflows.io.config_store import (
     get_site_visit_blocked_dates,
     get_site_visit_slots,
     get_site_visit_weekdays_only,
     get_site_visit_min_days_ahead,
 )
-from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.io.database import (
+from workflows.common.types import GroupResult, WorkflowState
+from workflows.io.database import (
     append_audit_entry,
     get_event_dates,
     load_db,

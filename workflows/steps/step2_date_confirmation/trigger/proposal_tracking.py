@@ -7,7 +7,7 @@ These functions manage the date proposal attempt counter and history,
 preventing the system from repeatedly proposing the same dates.
 
 Usage:
-    from backend.workflows.steps.step2_date_confirmation.trigger.proposal_tracking import (
+    from workflows.steps.step2_date_confirmation.trigger.proposal_tracking import (
         increment_date_attempt,
         collect_proposal_history,
         proposal_skip_dates,
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence
 
-from backend.workflows.io.database import update_event_metadata
+from workflows.io.database import update_event_metadata
 
 
 # -----------------------------------------------------------------------------

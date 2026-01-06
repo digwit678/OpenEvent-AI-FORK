@@ -4,8 +4,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from backend.workflows.common.billing import update_billing_details
-from backend.workflows.common.types import WorkflowState
+from workflows.common.billing import update_billing_details
+from workflows.common.types import WorkflowState
 
 
 # Question indicators for sentence classification
@@ -133,7 +133,7 @@ def capture_workflow_requirements(
     if captured:
         # Update requirements hash if function available
         try:
-            from backend.workflows.common.requirements import requirements_hash
+            from workflows.common.requirements import requirements_hash
             event_entry["requirements_hash"] = requirements_hash(requirements)
         except ImportError:
             pass

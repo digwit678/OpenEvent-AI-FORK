@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.workflows.qna.verbalizer import render_qna_answer
+from workflows.qna.verbalizer import render_qna_answer
 
 
 def test_verbalizer_fallback_formats_rooms_products():

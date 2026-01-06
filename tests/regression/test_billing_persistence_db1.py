@@ -19,8 +19,8 @@ import pytest
 from pathlib import Path
 from datetime import datetime
 
-from backend.workflow_email import process_msg
-from backend.workflows.io import database as db_io
+from workflow_email import process_msg
+from workflows.io import database as db_io
 
 
 # Run with AGENT_MODE=stub

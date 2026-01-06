@@ -21,7 +21,7 @@ class RankedRoom:
 
 
 def _config_by_name() -> Dict[str, Dict[str, object]]:
-    from backend.workflows.steps.step3_room_availability.db_pers import load_rooms_config
+    from workflows.steps.step3_room_availability.db_pers import load_rooms_config
 
     rooms = load_rooms_config()
     return {str(entry.get("name")): entry for entry in rooms if entry.get("name")}

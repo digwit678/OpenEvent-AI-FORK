@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 from typing import Dict, Any
 
-from backend.workflows.change_propagation import (
+from workflows.change_propagation import (
     ChangeType,
     NextStepDecision,
     route_change_on_updated_variable,

@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
-from backend.debug import timeline
-from backend.debug.trace import BUS, REQUIREMENTS_MATCH_HELP, get_trace_summary
-from backend.workflow.state import get_thread_state
+from debug import timeline
+from debug.trace import BUS, REQUIREMENTS_MATCH_HELP, get_trace_summary
+from workflow.state import get_thread_state
 
 REPORT_ROOT = Path(__file__).resolve().parents[2] / "tmp-debug" / "reports"
 

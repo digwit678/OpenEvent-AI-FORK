@@ -26,21 +26,21 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backend.domain import ConversationState, EventInformation
-from backend.legacy.session_store import (
+from domain import ConversationState, EventInformation
+from legacy.session_store import (
     active_conversations,
     render_step3_reply,
     pop_step3_payload,
 )
-from backend.core.fallback import wrap_fallback, create_fallback_context
-from backend.adapters.calendar_adapter import get_calendar_adapter
-from backend.adapters.client_gui_adapter import ClientGUIAdapter
-from backend.workflows.common.payloads import PayloadValidationError, validate_confirm_date_payload
-from backend.workflows.steps.step2_date_confirmation import compose_date_confirmation_reply
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.steps.step3_room_availability import run_availability_workflow
-from backend.utils import json_io
-from backend.workflow_email import (
+from core.fallback import wrap_fallback, create_fallback_context
+from adapters.calendar_adapter import get_calendar_adapter
+from adapters.client_gui_adapter import ClientGUIAdapter
+from workflows.common.payloads import PayloadValidationError, validate_confirm_date_payload
+from workflows.steps.step2_date_confirmation import compose_date_confirmation_reply
+from workflows.common.prompts import append_footer
+from workflows.steps.step3_room_availability import run_availability_workflow
+from utils import json_io
+from workflow_email import (
     process_msg as wf_process_msg,
     load_db as wf_load_db,
     save_db as wf_save_db,
@@ -286,7 +286,7 @@ def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> Opt
     Returns:
         Error message if something failed, None if successful.
     """
-    # Note: create_fallback_context imported at module level from backend.core.fallback
+    # Note: create_fallback_context imported at module level from core.fallback
 
     if not event_id:
         ctx = create_fallback_context(
@@ -364,7 +364,7 @@ def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> Opt
 
 def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: str) -> Dict[str, Any]:
     """Persist confirmed date and trigger availability workflow."""
-    # Note: create_fallback_context imported at module level from backend.core.fallback
+    # Note: create_fallback_context imported at module level from core.fallback
 
     conversation_state.event_info.event_date = chosen_date
     conversation_state.event_info.status = "Date Confirmed"

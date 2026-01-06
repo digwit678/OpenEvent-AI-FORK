@@ -16,7 +16,7 @@ def _reload_main(monkeypatch) -> Any:
 
 
 def _reset_bus(thread_id: str) -> None:
-    from backend.debug.trace import BUS
+    from debug.trace import BUS
 
     try:
         BUS._buf.pop(thread_id, None)  # type: ignore[attr-defined]
@@ -26,8 +26,8 @@ def _reset_bus(thread_id: str) -> None:
 
 def test_trace_event_contract(monkeypatch):
     main = _reload_main(monkeypatch)
-    from backend.debug.trace import BUS
-    from backend.debug.hooks import trace_entity, trace_gate, trace_db_write, trace_state
+    from debug.trace import BUS
+    from debug.hooks import trace_entity, trace_gate, trace_db_write, trace_state
 
     _reset_bus(THREAD_ID)
 

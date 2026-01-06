@@ -17,10 +17,10 @@ from typing import Any, Dict, Optional
 
 import pytest
 
-from backend import workflow_email as wf
-from backend.domain import IntentLabel, TaskStatus
-from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.steps import step5_negotiation as negotiation_close
+import workflow_email as wf
+from domain import IntentLabel, TaskStatus
+from workflows.common.types import IncomingMessage, WorkflowState
+from workflows.steps import step5_negotiation as negotiation_close
 
 
 # ==============================================================================

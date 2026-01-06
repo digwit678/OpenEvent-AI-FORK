@@ -13,8 +13,8 @@ import os
 
 from fastapi import APIRouter
 
-from backend.workflow_email import DB_PATH as WF_DB_PATH
-from backend.workflows.io.integration.config import is_hil_all_replies_enabled
+from workflow_email import DB_PATH as WF_DB_PATH
+from workflows.io.integration.config import is_hil_all_replies_enabled
 
 router = APIRouter(tags=["workflow"])
 

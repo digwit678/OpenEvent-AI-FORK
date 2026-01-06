@@ -10,16 +10,16 @@ _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from backend.workflow_email import load_db, process_msg, save_db  # noqa: E402
-from backend.workflows.common.requirements import requirements_hash  # noqa: E402
-from backend.workflows.common.types import IncomingMessage, WorkflowState  # noqa: E402
-from backend.workflows.planner import maybe_run_smart_shortcuts  # noqa: E402
-import backend.workflows.steps.step3_room_availability.trigger.step3_handler as room_trigger  # noqa: E402
+from workflow_email import load_db, process_msg, save_db  # noqa: E402
+from workflows.common.requirements import requirements_hash  # noqa: E402
+from workflows.common.types import IncomingMessage, WorkflowState  # noqa: E402
+from workflows.planner import maybe_run_smart_shortcuts  # noqa: E402
+import workflows.steps.step3_room_availability.trigger.step3_handler as room_trigger  # noqa: E402
 
 date_trigger_module = importlib.import_module(
     "backend.workflows.steps.step2_date_confirmation.trigger.step2_handler"
 )
-from backend.domain import TaskType  # noqa: E402
+from domain import TaskType  # noqa: E402
 
 
 pytestmark = [
@@ -35,7 +35,7 @@ pytestmark = [
 def _stub_agent(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Dict[str, Any]]:
     os.environ["AGENT_MODE"] = "stub"
     monkeypatch.setenv("ALLOW_AUTO_ROOM_LOCK", "false")
-    from backend.workflows.llm import adapter as llm_adapter
+    from workflows.llm import adapter as llm_adapter
 
     mapping: Dict[str, Dict[str, Any]] = {}
     intent_overrides: Dict[str, str] = {}

@@ -4,7 +4,7 @@ DEPRECATED: Use backend.workflows.steps.step3_room_availability.trigger.process 
 This module re-exports from the new canonical location for backwards compatibility.
 """
 
-from backend.workflows.steps.step3_room_availability.trigger.process import (
+from workflows.steps.step3_room_availability.trigger.process import (
     process,
     evaluate_room_statuses,
     handle_select_room_action,

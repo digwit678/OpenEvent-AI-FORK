@@ -14,11 +14,11 @@ from pathlib import Path
 import pytest
 from unittest.mock import MagicMock, patch
 
-from backend.domain import IntentLabel
-from backend.workflows.common.types import GroupResult, WorkflowState, IncomingMessage
-from backend.workflows.steps.step7_confirmation.trigger.step7_handler import process
-from backend.workflows.steps.step7_confirmation.trigger.classification import classify_message
-from backend.workflows.steps.step7_confirmation.trigger.site_visit import (
+from domain import IntentLabel
+from workflows.common.types import GroupResult, WorkflowState, IncomingMessage
+from workflows.steps.step7_confirmation.trigger.step7_handler import process
+from workflows.steps.step7_confirmation.trigger.classification import classify_message
+from workflows.steps.step7_confirmation.trigger.site_visit import (
     extract_site_visit_preference,
     parse_slot_selection,
 )

@@ -16,8 +16,8 @@ from __future__ import annotations
 import pytest
 import re
 
-# MIGRATED: from backend.llm.intent_classifier -> backend.detection.intent.classifier
-from backend.detection.intent.classifier import _RESUME_PHRASES
+# MIGRATED: from llm.intent_classifier -> backend.detection.intent.classifier
+from detection.intent.classifier import _RESUME_PHRASES
 
 
 # ==============================================================================

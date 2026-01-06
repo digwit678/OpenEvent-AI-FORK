@@ -22,7 +22,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from backend.services.products import normalise_product_payload
+from services.products import normalise_product_payload
 
 from .shortcuts_flags import (
     _budget_default_currency,

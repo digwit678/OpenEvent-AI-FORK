@@ -3,19 +3,19 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
-from backend.workflows.common.requirements import requirements_hash
-from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.steps.step2_date_confirmation.trigger.step2_handler import (
+from workflows.common.requirements import requirements_hash
+from workflows.common.types import IncomingMessage, WorkflowState
+from workflows.steps.step2_date_confirmation.trigger.step2_handler import (
     _present_candidate_dates,
     _finalize_confirmation,
 )
-from backend.workflows.steps.step4_offer.trigger.step4_handler import process as offer_process
+from workflows.steps.step4_offer.trigger.step4_handler import process as offer_process
 
 from ...utils.timezone import freeze_time
 
 room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
-from backend.workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
-from backend.workflows.common.types import GroupResult
+from workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
+from workflows.common.types import GroupResult
 
 
 def _mk_state(tmp_path: Path, step: int, thread_state: str = "Awaiting Client") -> WorkflowState:

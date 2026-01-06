@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from backend.detection.intent.classifier import classify_intent
-from backend.main import _compose_turn_drafts
-from backend.workflows.qna.router import route_general_qna
+from detection.intent.classifier import classify_intent
+from main import _compose_turn_drafts
+from workflows.qna.router import route_general_qna
 
 
 def _build_msg(text: str) -> dict:

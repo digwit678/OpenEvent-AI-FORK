@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from backend.llm.verbalizer_agent import verbalize_gui_reply
-from backend.workflow.state import stage_payload, WorkflowStep, write_stage
+from llm.verbalizer_agent import verbalize_gui_reply
+from workflow.state import stage_payload, WorkflowStep, write_stage
 
 
 def _locate_event(db: Dict[str, Any], event_id: Optional[str]) -> Optional[Dict[str, Any]]:

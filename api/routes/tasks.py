@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-from backend.workflow_email import (
+from workflow_email import (
     load_db as wf_load_db,
     save_db as wf_save_db,
     list_pending_tasks as wf_list_pending_tasks,
@@ -28,7 +28,7 @@ from backend.workflow_email import (
     reject_task_and_send as wf_reject_task_and_send,
     cleanup_tasks as wf_cleanup_tasks,
 )
-from backend.workflows.common.pricing import derive_room_rate, normalise_rate
+from workflows.common.pricing import derive_room_rate, normalise_rate
 
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -99,7 +99,7 @@ def _build_event_summary(event_entry: Dict[str, Any]) -> Optional[Dict[str, Any]
 
     # Calculate offer total
     try:
-        from backend.workflows.steps.step5_negotiation.trigger.step5_handler import _determine_offer_total
+        from workflows.steps.step5_negotiation.trigger.step5_handler import _determine_offer_total
         total_amount = _determine_offer_total(event_entry)
     except Exception:
         total_amount = None

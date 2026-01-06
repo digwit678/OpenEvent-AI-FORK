@@ -19,20 +19,20 @@ from unittest.mock import patch
 
 import pytest
 
-from backend.ux.verbalizer_payloads import (
+from ux.verbalizer_payloads import (
     RoomFact,
     MenuFact,
     RoomOfferFacts,
     build_room_offer_facts,
 )
-from backend.ux.verbalizer_safety import (
+from ux.verbalizer_safety import (
     HardFacts,
     VerificationResult,
     extract_hard_facts,
     verify_output,
 )
-from backend.llm.verbalizer_agent import verbalize_room_offer
-from backend.workflows.common.types import WorkflowState, IncomingMessage
+from llm.verbalizer_agent import verbalize_room_offer
+from workflows.common.types import WorkflowState, IncomingMessage
 
 
 # ==============================================================================
@@ -351,7 +351,7 @@ class TestSandwichIntegration:
         }
         state.event_entry = event_entry
 
-        from backend.workflows.common.sorting import RankedRoom
+        from workflows.common.sorting import RankedRoom
         ranked_rooms = [
             RankedRoom(
                 room="Room A",

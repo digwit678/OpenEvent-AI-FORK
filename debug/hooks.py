@@ -6,7 +6,7 @@ import inspect
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:  # pragma: no cover - debugger counters are optional in some environments
-    from backend.workflows.debugger.counters import compute_step_counters  # type: ignore[import]
+    from workflows.debugger.counters import compute_step_counters  # type: ignore[import]
 except Exception:  # pragma: no cover - fallback when workflows package unavailable
     compute_step_counters = None  # type: ignore[assignment]
 
@@ -624,7 +624,7 @@ def trace_draft(
     if current_subloop:
         data["subloop"] = current_subloop
     if is_trace_enabled():
-        from backend.debug.state_store import STATE_STORE  # pylint: disable=import-outside-toplevel
+        from debug.state_store import STATE_STORE  # pylint: disable=import-outside-toplevel
 
         current = STATE_STORE.get(thread_id)
         merged_state = dict(current)
@@ -741,7 +741,7 @@ def trace_state(thread_id: str, step: str, snapshot: Dict[str, Any]) -> None:
     counters: Optional[Dict[str, Any]] = None
 
     if is_trace_enabled():
-        from backend.debug.state_store import STATE_STORE  # pylint: disable=import-outside-toplevel
+        from debug.state_store import STATE_STORE  # pylint: disable=import-outside-toplevel
 
         current = STATE_STORE.get(thread_id)
         merged = dict(current)

@@ -1,11 +1,11 @@
 """
-DEPRECATED: Import from backend.detection.intent instead.
+DEPRECATED: Import from detection.intent instead.
 
 This module provides backwards-compatible re-exports for tests and code that
 still import from this old location.
 """
 
-from backend.detection.intent import (
+from detection.intent import (
     classify_intent,
     spans_multiple_steps,
     get_qna_steps,

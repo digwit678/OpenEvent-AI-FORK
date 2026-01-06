@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.workflows.steps.step4_offer.trigger.step4_handler import (
+from workflows.steps.step4_offer.trigger.step4_handler import (
     _apply_product_operations,
     _compose_offer_summary,
 )
@@ -98,7 +98,7 @@ def test_apply_product_operations_clears_autofill_summary_matched():
 
 def test_compose_offer_summary_recomputes_total_from_products(tmp_path):
     from pathlib import Path
-    from backend.workflows.common.types import IncomingMessage, WorkflowState
+    from workflows.common.types import IncomingMessage, WorkflowState
 
     event_entry = {
         "chosen_date": "20.11.2026",

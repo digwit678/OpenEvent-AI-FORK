@@ -9,15 +9,15 @@ _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from backend.domain import EventStatus  # noqa: E402
-from backend.workflow_email import load_db, process_msg, save_db  # noqa: E402
+from domain import EventStatus  # noqa: E402
+from workflow_email import load_db, process_msg, save_db  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def _stub_agent(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Dict[str, Any]]:
     os.environ["AGENT_MODE"] = "stub"
     monkeypatch.setenv("ALLOW_AUTO_ROOM_LOCK", "false")
-    from backend.workflows.llm import adapter as llm_adapter
+    from workflows.llm import adapter as llm_adapter
 
     mapping: Dict[str, Dict[str, Any]] = {}
 

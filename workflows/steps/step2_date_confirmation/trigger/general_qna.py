@@ -15,18 +15,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from backend.debug.hooks import set_subloop, trace_db_read, trace_general_qa_status
-from backend.utils.page_snapshots import create_snapshot
-from backend.utils.pseudolinks import generate_qna_link
-from backend.workflows.common.general_qna import _fallback_structured_body
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.sorting import rank_rooms
-from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.io.database import load_rooms, update_event_metadata
-from backend.workflows.qna.engine import build_structured_qna_result
-from backend.workflows.qna.extraction import ensure_qna_extraction
-from backend.workflows.qna.router import route_general_qna
-from backend.workflows.steps.step3_room_availability.condition.decide import room_status_on_date
+from debug.hooks import set_subloop, trace_db_read, trace_general_qa_status
+from utils.page_snapshots import create_snapshot
+from utils.pseudolinks import generate_qna_link
+from workflows.common.general_qna import _fallback_structured_body
+from workflows.common.prompts import append_footer
+from workflows.common.sorting import rank_rooms
+from workflows.common.types import GroupResult, WorkflowState
+from workflows.io.database import load_rooms, update_event_metadata
+from workflows.qna.engine import build_structured_qna_result
+from workflows.qna.extraction import ensure_qna_extraction
+from workflows.qna.router import route_general_qna
+from workflows.steps.step3_room_availability.condition.decide import room_status_on_date
 
 # D5: Import shared helpers from window_helpers (no circular deps)
 from .window_helpers import (

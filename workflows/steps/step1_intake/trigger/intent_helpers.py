@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from backend.domain import IntentLabel
+from domain import IntentLabel
 
 
 def needs_vague_date_confirmation(user_info: Dict[str, Any]) -> bool:

@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Pattern, Tuple
 
-from backend.workflows.io.database import load_db
+from workflows.io.database import load_db
 
 __workflow_role__ = "ConfigStore"
 

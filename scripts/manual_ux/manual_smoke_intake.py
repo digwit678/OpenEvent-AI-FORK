@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Any
 
-from backend.workflow_email import process_msg
+from workflow_email import process_msg
 
 
 def _msg(body: str, mid: str) -> Dict[str, Any]:

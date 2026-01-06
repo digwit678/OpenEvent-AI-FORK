@@ -1,8 +1,8 @@
 
 import pytest
 
-# MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
-from backend.detection.intent.confidence import (
+# MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
+from detection.intent.confidence import (
     should_seek_clarification,
     should_ignore_message,
     classify_response_action,
@@ -10,7 +10,7 @@ from backend.detection.intent.confidence import (
     is_gibberish,
     CONFIDENCE_NONSENSE,
 )
-from backend.workflows.steps import step5_negotiation as negotiation_close
+from workflows.steps import step5_negotiation as negotiation_close
 
 
 class DummyState:
@@ -263,8 +263,8 @@ class TestClassifyResponseAction:
 # check_nonsense_gate Tests (Step Handler Integration)
 # ============================================================================
 
-# MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
-from backend.detection.intent.confidence import (
+# MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
+from detection.intent.confidence import (
     check_nonsense_gate,
     NONSENSE_IGNORE_THRESHOLD,
     NONSENSE_HIL_THRESHOLD,

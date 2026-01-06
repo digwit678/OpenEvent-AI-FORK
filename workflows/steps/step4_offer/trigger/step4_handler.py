@@ -7,15 +7,15 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
-from backend.workflows.common.requirements import merge_client_profile, requirements_hash
-from backend.workflows.common.billing import (
+from workflows.common.requirements import merge_client_profile, requirements_hash
+from workflows.common.billing import (
     billing_prompt_for_missing_fields,
     format_billing_display,
     missing_billing_fields,
     update_billing_details,
 )
 # Billing gate helpers (O2 consolidation)
-from backend.workflows.common.billing_gate import (
+from workflows.common.billing_gate import (
     refresh_billing as _refresh_billing,
     flag_billing_accept_pending as _flag_billing_accept_pending,
     billing_prompt_draft as _billing_prompt_draft,
@@ -40,47 +40,47 @@ from .product_ops import (
     summarize_product_line as _summarize_product_line,
     build_alternative_suggestions as _build_alternative_suggestions,
 )
-from backend.workflows.common.confirmation_gate import (
+from workflows.common.confirmation_gate import (
     auto_continue_if_ready,
     get_next_prompt,
 )
-from backend.workflows.common.types import GroupResult, WorkflowState
-# MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
-from backend.detection.intent.confidence import check_nonsense_gate
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.general_qna import (
+from workflows.common.types import GroupResult, WorkflowState
+# MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
+from detection.intent.confidence import check_nonsense_gate
+from workflows.common.prompts import append_footer
+from workflows.common.general_qna import (
     append_general_qna_to_primary,
     present_general_room_qna,
     _fallback_structured_body,
 )
-from backend.workflows.change_propagation import (
+from workflows.change_propagation import (
     detect_change_type,
     detect_change_type_enhanced,
     route_change_on_updated_variable,
 )
-from backend.workflows.qna.engine import build_structured_qna_result
-from backend.workflows.qna.extraction import ensure_qna_extraction
-from backend.workflows.io.database import append_audit_entry, update_event_metadata
-from backend.workflows.io.config_store import get_product_autofill_threshold
-from backend.workflows.common.timeutils import format_iso_date_to_ddmmyyyy
-from backend.workflows.common.pricing import build_deposit_info, derive_room_rate, normalise_rate
-from backend.workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
-from backend.debug.hooks import trace_db_write, trace_detour, trace_gate, trace_state, trace_step, trace_marker, trace_general_qa_status, set_subloop
-from backend.debug.trace import set_hil_open
-from backend.utils.profiler import profile_step
-from backend.workflow.state import WorkflowStep, write_stage
-from backend.services.products import find_product, normalise_product_payload
-from backend.services.rooms import load_room_catalog
-from backend.workflows.steps.step5_negotiation import _handle_accept, _offer_summary_lines as _hil_offer_summary_lines
-# MIGRATED: from backend.workflows.nlu.semantic_matchers -> backend.detection.response.matchers
-from backend.detection.response.matchers import matches_acceptance_pattern
-from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
-from backend.utils.pseudolinks import (
+from workflows.qna.engine import build_structured_qna_result
+from workflows.qna.extraction import ensure_qna_extraction
+from workflows.io.database import append_audit_entry, update_event_metadata
+from workflows.io.config_store import get_product_autofill_threshold
+from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+from workflows.common.pricing import build_deposit_info, derive_room_rate, normalise_rate
+from workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
+from debug.hooks import trace_db_write, trace_detour, trace_gate, trace_state, trace_step, trace_marker, trace_general_qa_status, set_subloop
+from debug.trace import set_hil_open
+from utils.profiler import profile_step
+from workflow.state import WorkflowStep, write_stage
+from services.products import find_product, normalise_product_payload
+from services.rooms import load_room_catalog
+from workflows.steps.step5_negotiation import _handle_accept, _offer_summary_lines as _hil_offer_summary_lines
+# MIGRATED: from workflows.nlu.semantic_matchers -> backend.detection.response.matchers
+from detection.response.matchers import matches_acceptance_pattern
+from workflows.common.menu_options import DINNER_MENU_OPTIONS
+from utils.pseudolinks import (
     generate_catering_catalog_link,
     generate_catering_menu_link,
     generate_room_details_link,
 )
-from backend.utils.page_snapshots import create_snapshot
+from utils.page_snapshots import create_snapshot
 
 from ..llm.send_offer_llm import ComposeOffer
 
@@ -174,7 +174,7 @@ def process(state: WorkflowState) -> GroupResult:
     # -------------------------------------------------------------------------
     event_id = event_entry.get("event_id")
     if event_id and event_entry.get("offer_accepted"):
-        from backend.workflows.common.confirmation_gate import check_confirmation_gate, reload_and_check_gate
+        from workflows.common.confirmation_gate import check_confirmation_gate, reload_and_check_gate
 
         # First check in-memory state (has latest billing)
         gate_status = check_confirmation_gate(event_entry)
@@ -557,7 +557,7 @@ def process(state: WorkflowState) -> GroupResult:
 
     # Universal Verbalizer: only verbalize the introduction text
     # The structured offer (line items, prices, total) must remain as-is
-    from backend.workflows.common.prompts import verbalize_draft_body
+    from workflows.common.prompts import verbalize_draft_body
 
     # Create a brief intro message for verbalization
     room = event_entry.get("locked_room_id") or "your preferred room"

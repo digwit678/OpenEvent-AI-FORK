@@ -6,9 +6,9 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.llm.client import get_openai_client, is_llm_available
-from backend.ux.verb_rubric import enforce as enforce_rubric
-from backend.workflows.io.config_store import get_currency_code
+from llm.client import get_openai_client, is_llm_available
+from ux.verb_rubric import enforce as enforce_rubric
+from workflows.io.config_store import get_currency_code
 
 logger = logging.getLogger(__name__)
 
@@ -277,8 +277,8 @@ def verbalize_room_offer(
     Returns:
         Verbalized text (LLM or fallback)
     """
-    from backend.ux.verbalizer_payloads import RoomOfferFacts
-    from backend.ux.verbalizer_safety import verify_output, log_verification_failure
+    from ux.verbalizer_payloads import RoomOfferFacts
+    from ux.verbalizer_safety import verify_output, log_verification_failure
 
     tone = _resolve_tone()
     if tone == "plain":
@@ -321,7 +321,7 @@ def _build_room_offer_prompt(
     locale: str,
 ) -> Dict[str, Any]:
     """Build the LLM prompt for room/offer verbalization."""
-    from backend.ux.verbalizer_payloads import RoomOfferFacts
+    from ux.verbalizer_payloads import RoomOfferFacts
 
     locale_instruction = ""
     if locale == "de":
@@ -371,6 +371,6 @@ Return only the message text, starting with a greeting."""
 
 # Type hint import for runtime
 try:
-    from backend.ux.verbalizer_payloads import RoomOfferFacts  # noqa: F401
+    from ux.verbalizer_payloads import RoomOfferFacts  # noqa: F401
 except ImportError:
     pass

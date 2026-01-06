@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from backend.domain.vocabulary import IntentLabel
+from domain.vocabulary import IntentLabel
 
-from backend.workflows.common.timeutils import parse_ddmmyyyy
+from workflows.common.timeutils import parse_ddmmyyyy
 
 
 def is_event_request(intent: IntentLabel) -> bool:

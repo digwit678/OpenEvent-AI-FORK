@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.planner.smart_shortcuts import maybe_run_smart_shortcuts, _shortcuts_allowed
+from workflows.common.types import IncomingMessage, WorkflowState
+from workflows.planner.smart_shortcuts import maybe_run_smart_shortcuts, _shortcuts_allowed
 
 
 def _state(tmp_path: Path) -> WorkflowState:

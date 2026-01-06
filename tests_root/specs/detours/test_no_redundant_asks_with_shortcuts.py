@@ -3,11 +3,11 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
-from backend.workflows.common.requirements import requirements_hash
-from backend.workflows.common.types import IncomingMessage, WorkflowState
+from workflows.common.requirements import requirements_hash
+from workflows.common.types import IncomingMessage, WorkflowState
 
 room_module = importlib.import_module("backend.workflows.steps.step3_room_availability.trigger.step3_handler")
-from backend.workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
+from workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
 
 
 def _room_state(tmp_path: Path) -> WorkflowState:

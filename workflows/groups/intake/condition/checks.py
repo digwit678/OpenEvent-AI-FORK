@@ -5,7 +5,7 @@ This module re-exports from the new canonical location for backwards compatibili
 """
 
 # Re-export everything from the new location
-from backend.workflows.steps.step1_intake.condition.checks import (
+from workflows.steps.step1_intake.condition.checks import (
     is_event_request,
     has_event_date,
     suggest_dates,

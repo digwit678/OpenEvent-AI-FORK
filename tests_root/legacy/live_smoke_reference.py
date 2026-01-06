@@ -12,8 +12,8 @@ from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from backend.utils.openai_key import SECRET_NAME, load_openai_api_key
-from backend.agents.openevent_agent import OpenEventAgent
+from utils.openai_key import SECRET_NAME, load_openai_api_key
+from agents.openevent_agent import OpenEventAgent
 
 
 def run_live_smoke_reference() -> Dict[str, Any]:

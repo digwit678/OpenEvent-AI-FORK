@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 try:
-    import backend.main as _backend_main
+    import main as _backend_main
 except ImportError:  # pragma: no cover - legacy fallback only
     _backend_main = None
 else:

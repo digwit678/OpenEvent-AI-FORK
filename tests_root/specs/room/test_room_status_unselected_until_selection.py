@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from backend.debug.hooks import clear_subloop, trace_state
-from backend.debug.trace import BUS
+from debug.hooks import clear_subloop, trace_state
+from debug.trace import BUS
 
 
 def test_room_status_transitions(monkeypatch):

@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from backend.domain import IntentLabel
-from backend.workflows.common.requirements import requirements_hash
-from backend.workflows.common.types import IncomingMessage, WorkflowState
+from domain import IntentLabel
+from workflows.common.requirements import requirements_hash
+from workflows.common.types import IncomingMessage, WorkflowState
 
 
 def _state(tmp_path: Path, db: dict, message: IncomingMessage) -> WorkflowState:

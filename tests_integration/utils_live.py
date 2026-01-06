@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable
 
-from backend.workflows.io.database import append_audit_entry, update_event_metadata
+from workflows.io.database import append_audit_entry, update_event_metadata
 
 
 def _tmp_log_path(name: str) -> Path:

@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from backend.adapters.calendar_adapter import get_calendar_adapter
-from backend.services.rooms import get_room
-from backend.workflows.io.config_store import get_timezone, get_operating_hours
+from adapters.calendar_adapter import get_calendar_adapter
+from services.rooms import get_room
+from workflows.io.config_store import get_timezone, get_operating_hours
 
 # Dynamic venue configuration (fetched from database)
 def _get_default_timezone() -> str:

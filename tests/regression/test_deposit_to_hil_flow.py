@@ -14,9 +14,9 @@ from unittest.mock import patch
 
 import pytest
 
-from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.common.confirmation_gate import check_confirmation_gate
-from backend.workflows.common.billing import update_billing_details, missing_billing_fields
+from workflows.common.types import IncomingMessage, WorkflowState
+from workflows.common.confirmation_gate import check_confirmation_gate
+from workflows.common.billing import update_billing_details, missing_billing_fields
 
 
 class TestDepositPaymentTriggersHIL:
@@ -151,7 +151,7 @@ class TestDepositPaymentTriggersHIL:
         3. Client pays deposit
         4. System should send to HIL
         """
-        from backend.workflows.common.billing_gate import refresh_billing as _refresh_billing
+        from workflows.common.billing_gate import refresh_billing as _refresh_billing
 
         # Create event at step 5 with offer accepted
         event_entry = self._create_event_at_step5_with_offer_accepted()
@@ -229,7 +229,7 @@ class TestPayDepositEndpoint:
 
     def test_pay_deposit_uses_confirmation_gate_correctly(self):
         """Test that pay_deposit checks billing via confirmation_gate, not direct field."""
-        from backend.workflows.common.confirmation_gate import check_confirmation_gate
+        from workflows.common.confirmation_gate import check_confirmation_gate
 
         # Event with billing properly stored in billing_details (not billing_address field)
         event_entry = {

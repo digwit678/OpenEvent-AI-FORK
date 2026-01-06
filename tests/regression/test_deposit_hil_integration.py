@@ -14,9 +14,9 @@ from datetime import datetime
 
 import pytest
 
-from backend.workflows.common.types import IncomingMessage
-from backend.workflows.common.confirmation_gate import check_confirmation_gate
-from backend.workflow_email import process_msg
+from workflows.common.types import IncomingMessage
+from workflows.common.confirmation_gate import check_confirmation_gate
+from workflow_email import process_msg
 
 
 class TestDepositToHILIntegration:
@@ -129,7 +129,7 @@ class TestDepositToHILIntegration:
              patch("backend.workflows.steps.step1_intake.llm.analysis.extract_user_information") as mock_extract:
 
             # Mock LLM responses
-            from backend.domain import IntentLabel
+            from domain import IntentLabel
             mock_classify.return_value = (IntentLabel.EVENT_REQUEST, 0.95)
             mock_extract.return_value = {}
 
@@ -305,7 +305,7 @@ class TestFullBillingThenDepositFlow:
         with patch("backend.workflows.steps.step1_intake.llm.intent_classifier.classify_intent") as mock_classify, \
              patch("backend.workflows.steps.step1_intake.llm.analysis.extract_user_information") as mock_extract:
 
-            from backend.domain import IntentLabel
+            from domain import IntentLabel
             mock_classify.return_value = (IntentLabel.EVENT_REQUEST, 0.95)
             mock_extract.return_value = {"billing_address": "HelvetiaL, Bahnhofstrasse 11, 8001 Zurich, Switzerland"}
 
@@ -354,7 +354,7 @@ class TestFullBillingThenDepositFlow:
         with patch("backend.workflows.steps.step1_intake.llm.intent_classifier.classify_intent") as mock_classify, \
              patch("backend.workflows.steps.step1_intake.llm.analysis.extract_user_information") as mock_extract:
 
-            from backend.domain import IntentLabel
+            from domain import IntentLabel
             mock_classify.return_value = (IntentLabel.EVENT_REQUEST, 0.95)
             mock_extract.return_value = {}
 

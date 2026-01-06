@@ -6,7 +6,7 @@ from typing import Any, AsyncGenerator, Dict, Optional
 
 from fastapi.responses import StreamingResponse
 
-from backend.agents import run_streamed
+from agents import run_streamed
 
 CLIENT_TOOL_DEFAULTS = {
     "confirm_offer": "Please confirm the offer.",

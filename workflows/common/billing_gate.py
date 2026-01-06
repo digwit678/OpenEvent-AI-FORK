@@ -8,7 +8,7 @@ Originally extracted from step5_handler.py (N3 refactoring), then moved
 to common/ for O2 consolidation.
 
 Usage:
-    from backend.workflows.common.billing_gate import (
+    from workflows.common.billing_gate import (
         refresh_billing,
         flag_billing_accept_pending,
         billing_prompt_draft,
@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from backend.workflows.common.billing import (
+from workflows.common.billing import (
     billing_prompt_for_missing_fields,
     format_billing_display,
     missing_billing_fields,

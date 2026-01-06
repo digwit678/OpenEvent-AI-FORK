@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from backend.agents import validate_tool_call, ToolExecutionError
+from agents import validate_tool_call, ToolExecutionError
 
 
 def test_step_two_denies_room_tools() -> None:

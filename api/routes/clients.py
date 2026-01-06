@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-from backend.workflow_email import (
+from workflow_email import (
     load_db as wf_load_db,
     save_db as wf_save_db,
     process_msg as wf_process_msg,

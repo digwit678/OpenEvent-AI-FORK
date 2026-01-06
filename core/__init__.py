@@ -37,7 +37,7 @@ ENVIRONMENT:
 """
 
 # Export from submodules
-from backend.core.errors import (
+from core.errors import (
     OpenEventError,
     DetectionError,
     WorkflowError,
@@ -46,7 +46,7 @@ from backend.core.errors import (
     safe_operation,
     log_exception,
 )
-from backend.core.fallback import (
+from core.fallback import (
     FallbackContext,
     wrap_fallback,
     create_fallback_context,

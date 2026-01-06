@@ -21,18 +21,18 @@ class TestBackendImports:
 
     def test_import_main(self):
         """Main FastAPI app should import without errors."""
-        from backend.main import app
+        from main import app
         assert app is not None
         assert app.title == "AI Event Manager"
 
     def test_import_workflow_email(self):
         """Workflow email processor should import."""
-        from backend.workflow_email import process_msg
+        from workflow_email import process_msg
         assert callable(process_msg)
 
     def test_import_capture(self):
         """Capture module should import."""
-        from backend.workflows.common.capture import (
+        from workflows.common.capture import (
             capture_workflow_requirements,
             split_statement_vs_question,
         )
@@ -41,27 +41,27 @@ class TestBackendImports:
 
     def test_import_qna_router(self):
         """Q&A router should import."""
-        from backend.workflows.qna.router import route_general_qna
+        from workflows.qna.router import route_general_qna
         assert callable(route_general_qna)
 
     def test_import_qna_extraction(self):
         """Q&A extraction should import."""
-        from backend.workflows.qna.extraction import ensure_qna_extraction
+        from workflows.qna.extraction import ensure_qna_extraction
         assert callable(ensure_qna_extraction)
 
     def test_import_date_confirmation(self):
         """Date confirmation process should import."""
-        from backend.workflows.steps.step2_date_confirmation.trigger.process import process
+        from workflows.steps.step2_date_confirmation.trigger.process import process
         assert callable(process)
 
     def test_import_room_availability(self):
         """Room availability process should import."""
-        from backend.workflows.steps.step3_room_availability.trigger.process import process
+        from workflows.steps.step3_room_availability.trigger.process import process
         assert callable(process)
 
     def test_import_intake(self):
         """Intake process should import."""
-        from backend.workflows.steps.step1_intake.trigger.process import process
+        from workflows.steps.step1_intake.trigger.process import process
         assert callable(process)
 
 
@@ -70,7 +70,7 @@ class TestBasicWorkflowProcessing:
 
     def test_process_msg_returns_result(self):
         """process_msg should return a valid result dict."""
-        from backend.workflow_email import process_msg, load_db, save_db
+        from workflow_email import process_msg, load_db, save_db
 
         # Create a test message
         msg = {
@@ -88,7 +88,7 @@ class TestBasicWorkflowProcessing:
 
     def test_process_msg_returns_valid_structure(self):
         """A new inquiry should return a result with event information."""
-        from backend.workflow_email import process_msg
+        from workflow_email import process_msg
 
         # Use a unique email to avoid conflicts
         import uuid
@@ -117,7 +117,7 @@ class TestSentenceLevelParsing:
 
     def test_split_statement_question_basic(self):
         """Basic statement/question split should work."""
-        from backend.workflows.common.capture import split_statement_vs_question
+        from workflows.common.capture import split_statement_vs_question
 
         text = "We'll have 50 people. What rooms work?"
         statements, questions = split_statement_vs_question(text)
@@ -127,7 +127,7 @@ class TestSentenceLevelParsing:
 
     def test_capture_requirements_from_statement(self):
         """Requirements in statements should be captured."""
-        from backend.workflows.common.capture import capture_workflow_requirements
+        from workflows.common.capture import capture_workflow_requirements
 
         # Create minimal state
         event_entry = {"requirements": {}}
@@ -151,7 +151,7 @@ class TestQnaRequirementsPreservation:
 
     def test_normalize_preserves_qna_requirements(self):
         """Normalized extraction should include qna_requirements."""
-        from backend.workflows.qna.extraction import _normalize_qna_extraction
+        from workflows.qna.extraction import _normalize_qna_extraction
 
         raw = {
             "msg_type": "event",
@@ -171,7 +171,7 @@ class TestQnaRequirementsPreservation:
 
     def test_get_qna_requirements_accessor(self):
         """Generic accessor should return qna_requirements."""
-        from backend.workflows.qna.router import get_qna_requirements
+        from workflows.qna.router import get_qna_requirements
 
         extraction = {
             "qna_requirements": {

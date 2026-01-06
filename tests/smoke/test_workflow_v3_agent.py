@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.llm.client import get_openai_client, is_llm_available
+from llm.client import get_openai_client, is_llm_available
 
 
 def test_agent_smoke():

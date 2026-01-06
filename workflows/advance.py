@@ -5,7 +5,7 @@ from datetime import datetime
 import uuid
 from typing import Any, Dict
 
-from backend.workflow_email import process_msg as wf_process_msg
+from workflow_email import process_msg as wf_process_msg
 
 
 def advance_after_review(message_payload: Dict[str, Any]) -> Dict[str, Any]:

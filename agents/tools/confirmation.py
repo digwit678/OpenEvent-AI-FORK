@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
 
-from backend.workflow_email import process_msg as workflow_process_msg
+from workflow_email import process_msg as workflow_process_msg
 
 TOOL_SCHEMA: Dict[str, Dict[str, Any]] = {
     "tool_classify_confirmation": {

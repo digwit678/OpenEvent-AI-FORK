@@ -4,7 +4,7 @@ import datetime as dt
 
 import pytest
 
-from backend.workflows.qna.context_builder import CASE_MAP, build_qna_context
+from workflows.qna.context_builder import CASE_MAP, build_qna_context
 
 
 def test_conflicting_date_pattern_overrides_captured_date():

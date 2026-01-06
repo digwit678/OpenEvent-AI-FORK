@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
-from backend.domain import TaskStatus, TaskType
+from domain import TaskStatus, TaskType
 
 
 def enqueue_task(

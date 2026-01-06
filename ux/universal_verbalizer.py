@@ -37,7 +37,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.workflows.io.config_store import get_venue_name, get_venue_city
+from workflows.io.config_store import get_venue_name, get_venue_city
 
 logger = logging.getLogger(__name__)
 
@@ -472,8 +472,8 @@ def verbalize_message(
         return fallback_text
 
     # Check if LLM is available
-    from backend.utils.openai_key import load_openai_api_key
-    from backend.core.fallback import create_fallback_context, wrap_fallback
+    from utils.openai_key import load_openai_api_key
+    from core.fallback import create_fallback_context, wrap_fallback
 
     api_key = load_openai_api_key(required=False)
     if not api_key:
@@ -602,8 +602,8 @@ def _get_effective_prompts() -> Tuple[str, Dict[int, str]]:
 
     try:
         # Avoid circular imports
-        from backend.workflows.io.database import load_db
-        from backend.workflow_email import DB_PATH
+        from workflows.io.database import load_db
+        from workflow_email import DB_PATH
 
         # Build dynamic default prompt with current venue config
         default_system_prompt = _build_system_prompt()
@@ -751,8 +751,8 @@ def _format_facts_for_prompt(context: MessageContext) -> str:
 
 def _call_llm(payload: Dict[str, Any]) -> str:
     """Call the LLM for verbalization using configured provider."""
-    from backend.adapters.agent_adapter import get_adapter_for_provider
-    from backend.llm.provider_config import get_verbalization_provider
+    from adapters.agent_adapter import get_adapter_for_provider
+    from llm.provider_config import get_verbalization_provider
 
     # Get the verbalization provider from config (hybrid mode support)
     provider = get_verbalization_provider()

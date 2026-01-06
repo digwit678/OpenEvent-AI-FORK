@@ -7,51 +7,51 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-from backend.workflows.common.datetime_parse import parse_all_dates
-from backend.workflows.common.timeutils import parse_ddmmyyyy
+from workflows.common.datetime_parse import parse_all_dates
+from workflows.common.timeutils import parse_ddmmyyyy
 
-from backend.domain import TaskStatus, TaskType
-from backend.workflows.common.billing import (
+from domain import TaskStatus, TaskType
+from workflows.common.billing import (
     billing_prompt_for_missing_fields,
     format_billing_display,
     missing_billing_fields,
     update_billing_details,
 )
-from backend.workflows.common.confirmation_gate import (
+from workflows.common.confirmation_gate import (
     auto_continue_if_ready,
     get_next_prompt,
 )
-from backend.workflows.common.prompts import append_footer
-from backend.workflows.common.pricing import derive_room_rate, normalise_rate
-# MIGRATED: from backend.workflows.common.confidence -> backend.detection.intent.confidence
-from backend.detection.intent.confidence import (
+from workflows.common.prompts import append_footer
+from workflows.common.pricing import derive_room_rate, normalise_rate
+# MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
+from detection.intent.confidence import (
     should_defer_to_human,
     should_seek_clarification,
     check_nonsense_gate,
 )
-from backend.workflows.common.requirements import merge_client_profile
-from backend.workflows.common.types import GroupResult, WorkflowState
-from backend.workflows.common.general_qna import (
+from workflows.common.requirements import merge_client_profile
+from workflows.common.types import GroupResult, WorkflowState
+from workflows.common.general_qna import (
     append_general_qna_to_primary,
     present_general_room_qna,
     _fallback_structured_body,
 )
-from backend.workflows.qna.engine import build_structured_qna_result
-from backend.workflows.qna.extraction import ensure_qna_extraction
-from backend.workflows.io.database import append_audit_entry, update_event_metadata
-from backend.workflows.io.tasks import enqueue_task, update_task_status
-from backend.workflows.nlu import detect_general_room_query
-# MIGRATED: from backend.workflows.nlu.semantic_matchers -> backend.detection.response.matchers
-from backend.detection.response.matchers import (
+from workflows.qna.engine import build_structured_qna_result
+from workflows.qna.extraction import ensure_qna_extraction
+from workflows.io.database import append_audit_entry, update_event_metadata
+from workflows.io.tasks import enqueue_task, update_task_status
+from workflows.nlu import detect_general_room_query
+# MIGRATED: from workflows.nlu.semantic_matchers -> backend.detection.response.matchers
+from detection.response.matchers import (
     is_room_selection,
     matches_acceptance_pattern,
     matches_counter_pattern,
     matches_decline_pattern,
 )
-from backend.debug.hooks import trace_marker, trace_general_qa_status, set_subloop
-from backend.debug.trace import set_hil_open
-from backend.utils.profiler import profile_step
-from backend.workflows.common.menu_options import DINNER_MENU_OPTIONS
+from debug.hooks import trace_marker, trace_general_qa_status, set_subloop
+from debug.trace import set_hil_open
+from utils.profiler import profile_step
+from workflows.common.menu_options import DINNER_MENU_OPTIONS
 
 # N2 refactoring: Constants and classification extracted to dedicated modules
 from .constants import (
@@ -72,7 +72,7 @@ from .classification import (
 )
 
 # Billing gate helpers (N3 refactoring → O2 consolidated to common)
-from backend.workflows.common.billing_gate import (
+from workflows.common.billing_gate import (
     refresh_billing as _refresh_billing,
     flag_billing_accept_pending as _flag_billing_accept_pending,
     billing_prompt_draft as _billing_prompt_draft,
@@ -209,7 +209,7 @@ def process(state: WorkflowState) -> GroupResult:
     # -------------------------------------------------------------------------
     event_id = event_entry.get("event_id")
     if event_id and event_entry.get("offer_accepted"):
-        from backend.workflows.common.confirmation_gate import check_confirmation_gate
+        from workflows.common.confirmation_gate import check_confirmation_gate
 
         # First check in-memory state (has latest billing)
         gate_status = check_confirmation_gate(event_entry)

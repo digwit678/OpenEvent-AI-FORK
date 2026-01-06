@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from functools import lru_cache
 
-from backend.domain import EventStatus, TaskStatus
-from backend.utils import json_io
-from backend.utils.calendar_events import create_calendar_event
+from domain import EventStatus, TaskStatus
+from utils import json_io
+from utils.calendar_events import create_calendar_event
 
 __workflow_role__ = "Database"
 
@@ -316,7 +316,7 @@ def create_event_entry(db: Dict[str, Any], event_data: Dict[str, Any]) -> str:
     """[OpenEvent Database] Insert a new event entry and return its identifier."""
 
     # Import here to avoid circular dependency
-    from backend.workflows.io.integration.config import get_team_id
+    from workflows.io.integration.config import get_team_id
 
     event_id = str(uuid.uuid4())
     entry = {

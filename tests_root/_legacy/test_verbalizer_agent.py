@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 
 import pytest
 
-from backend.llm.verbalizer_agent import verbalize_gui_reply  # type: ignore
+from llm.verbalizer_agent import verbalize_gui_reply  # type: ignore
 
 
 @pytest.fixture(autouse=True)

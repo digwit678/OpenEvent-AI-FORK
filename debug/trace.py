@@ -167,7 +167,7 @@ def set_hil_open(thread_id: str, is_open: bool) -> None:
     if not is_trace_enabled():
         return
     try:  # pragma: no cover - defensive guard to avoid circular failures
-        from backend.debug.state_store import STATE_STORE  # pylint: disable=import-outside-toplevel
+        from debug.state_store import STATE_STORE  # pylint: disable=import-outside-toplevel
 
         snapshot = STATE_STORE.get(thread_id) or {}
         if snapshot.get("hil_open") == is_open:

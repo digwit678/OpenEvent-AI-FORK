@@ -10,7 +10,7 @@ This module contains session/cache management that does NOT require OpenAI:
 - pop_step3_payload: Retrieve and remove cached Step 3 payload
 
 Usage:
-    from backend.legacy.session_store import (
+    from legacy.session_store import (
         active_conversations,
         render_step3_reply,
         pop_step3_payload,
@@ -27,10 +27,10 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-from backend.domain import ConversationState, IntentLabel
-from backend.workflow_email import DB_PATH as WF_DB_PATH, load_db as wf_load_db, save_db as wf_save_db
-from backend.workflows.common.types import IncomingMessage, WorkflowState
-from backend.workflows.steps.step3_room_availability.trigger import process as step3_process
+from domain import ConversationState, IntentLabel
+from workflow_email import DB_PATH as WF_DB_PATH, load_db as wf_load_db, save_db as wf_save_db
+from workflows.common.types import IncomingMessage, WorkflowState
+from workflows.steps.step3_room_availability.trigger import process as step3_process
 
 
 # In-memory storage for demo

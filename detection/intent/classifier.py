@@ -36,12 +36,12 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from backend.domain.vocabulary import IntentLabel
-from backend.workflows.llm.adapter import classify_intent as agent_classify_intent
-from backend.detection.intent.confidence import has_workflow_signal, is_gibberish
+from domain.vocabulary import IntentLabel
+from workflows.llm.adapter import classify_intent as agent_classify_intent
+from detection.intent.confidence import has_workflow_signal, is_gibberish
 
 # Import consolidated patterns from keyword_buckets (single source of truth)
-from backend.detection.keywords.buckets import (
+from detection.keywords.buckets import (
     ACTION_REQUEST_PATTERNS,
     AVAILABILITY_TOKENS,
     RESUME_PHRASES,

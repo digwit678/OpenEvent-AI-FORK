@@ -25,8 +25,8 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-from backend.workflow_email import load_db as wf_load_db
-from backend.workflows.io.config_store import get_venue_name
+from workflow_email import load_db as wf_load_db
+from workflows.io.config_store import get_venue_name
 
 
 router = APIRouter(prefix="/api/emails", tags=["emails"])
@@ -79,7 +79,7 @@ async def send_email_to_client(request: SendClientEmailRequest):
         email_id: Optional[str] - ID in emails table (for Supabase)
     """
     try:
-        from backend.services.hil_email_notification import (
+        from services.hil_email_notification import (
             send_client_email,
             get_hil_email_config,
         )
@@ -161,7 +161,7 @@ async def send_offer_email(request: SendOfferEmailRequest):
 
         # Calculate total
         try:
-            from backend.workflows.steps.step5_negotiation.trigger.step5_handler import _determine_offer_total
+            from workflows.steps.step5_negotiation.trigger.step5_handler import _determine_offer_total
             offer_total = _determine_offer_total(event)
         except Exception:
             offer_total = None
@@ -201,7 +201,7 @@ async def send_offer_email(request: SendOfferEmailRequest):
         body_text = "\n".join(body_lines)
 
         # Send via the client email endpoint
-        from backend.services.hil_email_notification import (
+        from services.hil_email_notification import (
             send_client_email,
             get_hil_email_config,
         )
@@ -243,7 +243,7 @@ async def send_test_email(request: TestEmailRequest):
     Use this to confirm email sending works before going live.
     """
     try:
-        from backend.services.hil_email_notification import (
+        from services.hil_email_notification import (
             send_client_email,
             get_hil_email_config,
         )
@@ -289,7 +289,7 @@ def _log_sent_email(
 
     if event_id:
         try:
-            from backend.workflow_email import load_db, save_db
+            from workflow_email import load_db, save_db
 
             db = load_db()
             for event in db.get("events", []):

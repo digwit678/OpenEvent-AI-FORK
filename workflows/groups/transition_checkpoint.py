@@ -13,6 +13,6 @@ _warnings.warn(
     stacklevel=2,
 )
 
-from backend.workflows.steps.step6_transition import process
+from workflows.steps.step6_transition import process
 
 __all__ = ["process"]

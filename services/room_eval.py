@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from backend.services.availability import calendar_free
-from backend.services.products import check_availability
-from backend.services.rooms import RoomRecord, load_room_catalog
+from services.availability import calendar_free
+from services.products import check_availability
+from services.rooms import RoomRecord, load_room_catalog
 
 STATUS_ORDER = {"Available": 0, "Option": 1, "Unavailable": 2}
 

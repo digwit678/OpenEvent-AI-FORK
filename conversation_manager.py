@@ -17,7 +17,7 @@ A historical copy exists at backend/DEPRECATED/conversation_manager_v0.py.
 """
 
 # C1: Re-export session store functions for backward compatibility
-from backend.legacy.session_store import (
+from legacy.session_store import (
     active_conversations,
     STEP3_DRAFT_CACHE,
     STEP3_PAYLOAD_CACHE,

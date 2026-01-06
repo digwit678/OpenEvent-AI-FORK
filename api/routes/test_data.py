@@ -20,13 +20,13 @@ from fastapi import APIRouter, HTTPException, Request
 from pathlib import Path
 from typing import Optional
 
-from backend.utils.test_data_providers import (
+from utils.test_data_providers import (
     get_all_catering_menus,
     get_catering_menu_details,
     get_qna_items,
     get_rooms_for_display,
 )
-from backend.workflow_email import (
+from workflow_email import (
     DB_PATH as WF_DB_PATH,
     load_db as wf_load_db,
 )
@@ -80,8 +80,8 @@ async def get_catering_data(menu_slug: str, room: Optional[str] = None, date: Op
 @router.get("/api/qna")
 async def universal_qna(request: Request):
     """Universal Q&A endpoint - accepts any parameters, uses existing Q&A engine."""
-    from backend.workflows.qna.engine import build_structured_qna_result
-    from backend.workflows.common.types import WorkflowState, IncomingMessage as Message
+    from workflows.qna.engine import build_structured_qna_result
+    from workflows.common.types import WorkflowState, IncomingMessage as Message
 
     # Get all query params
     params = dict(request.query_params)

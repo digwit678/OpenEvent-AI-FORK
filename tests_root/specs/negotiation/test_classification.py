@@ -6,7 +6,7 @@ These tests lock down the behavior of the extracted classification functions.
 
 import pytest
 
-from backend.workflows.steps.step5_negotiation.trigger.classification import (
+from workflows.steps.step5_negotiation.trigger.classification import (
     collect_detected_intents,
     classify_message,
     iso_to_ddmmyyyy,
