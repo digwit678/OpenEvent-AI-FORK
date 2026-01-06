@@ -51,7 +51,14 @@ from api.middleware.request_limits import RequestSizeLimitMiddleware
 # In prod mode, they are disabled for safety (can still be explicitly enabled)
 _IS_DEV = os.getenv("ENV", "dev").lower() in ("dev", "development", "local")
 
-os.environ.setdefault("AGENT_MODE", os.environ.get("AGENT_MODE_DEFAULT", "openai"))
+# Smart default for AGENT_MODE:
+# If not set, check if we have a Gemini key.
+# - If YES: Leave unset (defaults to Hybrid: Gemini for extraction, OpenAI for verbalization)
+# - If NO: Default to "openai" (Single provider fallback)
+if not os.getenv("AGENT_MODE"):
+    has_gemini = os.getenv("GOOGLE_API_KEY") or os.getenv("gemini_key_openevent")
+    if not has_gemini:
+        os.environ["AGENT_MODE"] = "openai"
 
 from workflow_email import DB_PATH as WF_DB_PATH
 # NOTE: process_msg, load_db, save_db moved to routes/messages.py
