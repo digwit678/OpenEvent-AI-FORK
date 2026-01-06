@@ -204,6 +204,28 @@ def is_hybrid_enforcement_enabled() -> bool:
     return True
 
 
+def _check_provider_api_keys(settings: LLMProviderSettings) -> list:
+    """
+    Check that required API keys exist for configured providers.
+
+    Returns:
+        List of missing API key names (empty if all present)
+    """
+    missing = []
+    providers_used = {
+        settings.intent_provider,
+        settings.entity_provider,
+        settings.verbalization_provider,
+    }
+
+    if "gemini" in providers_used and not os.getenv("GOOGLE_API_KEY"):
+        missing.append("GOOGLE_API_KEY")
+    if "openai" in providers_used and not os.getenv("OPENAI_API_KEY"):
+        missing.append("OPENAI_API_KEY")
+
+    return missing
+
+
 def validate_hybrid_mode(*, raise_on_failure: bool = False, is_production: bool = False) -> tuple:
     """
     Validate that the system is running in hybrid mode.
@@ -223,6 +245,19 @@ def validate_hybrid_mode(*, raise_on_failure: bool = False, is_production: bool 
     settings = get_llm_providers(force_reload=True)
     enforcement_enabled = is_hybrid_enforcement_enabled()
     hybrid = is_hybrid_mode(settings)
+
+    # Check that required API keys exist for configured providers
+    missing_keys = _check_provider_api_keys(settings)
+    if missing_keys:
+        msg = (
+            f"❌ MISSING API KEYS: {', '.join(missing_keys)} required for "
+            f"configured providers (I:{settings.intent_provider}, "
+            f"E:{settings.entity_provider}, V:{settings.verbalization_provider})"
+        )
+        _hybrid_logger.error(msg)
+        if raise_on_failure:
+            raise RuntimeError(msg)
+        return (False, msg, settings)
 
     if hybrid:
         msg = (

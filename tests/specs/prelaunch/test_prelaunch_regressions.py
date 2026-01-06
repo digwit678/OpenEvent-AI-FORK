@@ -257,11 +257,8 @@ def test_step1_confirm_date_should_not_trigger_offer_acceptance(monkeypatch: pyt
     assert state.user_info.get("hil_approve_step") is None, state.user_info
 
 
-@pytest.mark.xfail(
-    reason="Hybrid validation checks configured providers but not whether required provider API keys exist at runtime.",
-    strict=False,
-)
 def test_validate_hybrid_mode_should_fail_when_required_keys_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fixed: validate_hybrid_mode() now checks API key existence (Jan 2026)."""
     monkeypatch.setenv("INTENT_PROVIDER", "gemini")
     monkeypatch.setenv("ENTITY_PROVIDER", "gemini")
     monkeypatch.setenv("VERBALIZER_PROVIDER", "openai")
