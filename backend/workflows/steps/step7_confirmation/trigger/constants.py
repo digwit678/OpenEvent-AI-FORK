@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Tuple
 
-CONFIRM_KEYWORDS: Tuple[str, ...] = ("confirm", "go ahead", "locked", "booked", "ready to proceed", "accept")
+CONFIRM_KEYWORDS: Tuple[str, ...] = ("confirm", "go ahead", "locked", "booked", "ready to proceed", "accept", "yes")
 RESERVE_KEYWORDS: Tuple[str, ...] = ("reserve", "hold", "pencil", "option")
 VISIT_KEYWORDS: Tuple[str, ...] = ("visit", "tour", "view", "walkthrough", "see the space", "stop by")
 DECLINE_KEYWORDS: Tuple[str, ...] = ("cancel", "decline", "not interested", "no longer", "won't proceed")

@@ -43,6 +43,9 @@ class TaskType(str, Enum):
     DATE_CONFIRMATION_MESSAGE = "date_confirmation_message"
     ROOM_AVAILABILITY_MESSAGE = "room_availability_message"
     OFFER_MESSAGE = "offer_message"
+    # Step 6/7 HIL task types (generalized workflow routing)
+    TRANSITION_MESSAGE = "transition_message"  # Step 6: transition blocked/clarification
+    CONFIRMATION_MESSAGE = "confirmation_message"  # Step 7: final confirmation/deposit
     # NEW: AI reply approval (when OE_HIL_ALL_LLM_REPLIES=true)
     # All AI-generated outbound replies go to separate "AI Reply Approval" queue
     AI_REPLY_APPROVAL = "ai_reply_approval"

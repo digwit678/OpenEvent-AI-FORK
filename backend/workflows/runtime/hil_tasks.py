@@ -38,25 +38,33 @@ enqueue_task = task_io.enqueue_task
 
 
 def _get_default_db_path() -> Path:
-    """Get the default database path (avoids circular import with workflow_email)."""
-    return Path(__file__).parent.parent.parent / "events_database.json"
+    """Get the default database path, respecting tenant context.
+
+    Uses tenant-aware resolution when X-Team-Id header or OE_TEAM_ID env is set.
+    """
+    base_path = Path(__file__).parent.parent.parent / "events_database.json"
+
+    # Resolve tenant-aware path
+    try:
+        from backend.workflows.io.integration.config import get_team_id
+
+        team_id = get_team_id()
+        if team_id:
+            return base_path.parent / f"events_{team_id}.json"
+    except ImportError:
+        pass  # Config not available
+
+    return base_path
 
 
 def _get_default_lock_path() -> Path:
-    """Get the default lock path."""
-    return Path(__file__).parent.parent.parent / ".events_db.lock"
+    """Get the default lock path, respecting tenant context."""
+    db_path = _get_default_db_path()
+    return db_io.lock_path_for(db_path)
 
 
 def _resolve_lock_path(path: Path) -> Path:
     """Determine the lockfile used for a database path."""
-    default_db = _get_default_db_path()
-    try:
-        is_default = path.resolve() == default_db.resolve()
-    except FileNotFoundError:
-        is_default = path == default_db
-
-    if is_default:
-        return _get_default_lock_path()
     return db_io.lock_path_for(path)
 
 
@@ -624,6 +632,10 @@ def _hil_action_type_for_step(step_id: Optional[int]) -> Optional[str]:
         return "offer_enqueued"
     if step_id == 5:
         return "negotiation_enqueued"
+    if step_id == 6:
+        return "transition_enqueued"
+    if step_id == 7:
+        return "confirmation_enqueued"
     return None
 
 
@@ -651,7 +663,7 @@ def enqueue_hil_tasks(state: "WorkflowState", event_entry: Dict[str, Any]) -> No
             step_num = int(step_id)
         except (TypeError, ValueError):
             continue
-        if step_num not in {2, 3, 4, 5}:
+        if step_num not in {2, 3, 4, 5, 6, 7}:
             continue
 
         # Drop older pending requests for the same step to avoid duplicate reviews.
@@ -694,6 +706,10 @@ def enqueue_hil_tasks(state: "WorkflowState", event_entry: Dict[str, Any]) -> No
             task_type = TaskType.ROOM_AVAILABILITY_MESSAGE
         elif step_num == 2:
             task_type = TaskType.DATE_CONFIRMATION_MESSAGE
+        elif step_num == 6:
+            task_type = TaskType.TRANSITION_MESSAGE
+        elif step_num == 7:
+            task_type = TaskType.CONFIRMATION_MESSAGE
         else:
             task_type = TaskType.MANUAL_REVIEW
 

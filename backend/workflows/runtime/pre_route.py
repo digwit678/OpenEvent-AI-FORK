@@ -25,6 +25,7 @@ from backend.detection.unified import run_unified_detection, UnifiedDetectionRes
 from backend.domain import TaskType
 from backend.workflows.io.tasks import enqueue_task
 from backend.workflows.io.config_store import get_manager_names
+from backend.workflows.io.database import tag_message
 
 
 # =============================================================================
@@ -224,6 +225,21 @@ def check_out_of_context(
     if not is_out_of_context(unified_result, current_step):
         return None
 
+    # Check if message contains capturable data that should be processed
+    # even though the intent is out-of-context (e.g., billing address)
+    capturable_fields = {"billing_address", "company", "billing_company", "vat_number"}
+    user_info = state.user_info or {}
+    has_capturable_data = any(
+        user_info.get(field) for field in capturable_fields
+    )
+    if has_capturable_data:
+        logger.info(
+            "[OOC_BYPASS] Intent '%s' is OOC at step %s, but message has capturable data - continuing",
+            unified_result.intent if unified_result else "unknown",
+            current_step,
+        )
+        return None  # Continue processing to capture the data
+
     # Log the out-of-context detection
     intent = unified_result.intent if unified_result else "unknown"
     logger.warning("[PRE_ROUTE] Out-of-context message detected - no response")
@@ -235,6 +251,13 @@ def check_out_of_context(
         detail=f"Intent '{intent}' not valid at step {current_step}",
         owner_step=f"Step{current_step}",
     )
+
+    # Tag the message for audit trail even though we won't respond
+    # This ensures msg_id is persisted on the event for tracking
+    if state.event_entry:
+        msg_id = state.message.msg_id if state.message else None
+        tag_message(state.event_entry, msg_id)
+        state.extras["_pending_save"] = True  # Ensure the tag is saved to DB
 
     # Return a "no response" result - workflow stays at current step, no message sent
     ooc_response = GroupResult(
