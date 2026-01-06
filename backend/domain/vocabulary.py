@@ -49,6 +49,8 @@ class TaskType(str, Enum):
     # NEW: AI reply approval (when OE_HIL_ALL_LLM_REPLIES=true)
     # All AI-generated outbound replies go to separate "AI Reply Approval" queue
     AI_REPLY_APPROVAL = "ai_reply_approval"
+    # Cancellation request from client - requires manager confirmation
+    CANCELLATION_REQUEST = "cancellation_request"
 
 
 class TaskStatus(str, Enum):

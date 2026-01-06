@@ -26,6 +26,7 @@ from backend.domain import TaskType
 from backend.workflows.io.tasks import enqueue_task
 from backend.workflows.io.config_store import get_manager_names
 from backend.workflows.io.database import tag_message
+from backend.detection.special.cancellation import detect_cancellation_intent, format_cancellation_subject
 
 
 # =============================================================================
@@ -390,6 +391,150 @@ def handle_manager_escalation(
     return finalize_fn(escalation_response, state, path, lock_path)
 
 
+def handle_cancellation_request(
+    state: WorkflowState,
+    combined_text: str,
+    path: Path,
+    lock_path: Path,
+    finalize_fn: FinalizeFn,
+) -> Optional[Dict[str, Any]]:
+    """Handle cancellation requests detected in client messages.
+
+    When a client wants to cancel their event booking:
+    1. Detect cancellation intent using multilingual patterns
+    2. Create a CANCELLATION_REQUEST HIL task for manager confirmation
+    3. Format the subject line to highlight cancellation for manager
+    4. Return acknowledgment (manager will confirm via GUI)
+
+    Different handling based on event state:
+    - Site visit scheduled → Manager sends regret email after confirming
+    - Normal flow → Manager confirms and archives event
+
+    See docs/internal/planning/OPEN_DECISIONS.md DECISION-012 for details.
+
+    Args:
+        state: Current workflow state
+        combined_text: Combined subject + body text for detection
+        path: Database file path
+        lock_path: Database lock file path
+        finalize_fn: Callback to finalize and return result
+
+    Returns:
+        Finalized response if cancellation detected, None otherwise
+    """
+    # Check for cancellation intent
+    is_cancellation, confidence, language = detect_cancellation_intent(combined_text)
+
+    if not is_cancellation or confidence < 0.6:
+        return None
+
+    logger.info(
+        "[PRE_ROUTE] Cancellation request detected (confidence=%.2f, lang=%s) - creating HIL task",
+        confidence, language
+    )
+
+    # Get client and event info
+    client_id = state.client_id or "unknown"
+    event_id = state.event_entry.get("event_id") if state.event_entry else None
+    thread_id = state.thread_id
+
+    # Determine cancellation type
+    current_step = state.event_entry.get("current_step", 1) if state.event_entry else 1
+    had_site_visit = current_step >= 7 or (
+        state.event_entry.get("site_visit_scheduled", False) if state.event_entry else False
+    )
+    cancellation_type = "site_visit" if had_site_visit else "standard"
+
+    # Build task payload with context
+    task_payload = {
+        "snippet": (state.message.body[:300] if state.message and state.message.body else ""),
+        "thread_id": thread_id,
+        "step_id": current_step,
+        "reason": "client_requested_cancellation",
+        "cancellation_type": cancellation_type,
+        "confidence": confidence,
+        "language": language,
+        "event_summary": None,
+        "instructions": (
+            "Client wants to cancel. Review the request and confirm via the Cancel Event button. "
+            "Type 'CANCEL' to confirm. " +
+            ("Note: Site visit was scheduled - send regret email after cancelling."
+             if had_site_visit else "")
+        ),
+    }
+
+    # Add event summary if we have an event
+    if state.event_entry:
+        task_payload["event_summary"] = {
+            "client_name": state.event_entry.get("client_name", "Not specified"),
+            "email": client_id,
+            "chosen_date": state.event_entry.get("chosen_date"),
+            "locked_room": state.event_entry.get("locked_room_id"),
+            "current_step": current_step,
+        }
+
+    # Create task using the db from state
+    from backend.workflows.io.database import lock_path_for, save_db
+
+    task_id = enqueue_task(
+        state.db,
+        TaskType.CANCELLATION_REQUEST,
+        client_id,
+        event_id,
+        task_payload,
+    )
+    save_db(state.db, state.db_path, lock_path_for(state.db_path))
+
+    logger.info("[PRE_ROUTE] Created cancellation request task: %s (type=%s)", task_id, cancellation_type)
+
+    # Set flag on event for downstream handlers
+    if state.event_entry:
+        flags = state.event_entry.setdefault("flags", {})
+        flags["cancellation_requested"] = True
+        flags["cancellation_task_id"] = task_id
+        state.extras["persist"] = True
+
+        # Format subject line for manager visibility
+        original_subject = state.message.subject if state.message else "Event Inquiry"
+        formatted_subject = format_cancellation_subject(original_subject, client_id)
+        state.event_entry["cancellation_subject"] = formatted_subject
+
+    # Add acknowledgment draft message
+    draft_message = {
+        "body_markdown": (
+            "I understand you'd like to cancel your booking. "
+            "I've forwarded your request to our events team for confirmation. "
+            "You'll receive a confirmation email once the cancellation has been processed."
+        ),
+        "step": current_step,
+        "topic": "cancellation_request",
+        "requires_approval": False,  # Acknowledgment doesn't need approval
+    }
+    state.add_draft_message(draft_message)
+
+    # Return response indicating cancellation detected
+    cancellation_response = GroupResult(
+        action="cancellation_request",
+        halt=True,
+        payload={
+            "task_id": task_id,
+            "topic": "cancellation_request",
+            "cancellation_type": cancellation_type,
+            "formatted_subject": task_payload.get("formatted_subject"),
+        },
+    )
+
+    from backend.debug.hooks import trace_marker
+    trace_marker(
+        state.thread_id,
+        "CANCELLATION_REQUEST_DETECTED",
+        detail=f"Created HIL task {task_id} for manager confirmation (type={cancellation_type})",
+        owner_step=f"Step{current_step}",
+    )
+
+    return finalize_fn(cancellation_response, state, path, lock_path)
+
+
 def check_duplicate_message(
     state: WorkflowState,
     combined_text: str,
@@ -600,6 +745,14 @@ def run_pre_route_pipeline(
     )
     if escalation_result is not None:
         return escalation_result, intake_result
+
+    # 0.55. Cancellation request check
+    # Detects when client wants to cancel their event - creates HIL task for manager
+    cancellation_result = handle_cancellation_request(
+        state, combined_text, path, lock_path, finalize_fn
+    )
+    if cancellation_result is not None:
+        return cancellation_result, intake_result
 
     # 0.6. Out-of-context check - step-specific intents at wrong steps
     # Example: "I confirm the date" at step 5 (negotiation) → silently ignored

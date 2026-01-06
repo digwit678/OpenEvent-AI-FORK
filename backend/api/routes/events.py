@@ -262,3 +262,119 @@ async def get_event_by_id(event_id: str):
             return event
 
     raise HTTPException(status_code=404, detail="Event not found")
+
+
+# --- Cancellation Models ---
+
+class CancelEventRequest(BaseModel):
+    """Request to cancel an event booking.
+
+    Requires explicit confirmation string to prevent accidental cancellations.
+    """
+    event_id: str
+    confirmation: str  # Must be exactly "CANCEL"
+    reason: Optional[str] = None  # Optional reason for cancellation
+
+
+class CancelEventResponse(BaseModel):
+    """Response from cancel event endpoint."""
+    status: str
+    event_id: str
+    previous_step: int
+    had_site_visit: bool
+    cancellation_type: str  # "site_visit" or "standard"
+    archived_at: str
+
+
+# --- Cancel Endpoint ---
+
+@router.post("/api/event/{event_id}/cancel")
+async def cancel_event(event_id: str, request: CancelEventRequest):
+    """
+    Cancel an event booking.
+
+    This is a manager action that requires explicit confirmation by typing "CANCEL".
+    The confirmation is case-sensitive to prevent accidental cancellations.
+
+    Behavior varies based on event state:
+    - If site visit was scheduled: Archives event, manager should send regret email
+    - Standard flow: Archives event immediately
+
+    The event is NOT deleted but moved to "cancelled" status for audit purposes.
+
+    See docs/internal/planning/OPEN_DECISIONS.md DECISION-012 for full spec.
+    """
+    # Validate confirmation string
+    if request.confirmation != "CANCEL":
+        raise HTTPException(
+            status_code=400,
+            detail="Confirmation must be exactly 'CANCEL' (case-sensitive)"
+        )
+
+    if request.event_id != event_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Event ID in path must match event_id in request body"
+        )
+
+    try:
+        db = wf_load_db()
+        events = db.get("events") or []
+        event_entry = None
+        event_index = None
+
+        for idx, event in enumerate(events):
+            if event.get("event_id") == event_id:
+                event_entry = event
+                event_index = idx
+                break
+
+        if not event_entry:
+            raise HTTPException(status_code=404, detail="Event not found")
+
+        # Check if already cancelled
+        if event_entry.get("status") == "cancelled":
+            return {
+                "status": "already_cancelled",
+                "event_id": event_id,
+                "cancelled_at": event_entry.get("cancelled_at"),
+            }
+
+        # Determine cancellation type
+        current_step = event_entry.get("current_step", 1)
+        had_site_visit = current_step >= 7 or event_entry.get("site_visit_scheduled", False)
+        cancellation_type = "site_visit" if had_site_visit else "standard"
+
+        # Archive the event (don't delete for audit trail)
+        cancelled_at = _now_iso()
+        event_entry["status"] = "cancelled"
+        event_entry["cancelled_at"] = cancelled_at
+        event_entry["cancellation_reason"] = request.reason
+        event_entry["cancellation_type"] = cancellation_type
+        event_entry["previous_step"] = current_step
+
+        # Mark thread state for UI
+        event_entry["thread_state"] = "Cancelled"
+
+        wf_save_db(db)
+        logger.info(
+            "Event %s cancelled: type=%s, previous_step=%d, reason=%s",
+            event_id, cancellation_type, current_step, request.reason
+        )
+
+        return CancelEventResponse(
+            status="cancelled",
+            event_id=event_id,
+            previous_step=current_step,
+            had_site_visit=had_site_visit,
+            cancellation_type=cancellation_type,
+            archived_at=cancelled_at,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to cancel event: %s", exc)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to cancel event: {exc}"
+        ) from exc
