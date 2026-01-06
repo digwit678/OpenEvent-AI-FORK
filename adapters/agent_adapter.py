@@ -472,7 +472,11 @@ class OpenAIAgentAdapter(AgentAdapter):
                 confidence = 0.5
             confidence = max(0.0, min(1.0, confidence))
             return intent or IntentLabel.NON_EVENT.value, confidence
-        except Exception:
+        except Exception as e:
+            # LOUD FALLBACK: Log when OpenAI fails
+            error_msg = f"[OPENAI FALLBACK] route_intent failed: {type(e).__name__}: {e}"
+            logger.error(error_msg)
+            print(f"\n{'='*60}\n{error_msg}\n{'='*60}\n", flush=True)
             return self._fallback.route_intent(msg)
 
     def extract_entities(self, msg: Dict[str, Any]) -> Dict[str, Any]:
@@ -492,7 +496,11 @@ class OpenAIAgentAdapter(AgentAdapter):
             for key in self._ENTITY_KEYS:
                 entities[key] = payload.get(key)
             return entities
-        except Exception:
+        except Exception as e:
+            # LOUD FALLBACK: Log when OpenAI fails
+            error_msg = f"[OPENAI FALLBACK] extract_entities failed: {type(e).__name__}: {e}"
+            logger.error(error_msg)
+            print(f"\n{'='*60}\n{error_msg}\n{'='*60}\n", flush=True)
             return self._fallback.extract_entities(msg)
 
     def extract_user_information(self, msg: Dict[str, Any]) -> Dict[str, Any]:
@@ -619,10 +627,11 @@ class GeminiAgentAdapter(AgentAdapter):
 
         This method controls what happens when the Gemini API call fails.
         Returns: "stub" to use heuristics, "raise" to propagate error.
-
-        TODO: User to implement - see CONTRIBUTING note below.
         """
-        # Default: always fall back to stub for resilience
+        # LOUD FALLBACK: Always log when Gemini fails so it's visible during debugging
+        error_msg = f"[GEMINI FALLBACK] {operation} failed: {type(error).__name__}: {error}"
+        logger.error(error_msg)
+        print(f"\n{'='*60}\n{error_msg}\n{'='*60}\n", flush=True)
         return "stub"
 
     def route_intent(self, msg: Dict[str, Any]) -> Tuple[str, float]:
