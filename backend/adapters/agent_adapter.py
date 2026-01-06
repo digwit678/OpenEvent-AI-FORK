@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 from backend.domain import IntentLabel
+from backend.utils.keychain_env import load_keychain_env
 from backend.llm.client import get_openai_client
 
 try:  # pragma: no cover - optional dependency resolved at runtime
@@ -732,6 +733,8 @@ def get_adapter_for_provider(provider: str) -> AgentAdapter:
         AgentAdapter for the specified provider
     """
     provider = provider.lower()
+    if provider != "stub":
+        load_keychain_env()
 
     if provider in _PROVIDER_ADAPTERS:
         return _PROVIDER_ADAPTERS[provider]
@@ -760,9 +763,11 @@ def get_agent_adapter() -> AgentAdapter:
         _AGENT_SINGLETON = StubAgentAdapter()
         return _AGENT_SINGLETON
     if mode == "openai":
+        load_keychain_env()
         _AGENT_SINGLETON = OpenAIAgentAdapter()
         return _AGENT_SINGLETON
     if mode == "gemini":
+        load_keychain_env()
         _AGENT_SINGLETON = GeminiAgentAdapter()
         return _AGENT_SINGLETON
     raise RuntimeError(f"Unsupported AGENT_MODE: {mode}")

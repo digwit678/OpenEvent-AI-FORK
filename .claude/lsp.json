@@ -1,0 +1,16 @@
+{
+  "servers": {
+    "python": {
+      "command": "pyright-langserver",
+      "args": ["--stdio"],
+      "extensions": [".py"],
+      "projects": [
+        {
+          "name": "openevent-ai",
+          "description": "OpenEvent AI backend",
+          "path": "/Users/nico/PycharmProjects/OpenEvent-AI"
+        }
+      ]
+    }
+  }
+}
