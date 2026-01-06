@@ -140,7 +140,7 @@ start_backend() {
     log_info "Starting backend on port $PORT..."
 
     # Start uvicorn in background and capture PID
-    uvicorn backend.main:app --reload --port $PORT &
+    uvicorn main:app --reload --port $PORT &
     local new_pid=$!
     echo "$new_pid" > "$PID_FILE"
 

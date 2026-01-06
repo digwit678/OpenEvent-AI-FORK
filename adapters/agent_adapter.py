@@ -782,6 +782,11 @@ def get_agent_adapter() -> AgentAdapter:
     if mode == "gemini":
         _AGENT_SINGLETON = GeminiAgentAdapter()
         return _AGENT_SINGLETON
+    if mode == "hybrid":
+        # Hybrid mode: use Gemini for intent/entity extraction (cheaper)
+        # Verbalization uses OpenAI via llm/provider_config.py
+        _AGENT_SINGLETON = GeminiAgentAdapter()
+        return _AGENT_SINGLETON
     raise RuntimeError(f"Unsupported AGENT_MODE: {mode}")
 
 
