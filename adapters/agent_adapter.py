@@ -575,7 +575,11 @@ class GeminiAgentAdapter(AgentAdapter):
 
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
-            raise RuntimeError("GOOGLE_API_KEY environment variable is required for Gemini")
+            # Fallback for custom Vercel environment variable
+            api_key = os.getenv("gemini_key_openevent")
+
+        if not api_key:
+            raise RuntimeError("GOOGLE_API_KEY (or gemini_key_openevent) environment variable is required for Gemini")
 
         genai.configure(api_key=api_key)
 

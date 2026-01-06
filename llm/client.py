@@ -77,8 +77,12 @@ def get_openai_client() -> "OpenAI":  # type: ignore
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
+        # Fallback for custom Vercel environment variable
+        api_key = os.getenv("openai_key_openevent", "").strip()
+
+    if not api_key:
         raise ValueError(
-            "OPENAI_API_KEY environment variable not set. "
+            "OPENAI_API_KEY (or openai_key_openevent) environment variable not set. "
             "Set it or use AGENT_MODE=stub for testing."
         )
 
