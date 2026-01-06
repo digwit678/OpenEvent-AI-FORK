@@ -1,7 +1,7 @@
 # Environment files
-.env
 *.env
-backend/.env
+!/.env
+!backend/.env
 
 # Local runtime databases
 backend/events_database.json
