@@ -426,10 +426,6 @@ class OpenAIAgentAdapter(AgentAdapter):
 
     def __init__(self) -> None:
         self._client = get_openai_client()
-        # TODO: Consider changing default from o3-mini to gpt-4o-mini
-        # o3-mini is a reasoning model that sometimes returns malformed JSON
-        # gpt-4o-mini is 7x cheaper and more reliable for JSON extraction
-        # Need to verify gpt-4o-mini reliability before switching default
         model = os.getenv("OPENAI_AGENT_MODEL", "gpt-4o-mini")
         self._intent_model = os.getenv("OPENAI_INTENT_MODEL", model)
         self._entity_model = os.getenv("OPENAI_ENTITY_MODEL", model)
