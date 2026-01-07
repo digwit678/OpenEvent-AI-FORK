@@ -22,7 +22,7 @@ import warnings
 try:  # pragma: no cover - optional dependency resolved at runtime
     # Suppress deprecation warning until migration to google-genai SDK is complete
     warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
-    import google.generativeai as genai  # type: ignore
+    import google.genai as genai # type: ignore
 except Exception:  # pragma: no cover - library may be unavailable in tests
     genai = None  # type: ignore
 
@@ -66,7 +66,7 @@ class AgentAdapter:
         system_prompt: Optional[str] = None,
         temperature: float = 0.1,
         max_tokens: int = 1000,
-        json_mode: bool = True,
+        json_mode: bool = False,
     ) -> str:
         """Run a raw completion with a custom prompt.
 
@@ -350,7 +350,7 @@ class StubAgentAdapter(AgentAdapter):
         system_prompt: Optional[str] = None,
         temperature: float = 0.1,
         max_tokens: int = 1000,
-        json_mode: bool = True,
+        json_mode: bool = False,
     ) -> str:
         """Stub implementation returns a minimal JSON response for testing."""
         # For unified detection, return a basic structure
@@ -430,15 +430,22 @@ class OpenAIAgentAdapter(AgentAdapter):
         # o3-mini is a reasoning model that sometimes returns malformed JSON
         # gpt-4o-mini is 7x cheaper and more reliable for JSON extraction
         # Need to verify gpt-4o-mini reliability before switching default
-        model = os.getenv("OPENAI_AGENT_MODEL", "o3-mini")
+        model = os.getenv("OPENAI_AGENT_MODEL", "gpt-4o-mini")
         self._intent_model = os.getenv("OPENAI_INTENT_MODEL", model)
         self._entity_model = os.getenv("OPENAI_ENTITY_MODEL", model)
         self._fallback = StubAgentAdapter()
 
-    def _run_completion(self, *, prompt: str, body: str, subject: str, model: str) -> Dict[str, Any]:
+    def _run_completion(
+        self,
+        *,
+        prompt: str,
+        body: str,
+        subject: str,
+        model_name: str,
+    ) -> Dict[str, Any]:
         message = f"Subject: {subject}\n\nBody:\n{body}"
         kwargs: Dict[str, Any] = {
-            "model": model,
+            "model": model_name,
             "messages": [
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": message},
@@ -446,14 +453,19 @@ class OpenAIAgentAdapter(AgentAdapter):
             "response_format": {"type": "json_object"},
         }
         # O-series models (o1, o3, etc.) don't support temperature parameter
-        if not model.startswith("o"):
+        if not model_name.startswith("o"):
             kwargs["temperature"] = 0
         response = self._client.chat.completions.create(**kwargs)
-        content = response.choices[0].message.content if response.choices else "{}"
         try:
-            return json.loads(content or "{}")
-        except json.JSONDecodeError:
+            return json.loads(response.choices[0].message.content or "{}")
+        except Exception:
             return {}
+
+    def _select_fallback_strategy(self, error: Exception, operation: str) -> str:
+        error_msg = f"[OPENAI FALLBACK] {operation} failed: {type(error).__name__}: {error}"
+        logger.error(error_msg)
+        print(f"\n{'='*60}\n{error_msg}\n{'='*60}\n", flush=True)
+        return "stub"
 
     def route_intent(self, msg: Dict[str, Any]) -> Tuple[str, float]:
         subject = msg.get("subject") or ""
@@ -463,7 +475,7 @@ class OpenAIAgentAdapter(AgentAdapter):
                 prompt=self._INTENT_PROMPT,
                 body=body,
                 subject=subject,
-                model=self._intent_model,
+                model_name=self._intent_model,
             )
             intent = str(payload.get("intent") or "").strip().lower()
             if intent not in {IntentLabel.EVENT_REQUEST.value, IntentLabel.NON_EVENT.value}:
@@ -493,7 +505,7 @@ class OpenAIAgentAdapter(AgentAdapter):
                 prompt=prompt,
                 body=body,
                 subject=subject,
-                model=self._entity_model,
+                model_name=self._entity_model,
             )
             entities: Dict[str, Any] = {}
             for key in self._ENTITY_KEYS:
@@ -522,33 +534,21 @@ class OpenAIAgentAdapter(AgentAdapter):
         system_prompt: Optional[str] = None,
         temperature: float = 0.1,
         max_tokens: int = 1000,
-        json_mode: bool = True,
+        json_mode: bool = False,
     ) -> str:
-        """Run a raw completion with OpenAI."""
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        try:
-            kwargs: Dict[str, Any] = {
-                "model": self._intent_model,
-                "messages": messages,
-            }
-            # o-series models don't support temperature and use max_completion_tokens
-            if self._intent_model.startswith("o"):
-                kwargs["max_completion_tokens"] = max_tokens
-            else:
-                kwargs["temperature"] = temperature
-                kwargs["max_tokens"] = max_tokens
-            if json_mode:
-                kwargs["response_format"] = {"type": "json_object"}
-
-            response = self._client.chat.completions.create(**kwargs)
-            return response.choices[0].message.content or "{}"
-        except Exception as e:
-            logger.warning("[OpenAIAgentAdapter] complete error: %s", e)
-            return self._fallback.complete(prompt, system_prompt=system_prompt, json_mode=json_mode)
+        response = self._client.chat.completions.create(
+            model=self._intent_model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            #response_format={"type": "json_object"} if json_mode else None,
+        )
+        return response.choices[0].message.content or ""
 
 
 class GeminiAgentAdapter(AgentAdapter):
@@ -586,43 +586,44 @@ class GeminiAgentAdapter(AgentAdapter):
 
     def __init__(self) -> None:
         if genai is None:
-            raise RuntimeError("google-generativeai package is required when AGENT_MODE=gemini")
+            raise RuntimeError("google-genai package is required when AGENT_MODE=gemini")
 
-        api_key = os.getenv("GOOGLE_API_KEY")
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("gemini_key_openevent")
         if not api_key:
-            # Fallback for custom Vercel environment variable
-            api_key = os.getenv("gemini_key_openevent")
+            raise RuntimeError("GOOGLE_API_KEY (or gemini_key_openevent) is required")
 
-        if not api_key:
-            raise RuntimeError("GOOGLE_API_KEY (or gemini_key_openevent) environment variable is required for Gemini")
+        self._client = genai.Client(api_key=api_key)
 
-        genai.configure(api_key=api_key)
+        model = os.getenv("GEMINI_AGENT_MODEL", "gemini-2.0-flash")
+        self._intent_model = os.getenv("GEMINI_INTENT_MODEL", model)
+        self._entity_model = os.getenv("GEMINI_ENTITY_MODEL", model)
 
-        # Model selection - Flash 2.0 for speed/cost, Pro 2.0 for quality
-        self._intent_model = os.getenv("GEMINI_INTENT_MODEL", "gemini-2.0-flash")
-        self._entity_model = os.getenv("GEMINI_ENTITY_MODEL", "gemini-2.0-flash")
         self._fallback = StubAgentAdapter()
 
-    def _run_completion(self, *, prompt: str, body: str, subject: str, model_name: str) -> Dict[str, Any]:
-        """Run a Gemini completion and parse JSON response."""
+    def _run_completion(
+        self,
+        *,
+        prompt: str,
+        body: str,
+        subject: str,
+        model_name: str,
+    ) -> Dict[str, Any]:
+        from google.genai import types
+
         message = f"Subject: {subject}\n\nBody:\n{body}"
 
-        model = genai.GenerativeModel(
-            model_name,
-            generation_config=genai.GenerationConfig(
+        response = self._client.models.generate_content(
+            model=model_name,
+            contents=f"{prompt}\n\n{message}",
+            config=types.GenerateContentConfig(
                 temperature=0,
                 response_mime_type="application/json",
             ),
         )
 
-        response = model.generate_content([
-            {"role": "user", "parts": [f"{prompt}\n\n{message}"]},
-        ])
-
-        content = response.text if response else "{}"
         try:
-            return json.loads(content or "{}")
-        except json.JSONDecodeError:
+            return json.loads(response.text or "{}")
+        except Exception:
             return {}
 
     def _select_fallback_strategy(self, error: Exception, operation: str) -> str:
@@ -706,30 +707,31 @@ class GeminiAgentAdapter(AgentAdapter):
         system_prompt: Optional[str] = None,
         temperature: float = 0.1,
         max_tokens: int = 1000,
-        json_mode: bool = True,
+        json_mode: bool = False,
     ) -> str:
         """Run a raw completion with Gemini."""
+        from google.genai import types
+        
         try:
             # Prepend system prompt if provided
             full_prompt = prompt
             if system_prompt:
                 full_prompt = f"{system_prompt}\n\n{prompt}"
 
-            generation_config = genai.GenerationConfig(
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-            )
+            # Build config using new SDK types
+            config_kwargs = {
+                "temperature": temperature,
+                "max_output_tokens": max_tokens,
+            }
             if json_mode:
-                generation_config.response_mime_type = "application/json"
+                config_kwargs["response_mime_type"] = "application/json"
 
-            model = genai.GenerativeModel(
-                self._intent_model,
-                generation_config=generation_config,
+            # Use client.models.generate_content (new SDK style)
+            response = self._client.models.generate_content(
+                model=self._intent_model,
+                contents=full_prompt,
+                config=types.GenerateContentConfig(**config_kwargs),
             )
-
-            response = model.generate_content([
-                {"role": "user", "parts": [full_prompt]},
-            ])
 
             return response.text if response else "{}"
         except Exception as e:
@@ -737,7 +739,6 @@ class GeminiAgentAdapter(AgentAdapter):
             if strategy == "stub":
                 return self._fallback.complete(prompt, system_prompt=system_prompt, json_mode=json_mode)
             raise
-
 
 _AGENT_SINGLETON: Optional[AgentAdapter] = None
 

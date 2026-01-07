@@ -18,7 +18,7 @@ jobs:
     env:
       TZ: Europe/Zurich
       AGENT_MODE: openai
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_KEY_OPENEVENT }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: python -m pip install -U pip && pip install openai==2.6.1
+      - run: python -m pip install -U pip && pip install openai
       - name: SDK probe
         run: |
           python - <<'PY'
@@ -35,12 +35,21 @@ jobs:
           key=os.getenv("OPENAI_API_KEY")
           if not key or len(key)<20: print("key_missing"); sys.exit(2)
           c=OpenAI()
-          ms=list(c.models.list().data)
-          if not ms: print("no_models"); sys.exit(3)
+          try:
+              ms=list(c.models.list().data)
+              if not ms: print("no_models"); sys.exit(3)
+          except Exception as e:
+              print("model_list_exception:",e); sys.exit(3)
           try:
               m=os.getenv("OPENAI_AGENT_MODEL","gpt-4o-mini")
-              r=c.responses.create(model=m,instructions="Respond with 'pong'.",input=[{"role":"user","content":"ping"}])
-              text=getattr(r,"output_text","").strip()
+              r=c.chat.completions.create(
+                  model=m,
+                  messages=[
+                      {"role": "system", "content": "Respond with 'pong'."},
+                      {"role": "user", "content": "ping"}
+                  ]
+              )
+              text=r.choices[0].message.content.strip()
               ok=("pong" in text.lower()) or bool(text)
               print("probe_text:",text[:200])
               sys.exit(0 if ok else 4)
