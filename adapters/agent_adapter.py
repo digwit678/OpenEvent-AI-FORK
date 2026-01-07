@@ -435,18 +435,21 @@ class OpenAIAgentAdapter(AgentAdapter):
         self._entity_model = os.getenv("OPENAI_ENTITY_MODEL", model)
         self._fallback = StubAgentAdapter()
 
-    def _run_completion(self, *, prompt: str, body: str, subject: str, model: str) -> Dict[str, Any]:
+    def _run_completion(self, *, prompt: str, body: str, subject: str, model_name: str) -> Dict[str, Any]:
+        """Run a Gemini completion and parse JSON response."""
         message = f"Subject: {subject}\n\nBody:\n{body}"
-        response = self._client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": message},
-            ],
-            temperature=0,
-            response_format={"type": "json_object"},
+
+        # NEW: Use client.models.generate_content
+        response = self.client.models.generate_content(
+            model=model_name,
+            contents=f"{prompt}\n\n{message}",
+            config={
+                'temperature': 0,
+                'response_mime_type': 'application/json',
+            }
         )
-        content = response.choices[0].message.content if response.choices else "{}"
+
+        content = response.text if response else "{}"
         try:
             return json.loads(content or "{}")
         except json.JSONDecodeError:
@@ -521,31 +524,33 @@ class OpenAIAgentAdapter(AgentAdapter):
         max_tokens: int = 1000,
         json_mode: bool = True,
     ) -> str:
-        """Run a raw completion with OpenAI."""
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
+        """Run a raw completion with Gemini."""
         try:
-            kwargs: Dict[str, Any] = {
-                "model": self._intent_model,
-                "messages": messages,
-            }
-            # o-series models don't support temperature and use max_completion_tokens
-            if self._intent_model.startswith("o"):
-                kwargs["max_completion_tokens"] = max_tokens
-            else:
-                kwargs["temperature"] = temperature
-                kwargs["max_tokens"] = max_tokens
-            if json_mode:
-                kwargs["response_format"] = {"type": "json_object"}
+            # Prepend system prompt if provided
+            full_prompt = prompt
+            if system_prompt:
+                full_prompt = f"{system_prompt}\n\n{prompt}"
 
-            response = self._client.chat.completions.create(**kwargs)
-            return response.choices[0].message.content or "{}"
+            config = {
+                'temperature': temperature,
+                'max_output_tokens': max_tokens,
+            }
+            if json_mode:
+                config['response_mime_type'] = 'application/json'
+
+            # NEW: Use client.models.generate_content
+            response = self.client.models.generate_content(
+                model=self._intent_model,
+                contents=full_prompt,
+                config=config
+            )
+
+            return response.text if response else "{}"
         except Exception as e:
-            logger.warning("[OpenAIAgentAdapter] complete error: %s", e)
-            return self._fallback.complete(prompt, system_prompt=system_prompt, json_mode=json_mode)
+            strategy = self._select_fallback_strategy(e, "complete")
+            if strategy == "stub":
+                return self._fallback.complete(prompt, system_prompt=system_prompt, json_mode=json_mode)
+            raise
 
 
 class GeminiAgentAdapter(AgentAdapter):
@@ -583,7 +588,7 @@ class GeminiAgentAdapter(AgentAdapter):
 
     def __init__(self) -> None:
         if genai is None:
-            raise RuntimeError("google-generativeai package is required when AGENT_MODE=gemini")
+            raise RuntimeError("google-genai package is required when AGENT_MODE=gemini")
 
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
@@ -593,34 +598,25 @@ class GeminiAgentAdapter(AgentAdapter):
         if not api_key:
             raise RuntimeError("GOOGLE_API_KEY (or gemini_key_openevent) environment variable is required for Gemini")
 
-        genai.configure(api_key=api_key)
+        # NEW: Create client instead of configure
 
-        # Model selection - Flash 2.0 for speed/cost, Pro 2.0 for quality
-        self._intent_model = os.getenv("GEMINI_INTENT_MODEL", "gemini-2.0-flash")
-        self._entity_model = os.getenv("GEMINI_ENTITY_MODEL", "gemini-2.0-flash")
-        self._fallback = StubAgentAdapter()
+            model = genai.GenerativeModel(
+                model_name,
+                generation_config=genai.GenerationConfig(
+                    temperature=0,
+                    response_mime_type="application/json",
+                ),
+            )
 
-    def _run_completion(self, *, prompt: str, body: str, subject: str, model_name: str) -> Dict[str, Any]:
-        """Run a Gemini completion and parse JSON response."""
-        message = f"Subject: {subject}\n\nBody:\n{body}"
+            response = model.generate_content([
+                {"role": "user", "parts": [f"{prompt}\n\n{message}"]},
+            ])
 
-        model = genai.GenerativeModel(
-            model_name,
-            generation_config=genai.GenerationConfig(
-                temperature=0,
-                response_mime_type="application/json",
-            ),
-        )
-
-        response = model.generate_content([
-            {"role": "user", "parts": [f"{prompt}\n\n{message}"]},
-        ])
-
-        content = response.text if response else "{}"
-        try:
-            return json.loads(content or "{}")
-        except json.JSONDecodeError:
-            return {}
+            content = response.text if response else "{}"
+            try:
+                return json.loads(content or "{}")
+            except json.JSONDecodeError:
+                return {}
 
     def _select_fallback_strategy(self, error: Exception, operation: str) -> str:
         """Determine fallback behavior when Gemini fails.
