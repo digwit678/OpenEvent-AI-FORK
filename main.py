@@ -47,9 +47,15 @@ from api.middleware import TenantContextMiddleware, AuthMiddleware
 from api.middleware.request_limits import RequestSizeLimitMiddleware
 
 # Environment mode detection: dev vs prod
-# In dev mode, auto-launch/kill conveniences are enabled by default
-# In prod mode, they are disabled for safety (can still be explicitly enabled)
-_IS_DEV = os.getenv("ENV", "dev").lower() in ("dev", "development", "local")
+# SECURITY: Default to production mode when ENV is not set
+# In dev mode (ENV=dev/development/local), auto-launch/kill conveniences are enabled
+# In prod mode, debug routers and test endpoints are disabled for safety
+_env_value = os.getenv("ENV", "prod").lower()  # Default to prod for security
+_IS_DEV = _env_value in ("dev", "development", "local")
+if _IS_DEV:
+    # Visible startup warning when running in dev mode
+    print("[SECURITY] Running in DEVELOPMENT mode - debug endpoints exposed")
+    print("[SECURITY] Set ENV=prod for production deployments")
 
 # Smart default for AGENT_MODE:
 # If not set, check if we have a Gemini key.
@@ -451,8 +457,7 @@ async def root():
     In production (ENV=prod), returns minimal status only.
     In dev mode, includes conversation/event counts for debugging.
     """
-    is_dev = os.getenv("ENV", "dev").lower() != "prod"
-    if is_dev:
+    if _IS_DEV:
         database = load_events_database()
         return {
             "status": "AI Event Manager Running",

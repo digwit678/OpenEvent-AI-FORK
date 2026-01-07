@@ -40,6 +40,8 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from api.utils.errors import raise_safe_error
+
 from workflow_email import (
     load_db as wf_load_db,
     save_db as wf_save_db,
@@ -185,9 +187,7 @@ async def get_global_deposit_config():
             "deposit_deadline_days": config.get("deposit_deadline_days", 10),
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load deposit config: {exc}"
-        ) from exc
+        raise_safe_error(500, "load deposit config", exc, logger)
 
 
 @router.post("/global-deposit")
@@ -214,9 +214,7 @@ async def set_global_deposit_config(config: GlobalDepositConfig):
         logger.info("Global deposit updated: enabled=%s type=%s", config.deposit_enabled, config.deposit_type)
         return {"status": "ok", "config": db["config"]["global_deposit"]}
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save deposit config: {exc}"
-        ) from exc
+        raise_safe_error(500, "save deposit config", exc, logger)
 
 
 # ---------------------------------------------------------------------------
@@ -264,9 +262,7 @@ async def get_hil_mode():
         return {"enabled": False, "source": "default"}
 
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load HIL mode config: {exc}"
-        ) from exc
+        raise_safe_error(500, "load HIL mode config", exc, logger)
 
 
 @router.post("/hil-mode")
@@ -311,9 +307,7 @@ async def set_hil_mode(config: HILModeConfig):
             "message": f"HIL mode {status}. {'All AI replies now require manager approval.' if config.enabled else 'AI replies will be sent directly to clients.'}",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save HIL mode config: {exc}"
-        ) from exc
+        raise_safe_error(500, "save HIL mode config", exc, logger)
 
 
 # ---------------------------------------------------------------------------
@@ -374,9 +368,7 @@ async def get_llm_provider_config():
         }
 
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load LLM provider config: {exc}"
-        ) from exc
+        raise_safe_error(500, "load LLM provider config", exc, logger)
 
 
 @router.post("/llm-provider")
@@ -451,9 +443,7 @@ async def set_llm_provider_config(config: LLMProviderConfig):
             "message": "LLM provider settings updated. Changes take effect on next request.",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save LLM provider config: {exc}"
-        ) from exc
+        raise_safe_error(500, "save LLM provider config", exc, logger)
 
 
 # ---------------------------------------------------------------------------
@@ -536,9 +526,7 @@ async def get_hybrid_enforcement_config():
         }
 
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load hybrid enforcement config: {exc}"
-        ) from exc
+        raise_safe_error(500, "load hybrid enforcement config", exc, logger)
 
 
 @router.post("/hybrid-enforcement")
@@ -600,9 +588,7 @@ async def set_hybrid_enforcement_config(config: HybridEnforcementConfig):
             ),
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save hybrid enforcement config: {exc}"
-        ) from exc
+        raise_safe_error(500, "save hybrid enforcement config", exc, logger)
 
 
 # ---------------------------------------------------------------------------
@@ -665,9 +651,7 @@ async def get_pre_filter_config():
         return {"mode": "legacy", "source": "default"}
 
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load pre-filter config: {exc}"
-        ) from exc
+        raise_safe_error(500, "load pre-filter config", exc, logger)
 
 
 @router.post("/pre-filter")
@@ -720,9 +704,7 @@ async def set_pre_filter_config(config: PreFilterConfig):
                       f"{'Full keyword detection enabled.' if config.mode == 'enhanced' else 'Safe legacy mode, always runs LLM.'}",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save pre-filter config: {exc}"
-        ) from exc
+        raise_safe_error(500, "save pre-filter config", exc, logger)
 
 
 # ---------------------------------------------------------------------------
@@ -773,9 +755,7 @@ async def get_detection_mode_config():
         return {"mode": "unified", "source": "default"}
 
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load detection mode config: {exc}"
-        ) from exc
+        raise_safe_error(500, "load detection mode config", exc, logger)
 
 
 @router.post("/detection-mode")
@@ -827,9 +807,7 @@ async def set_detection_mode_config(config: DetectionModeConfig):
                       f"{'One LLM call per message (recommended).' if config.mode == 'unified' else 'Separate keyword + intent + entity calls.'}",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save detection mode config: {exc}"
-        ) from exc
+        raise_safe_error(500, "save detection mode config", exc, logger)
 
 
 # ---------------------------------------------------------------------------
@@ -904,9 +882,7 @@ async def set_prompts_config(config: PromptConfig):
         logger.info("Prompts updated and persisted")
         return {"status": "ok"}
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save prompts: {exc}"
-        ) from exc
+        raise_safe_error(500, "save prompts", exc, logger)
 
 
 @router.get("/prompts/history", response_model=PromptHistoryResponse)
@@ -917,9 +893,7 @@ async def get_prompts_history():
         history = db.get("config", {}).get("prompts_history", [])
         return {"history": history}
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load prompt history: {exc}"
-        ) from exc
+        raise_safe_error(500, "load prompt history", exc, logger)
 
 
 @router.post("/prompts/revert/{index}")
@@ -962,9 +936,7 @@ async def revert_prompts_config(index: int):
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to revert prompts: {exc}"
-        ) from exc
+        raise_safe_error(500, "revert prompts", exc, logger)
 
 
 
@@ -1093,9 +1065,7 @@ async def get_hil_email_config():
             "source": "database" if config["manager_email"] else "environment",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load HIL email config: {exc}"
-        ) from exc
+        raise_safe_error(500, "load HIL email config", exc, logger)
 
 
 @router.post("/hil-email")
@@ -1151,9 +1121,7 @@ async def set_hil_email_config(config: HILEmailConfig):
                       + (f" Notifications will be sent to {config.manager_email}" if config.enabled else ""),
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save HIL email config: {exc}"
-        ) from exc
+        raise_safe_error(500, "save HIL email config", exc, logger)
 
 
 @router.post("/hil-email/test")
@@ -1191,9 +1159,7 @@ async def test_hil_email():
         return result
 
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to send test email: {exc}"
-        ) from exc
+        raise_safe_error(500, "send test email", exc, logger)
 
 
 # ---------------------------------------------------------------------------
@@ -1263,9 +1229,7 @@ async def get_venue_config():
             "source": "database",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load venue config: {exc}"
-        ) from exc
+        raise_safe_error(500, "load venue config", exc, logger)
 
 
 @router.post("/venue")
@@ -1327,9 +1291,7 @@ async def set_venue_config(config: VenueConfig):
             "message": "Venue configuration updated. Changes take effect immediately.",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save venue config: {exc}"
-        ) from exc
+        raise_safe_error(500, "save venue config", exc, logger)
 
 
 # ---------------------------------------------------------------------------
@@ -1375,9 +1337,7 @@ async def get_site_visit_config():
             "source": "database",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load site visit config: {exc}"
-        ) from exc
+        raise_safe_error(500, "load site visit config", exc, logger)
 
 
 @router.post("/site-visit")
@@ -1421,9 +1381,7 @@ async def set_site_visit_config(config: SiteVisitConfig):
             "message": "Site visit configuration updated.",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save site visit config: {exc}"
-        ) from exc
+        raise_safe_error(500, "save site visit config", exc, logger)
 
 
 # ---------------------------------------------------------------------------
@@ -1456,9 +1414,7 @@ async def get_manager_config():
             "source": "database",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load manager config: {exc}"
-        ) from exc
+        raise_safe_error(500, "load manager config", exc, logger)
 
 
 @router.post("/managers")
@@ -1494,9 +1450,7 @@ async def set_manager_config(config: ManagerConfig):
             "message": "Manager configuration updated.",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save manager config: {exc}"
-        ) from exc
+        raise_safe_error(500, "save manager config", exc, logger)
 
 
 # ---------------------------------------------------------------------------
@@ -1530,9 +1484,7 @@ async def get_product_config():
             "source": "database",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load product config: {exc}"
-        ) from exc
+        raise_safe_error(500, "load product config", exc, logger)
 
 
 @router.post("/products")
@@ -1576,9 +1528,7 @@ async def set_product_config(config: ProductConfig):
             "message": "Product configuration updated.",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save product config: {exc}"
-        ) from exc
+        raise_safe_error(500, "save product config", exc, logger)
 
 
 # ---------------------------------------------------------------------------
@@ -1628,9 +1578,7 @@ async def get_menus_config():
             "source": "database",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load menus config: {exc}"
-        ) from exc
+        raise_safe_error(500, "load menus config", exc, logger)
 
 
 @router.post("/menus")
@@ -1697,9 +1645,7 @@ async def set_menus_config(config: MenusConfig):
             "message": f"Menus configuration updated. {count} dinner option(s) configured.",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save menus config: {exc}"
-        ) from exc
+        raise_safe_error(500, "save menus config", exc, logger)
 
 
 # ---------------------------------------------------------------------------
@@ -1741,9 +1687,7 @@ async def get_catalog_config():
             "source": "database",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load catalog config: {exc}"
-        ) from exc
+        raise_safe_error(500, "load catalog config", exc, logger)
 
 
 @router.post("/catalog")
@@ -1792,9 +1736,7 @@ async def set_catalog_config(config: CatalogConfig):
             "message": f"Catalog configuration updated. {count} product mapping(s) configured.",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save catalog config: {exc}"
-        ) from exc
+        raise_safe_error(500, "save catalog config", exc, logger)
 
 
 # ---------------------------------------------------------------------------
@@ -1837,9 +1779,7 @@ async def get_faq_config():
             "source": "database",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to load FAQ config: {exc}"
-        ) from exc
+        raise_safe_error(500, "load FAQ config", exc, logger)
 
 
 @router.post("/faq")
@@ -1892,6 +1832,4 @@ async def set_faq_config(config: FAQConfig):
             "message": f"FAQ configuration updated. {count} item(s) configured.",
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save FAQ config: {exc}"
-        ) from exc
+        raise_safe_error(500, "save FAQ config", exc, logger)

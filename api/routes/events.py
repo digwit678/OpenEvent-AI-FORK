@@ -13,11 +13,14 @@ DEPENDS ON:
 """
 
 import logging
+import os
 import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from api.utils.errors import raise_safe_error
 
 logger = logging.getLogger(__name__)
 
@@ -185,9 +188,7 @@ async def pay_deposit(request: DepositPaymentRequest):
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to process deposit payment: {exc}"
-        ) from exc
+        raise_safe_error(500, "process deposit payment", exc, logger)
 
 
 @router.get("/api/event/{event_id}/deposit")
@@ -231,9 +232,7 @@ async def get_deposit_status(event_id: str):
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get deposit status: {exc}"
-        ) from exc
+        raise_safe_error(500, "get deposit status", exc, logger)
 
 
 @router.get("/api/events")
@@ -375,6 +374,4 @@ async def cancel_event(event_id: str, request: CancelEventRequest):
         raise
     except Exception as exc:
         logger.exception("Failed to cancel event: %s", exc)
-        raise HTTPException(
-            status_code=500, detail=f"Failed to cancel event: {exc}"
-        ) from exc
+        raise_safe_error(500, "cancel event", exc, logger)

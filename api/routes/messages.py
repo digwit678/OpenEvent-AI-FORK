@@ -348,7 +348,8 @@ def _trigger_room_availability(event_id: Optional[str], chosen_date: str) -> Opt
     wf_save_db(db)
 
     try:
-        run_availability_workflow(event_id, get_calendar_adapter(), GUI_ADAPTER)
+        # interactive=False to skip console input() - HIL toggle handles manager review
+        run_availability_workflow(event_id, get_calendar_adapter(), GUI_ADAPTER, interactive=False)
         return None  # Success
     except Exception as exc:
         ctx = create_fallback_context(

@@ -9,6 +9,11 @@ import secrets
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+import logging
+
+from api.utils.errors import raise_safe_error
+
+logger = logging.getLogger(__name__)
 
 from chatkit import server as chatkit_server
 from agents.openevent_agent import OpenEventAgent
@@ -59,9 +64,9 @@ async def agent_reply(request: AgentReplyRequest) -> Dict[str, Any]:
     try:
         result = agent.run(session, message_payload)
     except NotImplementedError as exc:
-        raise HTTPException(status_code=501, detail=str(exc)) from exc
+        raise_safe_error(501, "run agent (not implemented)", exc, logger)
     except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise_safe_error(502, "run agent", exc, logger)
     return result
 
 

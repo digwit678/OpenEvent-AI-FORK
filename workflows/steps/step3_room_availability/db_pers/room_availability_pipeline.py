@@ -630,8 +630,14 @@ def run_availability_workflow(
     calendar_adapter: CalendarAdapter,
     client_gui_adapter: ClientGUIAdapter,
     rooms_path: Path | None = None,
+    interactive: bool = True,
 ) -> None:
-    """[Trigger] Execute the full advanced availability workflow."""
+    """[Trigger] Execute the full advanced availability workflow.
+
+    Args:
+        interactive: If False, skip console human_review() - for API calls.
+                    The existing HIL toggle handles manager review when enabled.
+    """
 
     db = _load_workflow_db()
     events = db.get("events", [])
@@ -744,19 +750,22 @@ def run_availability_workflow(
 
     append_log(event, "availability_reply_drafted", {"outcome": outcome, "variant": decision_status})
 
-    decision = human_review(
-        {
-            "outcome": outcome,
-            "variant": decision_status,
-            "draft": availability_reply["draft"],
-        },
-        options,
-    )
+    # Skip interactive console review for API calls - the HIL toggle handles
+    # manager review when enabled in production
+    if interactive:
+        decision = human_review(
+            {
+                "outcome": outcome,
+                "variant": decision_status,
+                "draft": availability_reply["draft"],
+            },
+            options,
+        )
 
-    if decision == "cancel":
-        _save_workflow_db(db)
-        print("Cancelled. Draft saved only.")
-        return
+        if decision == "cancel":
+            _save_workflow_db(db)
+            print("Cancelled. Draft saved only.")
+            return
 
     availability_reply["status"] = "approved"
     availability_reply["approved"] = {"ts": now_iso(), "by": "Event Manager"}

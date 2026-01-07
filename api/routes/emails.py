@@ -23,6 +23,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from api.utils.errors import raise_safe_error
+
 logger = logging.getLogger(__name__)
 
 from workflow_email import load_db as wf_load_db
@@ -118,7 +120,7 @@ async def send_email_to_client(request: SendClientEmailRequest):
         return result
 
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise_safe_error(500, "send email to client", exc, logger)
 
 
 @router.post("/send-offer")
@@ -232,7 +234,7 @@ async def send_offer_email(request: SendOfferEmailRequest):
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise_safe_error(500, "send offer email", exc, logger)
 
 
 @router.post("/test")
@@ -267,7 +269,7 @@ async def send_test_email(request: TestEmailRequest):
         return result
 
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise_safe_error(500, "send test email", exc, logger)
 
 
 # --- Helper Functions ---

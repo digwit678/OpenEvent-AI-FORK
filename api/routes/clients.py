@@ -20,6 +20,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from api.utils.errors import raise_safe_error
+
 logger = logging.getLogger(__name__)
 
 from workflow_email import (
@@ -142,7 +144,7 @@ async def reset_client_data(request: ClientResetRequest):
 
         wf_save_db(db)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to reset client data: {exc}") from exc
+        raise_safe_error(500, "reset client data", exc, logger)
 
     logger.info("Client reset: email=%s events=%d tasks=%d", email, deleted_events, deleted_tasks)
     return {
@@ -188,7 +190,7 @@ async def continue_workflow(request: ClientContinueRequest):
     try:
         result = wf_process_msg(msg)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to continue workflow: {exc}") from exc
+        raise_safe_error(500, "continue workflow", exc, logger)
 
     logger.info("Client continue: email=%s action=%s", email, result.get('action', 'unknown'))
     return {

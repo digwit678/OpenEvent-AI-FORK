@@ -3134,6 +3134,490 @@
         "line_items": []
       },
       "offer_status": "Draft"
+    },
+    {
+      "event_id": "ecc7483b-1d0b-45b9-9019-38d308813b3e",
+      "team_id": "team-shami",
+      "created_at": "2026-01-07T16:33:30.261312",
+      "status": "Lead",
+      "current_step": 5,
+      "caller_step": null,
+      "thread_state": "Waiting on HIL",
+      "chosen_date": "25.02.2026",
+      "end_date": null,
+      "end_date_iso": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room D",
+      "requirements": {
+        "number_of_participants": 25,
+        "seating_layout": null,
+        "event_duration": {},
+        "special_requirements": "Arrange the flipchart",
+        "preferred_room": "Room D"
+      },
+      "requirements_hash": "0c81593a2799668abc8c87151fcf320d3287c6efb049faf840a0ce9fbdbc0d2c",
+      "room_eval_hash": "26e6a6b122d6c8a39f8cf40f3bf35ce0140ac6cd77fd5d1c06f11eb128f8ba0c",
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-07T16:33:30Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 1,
+          "reason": "info_update",
+          "fields": [
+            "Name"
+          ]
+        },
+        {
+          "ts": "2026-01-07T16:33:30Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 3,
+          "reason": "date_updated_initial"
+        },
+        {
+          "ts": "2026-01-07T16:35:27Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_accept_blocked_missing_billing"
+        },
+        {
+          "ts": "2026-01-07T16:35:40Z",
+          "actor": "system",
+          "from_step": 5,
+          "to_step": 5,
+          "reason": "info_update",
+          "fields": [
+            "Billing Address"
+          ]
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "07.01.2026",
+        "Status": "Lead",
+        "Event Date": "25.02.2026",
+        "Name": "Tom",
+        "Email": "tom@acme.com",
+        "Phone": "Not specified",
+        "Company": "ACME Corp",
+        "Billing Address": "ACME Corp, Main Street 123, 8000 Zurich, Switzerland",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Room D",
+        "Number of Participants": "25",
+        "Type of Event": "Not specified",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "We need a flipchart | Arrange the flipchart"
+      },
+      "msgs": [
+        "89c20457-1636-48da-8f8a-93f8321f100b",
+        "2d3ce9d4-d3a5-40cc-a4f8-a70561039451",
+        "3590094c-3fb1-4048-83c4-914f4f51fc80",
+        "7b13a7a4-80d0-45b7-98e2-ac73119d18b3"
+      ],
+      "captured": {},
+      "verified": {},
+      "captured_sources": [],
+      "deferred_intents": [],
+      "calendar_event_id": "openevent-ecc7483b-1d0b-45b9-9019-38d308813b3e",
+      "thread_id": "248aef02-c49b-4693-959a-e733cb2c1225",
+      "billing_details": {
+        "name_or_company": "ACME Corp",
+        "street": "Main Street 123",
+        "postal_code": "8000",
+        "city": "Zurich",
+        "country": "Switzerland",
+        "vat": null,
+        "raw": "ACME Corp, Main Street 123, 8000 Zurich, Switzerland"
+      },
+      "billing_validation": {},
+      "current_step_stage": "step_5",
+      "caller_step_stage": null,
+      "subflow_group": "negotiation",
+      "requested_window": {},
+      "offer_hash": null,
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "proposed",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "wish_products": [
+        "Arrange the flipchart",
+        "flipchart"
+      ],
+      "preferences": {
+        "wish_products": [
+          "Arrange the flipchart",
+          "flipchart"
+        ],
+        "keywords": [
+          "arrange",
+          "the",
+          "flipchart"
+        ],
+        "default_hint": "Arrange the flipchart",
+        "room_recommendations": [
+          {
+            "room": "Room B",
+            "score": 2.0,
+            "matched": [
+              "Flipchart"
+            ],
+            "closest": [],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "Arrange the flipchart",
+                "product": "Flipchart",
+                "score": 0.92
+              },
+              {
+                "wish": "flipchart",
+                "product": "Flipchart",
+                "score": 1.0
+              }
+            ],
+            "alternatives": []
+          },
+          {
+            "room": "Room A",
+            "score": 0.0,
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange the flipchart",
+              "flipchart"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "flipchart",
+                "product": "TV Display (65\")",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "Ice Cream Cart",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "DJ Service",
+                "score": 0.571
+              }
+            ]
+          },
+          {
+            "room": "Room C",
+            "score": 0.0,
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange the flipchart",
+              "flipchart"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "flipchart",
+                "product": "TV Display (65\")",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "Ice Cream Cart",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "BBQ Package",
+                "score": 0.571
+              }
+            ]
+          },
+          {
+            "room": "Room D",
+            "score": 0.0,
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange the flipchart",
+              "flipchart"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "flipchart",
+                "product": "TV Display (65\")",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "Ice Cream Cart",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "BBQ Package",
+                "score": 0.571
+              }
+            ]
+          },
+          {
+            "room": "Room E",
+            "score": 0.0,
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange the flipchart",
+              "flipchart"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "flipchart",
+                "product": "TV Display (65\")",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "Ice Cream Cart",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "BBQ Package",
+                "score": 0.571
+              }
+            ]
+          }
+        ],
+        "room_similarity": {
+          "Room B": 2.0,
+          "Room A": 0.0,
+          "Room C": 0.0,
+          "Room D": 0.0,
+          "Room E": 0.0
+        },
+        "room_match_breakdown": {
+          "Room B": {
+            "matched": [
+              "Flipchart"
+            ],
+            "closest": [],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "Arrange the flipchart",
+                "product": "Flipchart",
+                "score": 0.92
+              },
+              {
+                "wish": "flipchart",
+                "product": "Flipchart",
+                "score": 1.0
+              }
+            ],
+            "alternatives": []
+          },
+          "Room A": {
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange the flipchart",
+              "flipchart"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "flipchart",
+                "product": "TV Display (65\")",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "Ice Cream Cart",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "DJ Service",
+                "score": 0.571
+              }
+            ]
+          },
+          "Room C": {
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange the flipchart",
+              "flipchart"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "flipchart",
+                "product": "TV Display (65\")",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "Ice Cream Cart",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "BBQ Package",
+                "score": 0.571
+              }
+            ]
+          },
+          "Room D": {
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange the flipchart",
+              "flipchart"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "flipchart",
+                "product": "TV Display (65\")",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "Ice Cream Cart",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "BBQ Package",
+                "score": 0.571
+              }
+            ]
+          },
+          "Room E": {
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange the flipchart",
+              "flipchart"
+            ],
+            "matches_detail": [],
+            "alternatives": [
+              {
+                "wish": "flipchart",
+                "product": "TV Display (65\")",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "Ice Cream Cart",
+                "score": 0.615
+              },
+              {
+                "wish": "flipchart",
+                "product": "BBQ Package",
+                "score": 0.571
+              }
+            ]
+          }
+        }
+      },
+      "weekdays_hint": [
+        25
+      ],
+      "window_scope": {
+        "weekdays_hint": [
+          25
+        ]
+      },
+      "last_client_message": "Client follow-up (2026-01-07 16:35)\nACME Corp, Main Street 123, 8000 Zurich, Switzerland",
+      "room_proposal_attempts": 1,
+      "pending_hil_requests": [],
+      "selected_room": "Room D",
+      "selected_room_status": "Available",
+      "flags": {
+        "room_selected": true
+      },
+      "hil_history": [
+        {
+          "task_id": "69ff4252-9881-4adc-93e3-9a737223661e",
+          "rejected_at": "2026-01-07T16:35:12.634978Z",
+          "notes": null,
+          "step": 3,
+          "decision": "rejected",
+          "task_type": "source_missing_product",
+          "products": [
+            "flipchart"
+          ]
+        },
+        {
+          "task_id": "ca165849-5aaa-4ab5-ae8d-66bb9200e21b",
+          "approved_at": "2026-01-07T16:38:52.653937Z",
+          "notes": null,
+          "step": 5,
+          "decision": "approved"
+        }
+      ],
+      "offer_accepted": true,
+      "billing_requirements": {
+        "awaiting_billing_for_accept": false,
+        "last_missing": []
+      }
     }
   ],
   "clients": {
@@ -7081,6 +7565,732 @@
         }
       ],
       "event_ids": []
+    },
+    "tom@acme.com": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "89c20457-1636-48da-8f8a-93f8321f100b",
+          "ts": "2026-01-07T16:33:26.096603Z",
+          "subject": "Hi, I need a room for 25 people on 25.02.2026. We need a flipchart.",
+          "body_preview": "Hi, I need a room for 25 people on 25.02.2026. We need a flipchart.\n\nThanks,\nTom from ACME\ntom@acme.com",
+          "intent": "event_request",
+          "confidence": 0.95,
+          "user_info": {
+            "date": "2026-02-25",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 25,
+            "room": null,
+            "layout": null,
+            "name": "Tom",
+            "email": "tom@acme.com",
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": "ACME",
+            "language": null,
+            "notes": "We need a flipchart",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              25
+            ],
+            "window": {
+              "weekdays_hint": [
+                25
+              ]
+            },
+            "event_date": "25.02.2026",
+            "preferences": {
+              "wish_products": [
+                "We need a flipchart",
+                "flipchart"
+              ],
+              "keywords": [
+                "need",
+                "flipchart"
+              ],
+              "default_hint": "We need a flipchart",
+              "room_recommendations": [
+                {
+                  "room": "Room B",
+                  "score": 2.0,
+                  "matched": [
+                    "Flipchart"
+                  ],
+                  "closest": [],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "We need a flipchart",
+                      "product": "Flipchart",
+                      "score": 0.92
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Flipchart",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": []
+                },
+                {
+                  "room": "Room A",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "We need a flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "DJ Service",
+                      "score": 0.571
+                    }
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "We need a flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "BBQ Package",
+                      "score": 0.571
+                    }
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "We need a flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "BBQ Package",
+                      "score": 0.571
+                    }
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "We need a flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "BBQ Package",
+                      "score": 0.571
+                    }
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room B": 2.0,
+                "Room A": 0.0,
+                "Room C": 0.0,
+                "Room D": 0.0,
+                "Room E": 0.0
+              },
+              "room_match_breakdown": {
+                "Room B": {
+                  "matched": [
+                    "Flipchart"
+                  ],
+                  "closest": [],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "We need a flipchart",
+                      "product": "Flipchart",
+                      "score": 0.92
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Flipchart",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": []
+                },
+                "Room A": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "We need a flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "DJ Service",
+                      "score": 0.571
+                    }
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "We need a flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "BBQ Package",
+                      "score": 0.571
+                    }
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "We need a flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "BBQ Package",
+                      "score": 0.571
+                    }
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "We need a flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "BBQ Package",
+                      "score": 0.571
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "msg_id": "2d3ce9d4-d3a5-40cc-a4f8-a70561039451",
+          "ts": "2026-01-07T16:34:29.822346Z",
+          "subject": "Client follow-up (2026-01-07 16:34)",
+          "body_preview": "Room D please. Can you arrange the flipchart?",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": "Room D",
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": "Arrange the flipchart",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null,
+            "preferences": {
+              "wish_products": [
+                "Arrange the flipchart",
+                "flipchart"
+              ],
+              "keywords": [
+                "arrange",
+                "the",
+                "flipchart"
+              ],
+              "default_hint": "Arrange the flipchart",
+              "room_recommendations": [
+                {
+                  "room": "Room B",
+                  "score": 2.0,
+                  "matched": [
+                    "Flipchart"
+                  ],
+                  "closest": [],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "Arrange the flipchart",
+                      "product": "Flipchart",
+                      "score": 0.92
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Flipchart",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": []
+                },
+                {
+                  "room": "Room A",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange the flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "DJ Service",
+                      "score": 0.571
+                    }
+                  ]
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange the flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "BBQ Package",
+                      "score": 0.571
+                    }
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange the flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "BBQ Package",
+                      "score": 0.571
+                    }
+                  ]
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange the flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "BBQ Package",
+                      "score": 0.571
+                    }
+                  ]
+                }
+              ],
+              "room_similarity": {
+                "Room B": 2.0,
+                "Room A": 0.0,
+                "Room C": 0.0,
+                "Room D": 0.0,
+                "Room E": 0.0
+              },
+              "room_match_breakdown": {
+                "Room B": {
+                  "matched": [
+                    "Flipchart"
+                  ],
+                  "closest": [],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "Arrange the flipchart",
+                      "product": "Flipchart",
+                      "score": 0.92
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Flipchart",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": []
+                },
+                "Room A": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange the flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "DJ Service",
+                      "score": 0.571
+                    }
+                  ]
+                },
+                "Room C": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange the flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "BBQ Package",
+                      "score": 0.571
+                    }
+                  ]
+                },
+                "Room D": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange the flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "BBQ Package",
+                      "score": 0.571
+                    }
+                  ]
+                },
+                "Room E": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange the flipchart",
+                    "flipchart"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": [
+                    {
+                      "wish": "flipchart",
+                      "product": "TV Display (65\")",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "Ice Cream Cart",
+                      "score": 0.615
+                    },
+                    {
+                      "wish": "flipchart",
+                      "product": "BBQ Package",
+                      "score": 0.571
+                    }
+                  ]
+                }
+              }
+            },
+            "_room_choice_detected": true
+          }
+        },
+        {
+          "msg_id": "3590094c-3fb1-4048-83c4-914f4f51fc80",
+          "ts": "2026-01-07T16:35:23.619822Z",
+          "subject": "Client follow-up (2026-01-07 16:35)",
+          "body_preview": "That's fine, I can bring my own. Let's continue please.",
+          "intent": "event_request",
+          "confidence": 0.99,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "7b13a7a4-80d0-45b7-98e2-ac73119d18b3",
+          "ts": "2026-01-07T16:35:38.406983Z",
+          "subject": "Client follow-up (2026-01-07 16:35)",
+          "body_preview": "ACME Corp, Main Street 123, 8000 Zurich, Switzerland",
+          "intent": "other",
+          "confidence": 0.95,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": "ACME Corp",
+            "language": null,
+            "notes": null,
+            "billing_address": "Main Street 123, 8000 Zurich, Switzerland",
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null
+          }
+        }
+      ],
+      "event_ids": []
     }
   },
   "tasks": [
@@ -7161,6 +8371,46 @@
         "thread_id": "146f37ba-ad14-4dc5-b604-18d7b635795a",
         "client_message": "I'd like Room A please. Yes, please arrange the flipchart!",
         "action_type": "source_missing_product"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "69ff4252-9881-4adc-93e3-9a737223661e",
+      "created_at": "2026-01-07T16:34:36.603734",
+      "type": "source_missing_product",
+      "status": "rejected",
+      "client_id": "tom@acme.com",
+      "event_id": "ecc7483b-1d0b-45b9-9019-38d308813b3e",
+      "payload": {
+        "step_id": 3,
+        "event_id": "ecc7483b-1d0b-45b9-9019-38d308813b3e",
+        "products": [
+          "flipchart"
+        ],
+        "room": "Room D",
+        "thread_id": "248aef02-c49b-4693-959a-e733cb2c1225",
+        "client_message": "Room D please. Can you arrange the flipchart?",
+        "action_type": "source_missing_product"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "ca165849-5aaa-4ab5-ae8d-66bb9200e21b",
+      "created_at": "2026-01-07T16:35:49.370029",
+      "type": "offer_message",
+      "status": "approved",
+      "client_id": "tom@acme.com",
+      "event_id": "ecc7483b-1d0b-45b9-9019-38d308813b3e",
+      "payload": {
+        "step_id": 5,
+        "intent": "other",
+        "event_id": "ecc7483b-1d0b-45b9-9019-38d308813b3e",
+        "draft_msg": "Thank you for accepting our offer. We have prepared the draft for **25.02.2026** in Room D for ACME Corp, with a total of **CHF 350.00 per event**.\n\nPlease review the details and let me know if you approve so we can move forward with confirmation.\n\n---\nStep: 5 Event Preparation · Next: 5 Event Preparation · State: Waiting on HIL\n\n---\nStep: 5 Event Preparation · Next: Pending Final Approval · State: Waiting on HIL",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "0c81593a2799668abc8c87151fcf320d3287c6efb049faf840a0ce9fbdbc0d2c",
+        "room_eval_hash": "26e6a6b122d6c8a39f8cf40f3bf35ce0140ac6cd77fd5d1c06f11eb128f8ba0c",
+        "thread_id": "248aef02-c49b-4693-959a-e733cb2c1225"
       },
       "notes": ""
     }

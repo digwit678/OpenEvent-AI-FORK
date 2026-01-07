@@ -18,6 +18,8 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from api.utils.errors import raise_safe_error
+
 logger = logging.getLogger(__name__)
 
 from workflow_email import (
@@ -131,7 +133,7 @@ async def get_pending_tasks():
     try:
         db = wf_load_db()
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to load tasks: {exc}") from exc
+        raise_safe_error(500, "load tasks", exc, logger)
 
     tasks = wf_list_pending_tasks(db)
     events_by_id = {event.get("event_id"): event for event in db.get("events") or [] if event.get("event_id")}
@@ -217,9 +219,9 @@ async def approve_task(task_id: str, request: TaskDecisionRequest):
             edited_message=request.edited_message,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise_safe_error(404, "find task", exc, logger)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to approve task: {exc}") from exc
+        raise_safe_error(500, "approve task", exc, logger)
     logger.info("Task approved: %s", task_id)
     assistant_text = result.get("res", {}).get("assistant_draft_text")
     response = {
@@ -242,9 +244,9 @@ async def reject_task(task_id: str, request: TaskDecisionRequest):
     try:
         result = wf_reject_task_and_send(task_id, manager_notes=request.notes)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise_safe_error(404, "find task", exc, logger)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to reject task: {exc}") from exc
+        raise_safe_error(500, "reject task", exc, logger)
     logger.info("Task rejected: %s", task_id)
     assistant_text = result.get("res", {}).get("assistant_draft_text")
     return {
@@ -265,6 +267,6 @@ async def cleanup_tasks(request: TaskCleanupRequest):
         removed = wf_cleanup_tasks(db, keep_thread_id=request.keep_thread_id)
         wf_save_db(db)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to cleanup tasks: {exc}") from exc
+        raise_safe_error(500, "cleanup tasks", exc, logger)
     logger.info("Tasks cleanup: removed=%d", removed)
     return {"removed": removed}

@@ -33,7 +33,7 @@ Please ignore anything requiring supabase or new frontend for now. First focus o
 1) Stop leaking internal exception details to clients.
    - Current pattern returns `detail=f"... {exc}"` in multiple routes.
    - Replace with generic messages; log the exception server-side.
-   - Example references: `api/routes/config.py`, `api/routes/events.py`, `api/routes/clients.py`, `api/routes/tasks.py`, `api/routes/emails.py`, `api/agent_router.py`.
+   - Example references: `api/routes/config.py`, `api/routes/events.py`, , `api/routes/clients.py`, `api/routes/tasks.py`, `api/routes/emails.py`, `api/agent_router.py`.
 
 2) Make request size limiting effective for unknown or chunked request bodies.
    - Middleware currently only enforces when Content-Length is present.
