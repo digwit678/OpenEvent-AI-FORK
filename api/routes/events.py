@@ -59,6 +59,9 @@ async def pay_deposit(request: DepositPaymentRequest):
     This is a mock endpoint for testing. In production, this would be
     triggered by a payment gateway webhook after successful payment.
 
+    SECURITY: This endpoint is disabled by default.
+    Set ENABLE_TEST_ENDPOINTS=true to enable (development/testing only).
+
     Requirements:
     - Event must exist
     - Event must be at Step 4 (offer step)
@@ -67,6 +70,14 @@ async def pay_deposit(request: DepositPaymentRequest):
 
     See docs/plans/OPEN_DECISIONS.md DECISION-001 for handling deposit changes after payment.
     """
+    # Production guard - mock payment endpoint should only be used in dev/test
+    if os.getenv("ENABLE_TEST_ENDPOINTS", "false").lower() != "true":
+        raise HTTPException(
+            status_code=403,
+            detail="Mock deposit payment disabled. In production, use payment gateway webhooks. "
+                   "Set ENABLE_TEST_ENDPOINTS=true for testing."
+        )
+
     try:
         db = wf_load_db()
         events = db.get("events") or []

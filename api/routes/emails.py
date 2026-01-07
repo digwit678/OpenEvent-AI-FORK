@@ -18,6 +18,7 @@ In production, these integrate with:
 """
 
 import logging
+import os
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, HTTPException
@@ -243,7 +244,17 @@ async def send_test_email(request: TestEmailRequest):
     Send a test email to verify SMTP configuration.
 
     Use this to confirm email sending works before going live.
+
+    SECURITY: This endpoint is disabled by default.
+    Set ENABLE_TEST_ENDPOINTS=true to enable (development/testing only).
     """
+    # Production guard - test email endpoint should only be used in dev/test
+    if os.getenv("ENABLE_TEST_ENDPOINTS", "false").lower() != "true":
+        raise HTTPException(
+            status_code=403,
+            detail="Test email endpoint disabled. Set ENABLE_TEST_ENDPOINTS=true for testing."
+        )
+
     try:
         from services.hil_email_notification import (
             send_client_email,

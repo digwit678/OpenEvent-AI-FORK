@@ -199,22 +199,19 @@ class AtomicTurnPolicy:
 
 
 def maybe_run_smart_shortcuts(state: WorkflowState) -> Optional[GroupResult]:
-    import sys
-    print(f"[SHORTCUTS] maybe_run_smart_shortcuts CALLED", flush=True)
-    sys.stderr.write(f"[SHORTCUTS] maybe_run_smart_shortcuts CALLED\n")
+    logger.debug("[SHORTCUTS] maybe_run_smart_shortcuts called")
     policy = AtomicTurnPolicy()
     if policy.atomic_turns:
         state.telemetry.atomic_default = True
     if not _flag_enabled():
-        print(f"[SHORTCUTS] Feature flag disabled, returning None", flush=True)
+        logger.debug("[SHORTCUTS] Feature flag disabled, returning None")
         return None
     event_entry = state.event_entry
     if not event_entry:
-        print(f"[SHORTCUTS] No event_entry, returning None", flush=True)
+        logger.debug("[SHORTCUTS] No event_entry, returning None")
         return None
     allowed = _shortcuts_allowed(event_entry)
-    print(f"[SHORTCUTS] _shortcuts_allowed returned: {allowed}", flush=True)
-    sys.stderr.write(f"[SHORTCUTS] _shortcuts_allowed returned: {allowed}\n")
+    logger.debug("[SHORTCUTS] _shortcuts_allowed returned: %s", allowed)
     if not allowed:
         _debug_shortcut_gate("blocked", event_entry, state.user_info)
         return None

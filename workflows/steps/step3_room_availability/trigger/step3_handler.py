@@ -256,7 +256,8 @@ def process(state: WorkflowState) -> GroupResult:
     locked_room_early = event_entry.get("locked_room_id")
     missing_products_early = (room_pending_early or {}).get("missing_products", [])
 
-    print(f"[Step3] EARLY ARRANGEMENT CHECK: room_pending={bool(room_pending_early)}, missing_products={missing_products_early}, locked_room={locked_room_early}", flush=True)
+    logger.debug("[Step3] EARLY ARRANGEMENT CHECK: room_pending=%s, missing_products=%s, locked_room=%s",
+                 bool(room_pending_early), missing_products_early, locked_room_early)
 
     if room_pending_early and missing_products_early and message_text and not locked_room_early:
         arrangement_result = detect_product_arrangement_intent(
@@ -539,7 +540,8 @@ def process(state: WorkflowState) -> GroupResult:
     # "Would you like me to check if I can arrange it separately?"
     # -------------------------------------------------------------------------
     missing_products = (room_pending or {}).get("missing_products", [])
-    print(f"[Step3] ARRANGEMENT CHECK: room_pending={bool(room_pending)}, missing_products={missing_products}, message_text={message_text[:50] if message_text else None}, locked_room={locked_room}")
+    logger.debug("[Step3] ARRANGEMENT CHECK: room_pending=%s, missing_products=%s, message_text=%s, locked_room=%s",
+                 bool(room_pending), missing_products, message_text[:50] if message_text else None, locked_room)
     if room_pending and missing_products and message_text and not locked_room:
         arrangement_result = detect_product_arrangement_intent(
             message_text,
@@ -587,7 +589,7 @@ def process(state: WorkflowState) -> GroupResult:
     # skip room evaluation and proceed to offer
     sourced_products = event_entry.get("sourced_products")
     if sourced_products and sourced_products.get("room") == locked_room_id:
-        print(f"[Step3] SOURCING COMPLETE - bypassing room eval, room={locked_room_id}", flush=True)
+        logger.debug("[Step3] SOURCING COMPLETE - bypassing room eval, room=%s", locked_room_id)
         return _skip_room_evaluation(state, event_entry)
 
     room_selected_flag = bool(locked_room_id)
@@ -1245,10 +1247,10 @@ def _handle_product_sourcing_request(
     # This fixes the bug where client says "Room A please" but we lock Room B (recommended)
     if arrangement_result.chosen_room:
         selected_room = arrangement_result.chosen_room
-        print(f"[Step3] Using client's EXPLICIT room choice: {selected_room}", flush=True)
+        logger.debug("[Step3] Using client's EXPLICIT room choice: %s", selected_room)
     else:
         selected_room = room_pending.get("selected_room")
-        print(f"[Step3] Using recommended room (no explicit choice): {selected_room}", flush=True)
+        logger.debug("[Step3] Using recommended room (no explicit choice): %s", selected_room)
 
     selected_status = room_pending.get("selected_status", "Available")
     products_to_source = arrangement_result.products_to_source
@@ -1493,13 +1495,13 @@ def _skip_room_evaluation(state: WorkflowState, event_entry: dict) -> GroupResul
     """[Trigger] Skip Step 3 and return to the caller when caching allows."""
 
     caller = event_entry.get("caller_step")
-    print(f"[Step3] _skip_room_evaluation caller_step={caller}", flush=True)
+    logger.debug("[Step3] _skip_room_evaluation caller_step=%s", caller)
     if caller is not None:
         append_audit_entry(event_entry, 3, caller, "room_eval_cache_hit")
         update_event_metadata(event_entry, current_step=caller, caller_step=None)
         state.current_step = caller
         state.caller_step = None
-        print(f"[Step3] _skip_room_evaluation -> returning to caller step {caller}", flush=True)
+        logger.debug("[Step3] _skip_room_evaluation -> returning to caller step %s", caller)
     else:
         # No caller - proceeding to step 4 (offer), update current_step so product detection works
         logger.warning("[Step3] NO CALLER - updating current_step to 4 for product detection")
@@ -1507,12 +1509,13 @@ def _skip_room_evaluation(state: WorkflowState, event_entry: dict) -> GroupResul
         # Step 4's P2 gate compares event["room_eval_hash"] with event["requirements_hash"]
         # So we just copy the stored requirements_hash to room_eval_hash
         stored_req_hash = event_entry.get("requirements_hash")
-        print(f"[Step3] Setting room_eval_hash to stored requirements_hash={stored_req_hash}, locked_room_id={event_entry.get('locked_room_id')}", flush=True)
+        logger.debug("[Step3] Setting room_eval_hash to stored requirements_hash=%s, locked_room_id=%s",
+                     stored_req_hash, event_entry.get('locked_room_id'))
         update_event_metadata(event_entry, current_step=4, room_eval_hash=stored_req_hash)
         # Also update the event_entry directly to ensure it's set
         event_entry["room_eval_hash"] = stored_req_hash
         state.current_step = 4
-        print(f"[Step3] _skip_room_evaluation -> advancing to step 4", flush=True)
+        logger.debug("[Step3] _skip_room_evaluation -> advancing to step 4")
     state.extras["persist"] = True
     payload = {
         "client_id": state.client_id,

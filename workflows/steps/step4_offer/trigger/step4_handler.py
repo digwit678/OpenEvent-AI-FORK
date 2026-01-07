@@ -713,14 +713,16 @@ def _evaluate_preconditions(
 
     locked_room_id = event_entry.get("locked_room_id")
     room_eval_hash = event_entry.get("room_eval_hash")
-    print(f"[Step4] P2 CHECK: locked_room_id={locked_room_id}, room_eval_hash={room_eval_hash}, current_req_hash={current_requirements_hash}", flush=True)
+    logger.debug("[Step4] P2 CHECK: locked_room_id=%s, room_eval_hash=%s, current_req_hash=%s",
+                 locked_room_id, room_eval_hash, current_requirements_hash)
     p2_ok = (
         locked_room_id
         and current_requirements_hash
         and room_eval_hash
         and current_requirements_hash == room_eval_hash
     )
-    print(f"[Step4] P2 RESULT: p2_ok={p2_ok}, match={current_requirements_hash == room_eval_hash if room_eval_hash else 'N/A'}", flush=True)
+    logger.debug("[Step4] P2 RESULT: p2_ok=%s, match=%s", p2_ok,
+                 current_requirements_hash == room_eval_hash if room_eval_hash else 'N/A')
     trace_gate(
         thread_id,
         "Step4_Offer",

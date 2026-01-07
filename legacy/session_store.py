@@ -20,7 +20,9 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -33,8 +35,70 @@ from workflows.common.types import IncomingMessage, WorkflowState
 from workflows.steps.step3_room_availability.trigger import process as step3_process
 
 
-# In-memory storage for demo
-active_conversations: dict[str, ConversationState] = {}
+# =============================================================================
+# TTL-enabled session store
+# =============================================================================
+# Sessions expire after TTL_SECONDS of inactivity (default: 24 hours)
+# Cleanup runs lazily on access to avoid background threads
+
+SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_HOURS", "24")) * 3600
+_CLEANUP_INTERVAL = 300  # Run cleanup every 5 minutes at most
+_last_cleanup_time = 0.0
+
+
+class _TTLDict(dict):
+    """Dict wrapper that tracks access times and expires stale entries.
+
+    Entries are expired after SESSION_TTL_SECONDS of inactivity.
+    Cleanup runs lazily on get/set operations.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._access_times: Dict[str, float] = {}
+
+    def __getitem__(self, key):
+        self._maybe_cleanup()
+        self._access_times[key] = time.time()
+        return super().__getitem__(key)
+
+    def __setitem__(self, key, value):
+        self._maybe_cleanup()
+        self._access_times[key] = time.time()
+        super().__setitem__(key, value)
+
+    def get(self, key, default=None):
+        self._maybe_cleanup()
+        if key in self:
+            self._access_times[key] = time.time()
+            return super().get(key, default)
+        return default
+
+    def _maybe_cleanup(self):
+        """Run cleanup if enough time has passed since last run."""
+        global _last_cleanup_time
+        now = time.time()
+        if now - _last_cleanup_time < _CLEANUP_INTERVAL:
+            return
+        _last_cleanup_time = now
+        self._expire_stale_entries()
+
+    def _expire_stale_entries(self):
+        """Remove entries that haven't been accessed within TTL."""
+        now = time.time()
+        expired_keys = [
+            key for key, access_time in self._access_times.items()
+            if now - access_time > SESSION_TTL_SECONDS
+        ]
+        for key in expired_keys:
+            self.pop(key, None)
+            self._access_times.pop(key, None)
+        if expired_keys:
+            logger.info("[SessionStore] Expired %d stale sessions", len(expired_keys))
+
+
+# In-memory storage with TTL for session cleanup
+active_conversations: dict[str, ConversationState] = _TTLDict()
 
 # Step 3 caches for de-duplication
 STEP3_DRAFT_CACHE: Dict[str, str] = {}

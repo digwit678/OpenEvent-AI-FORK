@@ -104,8 +104,12 @@ start_backend() {
     export DETECTION_MODE="${DETECTION_MODE:-unified}"
     # Fallback diagnostics: off by default (set to 1 for debugging)
     export OE_FALLBACK_DIAGNOSTICS="${OE_FALLBACK_DIAGNOSTICS:-0}"
+    # SECURITY: Explicitly set dev mode (main.py now defaults to prod)
+    export ENV="${ENV:-dev}"
     # Enable dangerous endpoints for dev/testing (reset client, clear tasks, etc.)
     export ENABLE_DANGEROUS_ENDPOINTS="${ENABLE_DANGEROUS_ENDPOINTS:-true}"
+    # Enable test endpoints for dev/testing (mock deposit, test email, etc.)
+    export ENABLE_TEST_ENDPOINTS="${ENABLE_TEST_ENDPOINTS:-true}"
     # Enable tenant header switching for multi-tenancy testing
     export TENANT_HEADER_ENABLED="${TENANT_HEADER_ENABLED:-1}"
 
