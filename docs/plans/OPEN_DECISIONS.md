@@ -598,6 +598,85 @@ Since the system will implement response timers to appear more human-like (not i
 
 ---
 
+### DECISION-013: Site Visit Timing in Workflow
+
+**Date Raised:** 2026-01-07
+**Context:** Site visit scheduling is currently offered in Step 7 (after offer acceptance), but this may not be optimal
+**Status:** Open
+
+**Question:** When should the site visit be offered in the workflow?
+
+**Current Implementation:**
+- Site visit is offered in Step 7, after the client accepts the offer
+- Workflow: Intake → Dates → Room → Offer → Negotiation → **Confirmation (Site Visit here)** → Done
+
+**Problem:**
+- Site visit is semi-independent of the main booking flow
+- Asking about site visit AFTER offer acceptance feels backwards
+- Client might want to see the venue BEFORE committing to the final offer
+- Site visit date confirmation could be confused with event date confirmation (both involve date selection)
+
+**Options:**
+
+**Option A: Before Offer (Recommended)**
+```
+Intake → Dates → Room → [Site Visit?] → Offer → Negotiation → Confirmation
+```
+- Pro: Client can see venue before final commitment
+- Pro: Offer can include "site visit scheduled" as added value
+- Pro: More natural flow - see venue → confirm booking
+- Con: Extends workflow length
+
+**Option B: Current (After Acceptance)**
+```
+Intake → Dates → Room → Offer → Negotiation → Confirmation → [Site Visit?]
+```
+- Pro: Doesn't delay the offer
+- Pro: Only engaged clients reach this point
+- Con: Feels like an afterthought
+- Con: Client already committed before seeing venue
+
+**Option C: Parallel/Any-Time**
+```
+Site visit can be requested/offered at any step
+```
+- Pro: Maximum flexibility
+- Pro: Client can ask "can I see the room?" at any point
+- Con: Complex to implement - needs cross-step detection
+- Con: Site visit date might conflict with event date confirmation detection
+
+**Option D: Before Room Selection**
+```
+Intake → Dates → [Site Visit?] → Room → Offer → ...
+```
+- Pro: Client sees venue before choosing room
+- Con: Too early - haven't even discussed rooms yet
+- Con: Delays the main flow significantly
+
+**Implementation Considerations:**
+
+1. **Detection Challenge:**
+   - "Site visit date" vs "Event date" confirmation
+   - Need clear context markers to distinguish
+   - `INTENT_VALID_STEPS` restrictions help prevent confusion
+
+2. **State Management:**
+   - `site_visit_scheduled` already tracked
+   - Need to ensure it doesn't interfere with main flow state
+
+3. **Manager Coordination:**
+   - Site visit requires manager availability
+   - HIL task for site visit scheduling already exists
+
+**Recommendation:** Option A (Before Offer) or Option C (Any-Time with smart detection)
+
+**Dependencies:**
+- Step handler modifications
+- Site visit detection scope review
+- E2E testing of new flow position
+
+---
+
 ## Resolved Decisions
 
 (Move decisions here once resolved, with date and rationale)
