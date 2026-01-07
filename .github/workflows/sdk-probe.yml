@@ -18,7 +18,7 @@ jobs:
     env:
       TZ: Europe/Zurich
       AGENT_MODE: openai
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_KEY_OPENEVENT }}
     steps:
       - uses: actions/checkout@v4
         with:
