@@ -225,6 +225,31 @@ def process(state: WorkflowState) -> GroupResult:
     user_info = state.user_info or {}
 
     # -------------------------------------------------------------------------
+    # CATERING -> PRODUCTS_ADD CONVERSION
+    # When user confirms a catering item (e.g., "yes we'd like the Classic Apéro"),
+    # Gemini extracts it to the 'catering' field, not 'products_add'.
+    # Convert catalog products from 'catering' to 'products_add' for the product flow.
+    # -------------------------------------------------------------------------
+    catering_pref = user_info.get("catering")
+    if catering_pref and isinstance(catering_pref, str) and not user_info.get("products_add"):
+        catering_product = find_product(catering_pref)
+        if catering_product:
+            # Infer quantity from participant count
+            participant_count = (
+                user_info.get("participants")
+                or (event_entry.get("requirements") or {}).get("number_of_participants")
+                or (event_entry.get("event_data") or {}).get("Number of Participants")
+            )
+            try:
+                quantity = int(participant_count) if participant_count else 1
+            except (TypeError, ValueError):
+                quantity = 1
+            user_info["products_add"] = [{"name": catering_product.name, "quantity": quantity}]
+            state.user_info = user_info
+            logger.info("[Step4] Converted catering field '%s' to products_add: %s (qty: %d)",
+                       catering_pref, catering_product.name, quantity)
+
+    # -------------------------------------------------------------------------
     # NONSENSE GATE: Check for off-topic/nonsense using existing confidence
     # -------------------------------------------------------------------------
     nonsense_action = check_nonsense_gate(state.confidence or 0.0, message_text)
@@ -320,9 +345,10 @@ def process(state: WorkflowState) -> GroupResult:
                 # Try to find product in full catalog using find_product
                 product_match = find_product(message_text)
                 if product_match:
-                    user_info["products_add"] = [{"name": product_match["name"], "quantity": 1}]
+                    # find_product returns ProductRecord dataclass, not dict
+                    user_info["products_add"] = [{"name": product_match.name, "quantity": 1}]
                     state.user_info = user_info
-                    logger.info("[Step4] Extracted product from message: %s", product_match["name"])
+                    logger.info("[Step4] Extracted product from message: %s", product_match.name)
                 else:
                     # Fallback: check dinner menu names
                     menu_names = _menu_name_set()
@@ -592,6 +618,9 @@ def process(state: WorkflowState) -> GroupResult:
     intro_text = f"Here is your offer for {room} on {formatted_date}."
 
     # Verbalize only the intro, not the structured offer
+    # NOTE: Don't pass total_amount or products to offer_intro - these are shown
+    # in the structured offer card below. Passing them causes the LLM to try to
+    # mention amounts, which risks hallucination (e.g., "CHF 1" instead of "CHF 1050").
     verbalized_intro = verbalize_draft_body(
         intro_text,
         step=4,
@@ -599,8 +628,6 @@ def process(state: WorkflowState) -> GroupResult:
         event_date=formatted_date,
         participants_count=_infer_participant_count(event_entry),
         room_name=room,
-        total_amount=total_amount,
-        products=event_entry.get("products"),
     )
 
     # [HYBRID MESSAGE] Check if there's a sourcing prefix to prepend (from product sourcing flow)
@@ -797,6 +824,32 @@ def _route_to_owner_step(
 def _handle_products_pending(state: WorkflowState, event_entry: Dict[str, Any], reason_code: str) -> GroupResult:
     products_state = event_entry.setdefault("products_state", {})
     first_prompt = not products_state.get("awaiting_client_products")
+
+    # If Step 3 already showed catering teaser in room availability message,
+    # don't send a separate products prompt - wait for user to respond to that
+    if products_state.get("catering_teaser_shown") and first_prompt:
+        logger.debug("[Step4] Skipping products prompt - catering teaser already shown in Step 3")
+        products_state["awaiting_client_products"] = True
+        append_audit_entry(event_entry, 4, 4, "offer_products_deferred_to_step3_teaser")
+        # No message - just wait for client response to Step 3's catering question
+        write_stage(event_entry, current_step=WorkflowStep.STEP_4)
+        update_event_metadata(event_entry, thread_state="Awaiting Client")
+        state.current_step = 4
+        state.caller_step = event_entry.get("caller_step")
+        state.set_thread_state("Awaiting Client")
+        state.extras["persist"] = True
+        payload = {
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "intent": state.intent.value if state.intent else None,
+            "confidence": round(state.confidence or 0.0, 3),
+            "missing": [reason_code],
+            "thread_state": state.thread_state,
+            "draft_messages": state.draft_messages,
+            "context": state.context_snapshot,
+            "persisted": True,
+        }
+        return GroupResult(action="offer_products_pending_silent", payload=payload, halt=True)
 
     if first_prompt:
         products_state["awaiting_client_products"] = True

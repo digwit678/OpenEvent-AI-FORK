@@ -22,7 +22,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from services.products import normalise_product_payload
+from services.products import normalise_product_payload, find_product
 
 from .shortcuts_flags import (
     _budget_default_currency,
@@ -286,7 +286,21 @@ def parse_product_intent(planner: "_ShortcutPlanner") -> None:
             merged["quantity"] = item.get("quantity") or merged.get("quantity") or infer_quantity(planner, merged)
             matched.append(merged)
         else:
-            missing.append(item)
+            # Also check the main product catalog (products.json) before marking as missing
+            # This ensures catalog products like "Classic Apéro" are matched, not sourced
+            main_catalog_record = find_product(item["name"])
+            if main_catalog_record:
+                merged = {
+                    "name": main_catalog_record.name,
+                    "product_id": main_catalog_record.product_id,
+                    "unit_price": main_catalog_record.base_price,
+                    "unit": main_catalog_record.unit,
+                    "category": main_catalog_record.category,
+                    "quantity": item.get("quantity") or infer_quantity(planner, item),
+                }
+                matched.append(merged)
+            else:
+                missing.append(item)
 
     if matched:
         planner.pending_product_additions.extend(matched)

@@ -1021,6 +1021,9 @@ def process(state: WorkflowState) -> GroupResult:
             )
             # Pass catering products to verbalizer so it knows these amounts are valid
             verbalizer_products = teaser_products[:2]
+            # Flag that we've asked about catering - Step 4 should NOT ask again
+            products_state = event_entry.setdefault("products_state", {})
+            products_state["catering_teaser_shown"] = True
 
     # body_markdown = ONLY conversational prose (structured data is in table_blocks)
     # Use double newline for paragraph breaks (empty strings in list)

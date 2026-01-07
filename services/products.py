@@ -305,7 +305,21 @@ def text_matches_category(text: str, category: str) -> bool:
         return False
 
     text_lower = text.lower()
-    return any(kw in text_lower for kw in keywords)
+
+    # Exclude common false positives where room type phrases contain equipment keywords
+    # E.g., "conference room" should NOT match Equipment category due to "conference" keyword
+    # (conference camera is equipment, but conference room is not)
+    false_positive_phrases = [
+        "conference room",
+        "video room",
+        "presentation room",
+        "screen room",
+    ]
+    text_cleaned = text_lower
+    for phrase in false_positive_phrases:
+        text_cleaned = text_cleaned.replace(phrase, " ")
+
+    return any(kw in text_cleaned for kw in keywords)
 
 
 def detect_mentioned_categories(text: str) -> List[str]:
