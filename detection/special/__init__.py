@@ -72,6 +72,13 @@ from .room_conflict import (
     compose_conflict_hil_task,
 )
 
+# Product arrangement detection (missing product sourcing flow)
+from .product_arrangement import (
+    ArrangementDetectionResult,
+    detect_product_arrangement_intent,
+    detect_continue_without_product,
+)
+
 __all__ = [
     # Room conflict
     "ConflictType",
@@ -88,4 +95,8 @@ __all__ = [
     "compose_hard_conflict_block",
     "compose_winner_message",
     "compose_conflict_hil_task",
+    # Product arrangement
+    "ArrangementDetectionResult",
+    "detect_product_arrangement_intent",
+    "detect_continue_without_product",
 ]

@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@axivo/mcp-lsp": "^1.0.5"
+  },
+  "_npx": {
+    "packages": [
+      "@axivo/mcp-lsp@1.0.5"
+    ]
+  }
+}

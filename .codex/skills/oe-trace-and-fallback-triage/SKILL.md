@@ -28,7 +28,7 @@ description: Debug and eliminate fallback/generic-stub replies quickly. Use when
 
 3. If the issue matches a known regression guard, run its test:
    - `tests/TEST_MATRIX_detection_and_flow.md` (search the stub string and run the matching `DET_*` / `REG_*` test)
-   - `docs/TEAM_GUIDE.md` (Known Issues & Fixes → “Chain of Failure” sections)
+   - `docs/guides/TEAM_GUIDE.md` (Known Issues & Fixes → “Chain of Failure” sections)
 
 ## Map the fallback source
 
@@ -42,6 +42,6 @@ Use the diagnostic “Source:” / “Trigger:” to jump to the correct module:
 ## Common high-impact failure chains (check first)
 
 - Quoted confirmations triggering General Q&A and emitting the “no specific information available” stub:
-  - see `docs/TEAM_GUIDE.md` (“Regression trap: quoted confirmations triggering General Q&A”)
+  - see `docs/guides/TEAM_GUIDE.md` (“Regression trap: quoted confirmations triggering General Q&A”)
 - Event reuse routing a new inquiry into Step 7 site-visit handling and returning no drafts:
-  - see `docs/TEAM_GUIDE.md` (“Event reuse logic bug”)
+  - see `docs/guides/TEAM_GUIDE.md` (“Event reuse logic bug”)

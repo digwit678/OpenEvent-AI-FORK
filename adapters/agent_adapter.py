@@ -437,15 +437,18 @@ class OpenAIAgentAdapter(AgentAdapter):
 
     def _run_completion(self, *, prompt: str, body: str, subject: str, model: str) -> Dict[str, Any]:
         message = f"Subject: {subject}\n\nBody:\n{body}"
-        response = self._client.chat.completions.create(
-            model=model,
-            messages=[
+        kwargs: Dict[str, Any] = {
+            "model": model,
+            "messages": [
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": message},
             ],
-            temperature=0,
-            response_format={"type": "json_object"},
-        )
+            "response_format": {"type": "json_object"},
+        }
+        # O-series models (o1, o3, etc.) don't support temperature parameter
+        if not model.startswith("o"):
+            kwargs["temperature"] = 0
+        response = self._client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content if response.choices else "{}"
         try:
             return json.loads(content or "{}")
@@ -675,6 +678,14 @@ class GeminiAgentAdapter(AgentAdapter):
             entities: Dict[str, Any] = {}
             for key in self._ENTITY_KEYS:
                 entities[key] = payload.get(key)
+
+            # DEBUG: Log products_add extraction
+            products_add = entities.get("products_add")
+            if products_add:
+                logger.warning("[PRODUCT_DEBUG] Gemini extract_entities returned products_add: %s (len: %s)",
+                              products_add[:3] if isinstance(products_add, list) else products_add,
+                              len(products_add) if isinstance(products_add, list) else 1)
+
             return entities
         except Exception as e:
             strategy = self._select_fallback_strategy(e, "entity")

@@ -14,13 +14,13 @@ description: "Debug common manager/HIL + billing/deposit regressions: tasks not 
 
 1. Confirm the handler symbol exists and is exported from the canonical step module.
 2. Confirm any deprecated wrapper modules re-export the symbol used by `backend/workflow_email.py`.
-3. Use `docs/TEAM_GUIDE.md` (“HIL Approve Button Fails - Missing Export”) as the exact checklist.
+3. Use `docs/guides/TEAM_GUIDE.md` (“HIL Approve Button Fails - Missing Export”) as the exact checklist.
 
 ## If HIL tasks don’t appear in the frontend “Manager Tasks” panel
 
 1. Confirm the task payload uses the same `thread_id` as the frontend session id.
 2. Confirm the frontend is not appending the API response directly into chat (bypassing task rendering).
-3. Use `docs/TEAM_GUIDE.md` (“HIL Task Not Appearing in Tasks Panel After Deposit Payment”) for known root causes and files:
+3. Use `docs/guides/TEAM_GUIDE.md` (“HIL Task Not Appearing in Tasks Panel After Deposit Payment”) for known root causes and files:
    - `atelier-ai-frontend/app/page.tsx`
    - `backend/workflows/steps/step1_intake/trigger/step1_handler.py`
 
@@ -29,6 +29,6 @@ description: "Debug common manager/HIL + billing/deposit regressions: tasks not 
 1. Re-test in UI with a fresh session (reset client / new email) to avoid stale session artifacts.
 2. Verify the gate checks use fresh deposit status (reload from DB for deposit; in-memory for billing):
    - `backend/workflows/common/confirmation_gate.py`
-3. Use `docs/TEAM_GUIDE.md` (“Frontend Billing Capture Intermittent Failure”) for the suspected frontend/backend boundary issue and involved files:
+3. Use `docs/guides/TEAM_GUIDE.md` (“Frontend Billing Capture Intermittent Failure”) for the suspected frontend/backend boundary issue and involved files:
    - `backend/api/routes/messages.py`
    - `backend/api/routes/events.py`

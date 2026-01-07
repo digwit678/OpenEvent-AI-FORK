@@ -93,10 +93,12 @@ def run_routing_loop(
         event_entry = state.event_entry
         if not event_entry:
             logger.debug("[WF][ROUTE][%d] No event_entry, breaking", iteration)
+            print(f"[ROUTER] iter={iteration} - No event_entry, breaking", flush=True)
             break
 
         step = event_entry.get("current_step")
         logger.debug("[WF][ROUTE][%d] current_step=%s", iteration, step)
+        print(f"[ROUTER] iter={iteration} current_step={step}", flush=True)
 
         # =================================================================
         # SITE VISIT INTERCEPT: Handle site visit requests at ANY step
@@ -114,9 +116,11 @@ def run_routing_loop(
         # =================================================================
 
         step_result = dispatch_step(state, step)
+        print(f"[ROUTER] iter={iteration} step={step} result={step_result.action if step_result else 'None'} halt={step_result.halt if step_result else 'N/A'}", flush=True)
 
         if step_result is None:
             logger.debug("[WF][ROUTE] No handler for step %s, breaking", step)
+            print(f"[ROUTER] iter={iteration} - No handler for step {step}, breaking", flush=True)
             break
 
         last_result = step_result
@@ -128,9 +132,15 @@ def run_routing_loop(
         # Check for halt - return early with finalized result
         if last_result.halt:
             debug_fn(f"halt_step{step}", state)
+            print(f"[ROUTER] iter={iteration} step={step} HALT=True, returning", flush=True)
             return finalize_fn(last_result, state, path, lock_path), last_result
 
+        # Check current_step after handler (may have changed)
+        new_step = event_entry.get("current_step")
+        print(f"[ROUTER] iter={iteration} step was {step}, now {new_step} (halt=False, continuing)", flush=True)
+
     # Loop completed without halting
+    print(f"[ROUTER] Loop completed after {iteration+1} iterations", flush=True)
     return None, last_result
 
 

@@ -11,7 +11,7 @@ description: Repo navigation and “where do I start?” guide for OpenEvent-AI.
    - `README.md`
 
 2. Workflow contracts + known regressions + playbooks:
-   - `docs/TEAM_GUIDE.md`
+   - `docs/guides/TEAM_GUIDE.md`
 
 3. Refactor plans and pending cleanup:
    - `docs/internal/BACKEND_REFACTORING_PLAN_DEC_2025.md`

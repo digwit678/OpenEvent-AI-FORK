@@ -312,7 +312,29 @@ def process(state: WorkflowState) -> GroupResult:
         if decision.updated_caller_step is not None:
             update_event_metadata(event_entry, caller_step=decision.updated_caller_step)
 
-        if decision.next_step != 4:
+        # PRODUCTS change stays in step 4 - set flag to skip Q&A and regenerate offer
+        if change_type.value == "products" and decision.next_step == 4:
+            state.extras["products_change_detected"] = True
+            # Extract product name from message text for _apply_product_operations
+            if message_text and not user_info.get("products_add"):
+                # Try to find product in full catalog using find_product
+                product_match = find_product(message_text)
+                if product_match:
+                    user_info["products_add"] = [{"name": product_match["name"], "quantity": 1}]
+                    state.user_info = user_info
+                    logger.info("[Step4] Extracted product from message: %s", product_match["name"])
+                else:
+                    # Fallback: check dinner menu names
+                    menu_names = _menu_name_set()
+                    text_lower = message_text.lower()
+                    for menu in menu_names:
+                        if menu.lower() in text_lower:
+                            user_info["products_add"] = [{"name": menu, "quantity": 1}]
+                            state.user_info = user_info
+                            logger.info("[Step4] Extracted menu from message: %s", menu)
+                            break
+            # Continue to product processing (skip Q&A)
+        elif decision.next_step != 4:
             update_event_metadata(event_entry, current_step=decision.next_step)
 
             # For date changes: Keep room lock, invalidate room_eval_hash so Step 3 re-verifies
@@ -488,6 +510,10 @@ def process(state: WorkflowState) -> GroupResult:
 
     deferred_general_qna = False
     general_qna_applicable = classification.get("is_general")
+    # Skip Q&A when products change was detected - we need to regenerate the offer
+    if state.extras.get("products_change_detected"):
+        general_qna_applicable = False
+        logger.debug("[Step4] Skipping Q&A dispatch - products change detected")
     if general_qna_applicable and has_offer_update:
         deferred_general_qna = True
         general_qna_applicable = False
@@ -577,8 +603,13 @@ def process(state: WorkflowState) -> GroupResult:
         products=event_entry.get("products"),
     )
 
+    # [HYBRID MESSAGE] Check if there's a sourcing prefix to prepend (from product sourcing flow)
+    # This creates a combined "Great news! + Offer" message instead of two separate messages
+    sourced_products = event_entry.get("sourced_products") or {}
+    sourcing_prefix = sourced_products.get("sourcing_prefix", "")
+
     # Combine verbalized intro with structured offer (keeping line items intact)
-    offer_body_markdown = verbalized_intro + "\n\n" + "\n".join(summary_lines)
+    offer_body_markdown = sourcing_prefix + verbalized_intro + "\n\n" + "\n".join(summary_lines)
 
     draft_message = {
         "body_markdown": offer_body_markdown,
@@ -682,12 +713,14 @@ def _evaluate_preconditions(
 
     locked_room_id = event_entry.get("locked_room_id")
     room_eval_hash = event_entry.get("room_eval_hash")
+    print(f"[Step4] P2 CHECK: locked_room_id={locked_room_id}, room_eval_hash={room_eval_hash}, current_req_hash={current_requirements_hash}", flush=True)
     p2_ok = (
         locked_room_id
         and current_requirements_hash
         and room_eval_hash
         and current_requirements_hash == room_eval_hash
     )
+    print(f"[Step4] P2 RESULT: p2_ok={p2_ok}, match={current_requirements_hash == room_eval_hash if room_eval_hash else 'N/A'}", flush=True)
     trace_gate(
         thread_id,
         "Step4_Offer",
@@ -927,6 +960,11 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, sta
     if not catering_alternatives and not event_entry.get("selected_catering"):
         catering_alternatives = _default_menu_alternatives(event_entry)
 
+    # Clear alternatives when user explicitly skipped products (e.g., "no extras, just the room")
+    if products_state.get("skip_products") or event_entry.get("products_skipped"):
+        product_alternatives = []
+        catering_alternatives = []
+
     # Extract Q&A parameters for catering catalog link
     qna_extraction = state.extras.get("qna_extraction", {})
     q_values = qna_extraction.get("q_values", {})
@@ -1061,7 +1099,10 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, sta
     ])
 
     selected_catering = event_entry.get("selected_catering")
-    if not selected_catering and catering_alternatives:
+    # Don't show catering suggestions if user explicitly skipped products
+    products_state = event_entry.get("products_state") or {}
+    products_skipped = products_state.get("skip_products") or event_entry.get("products_skipped")
+    if not selected_catering and catering_alternatives and not products_skipped:
         # Create snapshot for catering catalog with all alternatives
         catalog_snapshot_data = {
             "catering_alternatives": [dict(e) for e in catering_alternatives],
@@ -1219,12 +1260,25 @@ def _thread_id(state: WorkflowState) -> str:
     return "unknown-thread"
 
 
+def _strip_system_subject(subject: str) -> str:
+    """Strip system-generated metadata from subject lines.
+
+    The API adds "Client follow-up (YYYY-MM-DD HH:MM)" to follow-up messages.
+    This timestamp should NOT be used for change detection as it would incorrectly
+    trigger DATE change detection due to the timestamp in the subject.
+    """
+    import re
+    # Pattern: "Client follow-up (YYYY-MM-DD HH:MM)" or similar system-generated prefixes
+    pattern = r"^Client follow-up\s*\(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\)\s*"
+    return re.sub(pattern, "", subject, flags=re.IGNORECASE).strip()
+
+
 def _message_text(state: WorkflowState) -> str:
-    """Extract full message text from state."""
+    """Extract full message text from state, stripping system-generated subject prefixes."""
     message = state.message
     if not message:
         return ""
-    subject = message.subject or ""
+    subject = _strip_system_subject(message.subject or "")
     body = message.body or ""
     if subject and body:
         return f"{subject}\n{body}"

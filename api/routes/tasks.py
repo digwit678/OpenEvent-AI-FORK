@@ -39,6 +39,8 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 class TaskDecisionRequest(BaseModel):
     notes: Optional[str] = None
     edited_message: Optional[str] = None  # For AI Reply Approval: manager can edit draft before sending
+    sourced_product_name: Optional[str] = None  # For SOURCE_MISSING_PRODUCT: product name found by manager
+    sourced_product_price: Optional[str] = None  # For SOURCE_MISSING_PRODUCT: product price
 
 
 class TaskCleanupRequest(BaseModel):
@@ -200,10 +202,18 @@ async def approve_task(task_id: str, request: TaskDecisionRequest):
     For AI Reply Approval tasks, the manager can optionally edit the draft message
     before sending by providing `edited_message` in the request body.
     """
+    # Build manager notes - include product info if provided for source_missing_product
+    notes = request.notes
+    if request.sourced_product_name and request.sourced_product_price:
+        product_info = f"{request.sourced_product_name} (CHF {request.sourced_product_price})"
+        notes = product_info if not notes else f"{notes} | {product_info}"
+    elif request.sourced_product_name:
+        notes = request.sourced_product_name if not notes else f"{notes} | {request.sourced_product_name}"
+
     try:
         result = wf_approve_task_and_send(
             task_id,
-            manager_notes=request.notes,
+            manager_notes=notes,
             edited_message=request.edited_message,
         )
     except ValueError as exc:
@@ -212,7 +222,7 @@ async def approve_task(task_id: str, request: TaskDecisionRequest):
         raise HTTPException(status_code=500, detail=f"Failed to approve task: {exc}") from exc
     logger.info("Task approved: %s", task_id)
     assistant_text = result.get("res", {}).get("assistant_draft_text")
-    return {
+    response = {
         "task_id": task_id,
         "task_status": "approved",
         "assistant_reply": assistant_text,
@@ -220,6 +230,10 @@ async def approve_task(task_id: str, request: TaskDecisionRequest):
         "event_id": result.get("event_id"),
         "review_state": "approved",
     }
+    # Include advance_to_step if present (used for auto-advancing after product sourcing)
+    if result.get("advance_to_step"):
+        response["advance_to_step"] = result["advance_to_step"]
+    return response
 
 
 @router.post("/{task_id}/reject")

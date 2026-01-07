@@ -2,7 +2,7 @@
 
 **Date:** 2025-12-24  
 **Status:** Planning only (no code changes made as part of this plan)  
-**Related docs:** `docs/internal/backend/BACKEND_CODE_REVIEW_DEC_2025.md`, `docs/internal/completed/DONE__ARCHITECTURE_FINDINGS_DEC_2025.md`, `docs/internal/completed/DONE__PENDING_REFACTORING_TASKS.md`
+**Related docs:** `docs/internal/backend/BACKEND_CODE_REVIEW_DEC_2025.md`, `docs/plans/completed/DONE__ARCHITECTURE_FINDINGS_DEC_2025.md`, `docs/plans/completed/DONE__PENDING_REFACTORING_TASKS.md`
 
 This document translates the existing backend review findings into **junior-dev-executable refactoring steps**, with explicit **dependency/import guardrails** so we can refactor "god files" without breaking runtime or tests.
 

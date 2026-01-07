@@ -37,7 +37,7 @@ from workflows.steps.step3_room_availability.db_pers import load_rooms_config
 # load it on startup. The default should be deposit_enabled=False until
 # explicitly configured by the manager.
 #
-# See docs/internal/planning/OPEN_DECISIONS.md for related design decisions:
+# See docs/plans/OPEN_DECISIONS.md for related design decisions:
 # - DECISION-001: Deposit Changes After Payment
 # - DECISION-002: LLM vs Template for Deposit Reminders
 # - DECISION-003: Deposit Payment Verification

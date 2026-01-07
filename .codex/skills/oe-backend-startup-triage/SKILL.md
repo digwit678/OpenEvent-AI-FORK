@@ -37,4 +37,4 @@ This is usually stale `.pyc` / `__pycache__` from changed dataclasses.
 1. Run the compile/import sanity gate:
    - `python3 scripts/verify_refactor.py`
 
-2. If the failure is in a workflow wrapper, ensure the wrapper re-exports the referenced symbol (see `docs/TEAM_GUIDE.md` for prior “missing export” regressions).
+2. If the failure is in a workflow wrapper, ensure the wrapper re-exports the referenced symbol (see `docs/guides/TEAM_GUIDE.md` for prior “missing export” regressions).

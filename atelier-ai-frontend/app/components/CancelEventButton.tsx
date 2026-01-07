@@ -12,7 +12,7 @@ import { useState, useCallback } from 'react';
  * - Site visit scheduled: Manager should send regret email after cancelling
  * - Standard flow: Event is archived immediately
  *
- * See docs/internal/planning/OPEN_DECISIONS.md DECISION-012 for details.
+ * See docs/plans/OPEN_DECISIONS.md DECISION-012 for details.
  */
 
 const BACKEND_BASE =

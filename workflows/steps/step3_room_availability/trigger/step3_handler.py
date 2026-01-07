@@ -40,6 +40,8 @@ from workflows.change_propagation import (
 from workflows.qna.engine import build_structured_qna_result
 from workflows.qna.extraction import ensure_qna_extraction
 from workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
+from workflows.io.tasks import enqueue_task
+from domain import TaskType
 from workflows.io.config_store import get_catering_teaser_products, get_currency_code
 # MIGRATED: from workflows.common.conflict -> backend.detection.special.room_conflict
 from detection.special.room_conflict import (
@@ -48,6 +50,11 @@ from detection.special.room_conflict import (
     compose_soft_conflict_warning,
     handle_hard_conflict,
     get_available_rooms_on_date,
+)
+# Product arrangement detection (missing product sourcing flow)
+from detection.special.product_arrangement import (
+    detect_product_arrangement_intent,
+    detect_continue_without_product,
 )
 from debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate, trace_state, trace_step, set_subloop, trace_marker, trace_general_qa_status
 from utils.profiler import profile_step
@@ -184,9 +191,95 @@ def process(state: WorkflowState) -> GroupResult:
             return result
         # If no result, client didn't make a clear choice - fall through to normal flow
 
+    # -------------------------------------------------------------------------
+    # PRODUCT SOURCING STATE: Handle pending sourcing requests
+    # When client asked us to arrange a missing product, we create a HIL task
+    # for the manager. While waiting, or after manager response, handle state.
+    # -------------------------------------------------------------------------
+    sourcing_pending = event_entry.get("sourcing_pending")
+    if sourcing_pending:
+        # Still waiting for manager to source the product - remind client
+        trace_marker(
+            thread_id,
+            "sourcing_pending_wait",
+            detail=f"Waiting for manager to source: {sourcing_pending.get('products')}",
+            owner_step="Step3_Room",
+        )
+        draft = {
+            "body": append_footer(
+                "I'm still checking with my colleague about arranging the items you requested. "
+                "I'll get back to you as soon as I have an update.",
+                step=3,
+                next_step=3,
+                thread_state="Awaiting Manager",
+            ),
+            "topic": "sourcing_still_pending",
+            "requires_approval": False,
+        }
+        state.add_draft_message(draft)
+        return GroupResult(
+            action="sourcing_pending_reminder",
+            payload={"products": sourcing_pending.get("products"), "step": 3},
+            halt=True,
+        )
+
+    sourcing_declined = event_entry.get("sourcing_declined")
+    if sourcing_declined:
+        # Manager couldn't find the product - check if client wants to continue
+        message_text = _message_text(state)
+        declined_products = sourcing_declined.get("products", [])
+
+        if message_text and detect_continue_without_product(message_text, declined_products):
+            # Client wants to continue without the product
+            trace_marker(
+                thread_id,
+                "continue_without_product",
+                detail=f"Client continuing without: {declined_products}",
+                owner_step="Step3_Room",
+            )
+            # Clear the sourcing state and advance to Step 4
+            del event_entry["sourcing_declined"]
+            state.extras["persist"] = True
+            # The room was already locked when sourcing was requested
+            return _advance_to_offer_from_sourcing(state, event_entry, thread_id)
+
+        # Client hasn't decided yet or said something else - fall through to normal handling
+
+    # -------------------------------------------------------------------------
+    # PRODUCT ARRANGEMENT DETECTION (EARLY CHECK)
+    # Must run BEFORE change detection, because "arrange the flipchart" might be
+    # mistakenly detected as a requirements change. If we have room_pending_decision
+    # with missing products and client wants to arrange them, handle it here.
+    # -------------------------------------------------------------------------
+    message_text = _message_text(state)
+    room_pending_early = event_entry.get("room_pending_decision")
+    locked_room_early = event_entry.get("locked_room_id")
+    missing_products_early = (room_pending_early or {}).get("missing_products", [])
+
+    print(f"[Step3] EARLY ARRANGEMENT CHECK: room_pending={bool(room_pending_early)}, missing_products={missing_products_early}, locked_room={locked_room_early}", flush=True)
+
+    if room_pending_early and missing_products_early and message_text and not locked_room_early:
+        arrangement_result = detect_product_arrangement_intent(
+            message_text,
+            missing_products_early,
+        )
+        if arrangement_result.wants_arrangement:
+            trace_marker(
+                thread_id,
+                "early_arrangement_request_detected",
+                detail=f"Client wants to arrange: {arrangement_result.products_to_source}",
+                owner_step="Step3_Room",
+            )
+            return _handle_product_sourcing_request(
+                state,
+                event_entry,
+                room_pending_early,
+                arrangement_result,
+                thread_id,
+            )
+
     # [CHANGE DETECTION + Q&A] Tap incoming stream BEFORE room evaluation to detect client revisions
     # ("actually we're 50 now") and route them back to dependent nodes while hashes stay valid.
-    message_text = _message_text(state)
     user_info = state.user_info or {}
 
     # Capture requirements from workflow context (statements only, not questions)
@@ -439,6 +532,34 @@ def process(state: WorkflowState) -> GroupResult:
     room_pending = event_entry.get("room_pending_decision")
     locked_room = event_entry.get("locked_room_id")
     has_step3_history = room_pending is not None or locked_room is not None
+
+    # -------------------------------------------------------------------------
+    # PRODUCT ARRANGEMENT DETECTION: Check if client wants to arrange missing products
+    # This happens when we've presented rooms with missing items and asked
+    # "Would you like me to check if I can arrange it separately?"
+    # -------------------------------------------------------------------------
+    missing_products = (room_pending or {}).get("missing_products", [])
+    print(f"[Step3] ARRANGEMENT CHECK: room_pending={bool(room_pending)}, missing_products={missing_products}, message_text={message_text[:50] if message_text else None}, locked_room={locked_room}")
+    if room_pending and missing_products and message_text and not locked_room:
+        arrangement_result = detect_product_arrangement_intent(
+            message_text,
+            missing_products,
+        )
+        if arrangement_result.wants_arrangement:
+            trace_marker(
+                thread_id,
+                "arrangement_request_detected",
+                detail=f"Client wants to arrange: {arrangement_result.products_to_source}",
+                owner_step="Step3_Room",
+            )
+            return _handle_product_sourcing_request(
+                state,
+                event_entry,
+                room_pending,
+                arrangement_result,
+                thread_id,
+            )
+
     if general_qna_applicable and not has_step3_history:
         # First entry to Step 3 - only block workflow questions, not pure Q&A
         if not is_pure_qna:
@@ -461,6 +582,13 @@ def process(state: WorkflowState) -> GroupResult:
 
     locked_room_id = event_entry.get("locked_room_id")
     room_eval_hash = event_entry.get("room_eval_hash")
+
+    # [SOURCING COMPLETE BYPASS] If sourcing was completed for this room,
+    # skip room evaluation and proceed to offer
+    sourced_products = event_entry.get("sourced_products")
+    if sourced_products and sourced_products.get("room") == locked_room_id:
+        print(f"[Step3] SOURCING COMPLETE - bypassing room eval, room={locked_room_id}", flush=True)
+        return _skip_room_evaluation(state, event_entry)
 
     room_selected_flag = bool(locked_room_id)
     trace_gate(
@@ -748,12 +876,39 @@ def process(state: WorkflowState) -> GroupResult:
     elif selected_room and outcome in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}:
         # Build recommendation with gatekeeping variables (date, capacity, equipment)
         # Echo back client requirements ("sandwich check")
+        # DECISION-010: Check which requested items are actually available vs missing
+        selected_room_data = next(
+            (vr for vr in verbalizer_rooms if vr.get("name") == selected_room),
+            {}
+        )
+        room_requirements = selected_room_data.get("requirements") or {}
+        matched_items = [str(m).lower() for m in (room_requirements.get("matched") or [])]
+        missing_items = [str(m).lower() for m in (room_requirements.get("missing") or [])]
+
         reason_parts = []
         if selected_room_capacity:
             reason_parts.append(f"accommodates up to {selected_room_capacity} guests")
+
+        # Only claim items that are actually matched, NOT all wish_products
         if wish_products_list:
-            products_str = ", ".join(str(p).lower() for p in wish_products_list[:3])
-            reason_parts.append(f"includes your {products_str}")
+            # Filter to only include items that are matched (not missing)
+            available_products = [
+                str(p).lower() for p in wish_products_list[:3]
+                if str(p).lower() in matched_items or str(p).lower() not in missing_items
+            ]
+            # Also check via badges if available
+            badges = selected_room_data.get("badges") or {}
+            for product in list(available_products):
+                product_key = product.lower().strip()
+                badge = badges.get(product_key)
+                if badge == "✗":
+                    available_products.remove(product)
+                    if product not in missing_items:
+                        missing_items.append(product)
+
+            if available_products:
+                products_str = ", ".join(available_products)
+                reason_parts.append(f"includes your {products_str}")
 
         if reason_parts:
             reason_clause = " and ".join(reason_parts)
@@ -767,8 +922,50 @@ def process(state: WorkflowState) -> GroupResult:
                 f"I recommend {selected_room}."
             )
 
+        # DECISION-010: Apologize for missing items and offer to source them
+        if missing_items:
+            missing_str = ", ".join(missing_items)
+            if len(missing_items) == 1:
+                intro_lines.append(
+                    f"Unfortunately, {missing_str} is not included in {selected_room}. "
+                    f"Would you like me to check if I can arrange it separately?"
+                )
+            else:
+                intro_lines.append(
+                    f"Unfortunately, {missing_str} are not included in {selected_room}. "
+                    f"Would you like me to check if I can arrange these separately?"
+                )
+
+        # Always compare with at least 1-2 alternative rooms for context
         if num_rooms > 1:
-            intro_lines.append(f"Would you like {selected_room}, or see other options?")
+            alternatives = [vr for vr in verbalizer_rooms if vr.get("name") != selected_room][:2]
+            if alternatives:
+                alt_descriptions = []
+                for alt in alternatives:
+                    alt_name = alt.get("name", "")
+                    alt_capacity = alt.get("capacity")
+                    alt_reqs = alt.get("requirements") or {}
+                    alt_matched = alt_reqs.get("matched") or []
+                    alt_missing = alt_reqs.get("missing") or []
+
+                    # Build brief comparison
+                    if alt_matched and not alt_missing:
+                        # Alternative has everything
+                        cap_note = f" (capacity {alt_capacity})" if alt_capacity else ""
+                        alt_descriptions.append(f"{alt_name}{cap_note} also has all your requirements")
+                    elif alt_missing:
+                        # Alternative is missing something
+                        missing_list = ", ".join(alt_missing[:2])
+                        alt_descriptions.append(f"{alt_name} lacks {missing_list}")
+                    elif alt_capacity:
+                        alt_descriptions.append(f"{alt_name} (capacity {alt_capacity})")
+                    else:
+                        alt_descriptions.append(alt_name)
+
+                if alt_descriptions:
+                    intro_lines.append(f"Alternatives: {'; '.join(alt_descriptions)}.")
+
+            intro_lines.append(f"Let me know which room you'd prefer and I'll prepare the offer.")
         else:
             intro_lines.append(f"Would you like me to prepare an offer for {selected_room}?")
     else:
@@ -896,7 +1093,7 @@ def process(state: WorkflowState) -> GroupResult:
         topic=outcome_topic,
         event_date=display_chosen_date,
         participants_count=participants,
-        rooms=[],  # Don't require other rooms - only room_name is required
+        rooms=verbalizer_rooms,  # Pass full room data including requirements.missing for honest claims
         room_name=selected_room,  # The recommended room (required fact)
         room_status=outcome,
         products=verbalizer_products,  # Pass catering products for fact verification
@@ -937,6 +1134,19 @@ def process(state: WorkflowState) -> GroupResult:
 
     pending_hint = _derive_hint(selected_entry, preferences, explicit_preferences) if selected_entry else None
 
+    # Collect missing products for ALL rooms (for arrange request handling)
+    # This allows us to know what's missing when client selects a different room than recommended
+    rooms_missing_products = {}
+    all_missing_products = []  # Union of all rooms' missing products
+    for vr in verbalizer_rooms:
+        room_name = vr.get("name", "")
+        room_missing = (vr.get("requirements") or {}).get("missing") or []
+        if room_missing:
+            rooms_missing_products[room_name] = room_missing
+            for product in room_missing:
+                if product not in all_missing_products:
+                    all_missing_products.append(product)
+
     event_entry["room_pending_decision"] = {
         "selected_room": selected_room,
         "selected_status": outcome,
@@ -944,6 +1154,8 @@ def process(state: WorkflowState) -> GroupResult:
         "summary": summary,
         "hint": pending_hint,
         "available_dates": available_dates_map.get(selected_room or "", []),
+        "missing_products": all_missing_products,  # All products that might be missing
+        "rooms_missing_products": rooms_missing_products,  # Per-room breakdown
     }
 
     update_event_metadata(
@@ -1005,6 +1217,182 @@ def process(state: WorkflowState) -> GroupResult:
 
 
 # R4: render_rooms_response moved to evaluation.py
+
+
+def _handle_product_sourcing_request(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    room_pending: Dict[str, Any],
+    arrangement_result: Any,  # ArrangementDetectionResult
+    thread_id: str,
+) -> GroupResult:
+    """Handle client request to arrange missing products.
+
+    Creates a HIL task for the manager to source the product and pauses
+    the workflow until the manager responds.
+
+    Args:
+        state: Current workflow state
+        event_entry: Event database entry
+        room_pending: The room_pending_decision with selected room info
+        arrangement_result: Detection result with products to source
+        thread_id: Thread ID for tracing
+
+    Returns:
+        GroupResult halting the workflow while waiting for manager
+    """
+    # Use client's explicitly chosen room if detected, otherwise use recommended room
+    # This fixes the bug where client says "Room A please" but we lock Room B (recommended)
+    if arrangement_result.chosen_room:
+        selected_room = arrangement_result.chosen_room
+        print(f"[Step3] Using client's EXPLICIT room choice: {selected_room}", flush=True)
+    else:
+        selected_room = room_pending.get("selected_room")
+        print(f"[Step3] Using recommended room (no explicit choice): {selected_room}", flush=True)
+
+    selected_status = room_pending.get("selected_status", "Available")
+    products_to_source = arrangement_result.products_to_source
+
+    # Lock the room - client confirmed by requesting arrangement
+    if not event_entry.get("locked_room_id"):
+        update_event_metadata(
+            event_entry,
+            locked_room_id=selected_room,
+            room_eval_hash=room_pending.get("requirements_hash"),
+            selected_room=selected_room,
+            selected_room_status=selected_status,
+        )
+        event_entry.setdefault("flags", {})["room_selected"] = True
+        trace_marker(
+            thread_id,
+            "room_locked_for_sourcing",
+            detail=f"Locked {selected_room} while sourcing: {products_to_source}",
+            owner_step="Step3_Room",
+        )
+
+    # Create HIL task for manager to source the product
+    task_payload = {
+        "step_id": 3,
+        "event_id": event_entry.get("event_id"),
+        "products": products_to_source,
+        "room": selected_room,
+        "thread_id": thread_id,
+        "client_message": _message_text(state),
+        "action_type": "source_missing_product",
+    }
+    task_id = enqueue_task(
+        state.db,
+        TaskType.SOURCE_MISSING_PRODUCT,
+        state.client_id,
+        event_entry.get("event_id"),
+        task_payload,
+    )
+
+    # Store pending sourcing state
+    event_entry["sourcing_pending"] = {
+        "task_id": task_id,
+        "products": products_to_source,
+        "room": selected_room,
+        "requested_at": datetime.now().isoformat(),
+    }
+
+    # Clear room_pending_decision since we've moved past that stage
+    if "room_pending_decision" in event_entry:
+        del event_entry["room_pending_decision"]
+
+    state.extras["persist"] = True
+
+    # Format the product list for the message
+    if len(products_to_source) == 1:
+        product_text = products_to_source[0]
+    else:
+        product_text = ", ".join(products_to_source[:-1]) + f" and {products_to_source[-1]}"
+
+    # Send response to client
+    draft = {
+        "body": append_footer(
+            f"I'll check with my colleague about arranging the {product_text} for you. "
+            f"I'll get back to you shortly with availability and pricing.",
+            step=3,
+            next_step=4,
+            thread_state="Awaiting Manager",
+        ),
+        "body_markdown": (
+            f"I'll check with my colleague about arranging the **{product_text}** for you. "
+            f"I'll get back to you shortly with availability and pricing."
+        ),
+        "topic": "sourcing_request_acknowledged",
+        "requires_approval": False,
+        "step": 3,
+    }
+    state.add_draft_message(draft)
+
+    update_event_metadata(
+        event_entry,
+        thread_state="Awaiting Manager",
+        current_step=3,
+    )
+    state.set_thread_state("Awaiting Manager")
+
+    return GroupResult(
+        action="sourcing_request_created",
+        payload={
+            "task_id": task_id,
+            "products": products_to_source,
+            "room": selected_room,
+            "step": 3,
+            "draft_messages": state.draft_messages,
+        },
+        halt=True,
+    )
+
+
+def _advance_to_offer_from_sourcing(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+    thread_id: str,
+) -> GroupResult:
+    """Advance to Step 4 (offer) after sourcing is resolved.
+
+    Called when:
+    - Manager found the product and client auto-advances
+    - Client chooses to continue without the product
+
+    Args:
+        state: Current workflow state
+        event_entry: Event database entry
+        thread_id: Thread ID for tracing
+
+    Returns:
+        GroupResult continuing to Step 4
+    """
+    trace_marker(
+        thread_id,
+        "advance_to_offer_from_sourcing",
+        detail="Advancing to Step 4 after sourcing resolution",
+        owner_step="Step3_Room",
+    )
+
+    # Update state for Step 4
+    update_event_metadata(
+        event_entry,
+        current_step=4,
+        thread_state="Processing",
+    )
+    state.current_step = 4
+    state.set_thread_state("Processing")
+    state.extras["persist"] = True
+
+    return GroupResult(
+        action="advance_to_offer",
+        payload={
+            "client_id": state.client_id,
+            "event_id": event_entry.get("event_id"),
+            "reason": "sourcing_resolved",
+            "step": 4,
+        },
+        halt=False,  # Continue processing to Step 4
+    )
 
 
 def _detour_to_date(state: WorkflowState, event_entry: dict) -> GroupResult:
@@ -1105,13 +1493,26 @@ def _skip_room_evaluation(state: WorkflowState, event_entry: dict) -> GroupResul
     """[Trigger] Skip Step 3 and return to the caller when caching allows."""
 
     caller = event_entry.get("caller_step")
+    print(f"[Step3] _skip_room_evaluation caller_step={caller}", flush=True)
     if caller is not None:
         append_audit_entry(event_entry, 3, caller, "room_eval_cache_hit")
         update_event_metadata(event_entry, current_step=caller, caller_step=None)
         state.current_step = caller
         state.caller_step = None
+        print(f"[Step3] _skip_room_evaluation -> returning to caller step {caller}", flush=True)
     else:
-        state.current_step = event_entry.get("current_step")
+        # No caller - proceeding to step 4 (offer), update current_step so product detection works
+        logger.warning("[Step3] NO CALLER - updating current_step to 4 for product detection")
+        # IMPORTANT: Update room_eval_hash to match requirements_hash stored in event
+        # Step 4's P2 gate compares event["room_eval_hash"] with event["requirements_hash"]
+        # So we just copy the stored requirements_hash to room_eval_hash
+        stored_req_hash = event_entry.get("requirements_hash")
+        print(f"[Step3] Setting room_eval_hash to stored requirements_hash={stored_req_hash}, locked_room_id={event_entry.get('locked_room_id')}", flush=True)
+        update_event_metadata(event_entry, current_step=4, room_eval_hash=stored_req_hash)
+        # Also update the event_entry directly to ensure it's set
+        event_entry["room_eval_hash"] = stored_req_hash
+        state.current_step = 4
+        print(f"[Step3] _skip_room_evaluation -> advancing to step 4", flush=True)
     state.extras["persist"] = True
     payload = {
         "client_id": state.client_id,

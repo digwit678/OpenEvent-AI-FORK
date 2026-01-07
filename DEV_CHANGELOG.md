@@ -2865,7 +2865,7 @@ Files analyzed but NOT split:
 - `smart_shortcuts.py` (2196 lines)
 - `general_qna.py` (1490 lines)
 
-**Rationale**: Heavy interdependencies, shared state, conditional logic - splitting risks breaking functionality. See `docs/internal/planning/OPEN_DECISIONS.md` DECISION-006.
+**Rationale**: Heavy interdependencies, shared state, conditional logic - splitting risks breaking functionality. See `docs/plans/OPEN_DECISIONS.md` DECISION-006.
 
 ---
 
@@ -2883,7 +2883,7 @@ Completed migration of all detection logic:
 6. **B.6**: `conflict.py` → `detection/special/room_conflict.py`
 7. **B.7**: `intent_classifier.py` → `detection/intent/classifier.py`
 
-**Pre-existing test failures documented**: See `docs/internal/planning/OPEN_DECISIONS.md` DECISION-005
+**Pre-existing test failures documented**: See `docs/plans/OPEN_DECISIONS.md` DECISION-005
 
 **Tests**: 380 passed, 2 pre-existing failures (unrelated to migration)
 

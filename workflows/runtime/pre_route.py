@@ -180,6 +180,11 @@ def is_out_of_context(
     if intent in ALWAYS_VALID_INTENTS:
         return False
 
+    # Room selection messages should never be treated as out-of-context
+    # even if misclassified as confirm_date (common LLM confusion)
+    if unified_result.room_preference:
+        return False
+
     # Check if this intent has step restrictions
     valid_steps = INTENT_VALID_STEPS.get(intent)
     if valid_steps is None:
@@ -214,6 +219,12 @@ def check_out_of_context(
 
     Returns finalized "no response" if out of context, None otherwise.
     """
+    # Continuation messages bypass out-of-context check entirely
+    # These are system-triggered after HIL approval to advance the workflow
+    if state.message and (state.message.extras or {}).get("is_continuation"):
+        logger.debug("[OOC_CHECK] Skipping check - continuation message")
+        return None
+
     if not state.event_entry:
         return None
 
@@ -281,6 +292,12 @@ def handle_manager_escalation(
     # This correctly handles phrases like "Can I speak with someone?" without
     # false positives on email addresses like "test-manager@example.com"
     if unified_result is None:
+        return None
+
+    # Skip manager escalation for system continuation messages (e.g., after HIL approval)
+    # These are workflow-triggered, not actual client requests
+    if state.message and (state.message.extras or {}).get("is_continuation"):
+        logger.debug("[MANAGER_ESCALATION] Skipping - continuation message")
         return None
 
     if not unified_result.is_manager_request:
@@ -378,6 +395,10 @@ def check_duplicate_message(
 
     Returns finalized response if duplicate detected, None otherwise.
     Also stores current message for next comparison.
+
+    Note: Skip duplicate detection for very short messages (< 30 chars) since these
+    are likely subject-only messages (e.g., "Re: Room Booking") which are commonly
+    reused in email threads and shouldn't trigger duplicate detection.
     """
     if not state.event_entry:
         return None
@@ -385,6 +406,15 @@ def check_duplicate_message(
     last_client_msg = state.event_entry.get("last_client_message", "")
     normalized_current = combined_text.strip().lower()
     normalized_last = (last_client_msg or "").strip().lower()
+
+    # Skip duplicate detection for very short messages (likely subject-only)
+    # Email subjects are commonly reused in threads
+    MIN_LENGTH_FOR_DUPLICATE_CHECK = 30
+    if len(normalized_current) < MIN_LENGTH_FOR_DUPLICATE_CHECK:
+        # Still store the message, just don't check for duplicates
+        state.event_entry["last_client_message"] = combined_text.strip()
+        state.extras["persist"] = True
+        return None
 
     # Only check for duplicates if we have a previous message and messages are identical
     if normalized_last and normalized_current == normalized_last:

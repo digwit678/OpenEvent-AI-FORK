@@ -106,10 +106,15 @@ def extract_preferences(user_info: Dict[str, Any], raw_text: Optional[str] = Non
 
 def _collect_wish_products(user_info: Dict[str, Any]) -> List[str]:
     result: List[str] = []
+    # Max length for product names - anything longer is likely a sentence, not a product
+    MAX_PRODUCT_NAME_LEN = 40
 
     def _append(values: Iterable[str]) -> None:
         for value in values:
             cleaned = value.strip()
+            # Filter out sentence-length strings (not product names)
+            if len(cleaned) > MAX_PRODUCT_NAME_LEN:
+                continue
             if cleaned and cleaned.lower() not in {"none", "not specified"} and cleaned not in result:
                 result.append(cleaned)
 
@@ -165,6 +170,14 @@ def _detect_raw_text_preferences(raw_text: Optional[str]) -> List[str]:
     _mark("background music" in text, "background music")
     _mark("live music" in text, "background music")
     _mark("sound system" in text, "sound system")
+    # Common equipment keywords
+    _mark("projector" in text or "beamer" in text, "projector")
+    _mark("flipchart" in text or "flip chart" in text or "flip-chart" in text, "flipchart")
+    _mark("whiteboard" in text, "whiteboard")
+    _mark("microphone" in text or "mic " in text, "microphone")
+    _mark("screen" in text and "projector" not in text, "screen")  # Only if not already covered by projector
+    _mark("wifi" in text or "wi-fi" in text, "WiFi")
+    _mark("parking" in text, "parking")
     return detected[:10]
 
 
@@ -194,7 +207,19 @@ def _normalise_sequence(value: Any) -> List[str]:
         chunks = re.split(r"[,\n;]+", value)
         return [chunk.strip() for chunk in chunks if chunk.strip()]
     if isinstance(value, (list, tuple, set)):
-        return [str(item).strip() for item in value if str(item).strip()]
+        # Also split list items by commas/semicolons to handle "projector, flipchart" as separate items
+        result: List[str] = []
+        for item in value:
+            item_str = str(item).strip()
+            if not item_str:
+                continue
+            # Split by commas/semicolons if present
+            chunks = re.split(r"[,;]+", item_str)
+            for chunk in chunks:
+                cleaned = chunk.strip()
+                if cleaned:
+                    result.append(cleaned)
+        return result
     return []
 
 
@@ -391,7 +416,10 @@ def _similarity_ratio(a: str, b: str) -> float:
         return 0.0
     if a == b:
         return 1.0
-    if a in b or b in a:
+    # Containment match only if both strings are long enough to be meaningful
+    # Avoid false positives like "art" in "flipchart" matching "latte art"
+    MIN_CONTAINMENT_LEN = 5
+    if (len(a) >= MIN_CONTAINMENT_LEN and len(b) >= MIN_CONTAINMENT_LEN) and (a in b or b in a):
         return 0.92
     return difflib.SequenceMatcher(a=a, b=b).ratio()
 

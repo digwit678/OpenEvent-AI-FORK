@@ -834,31 +834,43 @@ def process(state: WorkflowState) -> GroupResult:
                 or user_info.get("event_date")
                 or user_info.get("date")
             )
-            update_event_metadata(
-                event_entry,
-                locked_room_id=room_choice_selected,
-                room_status=status_value,
-                room_eval_hash=event_entry.get("requirements_hash"),
-                caller_step=None,
-                current_step=4,
-                thread_state="Awaiting Client",
-            )
-            event_entry.setdefault("event_data", {})["Preferred Room"] = room_choice_selected
-            append_audit_entry(event_entry, state.current_step or 1, 4, "room_choice_captured")
-            state.current_step = 4
-            state.caller_step = None
-            state.set_thread_state("Awaiting Client")
-            state.extras["persist"] = True
-            payload = {
-                "client_id": state.client_id,
-                "event_id": event_entry.get("event_id"),
-                "intent": intent.value,
-                "confidence": round(confidence, 3),
-                "locked_room_id": room_choice_selected,
-                "thread_state": state.thread_state,
-                "persisted": True,
-            }
-            return GroupResult(action="room_choice_captured", payload=payload, halt=False)
+            # [ARRANGEMENT FLOW BYPASS] If room_pending_decision has missing_products,
+            # DON'T auto-advance to step 4. Let step 3 handle arrangement requests.
+            # The client may be saying "Room A sounds good, please arrange the flipchart"
+            missing_products_for_room = (pending_info or {}).get("missing_products", [])
+            if missing_products_for_room:
+                logger.debug("[Step1] Room has missing products %s - letting Step 3 handle arrangement",
+                            missing_products_for_room)
+                # Don't lock or advance - fall through to let step 3 detect arrangement
+                # Store room choice for step 3 to use if client confirms without arrangement
+                user_info["room"] = room_choice_selected
+                user_info["_room_choice_detected"] = True
+            else:
+                update_event_metadata(
+                    event_entry,
+                    locked_room_id=room_choice_selected,
+                    room_status=status_value,
+                    room_eval_hash=event_entry.get("requirements_hash"),
+                    caller_step=None,
+                    current_step=4,
+                    thread_state="Awaiting Client",
+                )
+                event_entry.setdefault("event_data", {})["Preferred Room"] = room_choice_selected
+                append_audit_entry(event_entry, state.current_step or 1, 4, "room_choice_captured")
+                state.current_step = 4
+                state.caller_step = None
+                state.set_thread_state("Awaiting Client")
+                state.extras["persist"] = True
+                payload = {
+                    "client_id": state.client_id,
+                    "event_id": event_entry.get("event_id"),
+                    "intent": intent.value,
+                    "confidence": round(confidence, 3),
+                    "locked_room_id": room_choice_selected,
+                    "thread_state": state.thread_state,
+                    "persisted": True,
+                }
+                return GroupResult(action="room_choice_captured", payload=payload, halt=False)
 
     new_preferred_room = requirements.get("preferred_room")
 
@@ -955,20 +967,38 @@ def process(state: WorkflowState) -> GroupResult:
                         )
                     else:
                         # REQUIREMENTS change to Step 2: clear room lock since room may no longer fit
-                        update_event_metadata(
-                            event_entry,
-                            date_confirmed=False,
-                            room_eval_hash=None,
-                            locked_room_id=None,
-                        )
+                        # EXCEPTION: Don't clear room lock if sourcing was completed for this room
+                        sourced = event_entry.get("sourced_products")
+                        if sourced and sourced.get("room") == event_entry.get("locked_room_id"):
+                            update_event_metadata(
+                                event_entry,
+                                date_confirmed=False,
+                                room_eval_hash=None,
+                            )
+                        else:
+                            update_event_metadata(
+                                event_entry,
+                                date_confirmed=False,
+                                room_eval_hash=None,
+                                locked_room_id=None,
+                            )
                     detoured_to_step2 = True
                 elif decision.next_step == 3:
                     # Going to Step 3 for requirements change: clear room lock but KEEP date confirmed
-                    update_event_metadata(
-                        event_entry,
-                        room_eval_hash=None,
-                        locked_room_id=None,
-                    )
+                    # EXCEPTION: Don't clear room lock if sourcing was completed for this room
+                    sourced = event_entry.get("sourced_products")
+                    if sourced and sourced.get("room") == event_entry.get("locked_room_id"):
+                        # Sourcing completed - protect room lock, just invalidate hash
+                        update_event_metadata(
+                            event_entry,
+                            room_eval_hash=None,
+                        )
+                    else:
+                        update_event_metadata(
+                            event_entry,
+                            room_eval_hash=None,
+                            locked_room_id=None,
+                        )
 
     # Fallback: legacy logic for cases not handled by change propagation
     # Skip during billing flow or deposit payment context - these dates shouldn't trigger event date changes

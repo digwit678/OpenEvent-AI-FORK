@@ -1,6 +1,6 @@
 ---
 name: oe-docs-updates
-description: Keeps OpenEvent-AI “living docs” in sync while coding. Use whenever you fix a bug, discover a new bug, add/modify behavior, or capture a future idea. Updates docs/TEAM_GUIDE.md (bug list + regressions), DEV_CHANGELOG.md (what changed), new_features.md (ideas parked for later), and TO_DO_NEXT_SESS.md (next-session tasks).
+description: Keeps OpenEvent-AI “living docs” in sync while coding. Use whenever you fix a bug, discover a new bug, add/modify behavior, or capture a future idea. Updates docs/guides/TEAM_GUIDE.md (bug list + regressions), DEV_CHANGELOG.md (what changed), new_features.md (ideas parked for later), and TO_DO_NEXT_SESS.md (next-session tasks).
 ---
 
 # oe-docs-updates
@@ -8,7 +8,7 @@ description: Keeps OpenEvent-AI “living docs” in sync while coding. Use when
 ## Workflow (keep entries small + actionable)
 
 1. **If you fixed a bug**
-   - Update `docs/TEAM_GUIDE.md`:
+   - Update `docs/guides/TEAM_GUIDE.md`:
      - Find the matching bug entry (search by keywords).
      - Mark status as fixed (or add “Fixed” note).
      - Add a link/reference to the regression test that now covers it (prefer `backend/tests/regression/test_team_guide_bugs.py` or a specs test).
@@ -16,7 +16,7 @@ description: Keeps OpenEvent-AI “living docs” in sync while coding. Use when
      - Add a short entry under today’s date: what changed + which tests verify it.
 
 2. **If you discovered a bug but didn’t fix it**
-   - Update `docs/TEAM_GUIDE.md`:
+   - Update `docs/guides/TEAM_GUIDE.md`:
      - Add it under the appropriate “Known Issues / Bugs” section.
      - Include: symptom, likely trigger, suspected module(s), minimal repro hint, and a suggested test file location.
    - Update `TO_DO_NEXT_SESS.md`:

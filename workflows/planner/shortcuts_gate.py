@@ -17,6 +17,9 @@ def shortcuts_allowed(event_entry: Dict[str, Any]) -> bool:
 
     Returns True if the event is eligible for smart shortcut processing.
     """
+    import sys
+    print(f"[SHORTCUTS_GATE] ENTRY - current_step={event_entry.get('current_step')}, date_confirmed={event_entry.get('date_confirmed')}", flush=True)
+    sys.stderr.write(f"[SHORTCUTS_GATE] ENTRY - current_step={event_entry.get('current_step')}, date_confirmed={event_entry.get('date_confirmed')}\n")
     current_step = event_entry.get("current_step") or 0
     if current_step and isinstance(current_step, str):
         try:
@@ -31,6 +34,21 @@ def shortcuts_allowed(event_entry: Dict[str, Any]) -> bool:
     if event_entry.get("offer_accepted"):
         billing_req = event_entry.get("billing_requirements") or {}
         if billing_req.get("awaiting_billing_for_accept"):
+            return False
+
+    # [PRODUCT ARRANGEMENT BYPASS] Don't intercept room selection when client might
+    # be requesting to arrange missing products. Let step3_handler detect the intent.
+    room_pending = event_entry.get("room_pending_decision")
+    locked_room = event_entry.get("locked_room_id")
+    import sys
+    print(f"[SHORTCUTS_GATE] room_pending={bool(room_pending)}, locked_room={locked_room}, missing_products={(room_pending or {}).get('missing_products', [])}", flush=True)
+    sys.stderr.write(f"[SHORTCUTS_GATE] room_pending={bool(room_pending)}, locked_room={locked_room}, missing_products={(room_pending or {}).get('missing_products', [])}\n")
+    if room_pending and not locked_room:
+        missing_products = room_pending.get("missing_products", [])
+        if missing_products:
+            # Room not locked yet and there are missing products - defer to step3
+            print(f"[SHORTCUTS_GATE] BLOCKING shortcuts - missing products: {missing_products}", flush=True)
+            sys.stderr.write(f"[SHORTCUTS_GATE] BLOCKING shortcuts - missing products: {missing_products}\n")
             return False
 
     if event_entry.get("date_confirmed") is not True:

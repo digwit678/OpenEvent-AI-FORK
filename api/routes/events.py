@@ -62,7 +62,7 @@ async def pay_deposit(request: DepositPaymentRequest):
     - Deposit must be required (configured by manager)
     - Deposit must not already be paid
 
-    See docs/internal/planning/OPEN_DECISIONS.md DECISION-001 for handling deposit changes after payment.
+    See docs/plans/OPEN_DECISIONS.md DECISION-001 for handling deposit changes after payment.
     """
     try:
         db = wf_load_db()
@@ -302,7 +302,7 @@ async def cancel_event(event_id: str, request: CancelEventRequest):
 
     The event is NOT deleted but moved to "cancelled" status for audit purposes.
 
-    See docs/internal/planning/OPEN_DECISIONS.md DECISION-012 for full spec.
+    See docs/plans/OPEN_DECISIONS.md DECISION-012 for full spec.
     """
     # Validate confirmation string
     if request.confirmation != "CANCEL":

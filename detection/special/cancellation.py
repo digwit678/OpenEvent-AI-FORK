@@ -6,7 +6,7 @@ to manager for confirmation. Different handling based on workflow stage:
 - Site visit scheduled → Manager confirms, sends regret email
 - Normal flow → Manager confirms, archives event
 
-See docs/internal/planning/OPEN_DECISIONS.md DECISION-012 for details.
+See docs/plans/OPEN_DECISIONS.md DECISION-012 for details.
 """
 
 from __future__ import annotations

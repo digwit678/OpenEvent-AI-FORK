@@ -366,6 +366,8 @@ function EmailThreadUIContent() {
   const [taskActionId, setTaskActionId] = useState<string | null>(null);
   const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
   const [taskEditedMessages, setTaskEditedMessages] = useState<Record<string, string>>({});
+  // Source missing product: track product name and price inputs per task
+  const [taskSourcedProducts, setTaskSourcedProducts] = useState<Record<string, { name: string; price: string }>>({});
   const [cleanupLoading, setCleanupLoading] = useState(false);
   const [resetClientLoading, setResetClientLoading] = useState(false);
   const [clientEmail, setClientEmail] = useState<string | null>(null);
@@ -817,6 +819,10 @@ function EmailThreadUIContent() {
         const isAiReplyApproval = task.type === 'ai_reply_approval';
         const editedMessage = isAiReplyApproval ? taskEditedMessages[task.task_id] : undefined;
 
+        // For source_missing_product tasks, include the product name and price
+        const isSourceMissingProduct = task.type === 'source_missing_product';
+        const sourcedProduct = isSourceMissingProduct ? taskSourcedProducts[task.task_id] : undefined;
+
         const response = await fetch(`${API_BASE}/tasks/${task.task_id}/${decision}`, {
           method: 'POST',
           headers: {
@@ -827,6 +833,9 @@ function EmailThreadUIContent() {
           body: JSON.stringify({
             notes: taskNotes[task.task_id] || undefined,
             edited_message: editedMessage || undefined,
+            // Source missing product fields
+            sourced_product_name: sourcedProduct?.name || undefined,
+            sourced_product_price: sourcedProduct?.price || undefined,
           }),
         });
 
@@ -847,9 +856,38 @@ function EmailThreadUIContent() {
             review_state?: string;
             thread_id?: string | null;
             assistant_reply?: string;
+            advance_to_step?: number;
           };
           if (sessionId && result?.thread_id === sessionId && result.assistant_reply) {
             appendMessage({ role: 'assistant', content: result.assistant_reply, timestamp: new Date() });
+          }
+
+          // If advance_to_step is set, trigger workflow continuation
+          // This is used after source_missing_product approval to auto-generate the offer
+          if (result?.advance_to_step && sessionId) {
+            try {
+              const continueResponse = await fetch(`${API_BASE}/send-message`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Accept: 'application/json',
+                  ...currentTenantHeaders,
+                },
+                body: JSON.stringify({
+                  session_id: sessionId,
+                  message: '[CONTINUE_AFTER_SOURCING]',
+                  from_email: task.client_id || 'system@openevent.ai',
+                }),
+              });
+              if (continueResponse.ok) {
+                const continueResult = await continueResponse.json();
+                if (continueResult?.assistant_reply) {
+                  appendMessage({ role: 'assistant', content: continueResult.assistant_reply, timestamp: new Date() });
+                }
+              }
+            } catch (continueError) {
+              console.error('Error triggering workflow continuation:', continueError);
+            }
           }
         }
         await refreshTasks();
@@ -860,7 +898,7 @@ function EmailThreadUIContent() {
         setTaskActionId(null);
       }
     },
-    [appendMessage, refreshTasks, sessionId, taskNotes, taskEditedMessages]
+    [appendMessage, refreshTasks, sessionId, taskNotes, taskEditedMessages, taskSourcedProducts]
   );
 
   const handleConfirmDate = useCallback(
@@ -962,7 +1000,7 @@ function EmailThreadUIContent() {
   /**
    * Handle deposit payment (mock) - Client clicks to mark deposit as paid
    * Only works at Step 4 (offer step). On detour, button is greyed out.
-   * See docs/internal/planning/OPEN_DECISIONS.md DECISION-003 for production payment verification options.
+   * See docs/plans/OPEN_DECISIONS.md DECISION-003 for production payment verification options.
    */
   const handlePayDeposit = useCallback(
     async (eventId: string, depositAmount: number) => {
@@ -1061,7 +1099,7 @@ function EmailThreadUIContent() {
   }, [tasks, sessionDepositInfo]);
 
   // Block confirmation if deposit is required but not paid
-  // See docs/internal/planning/OPEN_DECISIONS.md DECISION-002 for why we use template message instead of LLM
+  // See docs/plans/OPEN_DECISIONS.md DECISION-002 for why we use template message instead of LLM
   const canConfirmBooking = !unpaidDepositInfo;
 
   // Filter tasks to current session only
@@ -1340,7 +1378,7 @@ function EmailThreadUIContent() {
                   const draftBody = task.payload?.draft_body ? task.payload.draft_body.trim() : '';
                   const eventSummary = task.payload?.event_summary;
                   const isAiReplyApproval = task.type === 'ai_reply_approval';
-                  const canAction = ['ask_for_date', 'manual_review', 'offer_message', 'room_availability_message', 'date_confirmation_message', 'ai_reply_approval'].includes(task.type);
+                  const canAction = ['ask_for_date', 'manual_review', 'offer_message', 'room_availability_message', 'date_confirmation_message', 'ai_reply_approval', 'source_missing_product'].includes(task.type);
 
                   return (
                     <div key={task.task_id} className="p-4 bg-[#f3f7ff] border-2 border-[#c9dcff] rounded-xl">
@@ -1455,7 +1493,8 @@ function EmailThreadUIContent() {
                   const draftMsg = task.payload?.draft_body || (task.payload as any)?.draft_msg || task.payload?.snippet || '';
                   const eventSummary = task.payload?.event_summary;
                   const depositInfo = eventSummary?.deposit_info;
-                  const canAction = ['ask_for_date', 'manual_review', 'offer_message', 'room_availability_message', 'date_confirmation_message'].includes(task.type);
+                  const canAction = ['ask_for_date', 'manual_review', 'offer_message', 'room_availability_message', 'date_confirmation_message', 'source_missing_product'].includes(task.type);
+                  const isSourceMissingProduct = task.type === 'source_missing_product';
 
                   return (
                     <div key={task.task_id} className="p-4 bg-[#eef2ff] border-2 border-[#c3cef9] rounded-xl">
@@ -1498,7 +1537,78 @@ function EmailThreadUIContent() {
                         </div>
                       )}
 
-                      {draftMsg && (
+                      {/* Source Missing Product: Special input fields */}
+                      {isSourceMissingProduct && (
+                        <div className="mt-3 p-3 bg-orange-50 border-2 border-orange-200 rounded-lg">
+                          <div className="text-sm font-bold text-orange-800 mb-3">
+                            🔍 Product Sourcing Request
+                          </div>
+                          <div className="text-xs text-orange-700 mb-3">
+                            Client requested: <strong>{(task.payload as any)?.products?.join(', ') || 'Unknown product'}</strong>
+                          </div>
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                Product Name/Description *
+                              </label>
+                              <input
+                                type="text"
+                                value={taskSourcedProducts[task.task_id]?.name || ''}
+                                onChange={(e) =>
+                                  setTaskSourcedProducts((prev) => ({
+                                    ...prev,
+                                    [task.task_id!]: { ...prev[task.task_id!], name: e.target.value },
+                                  }))
+                                }
+                                placeholder="e.g., Standard Flipchart with Paper"
+                                className="w-full text-sm p-2 border border-orange-300 rounded-md bg-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                Price (CHF) *
+                              </label>
+                              <input
+                                type="text"
+                                value={taskSourcedProducts[task.task_id]?.price || ''}
+                                onChange={(e) =>
+                                  setTaskSourcedProducts((prev) => ({
+                                    ...prev,
+                                    [task.task_id!]: { ...prev[task.task_id!], price: e.target.value },
+                                  }))
+                                }
+                                placeholder="e.g., 45.00"
+                                className="w-full text-sm p-2 border border-orange-300 rounded-md bg-white"
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-4 flex gap-3">
+                            <button
+                              onClick={() => handleTaskAction(task, 'approve')}
+                              disabled={
+                                taskActionId === task.task_id ||
+                                !taskSourcedProducts[task.task_id]?.name ||
+                                !taskSourcedProducts[task.task_id]?.price
+                              }
+                              className="flex-1 px-4 py-2 text-sm font-bold rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-300"
+                            >
+                              {taskActionId === task.task_id ? 'Sending...' : '✅ Product Found - Confirm'}
+                            </button>
+                            <button
+                              onClick={() => handleTaskAction(task, 'reject')}
+                              disabled={taskActionId === task.task_id}
+                              className="px-4 py-2 text-sm font-bold rounded-lg border-2 border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              ❌ Not Available
+                            </button>
+                          </div>
+                          <div className="mt-2 text-xs text-gray-500">
+                            💡 Fill in product details and click "Product Found" to confirm, or "Not Available" if you can't source it.
+                          </div>
+                        </div>
+                      )}
+
+                      {draftMsg && !isSourceMissingProduct && (
                         <div className="mt-2">
                           <div className="text-xs font-semibold text-[#2b47a3] mb-1">Draft Message:</div>
                           <pre className="text-xs bg-white border border-[#d3ddfb] rounded p-3 whitespace-pre-wrap">
@@ -1507,7 +1617,7 @@ function EmailThreadUIContent() {
                         </div>
                       )}
 
-                      {canAction && (
+                      {canAction && !isSourceMissingProduct && (
                         <div className="mt-4">
                           <textarea
                             value={taskNotes[task.task_id] || ''}

@@ -1,0 +1,1009 @@
+{
+  "events": [
+    {
+      "event_id": "da700044-5261-4962-b131-e93256bc6466",
+      "created_at": "2026-01-03T20:21:28.183460",
+      "status": "Lead",
+      "current_step": 5,
+      "caller_step": null,
+      "thread_state": "Waiting on HIL",
+      "chosen_date": "22.02.2026",
+      "date_confirmed": true,
+      "locked_room_id": "Room A",
+      "requirements": {
+        "number_of_participants": 15,
+        "seating_layout": "workshop",
+        "event_duration": {},
+        "special_requirements": "coffee service",
+        "preferred_room": "Room A"
+      },
+      "requirements_hash": "55bb4f5dd46906ac9fdff63308adac0ee25e875feb3d42976c012a2e8e2ad910",
+      "room_eval_hash": "55bb4f5dd46906ac9fdff63308adac0ee25e875feb3d42976c012a2e8e2ad910",
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-03T20:21:28Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 3,
+          "reason": "date_updated_initial"
+        },
+        {
+          "ts": "2026-01-03T20:22:16Z",
+          "actor": "system",
+          "from_step": 5,
+          "to_step": 4,
+          "reason": "room_choice_captured"
+        },
+        {
+          "ts": "2026-01-03T20:22:21Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_generated"
+        },
+        {
+          "ts": "2026-01-03T20:22:41Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 5,
+          "reason": "offer_accept_pending_hil"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "03.01.2026",
+        "Status": "Lead",
+        "Event Date": "22.02.2026",
+        "Name": "Not specified",
+        "Email": "sarah.miller-alex@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "TechCorp GmbH, Bahnhofstrasse 10, 8001 Zürich, Switzerland",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Room A",
+        "Number of Participants": "15",
+        "Type of Event": "workshop",
+        "Catering Preference": "Coffee service",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "coffee service"
+      },
+      "msgs": [
+        "cc658dd6-5836-423b-bd03-e7fd23cd5def",
+        "9074cce2-269b-4561-9d85-632988763a82"
+      ],
+      "captured": {},
+      "verified": {},
+      "captured_sources": [],
+      "deferred_intents": [],
+      "calendar_event_id": "openevent-da700044-5261-4962-b131-e93256bc6466",
+      "thread_id": "0288aab4-0814-4235-ae26-2dda258a8dbc",
+      "current_step_stage": "step_4",
+      "caller_step_stage": null,
+      "subflow_group": "offer_review",
+      "requested_window": {},
+      "offer_hash": null,
+      "offers": [
+        {
+          "offer_id": "da700044-5261-4962-b131-e93256bc6466-OFFER-1",
+          "version": 1,
+          "status": "Draft",
+          "created_at": "2026-01-03T20:22:16+00:00",
+          "total_amount": 612.5,
+          "pricing_inputs": {
+            "base_rate": 500.0,
+            "line_items": [
+              {
+                "description": "Coffee & Tea Bar",
+                "quantity": 15.0,
+                "unit_price": 7.5,
+                "amount": 112.5
+              }
+            ]
+          }
+        }
+      ],
+      "current_offer_id": "da700044-5261-4962-b131-e93256bc6466-OFFER-1",
+      "offer_sequence": 1,
+      "products": [
+        {
+          "name": "Coffee & Tea Bar",
+          "quantity": 15.0,
+          "unit_price": 7.5,
+          "product_id": "beverage-coffee-bar",
+          "unit": "per_person",
+          "category": "Beverages"
+        }
+      ],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {},
+        "autofill_summary": {
+          "matched": [
+            {
+              "name": "Coffee & Tea Bar",
+              "category": "Beverages",
+              "unit": "per_person",
+              "wish": "Coffee Service",
+              "match_pct": 100,
+              "unit_price": 7.5,
+              "quantity": 15,
+              "total": 112.5
+            }
+          ],
+          "alternatives": [],
+          "catering_alternatives": []
+        },
+        "autofill_applied": true
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "preferences": {
+        "wish_products": [],
+        "keywords": [
+          "coffee",
+          "service",
+          "workshop"
+        ],
+        "default_hint": "Products available",
+        "catering": [
+          "coffee service"
+        ],
+        "room_recommendations": [
+          {
+            "room": "Room A",
+            "score": 1.0,
+            "matched": [
+              "Coffee Service"
+            ],
+            "closest": [],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "Coffee Service",
+                "product": "Coffee Service",
+                "score": 1.0
+              }
+            ],
+            "alternatives": []
+          },
+          {
+            "room": "Room B",
+            "score": 1.0,
+            "matched": [
+              "Coffee Service"
+            ],
+            "closest": [],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "Coffee Service",
+                "product": "Coffee Service",
+                "score": 1.0
+              }
+            ],
+            "alternatives": []
+          },
+          {
+            "room": "Room C",
+            "score": 1.0,
+            "matched": [
+              "Coffee & Tea Bar"
+            ],
+            "closest": [],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "Coffee Service",
+                "product": "Coffee & Tea Bar",
+                "score": 1.0
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "Coffee Service",
+                "product": "Basic Coffee & Tea Package",
+                "score": 0.92
+              },
+              {
+                "wish": "Coffee Service",
+                "product": "Coffee & Snacks Package",
+                "score": 0.92
+              }
+            ]
+          },
+          {
+            "room": "Room D",
+            "score": 1.0,
+            "matched": [
+              "Coffee Service"
+            ],
+            "closest": [],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "Coffee Service",
+                "product": "Coffee Service",
+                "score": 1.0
+              }
+            ],
+            "alternatives": []
+          },
+          {
+            "room": "Room E",
+            "score": 1.0,
+            "matched": [
+              "Coffee Service"
+            ],
+            "closest": [],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "Coffee Service",
+                "product": "Coffee Service",
+                "score": 1.0
+              }
+            ],
+            "alternatives": []
+          }
+        ],
+        "room_similarity": {
+          "Room A": 1.0,
+          "Room B": 1.0,
+          "Room C": 1.0,
+          "Room D": 1.0,
+          "Room E": 1.0
+        },
+        "room_match_breakdown": {
+          "Room A": {
+            "matched": [
+              "Coffee Service"
+            ],
+            "closest": [],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "Coffee Service",
+                "product": "Coffee Service",
+                "score": 1.0
+              }
+            ],
+            "alternatives": []
+          },
+          "Room B": {
+            "matched": [
+              "Coffee Service"
+            ],
+            "closest": [],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "Coffee Service",
+                "product": "Coffee Service",
+                "score": 1.0
+              }
+            ],
+            "alternatives": []
+          },
+          "Room C": {
+            "matched": [
+              "Coffee & Tea Bar"
+            ],
+            "closest": [],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "Coffee Service",
+                "product": "Coffee & Tea Bar",
+                "score": 1.0
+              }
+            ],
+            "alternatives": [
+              {
+                "wish": "Coffee Service",
+                "product": "Basic Coffee & Tea Package",
+                "score": 0.92
+              },
+              {
+                "wish": "Coffee Service",
+                "product": "Coffee & Snacks Package",
+                "score": 0.92
+              }
+            ]
+          },
+          "Room D": {
+            "matched": [
+              "Coffee Service"
+            ],
+            "closest": [],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "Coffee Service",
+                "product": "Coffee Service",
+                "score": 1.0
+              }
+            ],
+            "alternatives": []
+          },
+          "Room E": {
+            "matched": [
+              "Coffee Service"
+            ],
+            "closest": [],
+            "missing": [],
+            "matches_detail": [
+              {
+                "wish": "Coffee Service",
+                "product": "Coffee Service",
+                "score": 1.0
+              }
+            ],
+            "alternatives": []
+          }
+        }
+      },
+      "weekdays_hint": [
+        15,
+        22
+      ],
+      "window_scope": {
+        "weekdays_hint": [
+          15,
+          22
+        ]
+      },
+      "last_client_message": "Client follow-up (2026-01-03 20:22)\nThat looks great! Please proceed. Our billing address is: TechCorp GmbH, Bahnhofstrasse 10, 8001 Zürich, Switzerland",
+      "room_proposal_attempts": 1,
+      "room_pending_decision": {
+        "selected_room": "Room A",
+        "selected_status": "Available",
+        "requirements_hash": "7bc80b1ee87ad1ca920c9da37d1d5847af47ecfd424f9d4240c52080648816d1",
+        "summary": "Room availability summary — Room A: Available; Room B: Available; Room C: Available; Room D: Available; Room E: Available; Room F: Available.",
+        "hint": "Coffee Service",
+        "available_dates": [
+          "2026-02-23",
+          "2026-02-21",
+          "2026-02-24"
+        ]
+      },
+      "pending_hil_requests": [
+        {
+          "task_id": "d1758ed8-0698-4ca5-8565-c8f9d2827696",
+          "signature": "ab3e71ca3da55414360b6ff221297072fbd10009752b6f044f97d939a890f309",
+          "step": 5,
+          "draft": {
+            "body": "Client accepted the offer. Please approve to proceed to confirmation.\n\nOffer draft for 22.02.2026 · Room A\n\nClient: sarah.miller-alex@example.com\nBilling address: TechCorp GmbH, Bahnhofstrasse 10, 8001 Zürich, Switzerland\n\n**Included products**\n- 15× Coffee & Tea Bar (match 100%, for \"Coffee Service\") · CHF 112.50 (CHF 7.50 per person)\n\n---\n**Total: CHF 612.50**\n---\n\nPlease review and approve to confirm.\n\n---\nStep: 5 Event Preparation · Next: 5 Event Preparation · State: Waiting on HIL",
+            "step": 5,
+            "topic": "negotiation_accept",
+            "requires_approval": true,
+            "body_markdown": "Client accepted the offer. Please approve to proceed to confirmation.\n\nOffer draft for 22.02.2026 · Room A\n\nClient: sarah.miller-alex@example.com\nBilling address: TechCorp GmbH, Bahnhofstrasse 10, 8001 Zürich, Switzerland\n\n**Included products**\n- 15× Coffee & Tea Bar (match 100%, for \"Coffee Service\") · CHF 112.50 (CHF 7.50 per person)",
+            "footer": "**Total: CHF 612.50**\n---\n\nPlease review and approve to confirm.\n\n---\nStep: 5 Event Preparation · Next: 5 Event Preparation · State: Waiting on HIL",
+            "table_blocks": [],
+            "actions": [],
+            "thread_state": "Waiting on HIL",
+            "next_step": 5,
+            "created_at_step": 5
+          },
+          "thread_id": "0288aab4-0814-4235-ae26-2dda258a8dbc",
+          "type": "offer_message",
+          "client_id": "sarah.miller-alex@example.com",
+          "event_id": "da700044-5261-4962-b131-e93256bc6466",
+          "payload": {
+            "step_id": 5,
+            "intent": "event_request",
+            "event_id": "da700044-5261-4962-b131-e93256bc6466",
+            "draft_msg": "Client accepted the offer. Please approve to proceed to confirmation.\n\nOffer draft for 22.02.2026 · Room A\n\nClient: sarah.miller-alex@example.com\nBilling address: TechCorp GmbH, Bahnhofstrasse 10, 8001 Zürich, Switzerland\n\n**Included products**\n- 15× Coffee & Tea Bar (match 100%, for \"Coffee Service\") · CHF 112.50 (CHF 7.50 per person)\n\n---\n**Total: CHF 612.50**\n---\n\nPlease review and approve to confirm.\n\n---\nStep: 5 Event Preparation · Next: 5 Event Preparation · State: Waiting on HIL",
+            "language": null,
+            "caller_step": null,
+            "requirements_hash": "55bb4f5dd46906ac9fdff63308adac0ee25e875feb3d42976c012a2e8e2ad910",
+            "room_eval_hash": "55bb4f5dd46906ac9fdff63308adac0ee25e875feb3d42976c012a2e8e2ad910",
+            "thread_id": "0288aab4-0814-4235-ae26-2dda258a8dbc"
+          }
+        }
+      ],
+      "room_status": "Available",
+      "billing_details": {
+        "name_or_company": "TechCorp GmbH",
+        "street": "Bahnhofstrasse 10",
+        "postal_code": "8001",
+        "city": "Zürich",
+        "country": "Switzerland",
+        "vat": null,
+        "raw": "TechCorp GmbH, Bahnhofstrasse 10, 8001 Zürich, Switzerland"
+      },
+      "billing_validation": {},
+      "pricing_inputs": {
+        "base_rate": 500.0,
+        "line_items": [
+          {
+            "description": "Coffee & Tea Bar",
+            "quantity": 15.0,
+            "unit_price": 7.5,
+            "amount": 112.5
+          }
+        ]
+      },
+      "offer_status": "Draft",
+      "offer_accepted": true,
+      "negotiation_pending_decision": {
+        "type": "accept",
+        "offer_id": "da700044-5261-4962-b131-e93256bc6466-OFFER-1",
+        "created_at": "2026-01-03T20:22:37+00:00"
+      }
+    },
+    {
+      "event_id": "28af7593-c88b-4080-b81c-89651744aa2a",
+      "created_at": "2026-01-03T20:23:32.081637",
+      "status": "Lead",
+      "current_step": 2,
+      "caller_step": null,
+      "thread_state": "Awaiting Client Response",
+      "chosen_date": null,
+      "date_confirmed": false,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": null,
+        "seating_layout": null,
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": null
+      },
+      "requirements_hash": "f7a9acafde4167480c885e89b816fbcf57924d7fad42d61dc2be9fd643135ae7",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-03T20:23:32Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 2,
+          "reason": "date_missing"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "03.01.2026",
+        "Status": "Lead",
+        "Event Date": "Not specified",
+        "Name": "Not specified",
+        "Email": "sarah.miller-alex@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Not specified",
+        "Number of Participants": "Not specified",
+        "Type of Event": "Not specified",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "9c50b828-4d5d-4cea-9872-0e9d2b7ea7ba"
+      ],
+      "captured": {},
+      "verified": {},
+      "captured_sources": [],
+      "deferred_intents": [],
+      "calendar_event_id": "openevent-28af7593-c88b-4080-b81c-89651744aa2a",
+      "thread_id": "0288aab4-0814-4235-ae26-2dda258a8dbc",
+      "current_step_stage": "step_2",
+      "caller_step_stage": null,
+      "subflow_group": "date_confirmation",
+      "requested_window": {},
+      "offer_hash": null,
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "last_client_message": "Client follow-up (2026-01-03 20:23)\nGreat, thank you! I confirm the booking.",
+      "date_proposal_attempts": 1,
+      "candidate_dates": [
+        "2026-01-03"
+      ],
+      "date_proposal_history": [
+        "2026-01-03"
+      ],
+      "gatekeeper_explain": {
+        "ready": false,
+        "missing_now": [
+          "date_confirmed",
+          "locked_room_id",
+          "offer_status"
+        ],
+        "reason": "date_confirmed"
+      },
+      "pending_hil_requests": []
+    }
+  ],
+  "clients": {
+    "sarah.miller-alex@example.com": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "cc658dd6-5836-423b-bd03-e7fd23cd5def",
+          "ts": "2026-01-03T20:21:28.167199Z",
+          "subject": "Hello, we're planning a workshop for 15 participants on 22.02.2026. Need whitebo",
+          "body_preview": "Hello, we're planning a workshop for 15 participants on 22.02.2026. Need whiteboard and coffee service.\n\nRegards,\nSarah Miller\nsarah.miller-alex@example.com",
+          "intent": "confirm_date_partial",
+          "confidence": 0.93,
+          "user_info": {
+            "date": "2026-02-22",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 15,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": "workshop",
+            "catering": "Coffee service",
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": "coffee service",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              15,
+              22
+            ],
+            "window": {
+              "weekdays_hint": [
+                15,
+                22
+              ]
+            },
+            "event_date": "22.02.2026",
+            "preferences": {
+              "wish_products": [],
+              "keywords": [
+                "coffee",
+                "service",
+                "workshop"
+              ],
+              "default_hint": "Products available",
+              "catering": [
+                "coffee service"
+              ],
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 1.0,
+                  "matched": [
+                    "Coffee Service"
+                  ],
+                  "closest": [],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "Coffee Service",
+                      "product": "Coffee Service",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": []
+                },
+                {
+                  "room": "Room B",
+                  "score": 1.0,
+                  "matched": [
+                    "Coffee Service"
+                  ],
+                  "closest": [],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "Coffee Service",
+                      "product": "Coffee Service",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": []
+                },
+                {
+                  "room": "Room C",
+                  "score": 1.0,
+                  "matched": [
+                    "Coffee & Tea Bar"
+                  ],
+                  "closest": [],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "Coffee Service",
+                      "product": "Coffee & Tea Bar",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "Coffee Service",
+                      "product": "Basic Coffee & Tea Package",
+                      "score": 0.92
+                    },
+                    {
+                      "wish": "Coffee Service",
+                      "product": "Coffee & Snacks Package",
+                      "score": 0.92
+                    }
+                  ]
+                },
+                {
+                  "room": "Room D",
+                  "score": 1.0,
+                  "matched": [
+                    "Coffee Service"
+                  ],
+                  "closest": [],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "Coffee Service",
+                      "product": "Coffee Service",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": []
+                },
+                {
+                  "room": "Room E",
+                  "score": 1.0,
+                  "matched": [
+                    "Coffee Service"
+                  ],
+                  "closest": [],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "Coffee Service",
+                      "product": "Coffee Service",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": []
+                }
+              ],
+              "room_similarity": {
+                "Room A": 1.0,
+                "Room B": 1.0,
+                "Room C": 1.0,
+                "Room D": 1.0,
+                "Room E": 1.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [
+                    "Coffee Service"
+                  ],
+                  "closest": [],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "Coffee Service",
+                      "product": "Coffee Service",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": []
+                },
+                "Room B": {
+                  "matched": [
+                    "Coffee Service"
+                  ],
+                  "closest": [],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "Coffee Service",
+                      "product": "Coffee Service",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": []
+                },
+                "Room C": {
+                  "matched": [
+                    "Coffee & Tea Bar"
+                  ],
+                  "closest": [],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "Coffee Service",
+                      "product": "Coffee & Tea Bar",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": [
+                    {
+                      "wish": "Coffee Service",
+                      "product": "Basic Coffee & Tea Package",
+                      "score": 0.92
+                    },
+                    {
+                      "wish": "Coffee Service",
+                      "product": "Coffee & Snacks Package",
+                      "score": 0.92
+                    }
+                  ]
+                },
+                "Room D": {
+                  "matched": [
+                    "Coffee Service"
+                  ],
+                  "closest": [],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "Coffee Service",
+                      "product": "Coffee Service",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": []
+                },
+                "Room E": {
+                  "matched": [
+                    "Coffee Service"
+                  ],
+                  "closest": [],
+                  "missing": [],
+                  "matches_detail": [
+                    {
+                      "wish": "Coffee Service",
+                      "product": "Coffee Service",
+                      "score": 1.0
+                    }
+                  ],
+                  "alternatives": []
+                }
+              }
+            }
+          }
+        },
+        {
+          "msg_id": "483c521f-8acd-4413-86b0-19afb972edde",
+          "ts": "2026-01-03T20:22:16.292602Z",
+          "subject": "Client follow-up (2026-01-03 20:22)",
+          "body_preview": "Yes, Room A sounds perfect. Please proceed with that.",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": "Room A",
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null,
+            "_room_choice_detected": true
+          }
+        },
+        {
+          "msg_id": "9074cce2-269b-4561-9d85-632988763a82",
+          "ts": "2026-01-03T20:22:37.848600Z",
+          "subject": "Client follow-up (2026-01-03 20:22)",
+          "body_preview": "That looks great! Please proceed. Our billing address is: TechCorp GmbH, Bahnhofstrasse 10, 8001 Zürich, Switzerland",
+          "intent": "event_request",
+          "confidence": 0.99,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "9c50b828-4d5d-4cea-9872-0e9d2b7ea7ba",
+          "ts": "2026-01-03T20:23:32.075813Z",
+          "subject": "Client follow-up (2026-01-03 20:23)",
+          "body_preview": "Great, thank you! I confirm the booking.",
+          "intent": "event_request",
+          "confidence": 0.99,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": null,
+            "products_remove": null,
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null
+          }
+        }
+      ],
+      "event_ids": []
+    }
+  },
+  "tasks": [
+    {
+      "task_id": "d1758ed8-0698-4ca5-8565-c8f9d2827696",
+      "created_at": "2026-01-03T20:22:41.974746",
+      "type": "offer_message",
+      "status": "pending",
+      "client_id": "sarah.miller-alex@example.com",
+      "event_id": "da700044-5261-4962-b131-e93256bc6466",
+      "payload": {
+        "step_id": 5,
+        "intent": "event_request",
+        "event_id": "da700044-5261-4962-b131-e93256bc6466",
+        "draft_msg": "Client accepted the offer. Please approve to proceed to confirmation.\n\nOffer draft for 22.02.2026 · Room A\n\nClient: sarah.miller-alex@example.com\nBilling address: TechCorp GmbH, Bahnhofstrasse 10, 8001 Zürich, Switzerland\n\n**Included products**\n- 15× Coffee & Tea Bar (match 100%, for \"Coffee Service\") · CHF 112.50 (CHF 7.50 per person)\n\n---\n**Total: CHF 612.50**\n---\n\nPlease review and approve to confirm.\n\n---\nStep: 5 Event Preparation · Next: 5 Event Preparation · State: Waiting on HIL",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "55bb4f5dd46906ac9fdff63308adac0ee25e875feb3d42976c012a2e8e2ad910",
+        "room_eval_hash": "55bb4f5dd46906ac9fdff63308adac0ee25e875feb3d42976c012a2e8e2ad910",
+        "thread_id": "0288aab4-0814-4235-ae26-2dda258a8dbc"
+      },
+      "notes": ""
+    }
+  ],
+  "config": {}
+}

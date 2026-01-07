@@ -647,12 +647,21 @@ async def send_message(request: SendMessageRequest):
 
     conversation_state = active_conversations[request.session_id]
 
-    # NOTE: Removed redundant extract_information_incremental() call (Dec 2025)
-    # It was making a separate gpt-4o-mini API call that updated in-memory state
-    # but didn't persist to the workflow database. The workflow's own detection
-    # in step1_handler.py handles all entity extraction properly.
-
-    conversation_state.conversation_history.append({"role": "user", "content": request.message})
+    # Handle workflow continuation after source_missing_product approval
+    # This is a system-triggered message, not a real client message
+    is_continuation = request.message == "[CONTINUE_AFTER_SOURCING]"
+    if is_continuation:
+        # Don't add the system marker to conversation history
+        # Use a marker that won't trigger offer acceptance detection
+        # Step 3 will detect sourced_products and advance to offer generation
+        actual_message = "[SYSTEM_OFFER_GENERATION]"
+    else:
+        actual_message = request.message
+        # NOTE: Removed redundant extract_information_incremental() call (Dec 2025)
+        # It was making a separate gpt-4o-mini API call that updated in-memory state
+        # but didn't persist to the workflow database. The workflow's own detection
+        # in step1_handler.py handles all entity extraction properly.
+        conversation_state.conversation_history.append({"role": "user", "content": request.message})
 
     payload = {
         "msg_id": str(uuid.uuid4()),
@@ -660,9 +669,10 @@ async def send_message(request: SendMessageRequest):
         "from_email": conversation_state.event_info.email,
         "subject": f"Client follow-up ({datetime.utcnow().strftime('%Y-%m-%d %H:%M')})",
         "ts": datetime.utcnow().isoformat() + "Z",
-        "body": request.message,
+        "body": actual_message,
         "thread_id": request.session_id,
         "session_id": request.session_id,
+        "is_continuation": is_continuation,  # Flag for workflow to handle specially
     }
 
     try:
@@ -823,6 +833,7 @@ async def send_message(request: SendMessageRequest):
         "session_id": request.session_id,
         "workflow_type": conversation_state.workflow_type,
         "response": assistant_reply,
+        "assistant_reply": assistant_reply,  # Alias for frontend continuation flow
         "is_complete": conversation_state.is_complete,
         "event_info": conversation_state.event_info.dict(),
         "pending_actions": pending_actions,

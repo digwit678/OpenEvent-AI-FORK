@@ -51,6 +51,8 @@ class TaskType(str, Enum):
     AI_REPLY_APPROVAL = "ai_reply_approval"
     # Cancellation request from client - requires manager confirmation
     CANCELLATION_REQUEST = "cancellation_request"
+    # Product sourcing request - manager to find/arrange missing product
+    SOURCE_MISSING_PRODUCT = "source_missing_product"
 
 
 class TaskStatus(str, Enum):

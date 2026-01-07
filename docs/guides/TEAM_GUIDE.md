@@ -160,3 +160,33 @@ All unit types that may appear in product data:
 **Root Cause**: Step 1 intake processed booking intent but didn't check for `qna_types` in unified detection.
 **Fix**: Added `generate_hybrid_qna_response()` function and hook in step 1 to append Q&A answers to booking responses.
 **Files**: `backend/workflows/qna/router.py`, `backend/workflows/steps/step1_intake/trigger/step1_handler.py`, `backend/api/routes/messages.py`
+
+### BUG-004: Product Arrangement Request Bypassed by Step 1 Auto-Lock
+**Status**: Fixed (2026-01-07)
+**Severity**: High
+**Symptom**: When client says "Room A sounds good, please arrange the flipchart", the system shows catering fallback ("Before I prepare your tailored proposal...") instead of acknowledging the arrangement request.
+**Root Cause**: Step 1's `room_choice_captured` logic auto-locked the room AND set `current_step=4` when detecting room selection phrases, completely bypassing Step 3's arrangement detection.
+**Investigation Path**:
+1. Added `[ROUTER]` debug logging in `router.py` to trace `current_step` values
+2. Discovered second message had `current_step=4, locked_room=Room A` BEFORE routing loop ran
+3. Traced to `step1_handler.py:837-873` where room choice detection locks and advances step
+**Fix**: Added bypass check in step1_handler: if `room_pending_decision` has `missing_products`, don't auto-lock or advance to step 4. Let step 3 handle the arrangement request detection.
+**Files**: `workflows/steps/step1_intake/trigger/step1_handler.py:837-873`
+**Learning**: When implementing "fast path" shortcuts, always check for blocking conditions from related flows. Room selection shortcut must respect pending arrangement requests.
+
+### BUG-005: Arrangement Detection After Change Detection (Order Bug)
+**Status**: Fixed (2026-01-07)
+**Severity**: High
+**Symptom**: Even after fixing BUG-004, arrangement requests still got catering fallback.
+**Root Cause**: In step3_handler, the ARRANGEMENT CHECK code was placed AFTER the CHANGE_DETECTION section. When client said "arrange the flipchart", it was detected as `ChangeType.REQUIREMENTS` and routed to a detour BEFORE the arrangement check could run.
+**Fix**: Moved arrangement detection to run BEFORE change detection (added "EARLY ARRANGEMENT CHECK" section at line 248-279 in step3_handler.py).
+**Files**: `workflows/steps/step3_room_availability/trigger/step3_handler.py:248-279`
+**Learning**: Detection priority matters! Specific intent detection (like arrangement requests) must run before generic change detection to avoid misclassification.
+
+### BUG-006: Smart Shortcuts Gate Missing Product Check
+**Status**: Fixed (2026-01-07)
+**Severity**: Medium
+**Symptom**: Smart shortcuts were intercepting room selection messages even when there were missing products to arrange.
+**Root Cause**: `shortcuts_gate.py` didn't check for `missing_products` in `room_pending_decision` before allowing shortcuts to run.
+**Fix**: Added bypass in `shortcuts_allowed()` - return False if `room_pending` exists, room isn't locked, and there are missing products.
+**Files**: `workflows/planner/shortcuts_gate.py:39-52`

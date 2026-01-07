@@ -32,13 +32,15 @@ from workflows.common.menu_options import DINNER_MENU_OPTIONS
 
 
 def products_ready(event_entry: Dict[str, Any]) -> bool:
-    """Check if products are ready (list non-empty or skip flag set)."""
+    """Check if products are ready (list non-empty, sourced, or skip flag set)."""
     products = event_entry.get("products") or []
     selected = event_entry.get("selected_products") or []
     products_state = event_entry.get("products_state") or {}
     line_items = products_state.get("line_items") or []
     skip_flag = bool(products_state.get("skip_products") or event_entry.get("products_skipped"))
-    return bool(products or selected or line_items or skip_flag)
+    # Sourced products (from HIL sourcing flow) count as ready
+    sourced = event_entry.get("sourced_products") or {}
+    return bool(products or selected or line_items or skip_flag or sourced)
 
 
 def ensure_products_container(event_entry: Dict[str, Any]) -> None:
@@ -302,11 +304,27 @@ def apply_product_operations(event_entry: Dict[str, Any], user_info: Dict[str, A
 
     Returns True if any changes were made.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # DEBUG: Log what products_add contains
+    raw_products_add = user_info.get("products_add")
+    if raw_products_add:
+        logger.warning("[PRODUCT_DEBUG] apply_product_operations called with products_add: %s (type: %s, len: %s)",
+                      raw_products_add[:3] if isinstance(raw_products_add, list) else raw_products_add,
+                      type(raw_products_add).__name__,
+                      len(raw_products_add) if isinstance(raw_products_add, list) else 1)
+
     participant_count = infer_participant_count(event_entry)
     additions = normalise_products(
         user_info.get("products_add"),
         participant_count=participant_count,
     )
+
+    # DEBUG: Log normalized additions
+    if additions:
+        logger.warning("[PRODUCT_DEBUG] Normalized additions (%d items): %s",
+                      len(additions), [a.get("name") for a in additions[:5]])
     removals = normalise_product_names(user_info.get("products_remove"))
     changes = False
 
