@@ -3,7 +3,8 @@ name: Workflow Tests
 on:
   push:
     branches:
-      - work
+      - main
+      - feature/*
   pull_request:
 
 jobs:
@@ -12,6 +13,7 @@ jobs:
     env:
       TZ: Europe/Zurich
       PYTHONHASHSEED: "1337"
+      AGENT_MODE: stub
     steps:
       - uses: actions/checkout@v4
 
@@ -30,14 +32,15 @@ jobs:
         run: |
           python - <<'PY'
           import importlib
-          # main.py is now at the root
           m = importlib.import_module('main')
           assert m is not None
-          print("✅ main.py importable")
           PY
 
       - name: Run smoke tests
         run: pytest tests/smoke -v
 
-      - name: Run full test suite
-        run: pytest tests
+      - name: Run regression tests
+        run: pytest tests/regression -v
+
+      - name: Run detection tests
+        run: pytest tests/detection -v -q
