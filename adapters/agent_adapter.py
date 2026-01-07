@@ -22,7 +22,7 @@ import warnings
 try:  # pragma: no cover - optional dependency resolved at runtime
     # Suppress deprecation warning until migration to google-genai SDK is complete
     warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
-    import google.generativeai as genai  # type: ignore
+    import google.genai as genai # type: ignore
 except Exception:  # pragma: no cover - library may be unavailable in tests
     genai = None  # type: ignore
 

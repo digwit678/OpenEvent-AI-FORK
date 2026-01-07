@@ -11,7 +11,7 @@ email-validator>=2.0.0
 openai>=1.0.0
 
 # Google Gemini integration (optional - for AGENT_MODE=gemini)
-google-generativeai>=0.8.0
+google-genai>=0.1.0
 
 # Form data support
 python-multipart>=0.0.6
