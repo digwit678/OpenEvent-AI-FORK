@@ -228,6 +228,12 @@ def check_out_of_context(
     if not state.event_entry:
         return None
 
+    # Bypass OOC check when waiting for "continue without product" response
+    # Step 3 has its own LLM detection for this flow
+    if state.event_entry.get("sourcing_declined"):
+        logger.debug("[OOC_CHECK] Skipping check - waiting for sourcing_declined response")
+        return None
+
     current_step = state.event_entry.get("current_step")
     intent = unified_result.intent if unified_result else None
     logger.debug("[OOC_CHECK] intent=%s, current_step=%s", intent, current_step)
