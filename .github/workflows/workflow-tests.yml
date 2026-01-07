@@ -29,9 +29,14 @@ jobs:
         run: |
           python - <<'PY'
           import importlib
-          m = importlib.import_module('backend.main')
+          # main.py is now at the root
+          m = importlib.import_module('main')
           assert m is not None
+          print("✅ main.py importable")
           PY
 
-      - name: Run tests
-        run: pytest
+      - name: Run smoke tests
+        run: pytest tests/smoke -v
+
+      - name: Run full test suite
+        run: pytest tests
