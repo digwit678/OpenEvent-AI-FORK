@@ -27,10 +27,11 @@ logger = logging.getLogger(__name__)
 # Check if rate limiting is enabled
 RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "0") == "1"
 
-# Rate limit configuration (defaults are placeholders - see DECISION-014)
-# These will be configured once we decide on appropriate values
-RATE_LIMIT_RPS = os.getenv("RATE_LIMIT_RPS", "")  # Empty = not configured yet
-RATE_LIMIT_BURST = os.getenv("RATE_LIMIT_BURST", "")  # Empty = not configured yet
+# Rate limit configuration
+# Defaults are generous for development (50 RPS = 180,000/hour per IP)
+# Production recommendation: 10 RPS, 30 burst (see DECISION-014)
+RATE_LIMIT_RPS = os.getenv("RATE_LIMIT_RPS", "50")  # Requests per second per IP
+RATE_LIMIT_BURST = os.getenv("RATE_LIMIT_BURST", "100")  # Burst allowance
 
 # Paths exempt from rate limiting (health checks, docs)
 _exempt_paths_raw = os.getenv(
@@ -50,13 +51,6 @@ def setup_rate_limiting(app: FastAPI) -> None:
         logger.info("Rate limiting disabled (RATE_LIMIT_ENABLED != 1)")
         return
 
-    if not RATE_LIMIT_RPS or not RATE_LIMIT_BURST:
-        logger.warning(
-            "Rate limiting enabled but limits not configured. "
-            "Set RATE_LIMIT_RPS and RATE_LIMIT_BURST. "
-            "See OPEN_DECISIONS.md DECISION-014."
-        )
-        return
 
     try:
         from slowapi import Limiter
