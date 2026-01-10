@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional, List
 from datetime import datetime
@@ -375,10 +376,16 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         msg.get("thread_id")
         or msg.get("thread")
         or msg.get("session_id")
-        or msg.get("msg_id")
-        or msg.get("from_email")
-        or "unknown-thread"
     )
+    if not raw_thread_id:
+        # Generate unique thread_id to prevent unrelated conversations from colliding
+        # NOTE: Using msg_id or from_email as fallback caused thread collisions (F-10)
+        raw_thread_id = f"auto-{uuid.uuid4().hex[:12]}"
+        logger.warning(
+            "[WF] No thread_id/session_id provided, generated %s. "
+            "Callers should provide explicit thread_id for session continuity.",
+            raw_thread_id,
+        )
     state.thread_id = str(raw_thread_id)
     STATE_STORE.clear(state.thread_id)
     combined_text = "\n".join(

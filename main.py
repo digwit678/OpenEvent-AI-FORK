@@ -127,6 +127,13 @@ async def lifespan(app: FastAPI):
         # Unexpected error during validation - log but don't block startup
         logger.warning("[Backend] Could not validate hybrid mode: %s", e)
 
+    # --- Startup: Auth configuration warning ---
+    # SECURITY: Warn loudly when auth is disabled in production
+    auth_enabled = os.getenv("AUTH_ENABLED", "0") == "1"
+    if not _IS_DEV and not auth_enabled:
+        logger.warning("[SECURITY] AUTH_ENABLED=0 in production mode - API is unprotected!")
+        logger.warning("[SECURITY] Set AUTH_ENABLED=1 and configure API_KEY for production")
+
     yield
     # --- Shutdown logic (if any) can go here ---
 

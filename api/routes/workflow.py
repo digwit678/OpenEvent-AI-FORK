@@ -19,7 +19,8 @@ from workflows.io.integration.config import is_hil_all_replies_enabled
 router = APIRouter(tags=["workflow"])
 
 # Only expose detailed info in dev mode
-_IS_DEV = os.getenv("ENV", "dev").lower() != "prod"
+# SECURITY: Default to prod (matches main.py) - prevents db_path leak when ENV unset
+_IS_DEV = os.getenv("ENV", "prod").lower() != "prod"
 
 
 @router.get("/api/workflow/health")

@@ -14,7 +14,6 @@ MIGRATION: Extracted from main.py in Phase C refactoring (2025-12-18).
 """
 
 import logging
-import os
 import re
 import uuid
 
@@ -369,7 +368,8 @@ def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: 
     conversation_state.event_info.event_date = chosen_date
     conversation_state.event_info.status = "Date Confirmed"
 
-    os.environ.setdefault("AGENT_MODE", "openai")
+    # NOTE: AGENT_MODE is now set at startup in main.py with smart defaults
+    # (hybrid if Gemini key present, openai-only otherwise)
     synthetic_msg = {
         "msg_id": str(uuid.uuid4()),
         "from_name": "Client (GUI)",
@@ -460,7 +460,7 @@ def _persist_confirmed_date(conversation_state: ConversationState, chosen_date: 
 @router.post("/api/start-conversation")
 async def start_conversation(request: StartConversationRequest):
     """Start a new conversation workflow."""
-    os.environ.setdefault("AGENT_MODE", "openai")
+    # NOTE: AGENT_MODE is now set at startup in main.py with smart defaults
     subject_line = (request.email_body.splitlines()[0][:80] if request.email_body else "No subject")
     session_id = str(uuid.uuid4())
     msg = {
@@ -749,25 +749,10 @@ async def send_message(request: SendMessageRequest):
     # Only use fallback message if reply is empty AND HIL approval is NOT pending
     res_meta = wf_res.get("res") or {}
     hil_pending = res_meta.get("pending_hil_approval", False)
-    workflow_action = wf_res.get("action", "")
 
-    # Handle intentionally silent responses (out-of-context, nonsense_ignored)
-    # These actions mean "do not respond" - return empty response, no fallback
-    silent_actions = {"out_of_context_ignored", "nonsense_ignored"}
-    if workflow_action in silent_actions:
-        # Intentionally no response - client sent wrong step action or nonsense
-        conversation_state.event_info = _update_event_info_from_db(
-            conversation_state.event_info,
-            wf_res.get("event_id") or conversation_state.event_id,
-        )
-        return {
-            "session_id": request.session_id,
-            "workflow_type": request.session_id,
-            "response": "",  # Empty response = no reply
-            "is_complete": conversation_state.is_complete,
-            "event_info": conversation_state.event_info.dict(),
-            "pending_actions": None,
-        }
+    # NOTE: Silent actions (out_of_context_ignored, nonsense_ignored) were removed in F-04 fix.
+    # These now return helpful guidance messages via out_of_context_guided/nonsense_guided actions.
+    # The normal flow below processes their draft messages and returns them to the user.
 
     if not assistant_reply and not hil_pending:
         # Create diagnostic fallback context for empty workflow reply
