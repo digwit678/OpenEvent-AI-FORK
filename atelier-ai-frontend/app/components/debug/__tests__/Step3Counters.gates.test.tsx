@@ -1,3 +1,5 @@
+import { describe, it, expect } from 'vitest';
+
 import { computeStepProgress } from '../utils';
 
 describe('Step3 counters', () => {

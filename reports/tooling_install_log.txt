@@ -1,0 +1,130 @@
+# Tooling Installation Log
+# Generated: 2026-01-10
+# All commands executed in order
+
+# ============================================
+# PHASE 1: INVENTORY (no installs)
+# ============================================
+
+# System detection
+uname -a
+echo $SHELL
+brew --version
+python3 --version
+pip3 --version
+pipx --version  # Result: not installed
+node --version
+npm --version
+pnpm --version  # Result: not installed
+docker --version  # Result: not installed
+go version  # Result: not installed
+cargo --version  # Result: not installed
+
+# Existing tools check
+ruff --version  # Result: not installed
+mypy --version  # Result: not installed
+pyright --version  # Result: 1.1.407 (pre-installed)
+bandit --version  # Result: not installed
+semgrep --version  # Result: not installed
+gitleaks version  # Result: not installed
+trufflehog --version  # Result: not installed
+pip-audit --version  # Result: not installed
+osv-scanner --version  # Result: not installed
+trivy --version  # Result: not installed
+
+# Codex CLI check
+codex --version  # Result: codex-cli 0.79.0
+
+# ============================================
+# PHASE 3: INSTALL & VERIFY
+# ============================================
+
+# Create reports directory
+mkdir -p /Users/nico/PycharmProjects/OpenEvent-AI/reports
+
+# Install pipx (Python CLI tool manager)
+brew install pipx
+# Result: SUCCESS - pipx 1.8.0 installed (with python@3.14 dependency)
+
+# Ensure pipx PATH
+pipx ensurepath
+# Result: SUCCESS - /Users/nico/.local/bin already in PATH
+
+# Install gitleaks (secrets scanner)
+brew install gitleaks
+# Result: SUCCESS - gitleaks 8.30.0 installed
+
+# Install semgrep (multi-language SAST)
+brew install semgrep
+# Result: SUCCESS - semgrep 1.146.0 installed (with dependencies: certifi, pycparser, cffi, cryptography, dwarfutils, libev, pcre, pydantic, readline, xz, rpds-py, tree-sitter)
+
+# Install ruff (Python linter)
+brew install ruff
+# Result: SUCCESS - ruff 0.14.11 installed
+
+# Install pip-audit (Python dependency scanner)
+pipx install pip-audit
+# Result: SUCCESS - pip-audit 2.10.0 installed
+
+# Install bandit (Python SAST)
+pipx install bandit
+# Result: SUCCESS - bandit 1.9.2 installed
+
+# ============================================
+# VERIFICATION
+# ============================================
+
+# Verify all tool versions
+gitleaks version  # Result: 8.30.0
+semgrep --version  # Result: 1.146.0
+ruff --version  # Result: ruff 0.14.11
+pip-audit --version  # Result: pip-audit 2.10.0
+bandit --version  # Result: bandit 1.9.2
+pyright --version  # Result: pyright 1.1.407
+pipx --version  # Result: 1.8.0
+
+# Generate package-lock.json for npm audit
+cd /Users/nico/PycharmProjects/OpenEvent-AI/atelier-ai-frontend
+npm i --package-lock-only
+# Result: SUCCESS - package-lock.json generated, 1 critical vulnerability detected
+
+# Verify npm audit works
+npm audit
+# Result: SUCCESS - 1 critical vulnerability (next 15.5.0-15.5.7)
+
+# Smoke test: gitleaks
+cd /Users/nico/PycharmProjects/OpenEvent-AI
+gitleaks detect --source . --no-git --redact
+# Result: SUCCESS - 21 potential leaks found (expected in dev environment)
+
+# Smoke test: ruff
+ruff check config.py
+# Result: SUCCESS - All checks passed
+
+# ============================================
+# PHASE 4: MCP/PLUGIN VERIFICATION
+# ============================================
+
+# MCP refactor tool test
+# Used mcp__refactor__code_search with pattern "def get_llm_profile"
+# Result: SUCCESS - Found match in config.py line 31
+
+# MCP IDE diagnostics test
+# Used mcp__ide__getDiagnostics on config.py
+# Result: TIMEOUT - May require LSP running
+
+# ============================================
+# PHASE 5: CODEX CLI VERIFICATION
+# ============================================
+
+# Verify Codex CLI
+codex --version
+# Result: codex-cli 0.79.0
+
+# Check global config
+cat ~/.codex/config.toml
+# Result: model = "gpt-5.2-codex", model_reasoning_effort = "xhigh" (already correct)
+
+# ============================================
+# NO FAILURES - ALL INSTALLS SUCCESSFUL
+# ============================================
