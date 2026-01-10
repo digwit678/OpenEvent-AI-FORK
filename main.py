@@ -43,7 +43,7 @@ from legacy.session_store import active_conversations  # Used in root endpoint
 # NOTE: adapter imports moved to routes/messages.py
 # NOTE: workflow imports moved to routes/messages.py
 from utils import json_io
-from api.middleware import TenantContextMiddleware, AuthMiddleware
+from api.middleware import TenantContextMiddleware, AuthMiddleware, setup_rate_limiting
 from api.middleware.request_limits import RequestSizeLimitMiddleware
 
 # Environment mode detection: dev vs prod
@@ -193,6 +193,11 @@ else:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+# Rate limiting middleware (disabled by default)
+# Enable with RATE_LIMIT_ENABLED=1 and configure RATE_LIMIT_RPS, RATE_LIMIT_BURST
+# See OPEN_DECISIONS.md DECISION-014 for rate limit value decisions
+setup_rate_limiting(app)
 
 # CENTRALIZED EVENTS DATABASE - use canonical path from workflow_email
 EVENTS_FILE = str(WF_DB_PATH)  # For backwards compat in any string contexts

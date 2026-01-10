@@ -31,3 +31,6 @@ httpx>=0.25.0
 
 # Logging
 structlog>=23.1.0
+
+# Rate limiting
+slowapi>=0.1.9
