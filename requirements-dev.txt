@@ -1,13 +1,18 @@
-##
-# Optional test/development extras.
-# Install only if you plan to run pytest or local regression tooling.
-##
+# Development/Test Dependencies
+# Pinned versions for reproducible test runs (updated 2026-01-10)
+# Install: pip install -r requirements-dev.txt
 
-pytest
-pytest-cov
-freezegun
-pytz
-python-dateutil
-faker
-hypothesis
-coverage
+# Testing framework
+pytest>=8.0.0
+pytest-cov>=4.0.0
+pytest-asyncio>=0.21.0
+
+# Test utilities
+freezegun>=1.2.0
+faker>=18.0.0
+hypothesis>=6.0.0
+
+# Coverage
+coverage>=7.0.0
+
+# Note: pytz and python-dateutil are in requirements.txt (runtime deps)

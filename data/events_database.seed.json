@@ -1,0 +1,1714 @@
+{
+  "events": [
+    {
+      "event_id": "0f53083f-14a9-4109-a6e3-d008b53142ba",
+      "team_id": "team-zurich",
+      "created_at": "2026-01-10T21:00:02.980501",
+      "status": "Lead",
+      "current_step": 1,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": null,
+      "end_date": null,
+      "date_confirmed": false,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 10,
+        "seating_layout": "Theater",
+        "event_duration": {
+          "hours": 2
+        },
+        "special_requirements": "Event scenario 1",
+        "preferred_room": null
+      },
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-10T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 1,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "10.01.2026",
+        "Status": "Lead",
+        "Event Date": "Not specified",
+        "Name": "Thomas Weber",
+        "Email": "t.weber@swisstech.ch",
+        "Phone": "+41 44 123 4567",
+        "Company": "SwissTech AG",
+        "Start Time": "9:00",
+        "End Time": "14:00",
+        "Preferred Room": null,
+        "Number of Participants": "10",
+        "Type of Event": "Workshop",
+        "Catering Preference": "Yes",
+        "Language": "de"
+      },
+      "msgs": [
+        "a442a072-86ab-4cf5-83bf-653949fe538b"
+      ],
+      "thread_id": "022a050a-3b2b-44da-803e-1d099d701d9a",
+      "calendar_event_id": "openevent-0f53083f-14a9-4109-a6e3-d008b53142ba",
+      "current_step_stage": "step_1",
+      "selected_products": [],
+      "selected_catering": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending"
+    },
+    {
+      "event_id": "d54c4118-5252-4112-b795-04a4b63a38b7",
+      "team_id": "team-geneva",
+      "created_at": "2026-01-08T21:00:02.980501",
+      "status": "Lead",
+      "current_step": 1,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": null,
+      "end_date": null,
+      "date_confirmed": false,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 15,
+        "seating_layout": "Classroom",
+        "event_duration": {
+          "hours": 3
+        },
+        "special_requirements": "Event scenario 2",
+        "preferred_room": null
+      },
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-09T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 1,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "08.01.2026",
+        "Status": "Lead",
+        "Event Date": "Not specified",
+        "Name": "Sophie Martin",
+        "Email": "sophie.martin@innovations.ch",
+        "Phone": "+41 22 987 6543",
+        "Company": "Innovations SA",
+        "Start Time": "10:00",
+        "End Time": "15:00",
+        "Preferred Room": null,
+        "Number of Participants": "15",
+        "Type of Event": "Conference",
+        "Catering Preference": "No",
+        "Language": "fr"
+      },
+      "msgs": [
+        "ff532550-6a32-43b7-9f0c-44a4dd423951"
+      ],
+      "thread_id": "e3ea7ab3-9b33-4275-a742-bdf821ba74c2",
+      "calendar_event_id": "openevent-d54c4118-5252-4112-b795-04a4b63a38b7",
+      "current_step_stage": "step_1",
+      "selected_products": [
+        {
+          "id": "equip-projector",
+          "name": "Projector",
+          "qty": 1
+        }
+      ],
+      "selected_catering": [
+        {
+          "id": "catering-basic-coffee",
+          "name": "Basic Coffee & Tea Package",
+          "qty": 1
+        }
+      ],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 1,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending"
+    },
+    {
+      "event_id": "1d1216c7-72b6-406f-898c-21b482cb6d55",
+      "team_id": null,
+      "created_at": "2026-01-06T21:00:02.980501",
+      "status": "Lead",
+      "current_step": 2,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": null,
+      "end_date": null,
+      "date_confirmed": false,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 20,
+        "seating_layout": "U-Shape",
+        "event_duration": {
+          "hours": 4
+        },
+        "special_requirements": "Event scenario 3",
+        "preferred_room": null
+      },
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-08T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 2,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "06.01.2026",
+        "Status": "Lead",
+        "Event Date": "Not specified",
+        "Name": "Michael Brown",
+        "Email": "m.brown@globalcorp.com",
+        "Phone": "+41 44 555 1234",
+        "Company": "GlobalCorp Ltd",
+        "Start Time": "11:00",
+        "End Time": "16:00",
+        "Preferred Room": null,
+        "Number of Participants": "20",
+        "Type of Event": "Meeting",
+        "Catering Preference": "Yes",
+        "Language": "en"
+      },
+      "msgs": [
+        "cfc33ee3-c2c2-4c20-96a5-c27a036aa306"
+      ],
+      "thread_id": "38d4be3e-b989-4eda-ac48-55cbe888cf32",
+      "calendar_event_id": "openevent-1d1216c7-72b6-406f-898c-21b482cb6d55",
+      "current_step_stage": "step_2",
+      "selected_products": [
+        {
+          "id": "equip-projector",
+          "name": "Projector",
+          "qty": 1
+        },
+        {
+          "id": "equip-flipchart",
+          "name": "Flipchart",
+          "qty": 2
+        }
+      ],
+      "selected_catering": [
+        {
+          "id": "catering-classic-apero",
+          "name": "Classic Ap\u00e9ro",
+          "qty": 1
+        }
+      ],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 2,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending"
+    },
+    {
+      "event_id": "e275a84e-b6c8-42f6-bb25-2bef463ee7a7",
+      "team_id": "team-zurich",
+      "created_at": "2026-01-04T21:00:02.980501",
+      "status": "Lead",
+      "current_step": 2,
+      "caller_step": null,
+      "thread_state": "Awaiting Manager",
+      "chosen_date": null,
+      "end_date": null,
+      "date_confirmed": false,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 25,
+        "seating_layout": "Boardroom",
+        "event_duration": {
+          "hours": 5
+        },
+        "special_requirements": "Event scenario 4",
+        "preferred_room": null
+      },
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-07T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 2,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "04.01.2026",
+        "Status": "Lead",
+        "Event Date": "Not specified",
+        "Name": "Elena Rossi",
+        "Email": "e.rossi@meditech.it",
+        "Phone": "+41 91 234 5678",
+        "Company": "MediTech Italia",
+        "Start Time": "12:00",
+        "End Time": "17:00",
+        "Preferred Room": null,
+        "Number of Participants": "25",
+        "Type of Event": "Training",
+        "Catering Preference": "No",
+        "Language": "it"
+      },
+      "msgs": [
+        "5cb0effc-abab-4fb9-af29-1b47e21e76c2"
+      ],
+      "thread_id": "9b5b7c1f-590b-4c2e-b03a-3dc38222d76b",
+      "calendar_event_id": "openevent-e275a84e-b6c8-42f6-bb25-2bef463ee7a7",
+      "current_step_stage": "step_2",
+      "selected_products": [
+        {
+          "id": "equip-microphone",
+          "name": "Wireless Microphone",
+          "qty": 2
+        }
+      ],
+      "selected_catering": [
+        {
+          "id": "catering-premium-apero",
+          "name": "Premium Ap\u00e9ro",
+          "qty": 1
+        },
+        {
+          "id": "catering-basic-coffee",
+          "name": "Basic Coffee & Tea Package",
+          "qty": 1
+        }
+      ],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending"
+    },
+    {
+      "event_id": "175b6d79-e636-44e9-ba2e-c88734bcd20a",
+      "team_id": "team-geneva",
+      "created_at": "2026-01-02T21:00:02.980501",
+      "status": "Lead",
+      "current_step": 3,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": "21.02.2026",
+      "end_date": null,
+      "date_confirmed": true,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 30,
+        "seating_layout": "Theater",
+        "event_duration": {
+          "hours": 6
+        },
+        "special_requirements": "Event scenario 5",
+        "preferred_room": null
+      },
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-06T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 3,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "02.01.2026",
+        "Status": "Lead",
+        "Event Date": "21.02.2026",
+        "Name": "Hans Keller",
+        "Email": "h.keller@finanzhaus.ch",
+        "Phone": "+41 31 876 5432",
+        "Company": "FinanzHaus GmbH",
+        "Start Time": "9:00",
+        "End Time": "18:00",
+        "Preferred Room": null,
+        "Number of Participants": "30",
+        "Type of Event": "Seminar",
+        "Catering Preference": "Yes",
+        "Language": "de"
+      },
+      "msgs": [
+        "c4dbb7fa-fe07-4107-9004-9c746917b1df"
+      ],
+      "thread_id": "3abf9f9f-18dc-45d5-8d4f-d7fb0ea30891",
+      "calendar_event_id": "openevent-175b6d79-e636-44e9-ba2e-c88734bcd20a",
+      "current_step_stage": "step_3",
+      "selected_products": [],
+      "selected_catering": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 1,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": true,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending"
+    },
+    {
+      "event_id": "4e383d2d-d7af-4213-bf55-4e68850ad378",
+      "team_id": null,
+      "created_at": "2025-12-31T21:00:02.980501",
+      "status": "Lead",
+      "current_step": 3,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": "28.02.2026",
+      "end_date": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room B",
+      "requirements": {
+        "number_of_participants": 35,
+        "seating_layout": "Classroom",
+        "event_duration": {
+          "hours": 7
+        },
+        "special_requirements": "Event scenario 6",
+        "preferred_room": "Room B"
+      },
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-05T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 3,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "31.12.2025",
+        "Status": "Lead",
+        "Event Date": "28.02.2026",
+        "Name": "Marie Dupont",
+        "Email": "marie.dupont@gmail.com",
+        "Phone": "+41 79 123 4567",
+        "Company": "Freelance Consultant",
+        "Start Time": "10:00",
+        "End Time": "14:00",
+        "Preferred Room": "Room B",
+        "Number of Participants": "35",
+        "Type of Event": "Product Launch",
+        "Catering Preference": "No",
+        "Language": "fr"
+      },
+      "msgs": [
+        "4d842283-07ef-4b48-84a9-87acf61985e5"
+      ],
+      "thread_id": "019340a6-9b87-4fc5-8ba7-3547094b3a62",
+      "calendar_event_id": "openevent-4e383d2d-d7af-4213-bf55-4e68850ad378",
+      "current_step_stage": "step_3",
+      "selected_products": [
+        {
+          "id": "equip-projector",
+          "name": "Projector",
+          "qty": 1
+        }
+      ],
+      "selected_catering": [
+        {
+          "id": "catering-basic-coffee",
+          "name": "Basic Coffee & Tea Package",
+          "qty": 1
+        }
+      ],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 2,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": true,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending"
+    },
+    {
+      "event_id": "26663af8-266b-422e-9626-862e59777c9c",
+      "team_id": "team-zurich",
+      "created_at": "2025-12-29T21:00:02.980501",
+      "status": "Lead",
+      "current_step": 4,
+      "caller_step": null,
+      "thread_state": "Offer Pending",
+      "chosen_date": "07.03.2026",
+      "end_date": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room A",
+      "requirements": {
+        "number_of_participants": 40,
+        "seating_layout": "U-Shape",
+        "event_duration": {
+          "hours": 2
+        },
+        "special_requirements": "Event scenario 7",
+        "preferred_room": "Room A"
+      },
+      "room_eval_hash": null,
+      "offer_id": "c667b2be-d048-4e46-b354-ebc927c41281",
+      "audit": [
+        {
+          "ts": "2026-01-04T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 4,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "29.12.2025",
+        "Status": "Lead",
+        "Event Date": "07.03.2026",
+        "Name": "Alex Johnson",
+        "Email": "alex.j@startup.io",
+        "Phone": "+41 76 999 8888",
+        "Company": "TechStartup",
+        "Start Time": "11:00",
+        "End Time": "15:00",
+        "Preferred Room": "Room A",
+        "Number of Participants": "40",
+        "Type of Event": "Team Building",
+        "Catering Preference": "Yes",
+        "Language": "en"
+      },
+      "msgs": [
+        "43c420f4-79a4-4e17-a86a-bdd8ac576bba"
+      ],
+      "thread_id": "43e82b17-214e-49ca-ab5c-fa539ef80e22",
+      "calendar_event_id": "openevent-26663af8-266b-422e-9626-862e59777c9c",
+      "current_step_stage": "step_4",
+      "selected_products": [
+        {
+          "id": "equip-projector",
+          "name": "Projector",
+          "qty": 1
+        },
+        {
+          "id": "equip-flipchart",
+          "name": "Flipchart",
+          "qty": 2
+        }
+      ],
+      "selected_catering": [
+        {
+          "id": "catering-classic-apero",
+          "name": "Classic Ap\u00e9ro",
+          "qty": 1
+        }
+      ],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": true,
+        "step3": true,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending"
+    },
+    {
+      "event_id": "f2117834-1b67-4018-be18-2aa82b6933b3",
+      "team_id": "team-geneva",
+      "created_at": "2025-12-27T21:00:02.980501",
+      "status": "Offer Sent",
+      "current_step": 4,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": "14.03.2026",
+      "end_date": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room C",
+      "requirements": {
+        "number_of_participants": 45,
+        "seating_layout": "Boardroom",
+        "event_duration": {
+          "hours": 3
+        },
+        "special_requirements": "Event scenario 8",
+        "preferred_room": "Room C"
+      },
+      "room_eval_hash": null,
+      "offer_id": "dc6593f8-be1a-4a0b-824a-51e66074265c",
+      "audit": [
+        {
+          "ts": "2026-01-03T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 4,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "27.12.2025",
+        "Status": "Offer Sent",
+        "Event Date": "14.03.2026",
+        "Name": "Claudia Bernasconi",
+        "Email": "claudia.b@eventplanner.ch",
+        "Phone": "+41 91 111 2222",
+        "Company": "Event Planner Pro",
+        "Start Time": "12:00",
+        "End Time": "16:00",
+        "Preferred Room": "Room C",
+        "Number of Participants": "45",
+        "Type of Event": "Board Meeting",
+        "Catering Preference": "No",
+        "Language": "it"
+      },
+      "msgs": [
+        "49ac92e6-172e-42ec-84ed-cc9bf7fbebaf"
+      ],
+      "thread_id": "68cc97db-e62d-4d2b-b395-f7e7fa7af380",
+      "calendar_event_id": "openevent-f2117834-1b67-4018-be18-2aa82b6933b3",
+      "current_step_stage": "step_4",
+      "selected_products": [
+        {
+          "id": "equip-microphone",
+          "name": "Wireless Microphone",
+          "qty": 2
+        }
+      ],
+      "selected_catering": [
+        {
+          "id": "catering-premium-apero",
+          "name": "Premium Ap\u00e9ro",
+          "qty": 1
+        },
+        {
+          "id": "catering-basic-coffee",
+          "name": "Basic Coffee & Tea Package",
+          "qty": 1
+        }
+      ],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 1,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": true,
+        "step3": true,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending"
+    },
+    {
+      "event_id": "fbc9b38c-4701-4f65-a963-61f81742244c",
+      "team_id": null,
+      "created_at": "2025-12-25T21:00:02.980501",
+      "status": "Offer Sent",
+      "current_step": 5,
+      "caller_step": null,
+      "thread_state": "Negotiating",
+      "chosen_date": "21.03.2026",
+      "end_date": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room D",
+      "requirements": {
+        "number_of_participants": 50,
+        "seating_layout": "Theater",
+        "event_duration": {
+          "hours": 4
+        },
+        "special_requirements": "Event scenario 9",
+        "preferred_room": "Room D"
+      },
+      "room_eval_hash": null,
+      "offer_id": "d0ca3e5f-2caf-4181-b44a-c79e66dceb9c",
+      "audit": [
+        {
+          "ts": "2026-01-02T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 5,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "25.12.2025",
+        "Status": "Offer Sent",
+        "Event Date": "21.03.2026",
+        "Name": "Peter M\u00fcller",
+        "Email": "peter.mueller@recurring.ch",
+        "Phone": "+41 44 333 4444",
+        "Company": "Recurring Events AG",
+        "Start Time": "9:00",
+        "End Time": "17:00",
+        "Preferred Room": "Room D",
+        "Number of Participants": "50",
+        "Type of Event": "Workshop",
+        "Catering Preference": "Yes",
+        "Language": "de"
+      },
+      "msgs": [
+        "6674f0fb-f8b0-440f-b536-2a983133bdba"
+      ],
+      "thread_id": "743d8165-02ca-4323-ab95-cd2343810588",
+      "calendar_event_id": "openevent-fbc9b38c-4701-4f65-a963-61f81742244c",
+      "current_step_stage": "step_5",
+      "selected_products": [],
+      "selected_catering": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 2,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": true,
+        "step3": true,
+        "step4": true,
+        "step7": false
+      },
+      "decision": "pending"
+    },
+    {
+      "event_id": "41c7b52d-d171-4860-b785-dec5f5ccf648",
+      "team_id": "team-zurich",
+      "created_at": "2025-12-23T21:00:02.980501",
+      "status": "Offer Sent",
+      "current_step": 5,
+      "caller_step": null,
+      "thread_state": "Awaiting Manager",
+      "chosen_date": "28.03.2026",
+      "end_date": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room E",
+      "requirements": {
+        "number_of_participants": 55,
+        "seating_layout": "Classroom",
+        "event_duration": {
+          "hours": 5
+        },
+        "special_requirements": "Event scenario 10",
+        "preferred_room": "Room E"
+      },
+      "room_eval_hash": null,
+      "offer_id": "121d1dca-181e-4235-a7d0-a018c7efbae4",
+      "audit": [
+        {
+          "ts": "2026-01-01T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 5,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "23.12.2025",
+        "Status": "Offer Sent",
+        "Event Date": "28.03.2026",
+        "Name": "Sarah Connor",
+        "Email": "s.connor@annual.com",
+        "Phone": "+41 22 555 6666",
+        "Company": "Annual Conference Inc",
+        "Start Time": "10:00",
+        "End Time": "18:00",
+        "Preferred Room": "Room E",
+        "Number of Participants": "55",
+        "Type of Event": "Conference",
+        "Catering Preference": "No",
+        "Language": "en"
+      },
+      "msgs": [
+        "0f2533a2-fa1f-4b7e-9083-71b082e403f1"
+      ],
+      "thread_id": "7732b908-96bb-4410-881f-f0d696bb07b5",
+      "calendar_event_id": "openevent-41c7b52d-d171-4860-b785-dec5f5ccf648",
+      "current_step_stage": "step_5",
+      "selected_products": [
+        {
+          "id": "equip-projector",
+          "name": "Projector",
+          "qty": 1
+        }
+      ],
+      "selected_catering": [
+        {
+          "id": "catering-basic-coffee",
+          "name": "Basic Coffee & Tea Package",
+          "qty": 1
+        }
+      ],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": true,
+        "step3": true,
+        "step4": true,
+        "step7": false
+      },
+      "decision": "pending"
+    },
+    {
+      "event_id": "3e996277-d4c6-4af6-a7f6-f43fd88c8806",
+      "team_id": "team-geneva",
+      "created_at": "2025-12-21T21:00:02.980501",
+      "status": "Offer Sent",
+      "current_step": 6,
+      "caller_step": null,
+      "thread_state": "Awaiting Deposit",
+      "chosen_date": "04.04.2026",
+      "end_date": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room A",
+      "requirements": {
+        "number_of_participants": 60,
+        "seating_layout": "U-Shape",
+        "event_duration": {
+          "hours": 6
+        },
+        "special_requirements": "Event scenario 11",
+        "preferred_room": "Room A"
+      },
+      "room_eval_hash": null,
+      "offer_id": "6e7cd4c4-cf75-4442-ad0e-53a539a8c28a",
+      "audit": [
+        {
+          "ts": "2025-12-31T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 6,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "21.12.2025",
+        "Status": "Offer Sent",
+        "Event Date": "04.04.2026",
+        "Name": "Thomas Weber",
+        "Email": "t.weber@swisstech.ch",
+        "Phone": "+41 44 123 4567",
+        "Company": "SwissTech AG",
+        "Start Time": "11:00",
+        "End Time": "14:00",
+        "Preferred Room": "Room A",
+        "Number of Participants": "60",
+        "Type of Event": "Meeting",
+        "Catering Preference": "Yes",
+        "Language": "de"
+      },
+      "msgs": [
+        "07f16544-8d00-48f7-ae9c-12bfc9102a6b"
+      ],
+      "thread_id": "46c0141c-fba8-423e-8cb5-1aa8f06c9e0f",
+      "calendar_event_id": "openevent-3e996277-d4c6-4af6-a7f6-f43fd88c8806",
+      "current_step_stage": "step_6",
+      "selected_products": [
+        {
+          "id": "equip-projector",
+          "name": "Projector",
+          "qty": 1
+        },
+        {
+          "id": "equip-flipchart",
+          "name": "Flipchart",
+          "qty": 2
+        }
+      ],
+      "selected_catering": [
+        {
+          "id": "catering-classic-apero",
+          "name": "Classic Ap\u00e9ro",
+          "qty": 1
+        }
+      ],
+      "deposit_state": {
+        "required": true,
+        "percent": 30,
+        "status": "pending",
+        "due_amount": 500.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 1,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": true,
+        "step3": true,
+        "step4": true,
+        "step7": false
+      },
+      "decision": "pending"
+    },
+    {
+      "event_id": "1e311b5a-c1a6-4dfb-93c1-2368132fd8d8",
+      "team_id": null,
+      "created_at": "2025-12-19T21:00:02.980501",
+      "status": "Offer Sent",
+      "current_step": 6,
+      "caller_step": null,
+      "thread_state": "Deposit Paid",
+      "chosen_date": "11.04.2026",
+      "end_date": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room B",
+      "requirements": {
+        "number_of_participants": 65,
+        "seating_layout": "Boardroom",
+        "event_duration": {
+          "hours": 7
+        },
+        "special_requirements": "Event scenario 12",
+        "preferred_room": "Room B"
+      },
+      "room_eval_hash": null,
+      "offer_id": "1666bb48-8136-4204-8e91-e076d36a63fe",
+      "audit": [
+        {
+          "ts": "2025-12-30T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 6,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "19.12.2025",
+        "Status": "Offer Sent",
+        "Event Date": "11.04.2026",
+        "Name": "Sophie Martin",
+        "Email": "sophie.martin@innovations.ch",
+        "Phone": "+41 22 987 6543",
+        "Company": "Innovations SA",
+        "Start Time": "12:00",
+        "End Time": "15:00",
+        "Preferred Room": "Room B",
+        "Number of Participants": "65",
+        "Type of Event": "Training",
+        "Catering Preference": "No",
+        "Language": "fr"
+      },
+      "msgs": [
+        "6def2187-f75b-4aab-84d2-9b82446d4202"
+      ],
+      "thread_id": "3f44734f-623b-4ecb-99d0-77a99c2208d9",
+      "calendar_event_id": "openevent-1e311b5a-c1a6-4dfb-93c1-2368132fd8d8",
+      "current_step_stage": "step_6",
+      "selected_products": [
+        {
+          "id": "equip-microphone",
+          "name": "Wireless Microphone",
+          "qty": 2
+        }
+      ],
+      "selected_catering": [
+        {
+          "id": "catering-premium-apero",
+          "name": "Premium Ap\u00e9ro",
+          "qty": 1
+        },
+        {
+          "id": "catering-basic-coffee",
+          "name": "Basic Coffee & Tea Package",
+          "qty": 1
+        }
+      ],
+      "deposit_state": {
+        "required": true,
+        "percent": 30,
+        "status": "paid",
+        "due_amount": 500.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 2,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": true,
+        "step3": true,
+        "step4": true,
+        "step7": false
+      },
+      "decision": "pending"
+    },
+    {
+      "event_id": "38763987-b7f0-4778-a725-21193094b3a7",
+      "team_id": "team-zurich",
+      "created_at": "2025-12-17T21:00:02.980501",
+      "status": "Booked",
+      "current_step": 7,
+      "caller_step": null,
+      "thread_state": "Confirmed",
+      "chosen_date": "18.04.2026",
+      "end_date": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room F",
+      "requirements": {
+        "number_of_participants": 70,
+        "seating_layout": "Theater",
+        "event_duration": {
+          "hours": 2
+        },
+        "special_requirements": "Event scenario 13",
+        "preferred_room": "Room F"
+      },
+      "room_eval_hash": null,
+      "offer_id": "84f56398-68b7-46c5-972d-a89f7828b72e",
+      "audit": [
+        {
+          "ts": "2025-12-29T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 7,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "17.12.2025",
+        "Status": "Booked",
+        "Event Date": "18.04.2026",
+        "Name": "Michael Brown",
+        "Email": "m.brown@globalcorp.com",
+        "Phone": "+41 44 555 1234",
+        "Company": "GlobalCorp Ltd",
+        "Start Time": "9:00",
+        "End Time": "16:00",
+        "Preferred Room": "Room F",
+        "Number of Participants": "70",
+        "Type of Event": "Seminar",
+        "Catering Preference": "Yes",
+        "Language": "en"
+      },
+      "msgs": [
+        "db21c0e4-9ad0-4aad-9093-51781a656f13"
+      ],
+      "thread_id": "cef1a1f0-2d80-4300-98bc-1e2a0ea0f593",
+      "calendar_event_id": "openevent-38763987-b7f0-4778-a725-21193094b3a7",
+      "current_step_stage": "step_7",
+      "selected_products": [],
+      "selected_catering": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": true,
+        "step3": true,
+        "step4": true,
+        "step7": false
+      },
+      "decision": "confirmed"
+    },
+    {
+      "event_id": "fbb2a151-f7a8-4904-9f39-4317bcc8f331",
+      "team_id": "team-geneva",
+      "created_at": "2025-12-15T21:00:02.980501",
+      "status": "Booked",
+      "current_step": 7,
+      "caller_step": null,
+      "thread_state": "Site Visit Scheduled",
+      "chosen_date": "25.04.2026",
+      "end_date": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room A",
+      "requirements": {
+        "number_of_participants": 75,
+        "seating_layout": "Classroom",
+        "event_duration": {
+          "hours": 3
+        },
+        "special_requirements": "Event scenario 14",
+        "preferred_room": "Room A"
+      },
+      "room_eval_hash": null,
+      "offer_id": "1c0e6e5f-f1ab-4a2e-9187-6470a45787c0",
+      "audit": [
+        {
+          "ts": "2025-12-28T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 7,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "15.12.2025",
+        "Status": "Booked",
+        "Event Date": "25.04.2026",
+        "Name": "Elena Rossi",
+        "Email": "e.rossi@meditech.it",
+        "Phone": "+41 91 234 5678",
+        "Company": "MediTech Italia",
+        "Start Time": "10:00",
+        "End Time": "17:00",
+        "Preferred Room": "Room A",
+        "Number of Participants": "75",
+        "Type of Event": "Product Launch",
+        "Catering Preference": "No",
+        "Language": "it"
+      },
+      "msgs": [
+        "5711cdf0-9b06-4963-8d9f-88c0603bed4a"
+      ],
+      "thread_id": "5e18e469-f692-4a20-9dc5-098b88928aa1",
+      "calendar_event_id": "openevent-fbb2a151-f7a8-4904-9f39-4317bcc8f331",
+      "current_step_stage": "step_7",
+      "selected_products": [
+        {
+          "id": "equip-projector",
+          "name": "Projector",
+          "qty": 1
+        }
+      ],
+      "selected_catering": [
+        {
+          "id": "catering-basic-coffee",
+          "name": "Basic Coffee & Tea Package",
+          "qty": 1
+        }
+      ],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "scheduled",
+        "proposed_slots": [],
+        "scheduled_slot": "2026-04-22T21:00:02.980501"
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 1,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": true,
+        "step3": true,
+        "step4": true,
+        "step7": false
+      },
+      "decision": "confirmed"
+    },
+    {
+      "event_id": "d0841547-8346-451b-a8f5-3517602df959",
+      "team_id": null,
+      "created_at": "2025-12-13T21:00:02.980501",
+      "status": "Cancelled",
+      "current_step": 4,
+      "caller_step": null,
+      "thread_state": "Cancelled by Client",
+      "chosen_date": "02.05.2026",
+      "end_date": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room C",
+      "requirements": {
+        "number_of_participants": 80,
+        "seating_layout": "U-Shape",
+        "event_duration": {
+          "hours": 4
+        },
+        "special_requirements": "Event scenario 15",
+        "preferred_room": "Room C"
+      },
+      "room_eval_hash": null,
+      "offer_id": "aa6890b5-178c-4c1f-b567-8f7236c97923",
+      "audit": [
+        {
+          "ts": "2025-12-27T21:00:02.980501",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 4,
+          "reason": "test_data"
+        }
+      ],
+      "event_data": {
+        "Date Email Received": "13.12.2025",
+        "Status": "Cancelled",
+        "Event Date": "02.05.2026",
+        "Name": "Hans Keller",
+        "Email": "h.keller@finanzhaus.ch",
+        "Phone": "+41 31 876 5432",
+        "Company": "FinanzHaus GmbH",
+        "Start Time": "11:00",
+        "End Time": "18:00",
+        "Preferred Room": "Room C",
+        "Number of Participants": "80",
+        "Type of Event": "Team Building",
+        "Catering Preference": "Yes",
+        "Language": "de"
+      },
+      "msgs": [
+        "0195cb9f-8a88-4680-9fe2-7b07350e8015"
+      ],
+      "thread_id": "025a66f7-b8d7-40c1-88de-266b11f9f90f",
+      "calendar_event_id": "openevent-d0841547-8346-451b-a8f5-3517602df959",
+      "current_step_stage": "step_4",
+      "selected_products": [
+        {
+          "id": "equip-projector",
+          "name": "Projector",
+          "qty": 1
+        },
+        {
+          "id": "equip-flipchart",
+          "name": "Flipchart",
+          "qty": 2
+        }
+      ],
+      "selected_catering": [
+        {
+          "id": "catering-classic-apero",
+          "name": "Classic Ap\u00e9ro",
+          "qty": 1
+        }
+      ],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "offers": [],
+      "products": [],
+      "negotiation_state": {
+        "counter_count": 2,
+        "manual_review_task_id": null
+      },
+      "gatekeeper_passed": {
+        "step2": true,
+        "step3": true,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "cancelled"
+    }
+  ],
+  "clients": [
+    {
+      "client_id": "2978a137-8a19-461e-84a3-d9466a49e9ae",
+      "team_id": "team-zurich",
+      "email": "t.weber@swisstech.ch",
+      "name": "Thomas Weber",
+      "company": "SwissTech AG",
+      "phone": "+41 44 123 4567",
+      "language": "de",
+      "created_at": "2026-01-10T21:00:02.980501",
+      "event_ids": [
+        "0f53083f-14a9-4109-a6e3-d008b53142ba"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 1"
+        ],
+        "summary": null
+      }
+    },
+    {
+      "client_id": "6f83d424-b604-4eb6-8f06-ece7792c21aa",
+      "team_id": "team-geneva",
+      "email": "sophie.martin@innovations.ch",
+      "name": "Sophie Martin",
+      "company": "Innovations SA",
+      "phone": "+41 22 987 6543",
+      "language": "fr",
+      "created_at": "2026-01-08T21:00:02.980501",
+      "event_ids": [
+        "d54c4118-5252-4112-b795-04a4b63a38b7"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 2"
+        ],
+        "summary": null
+      }
+    },
+    {
+      "client_id": "ddd65d74-7cd8-4c9a-af53-dad8e67ae319",
+      "team_id": null,
+      "email": "m.brown@globalcorp.com",
+      "name": "Michael Brown",
+      "company": "GlobalCorp Ltd",
+      "phone": "+41 44 555 1234",
+      "language": "en",
+      "created_at": "2026-01-06T21:00:02.980501",
+      "event_ids": [
+        "1d1216c7-72b6-406f-898c-21b482cb6d55"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 3"
+        ],
+        "summary": null
+      }
+    },
+    {
+      "client_id": "2198c011-e871-49b4-84ac-4ef0d5415d94",
+      "team_id": "team-zurich",
+      "email": "e.rossi@meditech.it",
+      "name": "Elena Rossi",
+      "company": "MediTech Italia",
+      "phone": "+41 91 234 5678",
+      "language": "it",
+      "created_at": "2026-01-04T21:00:02.980501",
+      "event_ids": [
+        "e275a84e-b6c8-42f6-bb25-2bef463ee7a7"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 4"
+        ],
+        "summary": null
+      }
+    },
+    {
+      "client_id": "fbe5cff1-7fda-4136-9796-7fb09da40cda",
+      "team_id": "team-geneva",
+      "email": "h.keller@finanzhaus.ch",
+      "name": "Hans Keller",
+      "company": "FinanzHaus GmbH",
+      "phone": "+41 31 876 5432",
+      "language": "de",
+      "created_at": "2026-01-02T21:00:02.980501",
+      "event_ids": [
+        "175b6d79-e636-44e9-ba2e-c88734bcd20a"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 5"
+        ],
+        "summary": null
+      }
+    },
+    {
+      "client_id": "81e1677c-1de0-435f-ae8a-e9526f3709f3",
+      "team_id": null,
+      "email": "marie.dupont@gmail.com",
+      "name": "Marie Dupont",
+      "company": "Freelance Consultant",
+      "phone": "+41 79 123 4567",
+      "language": "fr",
+      "created_at": "2025-12-31T21:00:02.980501",
+      "event_ids": [
+        "4e383d2d-d7af-4213-bf55-4e68850ad378"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 6"
+        ],
+        "summary": null
+      }
+    },
+    {
+      "client_id": "778908a5-2e8b-4da6-87a6-2b8e6800d439",
+      "team_id": "team-zurich",
+      "email": "alex.j@startup.io",
+      "name": "Alex Johnson",
+      "company": "TechStartup",
+      "phone": "+41 76 999 8888",
+      "language": "en",
+      "created_at": "2025-12-29T21:00:02.980501",
+      "event_ids": [
+        "26663af8-266b-422e-9626-862e59777c9c"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 7"
+        ],
+        "summary": null
+      }
+    },
+    {
+      "client_id": "4cdbbf9f-559c-496d-917a-505351b605df",
+      "team_id": "team-geneva",
+      "email": "claudia.b@eventplanner.ch",
+      "name": "Claudia Bernasconi",
+      "company": "Event Planner Pro",
+      "phone": "+41 91 111 2222",
+      "language": "it",
+      "created_at": "2025-12-27T21:00:02.980501",
+      "event_ids": [
+        "f2117834-1b67-4018-be18-2aa82b6933b3"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 8"
+        ],
+        "summary": null
+      }
+    },
+    {
+      "client_id": "6999e850-31f6-4674-82d4-1992e44a1aac",
+      "team_id": null,
+      "email": "peter.mueller@recurring.ch",
+      "name": "Peter M\u00fcller",
+      "company": "Recurring Events AG",
+      "phone": "+41 44 333 4444",
+      "language": "de",
+      "created_at": "2025-12-25T21:00:02.980501",
+      "event_ids": [
+        "fbc9b38c-4701-4f65-a963-61f81742244c"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 9"
+        ],
+        "summary": null
+      }
+    },
+    {
+      "client_id": "cb25cc11-2c34-4ccd-9311-d00e3f30e6ff",
+      "team_id": "team-zurich",
+      "email": "s.connor@annual.com",
+      "name": "Sarah Connor",
+      "company": "Annual Conference Inc",
+      "phone": "+41 22 555 6666",
+      "language": "en",
+      "created_at": "2025-12-23T21:00:02.980501",
+      "event_ids": [
+        "41c7b52d-d171-4860-b785-dec5f5ccf648"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 10"
+        ],
+        "summary": null
+      }
+    },
+    {
+      "client_id": "b1565d2b-354a-406f-bd28-92d496067bfb",
+      "team_id": "team-geneva",
+      "email": "t.weber@swisstech.ch",
+      "name": "Thomas Weber",
+      "company": "SwissTech AG",
+      "phone": "+41 44 123 4567",
+      "language": "de",
+      "created_at": "2025-12-21T21:00:02.980501",
+      "event_ids": [
+        "3e996277-d4c6-4af6-a7f6-f43fd88c8806"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 11"
+        ],
+        "summary": null
+      }
+    },
+    {
+      "client_id": "68ce9bf2-14c0-4dbc-b6f2-ff1040fe392c",
+      "team_id": null,
+      "email": "sophie.martin@innovations.ch",
+      "name": "Sophie Martin",
+      "company": "Innovations SA",
+      "phone": "+41 22 987 6543",
+      "language": "fr",
+      "created_at": "2025-12-19T21:00:02.980501",
+      "event_ids": [
+        "1e311b5a-c1a6-4dfb-93c1-2368132fd8d8"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 12"
+        ],
+        "summary": null
+      }
+    },
+    {
+      "client_id": "03db27fb-d995-4db8-9eb3-365925baf5db",
+      "team_id": "team-zurich",
+      "email": "m.brown@globalcorp.com",
+      "name": "Michael Brown",
+      "company": "GlobalCorp Ltd",
+      "phone": "+41 44 555 1234",
+      "language": "en",
+      "created_at": "2025-12-17T21:00:02.980501",
+      "event_ids": [
+        "38763987-b7f0-4778-a725-21193094b3a7"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 13"
+        ],
+        "summary": null
+      }
+    },
+    {
+      "client_id": "27aae879-676f-4098-84d5-fa90d7c13012",
+      "team_id": "team-geneva",
+      "email": "e.rossi@meditech.it",
+      "name": "Elena Rossi",
+      "company": "MediTech Italia",
+      "phone": "+41 91 234 5678",
+      "language": "it",
+      "created_at": "2025-12-15T21:00:02.980501",
+      "event_ids": [
+        "fbb2a151-f7a8-4904-9f39-4317bcc8f331"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 14"
+        ],
+        "summary": null
+      }
+    },
+    {
+      "client_id": "b4e83a5b-2c37-49d7-bc48-95cef2a1d770",
+      "team_id": null,
+      "email": "h.keller@finanzhaus.ch",
+      "name": "Hans Keller",
+      "company": "FinanzHaus GmbH",
+      "phone": "+41 31 876 5432",
+      "language": "de",
+      "created_at": "2025-12-13T21:00:02.980501",
+      "event_ids": [
+        "d0841547-8346-451b-a8f5-3517602df959"
+      ],
+      "memory": {
+        "preferences": [],
+        "notes": [
+          "Test client for scenario 15"
+        ],
+        "summary": null
+      }
+    }
+  ],
+  "hil_tasks": [
+    {
+      "task_id": "825325e1-6d78-4c1b-a95d-dab959171e87",
+      "team_id": "team-zurich",
+      "event_id": "e275a84e-b6c8-42f6-bb25-2bef463ee7a7",
+      "type": "date_confirmation",
+      "status": "pending",
+      "created_at": "2026-01-10T21:00:02.980501",
+      "assigned_to": "mgr-anna",
+      "context": {
+        "reason": "Test HIL task for step 2"
+      }
+    },
+    {
+      "task_id": "cb4bf757-a268-4833-8e33-8cf812dd7ab4",
+      "team_id": "team-zurich",
+      "event_id": "41c7b52d-d171-4860-b785-dec5f5ccf648",
+      "type": "manual_review",
+      "status": "pending",
+      "created_at": "2026-01-10T21:00:02.980501",
+      "assigned_to": "mgr-anna",
+      "context": {
+        "reason": "Test HIL task for step 5"
+      }
+    }
+  ]
+}

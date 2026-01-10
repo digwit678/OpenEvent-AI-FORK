@@ -1,36 +1,37 @@
 # OpenEvent-AI Backend Dependencies
-# Generated for Hostinger VPS deployment
+# Pinned versions for reproducible builds (updated 2026-01-10)
+# Run: pip install -r requirements.txt
 
 # Core web framework
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
-pydantic[email]>=2.0.0
-email-validator>=2.0.0
+fastapi==0.119.0
+uvicorn[standard]==0.37.0
+pydantic[email]==2.12.0
+email-validator==2.3.0
 
 # OpenAI integration
-openai>=1.0.0
+openai==2.3.0
 
-# Google Gemini integration (optional - for AGENT_MODE=gemini)
-google-genai>=0.1.0
+# Google Gemini integration (for AGENT_MODE=gemini/hybrid)
+google-genai==1.47.0
 
 # Form data support
-python-multipart>=0.0.6
+python-multipart==0.0.20
 
 # Environment and configuration
-python-dotenv>=1.0.0
+python-dotenv==1.1.1
 
 # Date/time handling
-python-dateutil>=2.8.0
-pytz>=2023.3
+python-dateutil==2.8.0
+pytz==2023.3
 
 # File locking for JSON database
-filelock>=3.12.0
+filelock==3.12.0
 
 # HTTP client (for webhooks/integrations)
-httpx>=0.25.0
+httpx==0.28.1
 
 # Logging
-structlog>=23.1.0
+structlog==23.1.0
 
 # Rate limiting
-slowapi>=0.1.9
+slowapi==0.1.9
