@@ -509,7 +509,7 @@ def verbalize_message(
 
     # Verify hard facts preserved
     hard_facts = context.extract_hard_facts()
-    verification = _verify_facts(llm_text, hard_facts)
+    verification = _verify_facts(llm_text, hard_facts, topic=context.topic)
 
     if not verification[0]:
         # Verification failed - try to patch the output first
@@ -540,8 +540,8 @@ def verbalize_message(
                 error=Exception(f"Missing: {missing_str}, Invented: {invented_str}"),
             )
             logger.warning(
-                f"universal_verbalizer: patching failed for step={context.step}, topic={context.topic}, using fallback",
-                extra={"missing": verification[1], "invented": verification[2]},
+                f"universal_verbalizer: patching failed for step={context.step}, topic={context.topic}, using fallback. "
+                f"Missing: {verification[1]}, Invented: {verification[2]}",
             )
             return wrap_fallback(fallback_text, ctx)
 
@@ -774,6 +774,7 @@ def _call_llm(payload: Dict[str, Any]) -> str:
 def _verify_facts(
     llm_text: str,
     hard_facts: Dict[str, List[str]],
+    topic: str = "",
 ) -> Tuple[bool, List[str], List[str]]:
     """
     Verify that all hard facts appear in the LLM output.
@@ -781,9 +782,23 @@ def _verify_facts(
     This verification is intentionally flexible to allow natural rephrasing
     while catching actual factual errors (wrong numbers, invented dates, etc.)
 
+    Args:
+        llm_text: The LLM-generated text to verify
+        hard_facts: Dictionary of fact types to fact values
+        topic: The message topic (used to determine which facts are required)
+
     Returns:
         Tuple of (ok, missing_facts, invented_facts)
     """
+    # Topics where participant count is optional (focus is on dates, not capacity)
+    COUNT_OPTIONAL_TOPICS = {
+        "date_candidates",
+        "date_time_clarification",
+        "date_confirmation_required",
+        "date_confirmed",
+        "site_visit_date_selection",
+        "site_visit_date_clarification",
+    }
     missing: List[str] = []
     invented: List[str] = []
 
@@ -811,17 +826,35 @@ def _verify_facts(
                         "th" if 11 <= day <= 13
                         else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
                     )
+                    month_name = parsed.strftime("%B")  # "July"
+                    month_abbr = parsed.strftime("%b")  # "Jul"
                     alt_formats = [
-                        parsed.strftime("%d/%m/%Y"),
-                        parsed.strftime("%Y-%m-%d"),
-                        parsed.strftime("%d %B %Y"),  # "08 May 2026"
-                        parsed.strftime("%B %d, %Y"),  # "May 08, 2026"
-                        parsed.strftime("%-d %B %Y"),  # "8 May 2026" (no leading zero)
-                        # Ordinal formats: "15th of February, 2026" or "15th February 2026"
-                        f"{day}{ordinal} of {parsed.strftime('%B')}, {parsed.year}",
-                        f"{day}{ordinal} of {parsed.strftime('%B')} {parsed.year}",
-                        f"{day}{ordinal} {parsed.strftime('%B')} {parsed.year}",
-                        f"{day}{ordinal} {parsed.strftime('%B')}, {parsed.year}",
+                        # Numeric formats
+                        parsed.strftime("%d/%m/%Y"),      # "01/07/2026"
+                        parsed.strftime("%Y-%m-%d"),      # "2026-07-01"
+                        # Full month name - day first
+                        parsed.strftime("%d %B %Y"),      # "01 July 2026"
+                        parsed.strftime("%-d %B %Y"),     # "1 July 2026" (no leading zero)
+                        f"{day} {month_name} {parsed.year}",  # "1 July 2026" (explicit)
+                        # Full month name - month first (American style)
+                        parsed.strftime("%B %d, %Y"),     # "July 01, 2026" (with leading zero)
+                        f"{month_name} {day}, {parsed.year}",  # "July 1, 2026" (no leading zero)
+                        f"{month_name} {day} {parsed.year}",   # "July 1 2026" (no comma)
+                        # Abbreviated month - day first
+                        f"{day} {month_abbr} {parsed.year}",   # "1 Jul 2026"
+                        parsed.strftime("%d %b %Y"),      # "01 Jul 2026"
+                        # Abbreviated month - month first
+                        f"{month_abbr} {day}, {parsed.year}",  # "Jul 1, 2026"
+                        f"{month_abbr} {day} {parsed.year}",   # "Jul 1 2026"
+                        parsed.strftime("%b %d, %Y"),     # "Jul 01, 2026"
+                        # Ordinal formats with full month
+                        f"{day}{ordinal} of {month_name}, {parsed.year}",
+                        f"{day}{ordinal} of {month_name} {parsed.year}",
+                        f"{day}{ordinal} {month_name} {parsed.year}",
+                        f"{day}{ordinal} {month_name}, {parsed.year}",
+                        # Ordinal formats with abbreviated month
+                        f"{day}{ordinal} {month_abbr} {parsed.year}",
+                        f"{day}{ordinal} of {month_abbr} {parsed.year}",
                     ]
                     for alt in alt_formats:
                         if alt in llm_text or alt.lower() in text_lower:
@@ -887,17 +920,31 @@ def _verify_facts(
             missing.append(f"amount:{amount}")
 
     # Check counts (participant count) - flexible matching
+    # Skip for topics where count is optional (e.g., date-focused messages)
+    skip_count_check = topic in COUNT_OPTIONAL_TOPICS
     for count in hard_facts.get("counts", []):
-        # Check for the number directly or spelled out for small numbers
+        if skip_count_check:
+            break  # Count is optional for this topic
+        # Check for the number directly
         count_found = count in llm_text
         if not count_found:
-            # Check if the number appears with common suffixes
+            # Check if the number appears with common suffixes/prefixes
             count_patterns = [
                 f"{count} guests",
                 f"{count} people",
                 f"{count} participants",
                 f"{count} attendees",
                 f"{count} persons",
+                f"{count} guest",
+                f"{count} person",
+                f"for {count}",
+                f"of {count}",
+                f"about {count}",
+                f"around {count}",
+                f"approximately {count}",
+                f"up to {count}",
+                f"group of {count}",
+                f"party of {count}",
             ]
             count_found = any(p.lower() in text_lower for p in count_patterns)
 
