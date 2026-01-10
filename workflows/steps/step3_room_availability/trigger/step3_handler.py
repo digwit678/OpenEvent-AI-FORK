@@ -42,6 +42,7 @@ from workflows.qna.extraction import ensure_qna_extraction
 from workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
 from workflows.io.tasks import enqueue_task
 from domain import TaskType
+from workflow.state import WorkflowStep
 from workflows.io.config_store import get_catering_teaser_products, get_currency_code
 # MIGRATED: from workflows.common.conflict -> backend.detection.special.room_conflict
 from detection.special.room_conflict import (
@@ -1401,7 +1402,16 @@ def _advance_to_offer_from_sourcing(
 
 
 def _detour_to_date(state: WorkflowState, event_entry: dict) -> GroupResult:
-    """[Trigger] Redirect to Step 2 when no chosen date exists."""
+    """[Trigger] Redirect to Step 2 when no chosen date exists.
+
+    This function is self-contained: it adds a draft message explaining that
+    we need the date confirmed before checking room availability. This ensures
+    a response is always generated, even when the original message was about
+    room selection (which Step 2 wouldn't know how to handle).
+    """
+    # Use enum for step references to avoid hardcoded values
+    target_step = WorkflowStep.STEP_2
+    current_step = WorkflowStep.STEP_3
 
     thread_id = _thread_id(state)
     trace_detour(
@@ -1412,18 +1422,31 @@ def _detour_to_date(state: WorkflowState, event_entry: dict) -> GroupResult:
         {"date_confirmed": event_entry.get("date_confirmed")},
     )
     if event_entry.get("caller_step") is None:
-        update_event_metadata(event_entry, caller_step=3)
+        update_event_metadata(event_entry, caller_step=current_step.numeric)
     update_event_metadata(
         event_entry,
-        current_step=2,
+        current_step=target_step.numeric,
         date_confirmed=False,
-        thread_state="Awaiting Client",
+        thread_state="Awaiting Client Response",
     )
-    append_audit_entry(event_entry, 3, 2, "room_requires_confirmed_date")
-    state.current_step = 2
-    state.caller_step = 3
-    state.set_thread_state("Awaiting Client")
+    append_audit_entry(event_entry, current_step.numeric, target_step.numeric, "room_requires_confirmed_date")
+    state.current_step = target_step.numeric
+    state.caller_step = current_step.numeric
+    state.set_thread_state("Awaiting Client Response")
     state.extras["persist"] = True
+
+    # Add draft message explaining we need date confirmation first
+    # This ensures a response even when the original message was about rooms
+    guidance = (
+        "Thank you for your interest! Before I can check room availability, "
+        "I need to confirm your preferred event date. "
+        "Could you please let me know which date works best for you?"
+    )
+    state.add_draft_message({
+        "body_markdown": guidance,
+        "topic": "date_confirmation_required",
+    })
+
     payload = {
         "client_id": state.client_id,
         "event_id": state.event_id,
@@ -1433,7 +1456,8 @@ def _detour_to_date(state: WorkflowState, event_entry: dict) -> GroupResult:
         "context": state.context_snapshot,
         "persisted": True,
     }
-    return GroupResult(action="room_detour_date", payload=payload, halt=False)
+    # halt=True since we're providing a response (self-contained detour pattern)
+    return GroupResult(action="room_detour_date", payload=payload, halt=True)
 
 
 def _detour_for_capacity(state: WorkflowState, event_entry: dict) -> GroupResult:
