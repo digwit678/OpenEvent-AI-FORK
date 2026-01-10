@@ -50,7 +50,7 @@ cd $APP_DIR
 echo "[4/6] Setting up Python virtual environment..."
 python3 -m venv venv
 ./venv/bin/pip install --upgrade pip
-./venv/bin/pip install -r requirements-dev
+./venv/bin/pip install -r requirements-dev.txt
 
 # Create .env file if not exists
 echo "[5/6] Creating environment file..."

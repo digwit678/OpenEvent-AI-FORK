@@ -4,11 +4,13 @@ After=network.target
 
 [Service]
 User=root
+# TODO: For better security, create dedicated user: useradd --system openevent
+# Then change to User=openevent and chown -R openevent:openevent /opt/openevent
 WorkingDirectory=/opt/openevent
 Environment="PATH=/opt/openevent/venv/bin"
 Environment="PYTHONDONTWRITEBYTECODE=1"
 EnvironmentFile=/opt/openevent/.env
-ExecStart=/opt/openevent/venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
+ExecStart=/opt/openevent/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=5
 

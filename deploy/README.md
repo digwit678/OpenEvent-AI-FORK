@@ -60,7 +60,7 @@ cd openevent
 chmod +x deploy/*.sh
 ./deploy/setup-vps.sh
 ```
-This installs the pinned backend dependencies from `requirements-dev`.
+This installs the pinned backend dependencies from `requirements-dev.txt`.
 
 ---
 
@@ -145,7 +145,7 @@ Add these to `/opt/openevent/.env`:
 # ========== PRODUCTION MODE ==========
 ENV=prod                      # Hides debug routes, removes db_path from health endpoint
 AUTH_ENABLED=1                # Requires API key for all endpoints (except health)
-RATE_LIMIT_ENABLED=1          # Prevents abuse
+RATE_LIMIT_ENABLED=1          # TODO: Not yet implemented in code - use nginx/cloudflare for now
 TENANT_HEADER_ENABLED=0       # Disables header-based tenant switching
 
 # ========== ERROR ALERTING (optional) ==========
@@ -164,7 +164,8 @@ SMTP_PASS=your-smtp-password
 ```bash
 # Switch to production mode
 nano /opt/openevent/.env
-# Add: ENV=prod AUTH_ENABLED=1 RATE_LIMIT_ENABLED=1 TENANT_HEADER_ENABLED=0
+# Add: ENV=prod AUTH_ENABLED=1 TENANT_HEADER_ENABLED=0
+# Note: RATE_LIMIT_ENABLED not yet implemented - configure at nginx/cloudflare level
 systemctl restart openevent
 
 # Verify production mode
@@ -179,7 +180,7 @@ curl http://72.60.135.183:8000/api/events
 
 - [ ] `ENV=prod` set
 - [ ] `AUTH_ENABLED=1` set
-- [ ] `RATE_LIMIT_ENABLED=1` set
+- [ ] Rate limiting configured (nginx/cloudflare - app toggle not yet implemented)
 - [ ] `TENANT_HEADER_ENABLED=0` set (never enable in prod)
 - [ ] API keys configured (OPENAI + GOOGLE for hybrid mode)
 - [ ] CORS origins set to your frontend domains only
@@ -192,7 +193,7 @@ curl http://72.60.135.183:8000/api/events
 |---------|-----|------|-----|
 | `ENV` | dev | **prod** | Hides debug routes, db paths |
 | `AUTH_ENABLED` | 0 | **1** | Protects API from public access |
-| `RATE_LIMIT_ENABLED` | 0 | **1** | Prevents abuse |
+| `RATE_LIMIT_ENABLED` | 0 | **1** | ⚠️ NOT IMPLEMENTED - use nginx/cloudflare |
 | `TENANT_HEADER_ENABLED` | 1 | **0** | Header spoofing risk |
 
 ---
