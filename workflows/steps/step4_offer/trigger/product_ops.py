@@ -32,7 +32,12 @@ from workflows.common.menu_options import DINNER_MENU_OPTIONS
 
 
 def products_ready(event_entry: Dict[str, Any]) -> bool:
-    """Check if products are ready (list non-empty, sourced, or skip flag set)."""
+    """Check if products are ready (list non-empty, sourced, skip flag set, or catering teaser shown).
+
+    When catering_teaser_shown is True, Step 3 already asked about catering/products
+    in the room availability message. The client's response (or lack thereof) should be
+    respected - Step 4 should NOT ask again.
+    """
     products = event_entry.get("products") or []
     selected = event_entry.get("selected_products") or []
     products_state = event_entry.get("products_state") or {}
@@ -40,7 +45,9 @@ def products_ready(event_entry: Dict[str, Any]) -> bool:
     skip_flag = bool(products_state.get("skip_products") or event_entry.get("products_skipped"))
     # Sourced products (from HIL sourcing flow) count as ready
     sourced = event_entry.get("sourced_products") or {}
-    return bool(products or selected or line_items or skip_flag or sourced)
+    # If catering teaser was shown in Step 3, don't ask again - treat as ready
+    teaser_shown = bool(products_state.get("catering_teaser_shown"))
+    return bool(products or selected or line_items or skip_flag or sourced or teaser_shown)
 
 
 def ensure_products_container(event_entry: Dict[str, Any]) -> None:

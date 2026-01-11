@@ -1,5 +1,36 @@
 # Development Changelog
 
+## 2026-01-11
+
+### Fix: Eliminate Duplicate Catering/Products Prompt in Step 4
+
+**Problem:** Step 4 was asking "Before I prepare your tailored proposal, could you share which catering or add-ons you'd like to include?" even when Step 3 had already asked about catering in the room availability message.
+
+**Root Causes:**
+1. "dinner party" in client messages was matching Catering category keywords (due to "dinner" being a synonym for "Three-Course Dinner" product), which prevented the catering teaser from being shown in Step 3
+2. Even when catering teaser was shown in Step 3, Step 4's `products_ready()` didn't recognize `catering_teaser_shown` flag as sufficient
+
+**Fixes Applied:**
+1. `services/products.py`: Added "dinner party", "lunch meeting", "cocktail party" etc. to false positive phrases - these are event type descriptions, not catering product requests
+2. `workflows/steps/step4_offer/trigger/product_ops.py`: `products_ready()` now returns True when `catering_teaser_shown` is True, so Step 4 skips the products prompt if Step 3 already asked
+
+**Expected Flow After Fix:**
+1. Step 3: Shows room availability WITH catering teaser integrated
+2. Client confirms room (with or without mentioning products)
+3. Step 4: Goes directly to offer (no separate products prompt)
+
+**Files Modified:**
+- `services/products.py` (lines 309-328)
+- `workflows/steps/step4_offer/trigger/product_ops.py` (lines 34-50)
+
+---
+
+### Fix: Semantic Date Verification in Universal Verbalizer
+
+The date verification in `universal_verbalizer.py` was already updated to use semantic parsing via `dateutil.parser` instead of string format matching. This prevents fallback issues when LLM outputs dates in formats like "July 1, 2026" vs "01.07.2026".
+
+---
+
 ## 2026-01-05
 
 ### Review: Production Readiness Gaps
