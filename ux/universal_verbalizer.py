@@ -35,7 +35,10 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+
+from dateutil import parser as dateutil_parser
 
 from workflows.io.config_store import get_venue_name, get_venue_city
 
@@ -771,6 +774,114 @@ def _call_llm(payload: Dict[str, Any]) -> str:
     )
 
 
+# =============================================================================
+# Semantic Date Verification
+# =============================================================================
+# Instead of maintaining a list of ~20+ date format strings, we extract dates
+# from the LLM output and compare them semantically as datetime objects.
+# This approach:
+# 1. Is format-agnostic - any valid date representation works
+# 2. Avoids ambiguity - no risk of confusing months/days due to format variants
+# 3. Is simpler to maintain - one parsing function handles all formats
+
+
+def _extract_dates_from_text(text: str) -> List[datetime]:
+    """
+    Extract all date-like patterns from text and parse them to datetime objects.
+
+    Uses regex to find date-like patterns, then dateutil.parser to parse them.
+    This handles a wide variety of formats including:
+    - Numeric: 01.07.2026, 01/07/2026, 2026-07-01
+    - Month names: July 1, 2026, 1st July 2026, Jul 1 2026
+    - With ordinals: 1st of July 2026, July 1st, 2026
+
+    Args:
+        text: The text to extract dates from
+
+    Returns:
+        List of parsed datetime objects (may be empty if no valid dates found)
+    """
+    # Patterns that look like dates - we extract these, then let dateutil parse
+    date_patterns = [
+        # Numeric formats: DD.MM.YYYY, DD/MM/YYYY, D/M/YY
+        r'\d{1,2}[./]\d{1,2}[./]\d{2,4}',
+        # ISO format: YYYY-MM-DD
+        r'\d{4}-\d{2}-\d{2}',
+        # Month name first: July 1, 2026 / Jul 1st, 2026 / July 01 2026
+        r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|'
+        r'Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|'
+        r'Dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?[,\s]+\d{4}',
+        # Day first with month name: 1 July 2026 / 1st of July, 2026
+        r'\d{1,2}(?:st|nd|rd|th)?(?:\s+of)?\s+'
+        r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|'
+        r'Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|'
+        r'Dec(?:ember)?)\.?[,\s]+\d{4}',
+    ]
+
+    found_dates: List[datetime] = []
+    seen_matches: set = set()  # Avoid parsing the same match twice
+
+    # Pattern to identify ISO format (YYYY-MM-DD) - these should NOT use dayfirst
+    iso_pattern = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+    for pattern in date_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        for match in matches:
+            if match in seen_matches:
+                continue
+            seen_matches.add(match)
+            try:
+                # ISO format (YYYY-MM-DD) is unambiguous - don't use dayfirst
+                # Other formats use dayfirst=True for European preference (DD.MM.YYYY)
+                is_iso = iso_pattern.match(match) is not None
+                parsed = dateutil_parser.parse(match, dayfirst=not is_iso, fuzzy=False)
+                found_dates.append(parsed)
+            except ValueError:
+                # Not a valid date, skip
+                pass
+
+    return found_dates
+
+
+def _verify_date_semantic(source_date_str: str, llm_text: str) -> bool:
+    """
+    Verify a date semantically by parsing and comparing datetime objects.
+
+    Instead of checking if a specific format string appears in the text,
+    this extracts all dates from the LLM output and checks if any of them
+    represent the same calendar day as the source date.
+
+    Args:
+        source_date_str: The source date in DD.MM.YYYY format (our internal format)
+        llm_text: The LLM-generated text to verify
+
+    Returns:
+        True if the source date appears in any valid format in the text
+    """
+    try:
+        # Parse source date (always DD.MM.YYYY from our system)
+        source_dt = datetime.strptime(source_date_str, "%d.%m.%Y")
+        source_date = source_dt.date()
+
+        # Extract all dates from LLM output
+        found_dates = _extract_dates_from_text(llm_text)
+
+        # Check if any extracted date matches the source (same calendar day)
+        for found_dt in found_dates:
+            if found_dt.date() == source_date:
+                return True
+
+        # Fallback: Also check if the original format appears literally
+        # (handles edge cases where dateutil might not extract it)
+        if source_date_str in llm_text:
+            return True
+
+        return False
+    except ValueError:
+        # If we can't parse the source date, fallback to string matching
+        return source_date_str in llm_text
+
+
 def _verify_facts(
     llm_text: str,
     hard_facts: Dict[str, List[str]],
@@ -804,66 +915,12 @@ def _verify_facts(
 
     text_lower = llm_text.lower()
     text_normalized = llm_text.replace(" ", "").upper()
-    # Also create a version with common separators normalized
-    text_numbers_only = re.sub(r"[^\d.]", "", llm_text)
 
-    # Check dates - flexible matching
+    # Check dates - semantic verification (format-agnostic)
+    # Uses dateutil to parse dates from LLM output and compare as datetime objects
+    # This avoids maintaining a list of format variants and eliminates ambiguity
     for date in hard_facts.get("dates", []):
-        # Try multiple formats: DD.MM.YYYY, DD/MM/YYYY, YYYY-MM-DD
-        date_found = False
-        if date in llm_text:
-            date_found = True
-        else:
-            # Try alternative formats
-            try:
-                from datetime import datetime
-                # Parse DD.MM.YYYY
-                if "." in date:
-                    parsed = datetime.strptime(date, "%d.%m.%Y")
-                    day = parsed.day
-                    # Ordinal suffix
-                    ordinal = (
-                        "th" if 11 <= day <= 13
-                        else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
-                    )
-                    month_name = parsed.strftime("%B")  # "July"
-                    month_abbr = parsed.strftime("%b")  # "Jul"
-                    alt_formats = [
-                        # Numeric formats
-                        parsed.strftime("%d/%m/%Y"),      # "01/07/2026"
-                        parsed.strftime("%Y-%m-%d"),      # "2026-07-01"
-                        # Full month name - day first
-                        parsed.strftime("%d %B %Y"),      # "01 July 2026"
-                        parsed.strftime("%-d %B %Y"),     # "1 July 2026" (no leading zero)
-                        f"{day} {month_name} {parsed.year}",  # "1 July 2026" (explicit)
-                        # Full month name - month first (American style)
-                        parsed.strftime("%B %d, %Y"),     # "July 01, 2026" (with leading zero)
-                        f"{month_name} {day}, {parsed.year}",  # "July 1, 2026" (no leading zero)
-                        f"{month_name} {day} {parsed.year}",   # "July 1 2026" (no comma)
-                        # Abbreviated month - day first
-                        f"{day} {month_abbr} {parsed.year}",   # "1 Jul 2026"
-                        parsed.strftime("%d %b %Y"),      # "01 Jul 2026"
-                        # Abbreviated month - month first
-                        f"{month_abbr} {day}, {parsed.year}",  # "Jul 1, 2026"
-                        f"{month_abbr} {day} {parsed.year}",   # "Jul 1 2026"
-                        parsed.strftime("%b %d, %Y"),     # "Jul 01, 2026"
-                        # Ordinal formats with full month
-                        f"{day}{ordinal} of {month_name}, {parsed.year}",
-                        f"{day}{ordinal} of {month_name} {parsed.year}",
-                        f"{day}{ordinal} {month_name} {parsed.year}",
-                        f"{day}{ordinal} {month_name}, {parsed.year}",
-                        # Ordinal formats with abbreviated month
-                        f"{day}{ordinal} {month_abbr} {parsed.year}",
-                        f"{day}{ordinal} of {month_abbr} {parsed.year}",
-                    ]
-                    for alt in alt_formats:
-                        if alt in llm_text or alt.lower() in text_lower:
-                            date_found = True
-                            break
-            except (ValueError, ImportError):
-                pass
-
-        if not date_found:
+        if not _verify_date_semantic(date, llm_text):
             missing.append(f"date:{date}")
 
     # Check room names (case-insensitive, flexible matching)
