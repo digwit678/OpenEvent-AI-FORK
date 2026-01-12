@@ -167,62 +167,85 @@ def list_catering(
     categories: Optional[Iterable[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Return catering options. Room/date parameters tailor messaging upstream but do not
-    currently alter availability.
+    Return catering options from products.json.
+
+    The products.json has a flat 'products' array with category field.
+    Catering-related categories: "Catering", "Beverages", "Add-ons"
+
+    Args:
+        room_id: Optional room to check availability (currently unused)
+        date_token: Optional date to check availability (currently unused)
+        categories: Optional filter - "package" maps to "Catering",
+                   "beverages" maps to "Beverages", etc.
     """
+    # Map filter categories to actual product categories
+    category_map = {
+        "package": "Catering",
+        "catering": "Catering",
+        "beverages": "Beverages",
+        "beverage": "Beverages",
+        "add-on": "Add-ons",
+        "addon": "Add-ons",
+    }
 
     category_filter = {str(cat).strip().lower() for cat in categories or [] if str(cat).strip()}
+    # Convert filter to actual categories
+    actual_categories = set()
+    for cat in category_filter:
+        if cat in category_map:
+            actual_categories.add(category_map[cat])
+
+    # If no filter or unrecognized filter, show all catering-related
+    if not actual_categories:
+        actual_categories = {"Catering", "Beverages", "Add-ons"}
+
     payload = _catering_payload()
-    packages = payload.get("catering_packages") or []
-    add_ons = payload.get("add_ons") or []
-    beverages = payload.get("beverages") or {}
+    products = payload.get("products") or []
     results: List[Dict[str, Any]] = []
 
-    for pkg in packages:
-        entry = {
-            "name": pkg.get("name"),
-            "category": "package",
-            "price_per_person": pkg.get("price_per_person"),
-            "description": pkg.get("description"),
-        }
-        if category_filter and entry["category"] not in category_filter:
+    for product in products:
+        prod_category = product.get("category", "")
+        if prod_category not in actual_categories:
             continue
-        results.append(entry)
 
-    for section, items in beverages.items():
-        label = "beverages"
-        for item in items or []:
-            entry = {
-                "name": item.get("name"),
-                "category": label,
-                "price": item.get("price_per_person") or item.get("price_per_glass") or item.get("price_per_bottle"),
-                "options": item.get("options"),
-            }
-            if category_filter and label not in category_filter:
-                continue
-            results.append(entry)
-
-    for addon in add_ons:
-        entry = {
-            "name": addon.get("name"),
-            "category": "add-on",
-            "price": addon.get("price"),
-            "description": addon.get("description"),
-        }
-        if category_filter and entry["category"] not in category_filter:
+        # Check room availability
+        unavailable_in = product.get("unavailable_in") or []
+        if room_id and room_id in unavailable_in:
             continue
+
+        entry = {
+            "name": product.get("name"),
+            "category": prod_category.lower(),
+            "price_per_person": product.get("unit_price") if product.get("unit") == "per_person" else None,
+            "price": product.get("unit_price"),
+            "description": product.get("description"),
+        }
         results.append(entry)
 
     results.sort(key=lambda item: (item.get("category") or "", item.get("name") or ""))
     return results
 
 
-def _resolve_anchor_date(anchor_month: Optional[int], anchor_day: Optional[int]) -> date:
+def _resolve_anchor_date(
+    anchor_month: Optional[int],
+    anchor_day: Optional[int],
+    force_next_year: bool = False,
+) -> date:
+    """
+    Resolve a month/day into a concrete date.
+
+    If force_next_year is True (e.g., "February next year"), always use current_year + 1.
+    Otherwise, use current year unless the month has already passed.
+    """
     today = date.today()
     if not anchor_month:
         return today
     year = today.year
-    if anchor_month < today.month or (anchor_month == today.month and anchor_day and anchor_day < today.day):
+    if force_next_year:
+        # Explicit "next year" mentioned - always add 1
+        year += 1
+    elif anchor_month < today.month or (anchor_month == today.month and anchor_day and anchor_day < today.day):
+        # Month already passed this year - use next year
         year += 1
     safe_day = max(1, min(anchor_day or 1, 28))
     return date(year, anchor_month, safe_day)
@@ -235,18 +258,23 @@ def list_free_dates(
     *,
     db: Optional[Dict[str, Any]] = None,
     preferred_room: Optional[str] = None,
+    force_next_year: bool = False,
 ) -> List[str]:
     """
     Produce deterministic candidate dates.
 
     When a database is provided we reuse the workflow `suggest_dates` helper to ensure
     availability-aware results. Otherwise we fall back to evenly spaced weekly slots.
+
+    Args:
+        force_next_year: If True, the anchor date is always resolved to next year
+                         (e.g., "February next year" explicitly mentioned).
     """
 
     if count <= 0:
         return []
 
-    start_date = _resolve_anchor_date(anchor_month, anchor_day)
+    start_date = _resolve_anchor_date(anchor_month, anchor_day, force_next_year)
     preferred = preferred_room or "Room A"
     if db is not None:
         try:
