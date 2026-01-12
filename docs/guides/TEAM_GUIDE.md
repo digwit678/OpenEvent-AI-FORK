@@ -190,3 +190,23 @@ All unit types that may appear in product data:
 **Root Cause**: `shortcuts_gate.py` didn't check for `missing_products` in `room_pending_decision` before allowing shortcuts to run.
 **Fix**: Added bypass in `shortcuts_allowed()` - return False if `room_pending` exists, room isn't locked, and there are missing products.
 **Files**: `workflows/planner/shortcuts_gate.py:39-52`
+
+### BUG-007: Products Prompt Still Appearing After Room Selection
+**Status**: Fixed (2026-01-12) - MVP Decision
+**Severity**: High (UX Critical)
+**Symptom**: After selecting a room, Step 4 showed "Before I prepare your tailored proposal, could you share which catering or add-ons you'd like to include?" instead of going directly to the offer.
+**Root Cause**: `products_ready()` gate in Step 4 was checking various conditions to determine if products were "ready", creating unnecessary blocking prompts.
+**MVP Decision**: Catering/products awareness belongs IN THE OFFER ITSELF, not as a separate blocking prompt. If client hasn't mentioned products, the offer should include suggestions but NOT block the flow.
+**Fix**: Made `products_ready()` always return True. Catering options are now displayed in the offer's "Menu options you can add" section.
+**Files**: `workflows/steps/step4_offer/trigger/product_ops.py`
+**E2E Verified**: Full flow from inquiry → room → offer → billing → HIL → site visit works without products prompt.
+
+### BUG-008: Hybrid Messages (Room + Catering Q&A) Ignore Q&A Part
+**Status**: Fixed (2026-01-12)
+**Severity**: High
+**Symptom**: Messages like "Room C sounds great! Also, could you share more about your catering options?" were confirming the room but ignoring the catering question portion.
+**Root Cause**: Sequential workflow detection patterns were too restrictive and didn't match indirect catering question phrases like "share more about", "about your catering".
+**Fix**:
+1. Added flexible regex patterns in `sequential_workflow.py` for room selection ("sounds great/good/perfect", "please proceed") and catering questions ("share more about", "about your catering")
+2. Added `sequential_catering_lookahead` handling in `step3_handler.py` to ensure catering info is appended to room confirmation
+**Files**: `detection/qna/sequential_workflow.py`, `workflows/steps/step3_room_availability/trigger/step3_handler.py`

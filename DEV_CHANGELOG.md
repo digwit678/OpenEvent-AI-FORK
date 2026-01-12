@@ -2,6 +2,42 @@
 
 ## 2026-01-12
 
+### Fix: Eliminate Products Prompt Entirely (MVP Decision)
+
+**Problem:** Step 4 was still showing "Before I prepare your tailored proposal, could you share which catering or add-ons you'd like to include?" even after previous fixes.
+
+**MVP Decision:** Catering/products awareness belongs **in the offer itself**, NOT as a separate blocking prompt. If client hasn't mentioned products, the offer should include a note like "you can add catering options" but NOT block the offer generation.
+
+**Fix Applied:**
+- `workflows/steps/step4_offer/trigger/product_ops.py`: `products_ready()` now **always returns True**
+- This eliminates the confusing products prompt entirely
+- Catering options are now shown **in the offer** (menu suggestions section)
+
+**Files Modified:**
+- `workflows/steps/step4_offer/trigger/product_ops.py`
+
+**E2E Verified:** Full flow from inquiry → room selection → offer → billing → HIL → site visit works without any products prompt appearing.
+
+---
+
+### Fix: Hybrid Message Detection (Room Selection + Catering Q&A)
+
+**Problem:** Messages like "Room C sounds great! Also, could you share more about your catering options?" were not detecting the catering Q&A portion. The system would confirm the room but ignore the catering question.
+
+**Root Cause:** Sequential workflow detection patterns were too restrictive and didn't match indirect catering questions.
+
+**Fixes Applied:**
+1. `detection/qna/sequential_workflow.py`: Added flexible patterns for:
+   - Room selection: "sounds great/good/perfect", "please proceed", "I will take"
+   - Catering questions: "share more about", "about your catering", indirect questions
+2. `workflows/steps/step3_room_availability/trigger/step3_handler.py`: Added `sequential_catering_lookahead` handling to ensure catering info is appended to room confirmation response
+
+**Files Modified:**
+- `detection/qna/sequential_workflow.py`
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py`
+
+---
+
 ### Feature: Supabase Integration with JSON Fallback
 
 **Summary:** Added `SupabaseWithFallbackAdapter` for safe Supabase integration testing.
