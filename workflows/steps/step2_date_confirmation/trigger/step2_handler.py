@@ -356,9 +356,17 @@ def process(state: WorkflowState) -> GroupResult:
     # -------------------------------------------------------------------------
     nonsense_action = check_nonsense_gate(state.confidence or 0.0, message_text)
     if nonsense_action == "ignore":
-        # Silent ignore - no reply, no further processing
+        # Provide guidance instead of silent ignore (F-04 fix)
+        guidance_message = (
+            "Thanks for your message! We're waiting for you to confirm your preferred event date. "
+            "Please let us know which date works best for you."
+        )
+        state.add_draft_message({
+            "body_markdown": guidance_message,
+            "topic": "nonsense_guidance",
+        })
         return GroupResult(
-            action="nonsense_ignored",
+            action="nonsense_guided",  # Changed from _ignored to _guided
             payload={"reason": "low_confidence_no_workflow_signal", "step": 2},
             halt=True,
         )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional, List
 from datetime import datetime
@@ -338,13 +339,18 @@ def _persist_if_needed(state: WorkflowState, path: Path, lock_path: Path) -> Non
 
     if state.extras.pop("persist", False):
         state.extras["_pending_save"] = True
+        logger.debug("[WF][PERSIST] Flagged _pending_save=True for thread=%s", state.thread_id)
 
 
 def _flush_pending_save(state: WorkflowState, path: Path, lock_path: Path) -> None:
     """[OpenEvent Database] Flush debounced writes at the end of the turn."""
 
     if state.extras.pop("_pending_save", False):
+        logger.info("[WF][PERSIST] Flushing DB to %s for thread=%s", path, state.thread_id)
         db_io.save_db(state.db, path, lock_path=lock_path)
+        logger.info("[WF][PERSIST] DB saved successfully")
+    else:
+        logger.debug("[WF][PERSIST] No pending save for thread=%s", state.thread_id)
 
 
 def _flush_and_finalize(result: GroupResult, state: WorkflowState, path: Path, lock_path: Path) -> Dict[str, Any]:
@@ -375,10 +381,16 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
         msg.get("thread_id")
         or msg.get("thread")
         or msg.get("session_id")
-        or msg.get("msg_id")
-        or msg.get("from_email")
-        or "unknown-thread"
     )
+    if not raw_thread_id:
+        # Generate unique thread_id to prevent unrelated conversations from colliding
+        # NOTE: Using msg_id or from_email as fallback caused thread collisions (F-10)
+        raw_thread_id = f"auto-{uuid.uuid4().hex[:12]}"
+        logger.warning(
+            "[WF] No thread_id/session_id provided, generated %s. "
+            "Callers should provide explicit thread_id for session continuity.",
+            raw_thread_id,
+        )
     state.thread_id = str(raw_thread_id)
     STATE_STORE.clear(state.thread_id)
     combined_text = "\n".join(
@@ -609,6 +621,13 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
         payload.setdefault("stage", stage_payload(event_entry))
     elif state.thread_state:
         payload["thread_state"] = state.thread_state
+
+    # [HYBRID Q&A] Include Q&A response from state.extras if present
+    # This survives across steps (e.g., Step1 detects Q&A, Step4 runs, output includes Q&A)
+    hybrid_qna = state.extras.get("hybrid_qna_response")
+    if hybrid_qna:
+        payload["hybrid_qna_response"] = hybrid_qna
+
     res_meta = payload.setdefault("res", {})
     actions_out = payload.setdefault("actions", [])
     requires_approval_flags: List[bool] = []
@@ -626,23 +645,43 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
         payload.setdefault("draft_messages", [])
 
     if state.draft_messages:
-        latest_draft = next(
-            (draft for draft in reversed(state.draft_messages) if draft.get("requires_approval")),
-            state.draft_messages[-1],
-        )
-        draft_body = latest_draft.get("body_markdown") or latest_draft.get("body") or ""
-        draft_headers = list(latest_draft.get("headers") or [])
+        # [FIX JAN-12-2026] Handle multiple drafts: send non-approval drafts immediately,
+        # hold approval drafts for HIL. This supports Q&A + Offer separation.
+        immediate_drafts = [d for d in state.draft_messages if not d.get("requires_approval", True)]
+        approval_drafts = [d for d in state.draft_messages if d.get("requires_approval", True)]
 
-        # When HIL toggle is ON: DON'T include message in response (it goes to approval queue only)
-        # When HIL toggle is OFF: Include message in response for immediate display
         if hil_all_replies_on:
-            # Message pending approval - don't send to client chat yet
+            # When HIL toggle ON: ALL drafts go to approval queue
             res_meta["assistant_draft"] = None
             res_meta["assistant_draft_text"] = ""
-            res_meta["pending_hil_approval"] = True  # Flag for frontend
+            res_meta["pending_hil_approval"] = True
+        elif immediate_drafts:
+            # Send non-approval drafts immediately (e.g., Q&A responses)
+            combined_body = "\n\n".join(
+                (d.get("body_markdown") or d.get("body") or "") for d in immediate_drafts
+            )
+            combined_headers = []
+            for d in immediate_drafts:
+                combined_headers.extend(d.get("headers") or [])
+            res_meta["assistant_draft"] = {"headers": combined_headers, "body": combined_body}
+            res_meta["assistant_draft_text"] = combined_body
+            # If there are also approval drafts, flag for frontend
+            if approval_drafts:
+                res_meta["pending_hil_approval"] = True
+        elif approval_drafts:
+            # Only approval drafts - don't send yet
+            res_meta["assistant_draft"] = None
+            res_meta["assistant_draft_text"] = ""
+            res_meta["pending_hil_approval"] = True
         else:
-            res_meta["assistant_draft"] = {"headers": draft_headers, "body": draft_body}
-            res_meta["assistant_draft_text"] = draft_body
+            # No drafts (shouldn't happen but handle gracefully)
+            res_meta["assistant_draft"] = None
+            res_meta["assistant_draft_text"] = ""
+
+        # For HIL task creation, use the first approval draft
+        latest_draft = approval_drafts[0] if approval_drafts else state.draft_messages[-1]
+        draft_body = latest_draft.get("body_markdown") or latest_draft.get("body") or ""
+        # Note: draft_headers available via latest_draft.get("headers") if needed downstream
     else:
         res_meta.setdefault("assistant_draft", None)
         res_meta.setdefault("assistant_draft_text", "")

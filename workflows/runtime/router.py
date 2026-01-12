@@ -97,6 +97,7 @@ def run_routing_loop(
 
         step = event_entry.get("current_step")
         logger.debug("[WF][ROUTE][%d] current_step=%s", iteration, step)
+        print(f"[ROUTE][{iteration}] current_step={step}, site_visit_status={event_entry.get('site_visit_state', {}).get('status')}")
 
         # =================================================================
         # SITE VISIT INTERCEPT: Handle site visit requests at ANY step
@@ -153,19 +154,56 @@ def _check_site_visit_intercept(
     1. If there's an active site visit flow (room_pending or date_pending)
     2. If the current message indicates a new site visit request
 
+    GUARD: Site visits should only be triggered for events that have:
+    - Already received an offer (Step 5+), OR
+    - Explicit site visit keywords in the message (not just LLM classification)
+
     Returns GroupResult if site visit was handled, None otherwise.
     """
     # Check if site visit flow is already active
     if is_site_visit_active(event_entry):
         # Continue the active site visit flow
         detection = _get_detection_result(state)
-        return handle_site_visit_request(state, event_entry, detection)
+        result = handle_site_visit_request(state, event_entry, detection)
+        if result is None:
+            # Site visit handler returned None - this means it detected an EVENT date change
+            # (not a site visit date selection). Let normal workflow handle it.
+            logger.info("[WF][SITE_VISIT] Event date change detected during active site visit flow - "
+                       "deferring to normal workflow")
+        return result
 
     # Check if this is a new site visit request
     detection = _get_detection_result(state)
+    logger.info("[WF][SITE_VISIT_GUARD] detection=%s, is_site_visit_intent=%s",
+                detection is not None, is_site_visit_intent(detection) if detection else False)
     if is_site_visit_intent(detection):
+        current_step = event_entry.get("current_step", 1)
+        logger.info("[WF][SITE_VISIT_GUARD] is_site_visit_intent=True, current_step=%s", current_step)
+
+        # GUARD: Don't trigger site visit for early-stage events unless
+        # the message has EXPLICIT site visit keywords
+        if current_step < 5:
+            # Check for explicit site visit keywords in the message
+            message = state.message
+            message_text = (message.body or "") + " " + (message.subject or "") if message else ""
+            message_lower = message_text.lower()
+
+            # These are EXPLICIT site visit request keywords
+            explicit_keywords = [
+                "site visit", "tour", "walkthrough", "visit the venue",
+                "view the venue", "see the room", "see the venue",
+                "want to visit", "would like to visit", "can we visit",
+                "besichtigung", "besichtigen",  # German
+            ]
+            has_explicit_keyword = any(kw in message_lower for kw in explicit_keywords)
+
+            if not has_explicit_keyword:
+                logger.debug("[WF][SITE_VISIT] Skipping site visit intercept at step %s - "
+                            "no explicit keywords and step < 5", current_step)
+                return None
+
         logger.debug("[WF][SITE_VISIT] New site visit request detected at step %s",
-                    event_entry.get('current_step'))
+                    current_step)
         return handle_site_visit_request(state, event_entry, detection)
 
     return None

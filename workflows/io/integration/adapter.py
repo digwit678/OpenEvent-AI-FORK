@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from .config import INTEGRATION_CONFIG, is_integration_mode
+from .config import INTEGRATION_CONFIG, is_integration_mode, allow_json_fallback
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -570,6 +570,227 @@ class SupabaseDatabaseAdapter(DatabaseAdapter):
 
 
 # =============================================================================
+# Supabase with JSON Fallback Adapter (Testing Mode)
+# =============================================================================
+
+class SupabaseWithFallbackAdapter(DatabaseAdapter):
+    """
+    Adapter that tries Supabase first, falls back to JSON on errors.
+
+    LOUD fallback: All fallback events are logged with [SUPABASE_FALLBACK] prefix.
+    This is for testing/development only - production should NOT use fallback.
+
+    The adapter maintains both Supabase and JSON adapters, attempting Supabase
+    operations first and falling back to JSON if they fail.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._supabase = SupabaseDatabaseAdapter()
+        self._json_fallback = JSONDatabaseAdapter()
+        self._fallback_count = 0
+
+    def initialize(self) -> None:
+        if self._initialized:
+            return
+
+        # Initialize JSON fallback first (always works)
+        self._json_fallback.initialize()
+
+        # Try to initialize Supabase
+        try:
+            self._supabase.initialize()
+            logger.info(
+                "[SUPABASE_FALLBACK] Supabase initialized - will fall back to JSON on errors"
+            )
+        except Exception as e:
+            logger.warning(
+                "\n"
+                "=" * 70 + "\n"
+                "[SUPABASE_FALLBACK] Supabase initialization FAILED!\n"
+                "Error: %s\n"
+                "All operations will use JSON fallback.\n"
+                "=" * 70,
+                e
+            )
+
+        self._initialized = True
+
+    def _with_fallback(self, operation: str, supabase_fn, json_fn):
+        """Execute Supabase operation with JSON fallback on error."""
+        try:
+            return supabase_fn()
+        except Exception as e:
+            self._fallback_count += 1
+            logger.warning(
+                "\n"
+                "=" * 70 + "\n"
+                "[SUPABASE_FALLBACK] Operation FAILED - falling back to JSON!\n"
+                "Operation: %s\n"
+                "Error: %s\n"
+                "Fallback count this session: %d\n"
+                "=" * 70,
+                operation,
+                e,
+                self._fallback_count
+            )
+            return json_fn()
+
+    def upsert_client(
+        self,
+        email: str,
+        name: Optional[str] = None,
+        company: Optional[str] = None,
+        phone: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        self.initialize()
+        return self._with_fallback(
+            f"upsert_client({email})",
+            lambda: self._supabase.upsert_client(email, name, company, phone),
+            lambda: self._json_fallback.upsert_client(email, name, company, phone),
+        )
+
+    def create_event(self, event_data: Dict[str, Any]) -> str:
+        self.initialize()
+        return self._with_fallback(
+            "create_event",
+            lambda: self._supabase.create_event(event_data),
+            lambda: self._json_fallback.create_event(event_data),
+        )
+
+    def find_event_by_id(self, event_id: str) -> Optional[Dict[str, Any]]:
+        self.initialize()
+        return self._with_fallback(
+            f"find_event_by_id({event_id})",
+            lambda: self._supabase.find_event_by_id(event_id),
+            lambda: self._json_fallback.find_event_by_id(event_id),
+        )
+
+    def find_event_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        self.initialize()
+        return self._with_fallback(
+            f"find_event_by_email({email})",
+            lambda: self._supabase.find_event_by_email(email),
+            lambda: self._json_fallback.find_event_by_email(email),
+        )
+
+    def update_event(self, event_id: str, **fields: Any) -> Dict[str, Any]:
+        self.initialize()
+        return self._with_fallback(
+            f"update_event({event_id})",
+            lambda: self._supabase.update_event(event_id, **fields),
+            lambda: self._json_fallback.update_event(event_id, **fields),
+        )
+
+    def create_task(
+        self,
+        event_id: str,
+        task_type: str,
+        title: str,
+        payload: Dict[str, Any],
+        **kwargs,
+    ) -> str:
+        self.initialize()
+        return self._with_fallback(
+            f"create_task({event_id}, {task_type})",
+            lambda: self._supabase.create_task(event_id, task_type, title, payload, **kwargs),
+            lambda: self._json_fallback.create_task(event_id, task_type, title, payload, **kwargs),
+        )
+
+    def create_message_approval(
+        self,
+        event_id: str,
+        client_name: str,
+        client_email: str,
+        draft_message: str,
+        subject: Optional[str] = None,
+    ) -> str:
+        self.initialize()
+        return self._with_fallback(
+            f"create_message_approval({event_id})",
+            lambda: self._supabase.create_message_approval(
+                event_id, client_name, client_email, draft_message, subject
+            ),
+            lambda: self._json_fallback.create_message_approval(
+                event_id, client_name, client_email, draft_message, subject
+            ),
+        )
+
+    def get_rooms(self, date_iso: Optional[str] = None) -> List[Dict[str, Any]]:
+        self.initialize()
+        return self._with_fallback(
+            "get_rooms",
+            lambda: self._supabase.get_rooms(date_iso),
+            lambda: self._json_fallback.get_rooms(date_iso),
+        )
+
+    def update_event_date(
+        self,
+        event_id: str,
+        date_iso: str,
+        *,
+        confirmed: bool = False,
+    ) -> Dict[str, Any]:
+        self.initialize()
+        return self._with_fallback(
+            f"update_event_date({event_id})",
+            lambda: self._supabase.update_event_date(event_id, date_iso, confirmed=confirmed),
+            lambda: self._json_fallback.update_event_date(event_id, date_iso, confirmed=confirmed),
+        )
+
+    def update_event_room(
+        self,
+        event_id: str,
+        room_id: str,
+        *,
+        status: str = "room_selected",
+    ) -> Dict[str, Any]:
+        self.initialize()
+        return self._with_fallback(
+            f"update_event_room({event_id})",
+            lambda: self._supabase.update_event_room(event_id, room_id, status=status),
+            lambda: self._json_fallback.update_event_room(event_id, room_id, status=status),
+        )
+
+    def update_event_billing(
+        self,
+        event_id: str,
+        products: List[Dict[str, Any]],
+        total: float,
+    ) -> Dict[str, Any]:
+        self.initialize()
+        return self._with_fallback(
+            f"update_event_billing({event_id})",
+            lambda: self._supabase.update_event_billing(event_id, products, total),
+            lambda: self._json_fallback.update_event_billing(event_id, products, total),
+        )
+
+    def append_audit(
+        self,
+        event_id: str,
+        action: str,
+        details: Dict[str, Any],
+    ) -> None:
+        self.initialize()
+        return self._with_fallback(
+            f"append_audit({event_id})",
+            lambda: self._supabase.append_audit(event_id, action, details),
+            lambda: self._json_fallback.append_audit(event_id, action, details),
+        )
+
+    def get_context_snapshot(
+        self,
+        email: str,
+    ) -> Dict[str, Any]:
+        self.initialize()
+        return self._with_fallback(
+            f"get_context_snapshot({email})",
+            lambda: self._supabase.get_context_snapshot(email),
+            lambda: self._json_fallback.get_context_snapshot(email),
+        )
+
+
+# =============================================================================
 # Adapter Factory
 # =============================================================================
 
@@ -581,7 +802,9 @@ def get_database_adapter() -> DatabaseAdapter:
     Get the appropriate database adapter based on configuration.
 
     Returns:
-        DatabaseAdapter instance (JSON or Supabase)
+        - JSONDatabaseAdapter if OE_INTEGRATION_MODE=json (default)
+        - SupabaseWithFallbackAdapter if supabase mode with fallback enabled
+        - SupabaseDatabaseAdapter if supabase mode in production (no fallback)
     """
     global _adapter_instance
 
@@ -589,8 +812,16 @@ def get_database_adapter() -> DatabaseAdapter:
         return _adapter_instance
 
     if is_integration_mode():
-        logger.info("Using Supabase database adapter")
-        _adapter_instance = SupabaseDatabaseAdapter()
+        if allow_json_fallback():
+            logger.info(
+                "Using Supabase adapter WITH JSON fallback (testing mode)"
+            )
+            _adapter_instance = SupabaseWithFallbackAdapter()
+        else:
+            logger.info(
+                "Using Supabase adapter (strict mode - no fallback)"
+            )
+            _adapter_instance = SupabaseDatabaseAdapter()
     else:
         logger.info("Using JSON database adapter")
         _adapter_instance = JSONDatabaseAdapter()

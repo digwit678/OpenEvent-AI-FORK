@@ -90,8 +90,13 @@ def client_requested_dates(state: WorkflowState) -> List[str]:
     msg = state.message
     text = get_message_text(msg.subject if msg else None, msg.body if msg else None)
     reference_day = _reference_date_from_state(state)
+    # Match various date formats:
+    # 1. DD.MM.YYYY, DD/MM/YYYY, DD-MM-YYYY
+    # 2. YYYY-MM-DD (ISO)
+    # 3. DD Month (e.g., "20 March")
+    # 4. Month DD (e.g., "March 20") - American format
     explicit_pattern = re.compile(
-        r"(\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|may|june|july|august|september|october|november|december)\b)",
+        r"(\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|may|june|july|august|september|october|november|december)\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}\b)",
         re.IGNORECASE,
     )
     iso_values: List[str] = []

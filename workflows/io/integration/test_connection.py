@@ -13,10 +13,14 @@ Usage:
 import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Add project root to path
-project_root = Path(__file__).resolve().parents[4]
+project_root = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(project_root))
+
+# Load .env file
+load_dotenv(project_root / ".env")
 
 
 def print_header(title: str) -> None:

@@ -60,7 +60,7 @@ cd openevent
 chmod +x deploy/*.sh
 ./deploy/setup-vps.sh
 ```
-This installs the pinned backend dependencies from `requirements-dev`.
+This installs the pinned backend dependencies from `requirements-dev.txt`.
 
 ---
 
@@ -145,8 +145,14 @@ Add these to `/opt/openevent/.env`:
 # ========== PRODUCTION MODE ==========
 ENV=prod                      # Hides debug routes, removes db_path from health endpoint
 AUTH_ENABLED=1                # Requires API key for all endpoints (except health)
-RATE_LIMIT_ENABLED=1          # Prevents abuse
 TENANT_HEADER_ENABLED=0       # Disables header-based tenant switching
+
+# ========== RATE LIMITING (optional) ==========
+# Limits requests per IP to prevent abuse. Uses in-memory storage.
+# For multi-worker deployments, use Redis instead (see docs).
+RATE_LIMIT_ENABLED=1          # Enable rate limiting
+RATE_LIMIT_RPS=10             # Requests per second per IP (10 = 36,000/hour)
+RATE_LIMIT_BURST=30           # Burst allowance for page loads
 
 # ========== ERROR ALERTING (optional) ==========
 # Get notified when AI fails and falls back to manual review
@@ -164,7 +170,7 @@ SMTP_PASS=your-smtp-password
 ```bash
 # Switch to production mode
 nano /opt/openevent/.env
-# Add: ENV=prod AUTH_ENABLED=1 RATE_LIMIT_ENABLED=1 TENANT_HEADER_ENABLED=0
+# Add: ENV=prod AUTH_ENABLED=1 TENANT_HEADER_ENABLED=0 RATE_LIMIT_ENABLED=1
 systemctl restart openevent
 
 # Verify production mode
@@ -179,7 +185,7 @@ curl http://72.60.135.183:8000/api/events
 
 - [ ] `ENV=prod` set
 - [ ] `AUTH_ENABLED=1` set
-- [ ] `RATE_LIMIT_ENABLED=1` set
+- [ ] `RATE_LIMIT_ENABLED=1` set (optional but recommended)
 - [ ] `TENANT_HEADER_ENABLED=0` set (never enable in prod)
 - [ ] API keys configured (OPENAI + GOOGLE for hybrid mode)
 - [ ] CORS origins set to your frontend domains only
@@ -192,7 +198,7 @@ curl http://72.60.135.183:8000/api/events
 |---------|-----|------|-----|
 | `ENV` | dev | **prod** | Hides debug routes, db paths |
 | `AUTH_ENABLED` | 0 | **1** | Protects API from public access |
-| `RATE_LIMIT_ENABLED` | 0 | **1** | Prevents abuse |
+| `RATE_LIMIT_ENABLED` | 0 | **1** | Prevents API abuse (10 req/sec default) |
 | `TENANT_HEADER_ENABLED` | 1 | **0** | Header spoofing risk |
 
 ---
@@ -360,3 +366,64 @@ certbot --nginx -d api.yourdomain.com
 ```
 
 Then update Lovable to use `https://` instead of `http://`.
+
+---
+
+## Rate Limiting
+
+The API includes built-in rate limiting to prevent abuse.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RATE_LIMIT_ENABLED` | `0` | Set to `1` to enable |
+| `RATE_LIMIT_RPS` | `50` | Requests per second per IP |
+| `RATE_LIMIT_BURST` | `100` | Burst allowance for page loads |
+| `RATE_LIMIT_EXEMPT_PATHS` | `/api/workflow/health,...` | Comma-separated paths to skip |
+
+### Recommended Settings
+
+| Environment | RPS | Burst | Why |
+|-------------|-----|-------|-----|
+| **Development** | 50 | 100 | Generous - won't affect testing |
+| **Production** | 10 | 30 | Prevents abuse while allowing normal use |
+| **High-security** | 5 | 10 | For public-facing APIs |
+
+### How It Works
+
+```
+Request comes in
+    ↓
+Is path exempt? (/health, /docs) → Allow
+    ↓
+Count requests from this IP in last second
+    ↓
+Under limit? → Allow
+Over limit? → 429 Too Many Requests
+```
+
+### Multi-Worker Deployments
+
+By default, rate limits use **in-memory storage** - each worker tracks limits independently.
+For multiple uvicorn workers, requests could exceed limits (each worker has its own counter).
+
+**Options:**
+1. **Single worker** (default): In-memory is fine
+2. **Multiple workers**: Use Redis for shared counters:
+   ```python
+   # In rate_limit.py, change storage_uri:
+   storage_uri="redis://localhost:6379"
+   ```
+
+### Testing Rate Limits
+
+```bash
+# Trigger rate limit (run in rapid succession)
+for i in {1..100}; do curl -s http://localhost:8000/api/events > /dev/null & done
+
+# Check if you get 429 response
+curl -i http://localhost:8000/api/events
+# HTTP/1.1 429 Too Many Requests
+# {"error": "rate_limit_exceeded", "detail": "Rate limit exceeded...", "retry_after": 1}
+```

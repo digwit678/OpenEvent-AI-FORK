@@ -306,14 +306,25 @@ def text_matches_category(text: str, category: str) -> bool:
 
     text_lower = text.lower()
 
-    # Exclude common false positives where room type phrases contain equipment keywords
+    # Exclude common false positives where event/room descriptions contain category keywords
     # E.g., "conference room" should NOT match Equipment category due to "conference" keyword
     # (conference camera is equipment, but conference room is not)
+    # Similarly, "dinner party" is an event type, not a catering product request
     false_positive_phrases = [
+        # Equipment false positives (room types)
         "conference room",
         "video room",
         "presentation room",
         "screen room",
+        # Catering false positives (event types - not actual catering requests)
+        "dinner party",
+        "dinner event",
+        "lunch meeting",
+        "lunch event",
+        "breakfast meeting",
+        "cocktail party",
+        "cocktail event",
+        "cocktail reception",
     ]
     text_cleaned = text_lower
     for phrase in false_positive_phrases:

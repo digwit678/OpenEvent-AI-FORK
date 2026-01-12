@@ -32,15 +32,17 @@ from workflows.common.menu_options import DINNER_MENU_OPTIONS
 
 
 def products_ready(event_entry: Dict[str, Any]) -> bool:
-    """Check if products are ready (list non-empty, sourced, or skip flag set)."""
-    products = event_entry.get("products") or []
-    selected = event_entry.get("selected_products") or []
-    products_state = event_entry.get("products_state") or {}
-    line_items = products_state.get("line_items") or []
-    skip_flag = bool(products_state.get("skip_products") or event_entry.get("products_skipped"))
-    # Sourced products (from HIL sourcing flow) count as ready
-    sourced = event_entry.get("sourced_products") or {}
-    return bool(products or selected or line_items or skip_flag or sourced)
+    """Products are ALWAYS ready - Step 4 should never ask about products.
+
+    MVP Decision: Catering/products awareness belongs in the OFFER ITSELF, not as a
+    separate prompt. If client hasn't mentioned products, the offer should include a
+    note like "you can add catering options" but NOT block the offer generation.
+
+    This eliminates the confusing "Before I prepare your tailored proposal, could you
+    share which catering or add-ons..." message that breaks the flow.
+    """
+    # Always return True - Step 4 goes straight to offer
+    return True
 
 
 def ensure_products_container(event_entry: Dict[str, Any]) -> None:

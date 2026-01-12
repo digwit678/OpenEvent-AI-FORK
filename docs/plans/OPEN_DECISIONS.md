@@ -677,6 +677,60 @@ Intake → Dates → [Site Visit?] → Room → Offer → ...
 
 ---
 
+### DECISION-014: Rate Limit Values
+
+**Date Raised:** 2026-01-10
+**Context:** Production readiness - rate limiting implemented but values not configured
+**Status:** Open
+
+**Question:** What rate limits should we set for the API?
+
+**Current Implementation:**
+- Rate limiting middleware added (`api/middleware/rate_limit.py`)
+- Disabled by default (`RATE_LIMIT_ENABLED=0`)
+- Uses slowapi with in-memory storage
+- Exempt paths: `/api/workflow/health`, `/docs`, `/openapi.json`, `/redoc`
+
+**Configuration Options:**
+```bash
+RATE_LIMIT_ENABLED=1      # Enable rate limiting
+RATE_LIMIT_RPS=10         # Requests per second per IP
+RATE_LIMIT_BURST=20       # Burst allowance
+```
+
+**Considerations:**
+
+1. **Normal Usage Patterns:**
+   - Chat messages: 1-2 per minute per user (human typing speed)
+   - Page loads: 5-10 API calls per page (room list, catering, etc.)
+   - Manager HIL checks: 1-2 per second during active review
+
+2. **Attack Scenarios:**
+   - Brute force: Rapid repeated requests
+   - DoS: Flood from single/multiple IPs
+   - Scraping: Automated data extraction
+
+3. **Suggested Starting Points:**
+
+| Profile | RPS | Burst | Use Case |
+|---------|-----|-------|----------|
+| **Relaxed** | 20 | 50 | Low-risk, internal use |
+| **Moderate** | 10 | 25 | Public API, trusted users |
+| **Strict** | 5 | 10 | High-risk, public exposure |
+
+4. **Per-Route Limits (future):**
+   - LLM endpoints (`/api/send-message`): Lower limit (expensive)
+   - Static data (`/api/test-data/*`): Higher limit (cheap)
+
+**Recommendation:** Start with **Moderate** (10 RPS, 25 burst) and adjust based on real usage.
+
+**Dependencies:**
+- Production traffic patterns (need data)
+- Cost analysis of LLM calls under attack
+- Decision on nginx/cloudflare layer vs. app-level
+
+---
+
 ## Resolved Decisions
 
 (Move decisions here once resolved, with date and rationale)

@@ -43,7 +43,7 @@ from legacy.session_store import active_conversations  # Used in root endpoint
 # NOTE: adapter imports moved to routes/messages.py
 # NOTE: workflow imports moved to routes/messages.py
 from utils import json_io
-from api.middleware import TenantContextMiddleware, AuthMiddleware
+from api.middleware import TenantContextMiddleware, AuthMiddleware, setup_rate_limiting
 from api.middleware.request_limits import RequestSizeLimitMiddleware
 
 # Environment mode detection: dev vs prod
@@ -127,6 +127,13 @@ async def lifespan(app: FastAPI):
         # Unexpected error during validation - log but don't block startup
         logger.warning("[Backend] Could not validate hybrid mode: %s", e)
 
+    # --- Startup: Auth configuration warning ---
+    # SECURITY: Warn loudly when auth is disabled in production
+    auth_enabled = os.getenv("AUTH_ENABLED", "0") == "1"
+    if not _IS_DEV and not auth_enabled:
+        logger.warning("[SECURITY] AUTH_ENABLED=0 in production mode - API is unprotected!")
+        logger.warning("[SECURITY] Set AUTH_ENABLED=1 and configure API_KEY for production")
+
     yield
     # --- Shutdown logic (if any) can go here ---
 
@@ -193,6 +200,11 @@ else:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+# Rate limiting middleware (disabled by default)
+# Enable with RATE_LIMIT_ENABLED=1 and configure RATE_LIMIT_RPS, RATE_LIMIT_BURST
+# See OPEN_DECISIONS.md DECISION-014 for rate limit value decisions
+setup_rate_limiting(app)
 
 # CENTRALIZED EVENTS DATABASE - use canonical path from workflow_email
 EVENTS_FILE = str(WF_DB_PATH)  # For backwards compat in any string contexts

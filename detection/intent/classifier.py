@@ -129,22 +129,22 @@ _QNA_KEYWORDS: Dict[str, Sequence[str]] = {
         "equipment in room",
     ),
     "catering_for": (
-        "catering",
-        "menu",
-        "menus",
-        "package",
-        "packages",
-        "package options",
-        "coffee break",
-        "coffee",
-        "snacks",
-        "lunch",
-        "dinner",
-        "drinks",
-        "beverage",
-        "beverages",
-        "apero",
-        "aperitif",
+        # Question words about catering - must indicate a Q&A question, not just event type
+        "what catering",
+        "what menus",
+        "catering options",
+        "catering packages",
+        "menu options",
+        "food options",
+        "do you offer catering",
+        "do you have catering",
+        "do you serve",
+        "beverage options",
+        "drink options",
+        "coffee break options",
+        "snack options",
+        # NOTE: "dinner", "lunch" removed - they are event types, not catering questions
+        # Asking "I want a dinner" is different from "what's for dinner?"
     ),
     "products_for": (
         "products",
@@ -315,6 +315,17 @@ _QNA_REGEX_PATTERNS: Dict[str, List[str]] = {
     "check_alternatives": ALTERNATIVE_KEYWORDS.get("en", []),
     "confirm_booking": ENHANCED_CONFIRMATION_KEYWORDS.get("en", []),
     "check_availability": AVAILABILITY_KEYWORDS.get("en", []),
+    # Month-constrained availability questions (e.g., "available in February")
+    "free_dates": [
+        # English patterns
+        r"\b(?:available|free|open)\s+(?:in|for|around|during)\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)",
+        r"\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+(?:available|free|open)\b",
+        r"\bwould\s+be\s+available\s+.*\b(?:january|february|march|april|may|june|july|august|september|october|november|december)",
+        # German patterns
+        r"\b(?:verfügbar|frei|offen)\s+(?:im|für|um|während)\s+(?:januar|februar|märz|maerz|april|mai|juni|juli|august|september|oktober|november|dezember)",
+        r"\b(?:januar|februar|märz|maerz|april|mai|juni|juli|august|september|oktober|november|dezember)\s+(?:verfügbar|frei|offen)\b",
+        r"\bwäre\s+(?:frei|verfügbar)\s+.*\b(?:januar|februar|märz|maerz|april|mai|juni|juli|august|september|oktober|november|dezember)",
+    ],
 }
 
 

@@ -199,9 +199,16 @@ class StubAgentAdapter(AgentAdapter):
                 entities["participants"] = int(participants_match.group(1))
                 break
 
-        room_match = re.search(r"\b(room\s*[a-z0-9]+|punkt\.?null)\b", body, re.IGNORECASE)
+        # Room extraction - avoid false positives like "room with a nice ambiance"
+        # Match: "Room A", "Room B", "Room 1", "punkt.null" (specific room names)
+        # Exclude: "room with", "room for", "room that", etc.
+        room_match = re.search(r"\b(room\s*[a-e0-9](?:\s|$|,|\.)|punkt\.?null)\b", body, re.IGNORECASE)
         if room_match:
-            entities["room"] = room_match.group(0).strip()
+            extracted_room = room_match.group(0).strip().rstrip(",.")
+            # Additional validation: filter out preposition-like matches
+            false_positives = ["room with", "room for", "room that", "room in", "room at", "room on"]
+            if extracted_room.lower() not in false_positives:
+                entities["room"] = extracted_room
 
         # Event types that affect room/catering preferences
         # Prioritize food/catering types (affect product matching) over generic event types
@@ -460,7 +467,6 @@ class OpenAIAgentAdapter(AgentAdapter):
     def _select_fallback_strategy(self, error: Exception, operation: str) -> str:
         error_msg = f"[OPENAI FALLBACK] {operation} failed: {type(error).__name__}: {error}"
         logger.error(error_msg)
-        print(f"\n{'='*60}\n{error_msg}\n{'='*60}\n", flush=True)
         return "stub"
 
     def route_intent(self, msg: Dict[str, Any]) -> Tuple[str, float]:
@@ -484,10 +490,9 @@ class OpenAIAgentAdapter(AgentAdapter):
             confidence = max(0.0, min(1.0, confidence))
             return intent or IntentLabel.NON_EVENT.value, confidence
         except Exception as e:
-            # LOUD FALLBACK: Log when OpenAI fails
+            # Log when OpenAI fails and fallback to stub
             error_msg = f"[OPENAI FALLBACK] route_intent failed: {type(e).__name__}: {e}"
             logger.error(error_msg)
-            print(f"\n{'='*60}\n{error_msg}\n{'='*60}\n", flush=True)
             return self._fallback.route_intent(msg)
 
     def extract_entities(self, msg: Dict[str, Any]) -> Dict[str, Any]:
@@ -508,10 +513,9 @@ class OpenAIAgentAdapter(AgentAdapter):
                 entities[key] = payload.get(key)
             return entities
         except Exception as e:
-            # LOUD FALLBACK: Log when OpenAI fails
+            # Log when OpenAI fails and fallback to stub
             error_msg = f"[OPENAI FALLBACK] extract_entities failed: {type(e).__name__}: {e}"
             logger.error(error_msg)
-            print(f"\n{'='*60}\n{error_msg}\n{'='*60}\n", flush=True)
             return self._fallback.extract_entities(msg)
 
     def extract_user_information(self, msg: Dict[str, Any]) -> Dict[str, Any]:
@@ -628,10 +632,8 @@ class GeminiAgentAdapter(AgentAdapter):
         This method controls what happens when the Gemini API call fails.
         Returns: "stub" to use heuristics, "raise" to propagate error.
         """
-        # LOUD FALLBACK: Always log when Gemini fails so it's visible during debugging
         error_msg = f"[GEMINI FALLBACK] {operation} failed: {type(error).__name__}: {error}"
         logger.error(error_msg)
-        print(f"\n{'='*60}\n{error_msg}\n{'='*60}\n", flush=True)
         return "stub"
 
     def route_intent(self, msg: Dict[str, Any]) -> Tuple[str, float]:

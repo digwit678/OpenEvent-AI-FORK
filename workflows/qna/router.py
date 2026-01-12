@@ -64,6 +64,7 @@ _LAYOUT_KEYWORDS = {
 _ATTENDEE_PATTERN = re.compile(r"(\d{1,3})\s*(?:guests|people|ppl|attendees)", re.IGNORECASE)
 _ROOM_PATTERN = re.compile(r"\broom\s*([abc])\b", re.IGNORECASE)
 _MONTHS = {
+    # English
     "january": 1,
     "february": 2,
     "march": 3,
@@ -76,6 +77,16 @@ _MONTHS = {
     "october": 10,
     "november": 11,
     "december": 12,
+    # German
+    "januar": 1,
+    "februar": 2,
+    "märz": 3,
+    "maerz": 3,  # ASCII alternative for März
+    "mai": 5,
+    "juni": 6,
+    "juli": 7,
+    "oktober": 10,
+    "dezember": 12,
 }
 
 
@@ -202,18 +213,27 @@ def _extract_requested_room(text: str) -> Optional[str]:
     return None
 
 
-def _extract_anchor(text: str) -> Tuple[Optional[int], Optional[int]]:
+def _extract_anchor(text: str) -> Tuple[Optional[int], Optional[int], bool]:
+    """
+    Extract month, day, and whether "next year" is explicitly mentioned.
+    Returns (month, day, force_next_year).
+    """
     lowered = text.lower()
+    # Detect "next year" pattern (handles "next year", "nächstes Jahr" for German)
+    force_next_year = bool(
+        re.search(r"\bnext\s+year\b", lowered)
+        or re.search(r"\bnächstes?\s+jahr\b", lowered)
+    )
     for name, month in _MONTHS.items():
         if name in lowered:
             day_match = re.search(rf"(\d{{1,2}})\s+(?:of\s+)?{name}", lowered)
             if day_match:
                 try:
-                    return month, int(day_match.group(1))
+                    return month, int(day_match.group(1)), force_next_year
                 except ValueError:
-                    return month, None
-            return month, None
-    return None, None
+                    return month, None, force_next_year
+            return month, None, force_next_year
+    return None, None, force_next_year
 
 
 def _event_requirements(event_entry: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -265,11 +285,14 @@ def _event_date_iso(event_entry: Optional[Dict[str, Any]]) -> Optional[str]:
     chosen = event_entry.get("chosen_date")
     if not chosen:
         return None
-    try:
-        parsed = datetime.strptime(chosen, "%d.%m.%Y")
-        return parsed.strftime("%Y-%m-%d")
-    except (ValueError, TypeError):
-        return None
+    # Try multiple date formats
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
+        try:
+            parsed = datetime.strptime(chosen, fmt)
+            return parsed.strftime("%Y-%m-%d")
+        except (ValueError, TypeError):
+            continue
+    return None
 
 
 def _missing_fields(step: int, event_entry: Optional[Dict[str, Any]]) -> List[str]:
@@ -389,15 +412,93 @@ def _catering_response(
     text: str,
     event_entry: Optional[Dict[str, Any]],
 ) -> List[str]:
+    """
+    ═══════════════════════════════════════════════════════════════════════════════
+    Q&A CATERING DETOUR CONTEXT RULE (Jan 12, 2026)
+    ═══════════════════════════════════════════════════════════════════════════════
+
+    When answering catering Q&A during a detour, use the DETOURED context:
+
+    PRIORITY ORDER:
+    1. If detoured with NEW room AND room is available:
+       → Show catering for the NEW room
+
+    2. If room is being re-evaluated (detour in progress) but date is confirmed:
+       → Show ALL catering options from ALL rooms on that date
+
+    3. If BOTH date and room are uncertain (double detour or no confirmation):
+       → Show catering available in the CURRENT MONTH
+       → If past the 20th: Also show NEXT month's options
+       → Format: "In February: [list], In March: [list]"
+
+    4. EXCLUSION RULE: If a room is unavailable for remaining days of month,
+       exclude that room's UNIQUE catering options (options only that room has).
+       Shared options from other rooms are still shown.
+
+    The event_entry values are already UPDATED by the detour handler before
+    Q&A is called, so we use event_entry directly (not cached/stale values).
+    ═══════════════════════════════════════════════════════════════════════════════
+    """
+    # Get current context (already updated by detour if applicable)
     room = _event_room(event_entry)
     date_token = _event_date_iso(event_entry)
+    date_confirmed = (event_entry or {}).get("date_confirmed", False)
+    room_confirmed = bool((event_entry or {}).get("locked_room_id"))
+
+    # Detect detour context
+    caller_step = (event_entry or {}).get("caller_step")
+    is_in_detour = caller_step is not None
+
+    # Determine category filter from question text
     categories: Optional[List[str]] = None
     lowered = text.lower()
     if "drink" in lowered or "beverage" in lowered:
         categories = ["beverages"]
     elif "package" in lowered or "menu" in lowered or "catering" in lowered:
         categories = ["package"]
-    options = list_catering(room_id=room, date_token=date_token, categories=categories)
+
+    # === PRIORITY 1: New room confirmed and available ===
+    if room_confirmed and room:
+        options = list_catering(room_id=room, date_token=date_token, categories=categories)
+        preface = f"Here are catering options for {room}:"
+        if date_token:
+            preface = f"Here are catering options for {room} on {_format_date(date_token)}:"
+
+    # === PRIORITY 2: Date confirmed but room being re-evaluated ===
+    elif date_confirmed and date_token and not room_confirmed:
+        # Show ALL catering from all rooms on this date
+        options = list_catering(room_id=None, date_token=date_token, categories=categories)
+        preface = f"Here are all catering options available on {_format_date(date_token)}:"
+
+    # === PRIORITY 3: Both uncertain - show monthly availability ===
+    elif not date_confirmed or not room_confirmed:
+        options = list_catering(room_id=None, date_token=None, categories=categories)
+        # Check if we're past the 20th of current month
+        today = datetime.now()
+        current_month = today.strftime("%B")
+        if today.day > 20:
+            next_month_date = today.replace(day=28)
+            try:
+                from datetime import timedelta
+                next_month_date = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+            except Exception:
+                pass
+            next_month = next_month_date.strftime("%B")
+            preface = f"In {current_month} and {next_month}, we offer these catering options:"
+        else:
+            preface = f"In {current_month}, we offer these catering options:"
+
+    # === DEFAULT: Use whatever context we have ===
+    else:
+        options = list_catering(room_id=room, date_token=date_token, categories=categories)
+        if room and date_token:
+            preface = f"Here are catering ideas that work well in {room} on your requested date:"
+        elif room:
+            preface = f"Here are catering ideas that work well in {room}:"
+        else:
+            preface = "Here are a few catering ideas we can arrange:"
+
+    # Format response
     info: List[str] = []
     for entry in options[:4]:
         name = entry.get("name") or "Option"
@@ -410,22 +511,34 @@ def _catering_response(
             info.append(f"{name}{price_text}: {descriptor}.")
         else:
             info.append(f"{name}{price_text}.")
+
     if not info:
-        if room:
+        if is_in_detour:
+            info.append("I'll confirm catering options once we finalize the room and date.")
+        elif room:
             info.append(f"I'll pull the detailed catering menus for {room} once we confirm the room and date.")
         else:
             info.append("Catering menus are available once we confirm the room/date combination.")
-    if categories == ["beverages"]:
-        preface = "Here are beverage pairings we can set up for you:"
-    elif categories == ["package"]:
-        preface = "Here are our catering packages:"
-    elif room and date_token:
-        preface = f"Here are catering ideas that work well in {room} on your requested date:"
-    elif room:
-        preface = f"Here are catering ideas that work well in {room}:"
-    else:
-        preface = "Here are a few catering ideas we can arrange:"
+
+    # Override preface for specific category questions ONLY if not in context-aware mode
+    # (context-aware mode = already set a specific preface based on room/date context)
+    context_aware = room_confirmed or (date_confirmed and date_token) or is_in_detour
+    if not context_aware:
+        if categories == ["beverages"]:
+            preface = "Here are beverage pairings we can set up for you:"
+        elif categories == ["package"]:
+            preface = "Here are our catering packages:"
+
     return _with_preface(info, preface)
+
+
+def _format_date(date_iso: str) -> str:
+    """Format ISO date to readable format (e.g., '2026-02-25' -> 'February 25')."""
+    try:
+        dt = datetime.strptime(date_iso, "%Y-%m-%d")
+        return dt.strftime("%B %d").replace(" 0", " ")
+    except Exception:
+        return date_iso
 
 
 def _products_response(
@@ -455,9 +568,12 @@ def _dates_response(
     event_entry: Optional[Dict[str, Any]],
     db: Optional[Dict[str, Any]],
 ) -> List[str]:
-    anchor_month, anchor_day = _extract_anchor(text)
+    anchor_month, anchor_day, force_next_year = _extract_anchor(text)
     preferred_room = _event_room(event_entry) or "Room A"
-    dates = list_free_dates(anchor_month, anchor_day, count=5, db=db, preferred_room=preferred_room)
+    dates = list_free_dates(
+        anchor_month, anchor_day, count=5, db=db,
+        preferred_room=preferred_room, force_next_year=force_next_year
+    )
     info: List[str] = []
     for value in dates[:5]:
         info.append(f"{value} — {preferred_room} currently shows as free.")
@@ -926,10 +1042,15 @@ def generate_hybrid_qna_response(
     pure_qna_types = [
         t for t in qna_types
         if t in {
-            "catering_for", "products_for", "free_dates", "room_features",
-            "rooms_by_feature", "parking_policy", "site_visit_overview", "general"
+            "catering_for", "products_for", "free_dates", "check_availability",
+            "room_features", "rooms_by_feature", "parking_policy",
+            "site_visit_overview", "general"
         }
     ]
+
+    # DEBUG
+    import logging
+    logging.getLogger(__name__).debug("[HYBRID_QNA] qna_types=%s, pure=%s", qna_types, pure_qna_types)
 
     if not pure_qna_types:
         return None
@@ -951,7 +1072,7 @@ def generate_hybrid_qna_response(
         elif qna_type == "products_for":
             info_lines = _products_response(event_entry)
             header = "Available Products"
-        elif qna_type == "free_dates":
+        elif qna_type in ("free_dates", "check_availability"):
             info_lines = _dates_response(message_text, event_entry, db)
             header = "Available Dates"
         elif qna_type == "room_features":
@@ -973,7 +1094,10 @@ def generate_hybrid_qna_response(
             continue
 
         if info_lines:
-            section = f"**{header}:**\n" + "\n".join(f"• {line}" if not line.startswith("•") else line for line in info_lines)
+            # Format Q&A response: NO bullets (user request - saves space)
+            # Structure: header, then lines separated by double newlines
+            # Feature lists are already joined inline in source functions (e.g., room_features)
+            section = f"**{header}:**\n\n" + "\n\n".join(info_lines)
             response_parts.append(section)
 
     if not response_parts:

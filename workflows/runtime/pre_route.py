@@ -56,6 +56,17 @@ ALWAYS_VALID_INTENTS = {
     "non_event",  # Non-event messages need other handling
 }
 
+# User-friendly guidance for what action is expected at each step (F-04 fix)
+STEP_GUIDANCE: Dict[int, str] = {
+    1: "We're waiting for details about your event (date, number of guests, etc.).",
+    2: "We're waiting for you to confirm your preferred event date.",
+    3: "We're checking room availability for your requested date.",
+    4: "We've sent you an offer - please let us know if you'd like to accept, decline, or discuss changes.",
+    5: "We're in negotiation - please respond to the current offer discussion.",
+    6: "We're finalizing the booking details.",
+    7: "Your booking is confirmed! Let us know if you have any questions.",
+}
+
 
 # Type aliases for callback functions
 PersistFn = Callable[[WorkflowState, Path, Path], None]
@@ -243,19 +254,29 @@ def check_out_of_context(
 
     # Log the out-of-context detection
     intent = unified_result.intent if unified_result else "unknown"
-    logger.warning("[PRE_ROUTE] Out-of-context message detected - no response")
+    logger.warning("[PRE_ROUTE] Out-of-context message detected - providing guidance")
 
     from debug.hooks import trace_marker
     trace_marker(
-        state.thread_id,
-        "OUT_OF_CONTEXT_IGNORED",
+        state.thread_id or "unknown",
+        "OUT_OF_CONTEXT_GUIDED",
         detail=f"Intent '{intent}' not valid at step {current_step}",
         owner_step=f"Step{current_step}",
     )
 
-    # Return a "no response" result - workflow stays at current step, no message sent
+    # Build a helpful guidance message instead of silent ignore (F-04 fix)
+    # This helps users understand what action the system is waiting for
+    guidance = STEP_GUIDANCE.get(current_step or 1, "We're processing your request.")
+    guidance_message = f"Thanks for your message! {guidance}"
+
+    # Add draft message to state so it gets included in the response
+    state.add_draft_message({
+        "body_markdown": guidance_message,
+        "topic": "out_of_context_guidance",
+    })
+
     ooc_response = GroupResult(
-        action="out_of_context_ignored",
+        action="out_of_context_guided",  # Changed from _ignored to _guided
         halt=True,
         payload={
             "reason": "step_mismatch",

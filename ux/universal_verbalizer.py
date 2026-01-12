@@ -35,7 +35,10 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+
+from dateutil import parser as dateutil_parser
 
 from workflows.io.config_store import get_venue_name, get_venue_city
 
@@ -347,6 +350,7 @@ TOPIC_HINTS = {
     "room_option": "Room has a tentative hold - explain clearly but don't alarm. Present it as 'we can secure this for you'",
     "room_unavailable": "Be professional and solution-focused. Quickly pivot to alternatives that DO work",
     "room_selected_follow_up": "Confirm room choice, smoothly transition to products/offer discussion",
+    "room_confirmed": "Client has confirmed their room choice. Lead with 'Great choice! [Room] is confirmed for [date].' then summarize key features briefly",
 
     # Step 4 - Offer
     "offer_intro": "Set up the offer professionally. Acknowledge choices so far. Keep it brief - the offer details follow",
@@ -509,7 +513,7 @@ def verbalize_message(
 
     # Verify hard facts preserved
     hard_facts = context.extract_hard_facts()
-    verification = _verify_facts(llm_text, hard_facts)
+    verification = _verify_facts(llm_text, hard_facts, topic=context.topic)
 
     if not verification[0]:
         # Verification failed - try to patch the output first
@@ -540,8 +544,8 @@ def verbalize_message(
                 error=Exception(f"Missing: {missing_str}, Invented: {invented_str}"),
             )
             logger.warning(
-                f"universal_verbalizer: patching failed for step={context.step}, topic={context.topic}, using fallback",
-                extra={"missing": verification[1], "invented": verification[2]},
+                f"universal_verbalizer: patching failed for step={context.step}, topic={context.topic}, using fallback. "
+                f"Missing: {verification[1]}, Invented: {verification[2]}",
             )
             return wrap_fallback(fallback_text, ctx)
 
@@ -771,9 +775,118 @@ def _call_llm(payload: Dict[str, Any]) -> str:
     )
 
 
+# =============================================================================
+# Semantic Date Verification
+# =============================================================================
+# Instead of maintaining a list of ~20+ date format strings, we extract dates
+# from the LLM output and compare them semantically as datetime objects.
+# This approach:
+# 1. Is format-agnostic - any valid date representation works
+# 2. Avoids ambiguity - no risk of confusing months/days due to format variants
+# 3. Is simpler to maintain - one parsing function handles all formats
+
+
+def _extract_dates_from_text(text: str) -> List[datetime]:
+    """
+    Extract all date-like patterns from text and parse them to datetime objects.
+
+    Uses regex to find date-like patterns, then dateutil.parser to parse them.
+    This handles a wide variety of formats including:
+    - Numeric: 01.07.2026, 01/07/2026, 2026-07-01
+    - Month names: July 1, 2026, 1st July 2026, Jul 1 2026
+    - With ordinals: 1st of July 2026, July 1st, 2026
+
+    Args:
+        text: The text to extract dates from
+
+    Returns:
+        List of parsed datetime objects (may be empty if no valid dates found)
+    """
+    # Patterns that look like dates - we extract these, then let dateutil parse
+    date_patterns = [
+        # Numeric formats: DD.MM.YYYY, DD/MM/YYYY, D/M/YY
+        r'\d{1,2}[./]\d{1,2}[./]\d{2,4}',
+        # ISO format: YYYY-MM-DD
+        r'\d{4}-\d{2}-\d{2}',
+        # Month name first: July 1, 2026 / Jul 1st, 2026 / July 01 2026
+        r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|'
+        r'Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|'
+        r'Dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?[,\s]+\d{4}',
+        # Day first with month name: 1 July 2026 / 1st of July, 2026
+        r'\d{1,2}(?:st|nd|rd|th)?(?:\s+of)?\s+'
+        r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|'
+        r'Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|'
+        r'Dec(?:ember)?)\.?[,\s]+\d{4}',
+    ]
+
+    found_dates: List[datetime] = []
+    seen_matches: set = set()  # Avoid parsing the same match twice
+
+    # Pattern to identify ISO format (YYYY-MM-DD) - these should NOT use dayfirst
+    iso_pattern = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+    for pattern in date_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        for match in matches:
+            if match in seen_matches:
+                continue
+            seen_matches.add(match)
+            try:
+                # ISO format (YYYY-MM-DD) is unambiguous - don't use dayfirst
+                # Other formats use dayfirst=True for European preference (DD.MM.YYYY)
+                is_iso = iso_pattern.match(match) is not None
+                parsed = dateutil_parser.parse(match, dayfirst=not is_iso, fuzzy=False)
+                found_dates.append(parsed)
+            except ValueError:
+                # Not a valid date, skip
+                pass
+
+    return found_dates
+
+
+def _verify_date_semantic(source_date_str: str, llm_text: str) -> bool:
+    """
+    Verify a date semantically by parsing and comparing datetime objects.
+
+    Instead of checking if a specific format string appears in the text,
+    this extracts all dates from the LLM output and checks if any of them
+    represent the same calendar day as the source date.
+
+    Args:
+        source_date_str: The source date in DD.MM.YYYY format (our internal format)
+        llm_text: The LLM-generated text to verify
+
+    Returns:
+        True if the source date appears in any valid format in the text
+    """
+    try:
+        # Parse source date (always DD.MM.YYYY from our system)
+        source_dt = datetime.strptime(source_date_str, "%d.%m.%Y")
+        source_date = source_dt.date()
+
+        # Extract all dates from LLM output
+        found_dates = _extract_dates_from_text(llm_text)
+
+        # Check if any extracted date matches the source (same calendar day)
+        for found_dt in found_dates:
+            if found_dt.date() == source_date:
+                return True
+
+        # Fallback: Also check if the original format appears literally
+        # (handles edge cases where dateutil might not extract it)
+        if source_date_str in llm_text:
+            return True
+
+        return False
+    except ValueError:
+        # If we can't parse the source date, fallback to string matching
+        return source_date_str in llm_text
+
+
 def _verify_facts(
     llm_text: str,
     hard_facts: Dict[str, List[str]],
+    topic: str = "",
 ) -> Tuple[bool, List[str], List[str]]:
     """
     Verify that all hard facts appear in the LLM output.
@@ -781,56 +894,34 @@ def _verify_facts(
     This verification is intentionally flexible to allow natural rephrasing
     while catching actual factual errors (wrong numbers, invented dates, etc.)
 
+    Args:
+        llm_text: The LLM-generated text to verify
+        hard_facts: Dictionary of fact types to fact values
+        topic: The message topic (used to determine which facts are required)
+
     Returns:
         Tuple of (ok, missing_facts, invented_facts)
     """
+    # Topics where participant count is optional (focus is on dates, not capacity)
+    COUNT_OPTIONAL_TOPICS = {
+        "date_candidates",
+        "date_time_clarification",
+        "date_confirmation_required",
+        "date_confirmed",
+        "site_visit_date_selection",
+        "site_visit_date_clarification",
+    }
     missing: List[str] = []
     invented: List[str] = []
 
     text_lower = llm_text.lower()
     text_normalized = llm_text.replace(" ", "").upper()
-    # Also create a version with common separators normalized
-    text_numbers_only = re.sub(r"[^\d.]", "", llm_text)
 
-    # Check dates - flexible matching
+    # Check dates - semantic verification (format-agnostic)
+    # Uses dateutil to parse dates from LLM output and compare as datetime objects
+    # This avoids maintaining a list of format variants and eliminates ambiguity
     for date in hard_facts.get("dates", []):
-        # Try multiple formats: DD.MM.YYYY, DD/MM/YYYY, YYYY-MM-DD
-        date_found = False
-        if date in llm_text:
-            date_found = True
-        else:
-            # Try alternative formats
-            try:
-                from datetime import datetime
-                # Parse DD.MM.YYYY
-                if "." in date:
-                    parsed = datetime.strptime(date, "%d.%m.%Y")
-                    day = parsed.day
-                    # Ordinal suffix
-                    ordinal = (
-                        "th" if 11 <= day <= 13
-                        else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
-                    )
-                    alt_formats = [
-                        parsed.strftime("%d/%m/%Y"),
-                        parsed.strftime("%Y-%m-%d"),
-                        parsed.strftime("%d %B %Y"),  # "08 May 2026"
-                        parsed.strftime("%B %d, %Y"),  # "May 08, 2026"
-                        parsed.strftime("%-d %B %Y"),  # "8 May 2026" (no leading zero)
-                        # Ordinal formats: "15th of February, 2026" or "15th February 2026"
-                        f"{day}{ordinal} of {parsed.strftime('%B')}, {parsed.year}",
-                        f"{day}{ordinal} of {parsed.strftime('%B')} {parsed.year}",
-                        f"{day}{ordinal} {parsed.strftime('%B')} {parsed.year}",
-                        f"{day}{ordinal} {parsed.strftime('%B')}, {parsed.year}",
-                    ]
-                    for alt in alt_formats:
-                        if alt in llm_text or alt.lower() in text_lower:
-                            date_found = True
-                            break
-            except (ValueError, ImportError):
-                pass
-
-        if not date_found:
+        if not _verify_date_semantic(date, llm_text):
             missing.append(f"date:{date}")
 
     # Check room names (case-insensitive, flexible matching)
@@ -887,17 +978,31 @@ def _verify_facts(
             missing.append(f"amount:{amount}")
 
     # Check counts (participant count) - flexible matching
+    # Skip for topics where count is optional (e.g., date-focused messages)
+    skip_count_check = topic in COUNT_OPTIONAL_TOPICS
     for count in hard_facts.get("counts", []):
-        # Check for the number directly or spelled out for small numbers
+        if skip_count_check:
+            break  # Count is optional for this topic
+        # Check for the number directly
         count_found = count in llm_text
         if not count_found:
-            # Check if the number appears with common suffixes
+            # Check if the number appears with common suffixes/prefixes
             count_patterns = [
                 f"{count} guests",
                 f"{count} people",
                 f"{count} participants",
                 f"{count} attendees",
                 f"{count} persons",
+                f"{count} guest",
+                f"{count} person",
+                f"for {count}",
+                f"of {count}",
+                f"about {count}",
+                f"around {count}",
+                f"approximately {count}",
+                f"up to {count}",
+                f"group of {count}",
+                f"party of {count}",
             ]
             count_found = any(p.lower() in text_lower for p in count_patterns)
 

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+logger = logging.getLogger(__name__)
 
 from utils.async_tools import run_io_tasks
 
@@ -679,7 +682,7 @@ def run_availability_workflow(
             {"outcome": "Unavailable", "variant": "no_full_availability", "reason": reason},
         )
         _save_workflow_db(db)
-        print("[i] Drafted clarification reply (missing time).")
+        logger.info("Drafted clarification reply (missing time)")
         return
 
     rooms = load_rooms_config(rooms_path)
@@ -787,7 +790,7 @@ def run_availability_workflow(
             idempotency_key=idempotency_key,
         )
     except Exception as exc:  # pragma: no cover - manual flow
-        print(f"[!] Failed to publish to Client GUI: {exc}")
+        logger.error("Failed to publish to Client GUI: %s", exc)
         _save_workflow_db(db)
         return
 
@@ -805,4 +808,4 @@ def run_availability_workflow(
     )
 
     _save_workflow_db(db)
-    print("✅ Published to Client GUI.")
+    logger.info("Published to Client GUI")

@@ -1,6 +1,6 @@
 # Environment files
 *.env
-!/.env
+
 
 # Local runtime databases
 events_database.json

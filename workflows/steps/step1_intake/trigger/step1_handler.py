@@ -54,6 +54,10 @@ from workflows.common.datetime_parse import parse_first_date
 from services.products import list_product_records, merge_product_requests, normalise_product_payload
 from workflows.common.menu_options import DINNER_MENU_OPTIONS
 from workflows.qna.router import generate_hybrid_qna_response
+from detection.intent.classifier import _detect_qna_types
+from workflows.common.catalog import list_room_features
+from services.room_eval import evaluate_rooms
+from workflows.steps.step2_date_confirmation.trigger.date_parsing import iso_date_is_past, normalize_iso_candidate
 
 # Extracted pure helpers (I1 refactoring)
 from .normalization import normalize_quotes as _normalize_quotes
@@ -545,6 +549,22 @@ def process(state: WorkflowState) -> GroupResult:
     context = context_snapshot(state.db, client, state.client_id)
     state.record_context(context)
 
+    # [CONFIDENCE BOOST FOR CLEAR EVENT REQUESTS]
+    # If LLM detected event_request intent AND we have both date and participants,
+    # this is unambiguously an event inquiry - boost confidence to avoid false manual_review.
+    # This fixes cases where LLM returns 0.7 confidence for clear event requests.
+    if is_event_request(intent) and confidence < 0.85:
+        has_date = bool(user_info.get("date") or user_info.get("event_date"))
+        has_participants = bool(user_info.get("participants"))
+        if has_date and has_participants:
+            logger.info(
+                "[Step1] Boosting confidence %.2f -> 0.90 for clear event request "
+                "(has date=%s, participants=%s)",
+                confidence, user_info.get("date"), user_info.get("participants")
+            )
+            confidence = max(confidence, 0.90)
+            state.confidence = confidence
+
     # [SKIP MANUAL REVIEW FOR EXISTING EVENTS]
     # If there's an existing event at step > 1, we should NOT do "is this an event?"
     # classification. These messages should flow through to the step-specific handlers
@@ -781,6 +801,129 @@ def process(state: WorkflowState) -> GroupResult:
         requirements_hash=new_req_hash,
     )
 
+    # [SMART SHORTCUT] If initial message has room + date + participants, verify inline and jump to offer
+    # This avoids an extra round-trip through Step 3 when all info is provided upfront
+    preferred_room_from_msg = requirements.get("preferred_room") or user_info.get("room")
+    event_date_from_msg = user_info.get("event_date") or user_info.get("date")
+    participants_from_msg = requirements.get("participants") or requirements.get("number_of_participants")
+
+    # [PAST DATE VALIDATION] Check if the extracted date is in the past - this applies UNIVERSALLY
+    # (not just smart shortcut) for all new events with a date
+    # NOTE: We DON'T clear user_info["event_date"] here - Step 2's validate_window will detect
+    # the past date and provide a friendly message with alternative dates
+    past_date_detected = False
+    if event_date_from_msg and not event_entry.get("date_confirmed"):
+        normalized_date = normalize_iso_candidate(event_date_from_msg)
+        if normalized_date and iso_date_is_past(normalized_date):
+            logger.info("[Step1][PAST_DATE] Date %s is in the past - routing to Step 2", event_date_from_msg)
+            past_date_detected = True
+            state.extras["past_date_rejected"] = event_date_from_msg
+            # Don't clear date from user_info - Step 2 needs it to show the rejection message
+            event_date_from_msg = None  # Don't use it for smart shortcut (skip room verification)
+
+    # Only trigger smart shortcut for NEW events (no existing room lock) that have all three fields
+    is_new_event = not event_entry.get("locked_room_id") and not event_entry.get("date_confirmed")
+    has_all_shortcut_fields = preferred_room_from_msg and event_date_from_msg and participants_from_msg
+
+    # Route to Step 2 if past date was detected (with flag for alternatives suggestion)
+    if past_date_detected:
+        logger.info("[Step1][PAST_DATE] Routing to Step 2 for date alternatives")
+        update_event_metadata(
+            event_entry,
+            chosen_date=None,
+            date_confirmed=False,
+            current_step=2,
+        )
+        state.current_step = 2
+        state.extras["persist"] = True
+        # Fall through - Step 2 handler will see past_date_rejected and suggest alternatives
+
+    if is_new_event and has_all_shortcut_fields and not needs_vague_date_confirmation:
+        logger.debug("[Step1][SMART_SHORTCUT] Checking inline availability: room=%s, date=%s, participants=%s",
+                    preferred_room_from_msg, event_date_from_msg, participants_from_msg)
+
+        # Set up event_entry with requested_window for evaluate_rooms
+        start_time = user_info.get("start_time") or "09:00"
+        end_time = user_info.get("end_time") or "18:00"
+        event_entry["requested_window"] = {
+            "date_iso": event_date_from_msg,
+            "start": start_time,
+            "end": end_time,
+        }
+        event_entry["chosen_date"] = event_date_from_msg
+
+        # Evaluate room availability
+        try:
+            evaluations = evaluate_rooms(event_entry)
+            target_eval = next(
+                (e for e in evaluations if e.record.name.lower() == str(preferred_room_from_msg).lower()),
+                None
+            )
+
+            if target_eval and target_eval.status in ("Available", "Option"):
+                # Room is available! Set all gatekeeping variables
+                logger.info("[Step1][SMART_SHORTCUT] Room %s is %s - jumping to Step 4",
+                           preferred_room_from_msg, target_eval.status)
+
+                update_event_metadata(
+                    event_entry,
+                    chosen_date=event_date_from_msg,
+                    date_confirmed=True,
+                    locked_room_id=target_eval.record.name,
+                    room_status=target_eval.status,
+                    room_eval_hash=new_req_hash,
+                    current_step=4,
+                    thread_state="Awaiting Client",
+                    caller_step=None,
+                )
+                event_entry.setdefault("event_data", {})["Event Date"] = event_date_from_msg
+                event_entry.setdefault("event_data", {})["Preferred Room"] = target_eval.record.name
+                append_audit_entry(event_entry, 1, 4, "smart_shortcut_room_verified")
+
+                state.current_step = 4
+                state.set_thread_state("Awaiting Client")
+                state.extras["persist"] = True
+
+                # Store pending decision for Step 4 to use
+                event_entry["room_pending_decision"] = {
+                    "selected_room": target_eval.record.name,
+                    "selected_status": target_eval.status,
+                    "missing_products": [p.get("name") for p in target_eval.missing_products] if target_eval.missing_products else [],
+                }
+
+                # Generate Q&A response if detected
+                if state.extras.get("general_qna_detected"):
+                    unified_detection = state.extras.get("unified_detection") or {}
+                    qna_types = unified_detection.get("qna_types") or []
+                    if not qna_types:
+                        qna_types = _detect_qna_types((state.message.body or "").lower())
+                    if qna_types:
+                        hybrid_qna_response = generate_hybrid_qna_response(
+                            qna_types=qna_types,
+                            message_text=state.message.body or "",
+                            event_entry=event_entry,
+                            db=state.db,
+                        )
+                        if hybrid_qna_response:
+                            state.extras["hybrid_qna_response"] = hybrid_qna_response
+
+                payload = {
+                    "client_id": state.client_id,
+                    "event_id": event_entry.get("event_id"),
+                    "intent": intent.value,
+                    "confidence": round(confidence, 3),
+                    "locked_room_id": target_eval.record.name,
+                    "thread_state": state.thread_state,
+                    "persisted": True,
+                    "smart_shortcut": True,
+                }
+                return GroupResult(action="smart_shortcut_to_offer", payload=payload, halt=False)
+            else:
+                logger.debug("[Step1][SMART_SHORTCUT] Room %s not available (status=%s) - proceeding normally",
+                            preferred_room_from_msg, target_eval.status if target_eval else "not found")
+        except Exception as ex:
+            logger.warning("[Step1][SMART_SHORTCUT] Room evaluation failed: %s - proceeding normally", ex)
+
     preferences = user_info.get("preferences") or {}
     wish_products = list((preferences.get("wish_products") or []))
     vague_month = user_info.get("vague_month")
@@ -861,6 +1004,67 @@ def process(state: WorkflowState) -> GroupResult:
                 state.caller_step = None
                 state.set_thread_state("Awaiting Client")
                 state.extras["persist"] = True
+
+                # [HYBRID Q&A] Generate Q&A response if general Q&A was detected
+                # This handles hybrid messages like "Room B looks great + which rooms in February?"
+                # Store on state.extras so it survives across steps (routing loop continues to Step 4)
+                if state.extras.get("general_qna_detected"):
+                    # Try unified_detection first, fall back to keyword detection
+                    # (unified_detection runs AFTER intake, so may not be available yet)
+                    unified_detection = state.extras.get("unified_detection") or {}
+                    qna_types = unified_detection.get("qna_types") or []
+                    if not qna_types:
+                        # Run keyword-based Q&A type detection directly on message
+                        message_text = state.message.body or ""
+                        qna_types = _detect_qna_types(message_text.lower())
+                        if not qna_types:
+                            # Last resort: use generic "general" type
+                            qna_types = ["general"]
+                    logger.debug("[HYBRID Step1] qna_types=%s", qna_types)
+                    if qna_types:
+                        message_text = state.message.body or ""
+                        hybrid_qna_response = generate_hybrid_qna_response(
+                            qna_types=qna_types,
+                            message_text=message_text,
+                            event_entry=event_entry,
+                            db=state.db,
+                        )
+                        if hybrid_qna_response:
+                            state.extras["hybrid_qna_response"] = hybrid_qna_response
+                            logger.debug("[Step1] Generated hybrid Q&A response for room shortcut: %s chars",
+                                        len(hybrid_qna_response))
+
+                # [ROOM CONFIRMED RESPONSE] Generate draft message for room confirmation
+                # This is needed because room_choice_captured bypasses Step 3 where the
+                # "Room Confirmed" response would normally be generated
+                chosen_date = event_entry.get("chosen_date") or ""
+                display_date = format_iso_date_to_ddmmyyyy(chosen_date) if chosen_date else "your date"
+                participants = (event_entry.get("requirements") or {}).get("participants", "")
+                participants_str = f" for {participants} guests" if participants else ""
+
+                # Get room features for the selected room
+                room_features = list_room_features(room_choice_selected)
+                features_str = ""
+                if room_features:
+                    # Join features inline with commas (user preference: no bullets)
+                    features_str = f"\n\nFeatures: {', '.join(room_features[:6])}"
+
+                confirmation_body = (
+                    f"Great choice! {room_choice_selected} on {display_date} is confirmed{participants_str}."
+                    f"{features_str}"
+                    f"\n\nI'll prepare the offer for you now."
+                )
+                draft_message = {
+                    "body_markdown": confirmation_body,
+                    "step": 4,
+                    "topic": "room_confirmed",
+                    "headers": ["Room Confirmed"],
+                    "thread_state": "Awaiting Client",
+                    "requires_approval": False,
+                }
+                state.add_draft_message(draft_message)
+                logger.debug("[Step1] Added Room Confirmed draft for shortcut: %s", room_choice_selected)
+
                 payload = {
                     "client_id": state.client_id,
                     "event_id": event_entry.get("event_id"),
@@ -912,7 +1116,16 @@ def process(state: WorkflowState) -> GroupResult:
         logger.debug("[Step1][CHANGE_DETECT] message_text=%s...",
                     message_text[:100] if message_text else 'None')
 
-    if needs_vague_date_confirmation and not in_billing_flow:
+    # [Q&A DATE GUARD] Don't reset date confirmation if:
+    # 1. Q&A is detected (vague month might come from Q&A question, not workflow intent)
+    # 2. Date is already confirmed (shouldn't lose confirmed date due to Q&A question)
+    # Example: "Room B looks great. Which rooms are available in February next year?"
+    # The "February" is for Q&A, not for the main booking flow.
+    has_qna_question = state.extras.get("general_qna_detected", False)
+    date_already_confirmed = event_entry.get("date_confirmed", False)
+    skip_vague_date_reset = has_qna_question and date_already_confirmed
+
+    if needs_vague_date_confirmation and not in_billing_flow and not skip_vague_date_reset:
         event_entry["range_query_detected"] = True
         update_event_metadata(
             event_entry,
@@ -927,10 +1140,16 @@ def process(state: WorkflowState) -> GroupResult:
         append_audit_entry(event_entry, previous_step, 2, "date_pending_vague_request")
         detoured_to_step2 = True
         state.set_thread_state("Awaiting Client Response")
+    elif needs_vague_date_confirmation and skip_vague_date_reset:
+        logger.debug("[Step1] Skipping vague date reset - Q&A detected and date already confirmed")
 
     # Handle change routing using DAG-based change propagation
+    logger.info("[Step1][CHANGE_ROUTING] change_type=%s, previous_step=%s", change_type, previous_step)
+    print(f"[Step1][CHANGE_ROUTING] change_type={change_type}, previous_step={previous_step}")
     if change_type is not None and previous_step > 1:
         decision = route_change_on_updated_variable(event_entry, change_type, from_step=previous_step)
+        logger.info("[Step1][CHANGE_ROUTING] decision: next_step=%s, caller_step=%s",
+                   decision.next_step, decision.updated_caller_step)
 
         # Apply the routing decision
         if decision.updated_caller_step is not None and event_entry.get("caller_step") is None:
@@ -959,10 +1178,13 @@ def process(state: WorkflowState) -> GroupResult:
                     if change_type.value == "date":
                         # DATE change to Step 2: KEEP locked_room_id so Step 3 can fast-skip
                         # if the room is still available on the new date
+                        # CRITICAL: Also invalidate offer_hash - a new offer with the new date
+                        # must be generated even if the room is still available
                         update_event_metadata(
                             event_entry,
                             date_confirmed=False,
                             room_eval_hash=None,  # Invalidate for re-verification
+                            offer_hash=None,  # Invalidate offer - must regenerate with new date
                             # NOTE: Do NOT clear locked_room_id for date changes
                         )
                     else:
@@ -1003,12 +1225,54 @@ def process(state: WorkflowState) -> GroupResult:
     # Fallback: legacy logic for cases not handled by change propagation
     # Skip during billing flow or deposit payment context - these dates shouldn't trigger event date changes
     elif new_date and new_date != event_entry.get("chosen_date") and not in_billing_flow and not is_deposit_date_context:
-        if (
+        # Check if new_date is in the past (normalize first to handle DD.MM.YYYY format)
+        normalized_new_date = normalize_iso_candidate(new_date)
+        date_is_past = iso_date_is_past(normalized_new_date) if normalized_new_date else False
+
+        if date_is_past:
+            # Past date - route to Step 2 for alternatives
+            logger.info("[Step1] Date %s is in the past - routing to Step 2", new_date)
+            update_event_metadata(
+                event_entry,
+                chosen_date=None,
+                date_confirmed=False,
+                current_step=2,
+                room_eval_hash=None,
+                locked_room_id=None,
+            )
+            state.extras["past_date_rejected"] = new_date
+            append_audit_entry(event_entry, previous_step, 2, "past_date_rejected")
+            detoured_to_step2 = True
+        elif (
             previous_step not in (None, 1, 2)
             and event_entry.get("caller_step") is None
         ):
             update_event_metadata(event_entry, caller_step=previous_step)
-        if previous_step <= 1:
+            if previous_step <= 1:
+                update_event_metadata(
+                    event_entry,
+                    chosen_date=new_date,
+                    date_confirmed=True,
+                    current_step=3,
+                    room_eval_hash=None,
+                    locked_room_id=None,
+                )
+                event_entry.setdefault("event_data", {})["Event Date"] = new_date
+                append_audit_entry(event_entry, previous_step, 3, "date_updated_initial")
+                detoured_to_step2 = False
+            else:
+                update_event_metadata(
+                    event_entry,
+                    chosen_date=new_date,
+                    date_confirmed=False,
+                    current_step=2,
+                    room_eval_hash=None,
+                    locked_room_id=None,
+                )
+                event_entry.setdefault("event_data", {})["Event Date"] = new_date
+                append_audit_entry(event_entry, previous_step, 2, "date_updated")
+                detoured_to_step2 = True
+        elif previous_step <= 1:
             update_event_metadata(
                 event_entry,
                 chosen_date=new_date,
@@ -1085,17 +1349,27 @@ def process(state: WorkflowState) -> GroupResult:
 
     # Handle hybrid messages: booking intent + Q&A questions in same message
     # e.g., "Book room for April 5 + what menu options do you have?"
-    unified_detection = state.extras.get("unified_detection") or {}
-    qna_types = unified_detection.get("qna_types") or []
-    hybrid_qna_response: Optional[str] = None
-    if qna_types:
-        message_text = state.message.body or ""
-        hybrid_qna_response = generate_hybrid_qna_response(
-            qna_types=qna_types,
-            message_text=message_text,
-            event_entry=event_entry,
-            db=state.db,
-        )
+    # Store on state.extras so it survives across steps
+    if state.extras.get("general_qna_detected") and not state.extras.get("hybrid_qna_response"):
+        # Try unified_detection first, fall back to keyword detection
+        unified_detection = state.extras.get("unified_detection") or {}
+        qna_types = unified_detection.get("qna_types") or []
+        if not qna_types:
+            # Run keyword-based Q&A type detection directly on message
+            message_text = state.message.body or ""
+            qna_types = _detect_qna_types(message_text.lower())
+            if not qna_types:
+                qna_types = ["general"]
+        if qna_types:
+            message_text = state.message.body or ""
+            hybrid_qna_response = generate_hybrid_qna_response(
+                qna_types=qna_types,
+                message_text=message_text,
+                event_entry=event_entry,
+                db=state.db,
+            )
+            if hybrid_qna_response:
+                state.extras["hybrid_qna_response"] = hybrid_qna_response
 
     payload = {
         "client_id": state.client_id,
@@ -1109,7 +1383,6 @@ def process(state: WorkflowState) -> GroupResult:
         "caller_step": event_entry.get("caller_step"),
         "thread_state": event_entry.get("thread_state"),
         "draft_messages": state.draft_messages,
-        "hybrid_qna_response": hybrid_qna_response,  # Q&A answers to append to booking response
     }
     trace_state(
         _thread_id(state),
