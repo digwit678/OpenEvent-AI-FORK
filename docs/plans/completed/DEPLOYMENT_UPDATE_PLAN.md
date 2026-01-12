@@ -1,12 +1,12 @@
-# Plan: Deploy Backend to Production (Vercel/Main)
+# Plan: Deploy Backend to Production (Main Branch)
 
-**Objective:** Deploy backend changes from `development-branch` to `main` for Vercel production deployment.
+**Objective:** Deploy backend changes from `development-branch` to `main` branch for production deployment.
 
 ## CRITICAL: Backend-Only Deployment
 
 **⚠️ NEVER push frontend files (`atelier-ai-frontend/`) to main!**
 
-- Frontend is deployed separately via Lovable
+- Frontend is deployed separately via Vercel/Lovable
 - Main branch should contain ONLY backend code
 - Always verify no frontend files are included before pushing
 
@@ -22,98 +22,120 @@
 
 ## Step-by-Step Deployment Process
 
-### Step 1: Verify No Conflicts
+### Step 1: Prepare and Stash
 
 ```bash
-# Fetch latest
-git fetch origin main
+# Stash any local uncommitted changes
+git stash push -m "Local changes before main merge"
 
-# Check commits ahead (should show your changes)
-git log --oneline origin/main..HEAD
-
-# Check if main has new commits (should be empty if synced)
-git log --oneline HEAD..origin/main
-
-# Verify clean merge possible
-git merge --no-commit --no-ff origin/main
-git merge --abort  # Cancel test merge
+# Move any conflicting untracked files
+mv conftest.py conftest.py.dev-backup 2>/dev/null || true
 ```
 
-### Step 2: Check for Frontend Files
-
-**CRITICAL - Run before every merge:**
+### Step 2: Checkout Main and Merge
 
 ```bash
-# List any frontend files that would be merged
-git diff --name-only origin/main..HEAD | grep -E "^atelier" | head -20
-
-# If files found, you need to exclude them!
-```
-
-### Step 3: Merge to Main (Backend Only)
-
-**Option A: If NO frontend files in diff (clean merge)**
-
-```bash
-git stash push -m "temp: local dev files"
-git checkout main
-git pull origin main
-git merge development-branch -m "Merge: backend fixes from development-branch"
-git push origin main
-git checkout development-branch
-git stash pop
-```
-
-**Option B: If frontend files exist (selective merge)**
-
-```bash
-git stash push -m "temp: local dev files"
+# Switch to main and update
 git checkout main
 git pull origin main
 
-# Merge but don't commit yet
+# Merge development-branch (no commit yet to resolve conflicts)
 git merge development-branch --no-commit
+```
 
-# Remove frontend files from staging
-git reset HEAD atelier-ai-frontend/
-git checkout -- atelier-ai-frontend/
+### Step 3: Resolve Conflicts
 
-# Or if they were added:
-git rm -r --cached atelier-ai-frontend/
+**Frontend files (modify/delete conflicts):**
+```bash
+# Delete frontend files - they should NOT be on main
+git rm -f atelier-ai-frontend/app/components/debug/__tests__/*.tsx 2>/dev/null || true
+git rm -f atelier-ai-frontend/app/components/mail/__tests__/*.tsx 2>/dev/null || true
+git rm -f atelier-ai-frontend/package.json 2>/dev/null || true
+# Remove any other frontend files that show as conflicts
+git rm -rf atelier-ai-frontend/ 2>/dev/null || true
+```
 
-# Commit backend-only changes
-git commit -m "Merge: backend fixes from development-branch (frontend excluded)"
+**tests/conftest.py (content conflict):**
+```bash
+# Keep main's version (uses pathlib, cleaner)
+git checkout --ours tests/conftest.py
+git add tests/conftest.py
+```
+
+**Other conflicts:** Review case-by-case. Generally:
+- Keep main's test folder structure (tests/test_detection/, etc.)
+- Accept development-branch's workflow handler changes
+
+### Step 4: Verify Syntax
+
+```bash
+# Check Python syntax compiles
+python3 -m py_compile main.py
+python3 -m py_compile workflow_email.py
+python3 -m py_compile workflows/steps/step1_intake/trigger/step1_handler.py
+
+# If environment available, do full import check:
+# python3 -c "from main import app; print('✅ OK')"
+```
+
+### Step 5: Commit and Push
+
+```bash
+# Check status - no conflicts should remain
+git status | grep -E "both modified|Unmerged" || echo "✅ No conflicts"
+
+# Commit the merge
+git commit -m "Merge development-branch into main
+
+Backend workflow improvements merged.
+Frontend files excluded (deployed separately via Vercel).
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+
+# Push to main
 git push origin main
+```
+
+### Step 6: Return to Development
+
+```bash
+# Go back to development branch
 git checkout development-branch
+
+# Restore conftest.py if moved
+mv conftest.py.dev-backup conftest.py 2>/dev/null || true
+
+# Restore stashed changes
 git stash pop
-```
-
-**Option C: If frontend already pushed by mistake**
-
-```bash
-git checkout main
-git rm -r atelier-ai-frontend/
-git commit -m "chore: remove frontend from main (backend-only deployment)"
-git push origin main
-```
-
-### Step 4: Verify Deployment
-
-```bash
-# Confirm no frontend on main
-git ls-tree --name-only origin/main | grep -E "^atelier" || echo "✅ No frontend"
-
-# Verify backend files are there
-git ls-tree --name-only origin/main | grep -E "^(api|workflows|services|main.py)" | head -10
 ```
 
 ---
 
-## Post-Deployment Verification
+## Common Conflict Resolutions
 
-1. Check Vercel deployment status
-2. Test health endpoint: `curl https://your-vercel-url/api/workflow/health`
-3. Verify no build errors in Vercel dashboard
+| Conflict Type | Files | Resolution |
+|--------------|-------|------------|
+| modify/delete | `atelier-ai-frontend/*` | Delete (keep main's deletion) |
+| content | `tests/conftest.py` | Keep main's version (pathlib) |
+| rename | `tests/detection/` → `tests/test_detection/` | Accept main's structure |
+| modify | Backend workflow files | Accept development-branch changes |
+
+---
+
+## Verification Checklist
+
+Before every push to main:
+
+- [ ] All tests pass on development-branch
+- [ ] No frontend files in merge (`git status | grep atelier` returns empty)
+- [ ] Syntax check passes (`python3 -m py_compile main.py`)
+- [ ] No unresolved conflicts (`git status | grep Unmerged` returns empty)
+- [ ] Commit message describes what was merged
+
+After push:
+
+- [ ] Verify deployment succeeds
+- [ ] Test health endpoint if available
 
 ---
 
@@ -121,21 +143,33 @@ git ls-tree --name-only origin/main | grep -E "^(api|workflows|services|main.py)
 
 | Branch | Purpose | Contains |
 |--------|---------|----------|
-| `main` | Production (Vercel) | Backend only |
+| `main` | Production | Backend only (flat structure) |
 | `development-branch` | Development | Backend + Frontend |
-| `integration/hostinger-backend` | Legacy (deprecated) | Old nested structure |
 
 ---
 
-## Checklist
+## Troubleshooting
 
-Before every push to main:
+**"Untracked working tree files would be overwritten"**
+```bash
+mv conftest.py conftest.py.backup
+# Then retry checkout/merge
+```
 
-- [ ] All tests pass on development-branch
-- [ ] No frontend files (`atelier-ai-frontend/`) in merge
-- [ ] Syntax check: `python3 -c "from main import app; print('OK')"`
-- [ ] Commit message describes what was merged
-- [ ] Vercel deployment succeeds
+**Frontend files accidentally pushed to main:**
+```bash
+git checkout main
+git rm -rf atelier-ai-frontend/
+git commit -m "chore: remove frontend from main"
+git push origin main
+```
+
+**Merge conflict in binary/generated files:**
+```bash
+# Accept development-branch version
+git checkout --theirs path/to/file
+git add path/to/file
+```
 
 ---
 
