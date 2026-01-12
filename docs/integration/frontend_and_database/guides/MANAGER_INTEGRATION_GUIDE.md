@@ -1,11 +1,16 @@
 # Email Workflow Integration Guide
 ## Manager Edition
 
-**Last Updated:** 2025-12-09
+**Last Updated:** 2026-01-12
 
-**For:** River (Co-founder)
+**For:** Product Team / Co-founders
 
-**Purpose:** Everything you need to decide and do before we launch the email workflow
+**Purpose:** Open decisions and setup tasks for the email workflow integration
+
+**Related Documents:**
+- `docs/frontend/MVP_FEATURE_REQUIREMENTS.md` - Frontend feature list for design team
+- `docs/frontend/TECHNICAL_UX_DECISIONS.md` - Technical/backend decisions
+- `docs/plans/OPEN_DECISIONS.md` - Detailed open decisions log
 
 ---
 
@@ -967,6 +972,17 @@ The AI workflow code uses some different names internally than your database. Th
 
 ---
 
-*Document version: 8.1 | Last updated: 2025-12-10*
+*Document version: 9.0 | Last updated: 2026-01-12*
 
 **Questions?** Ask the dev team!
+
+---
+
+## Summary of Decisions Made (For Reference)
+
+| Decision | Choice | Date |
+|----------|--------|------|
+| Deposit reminders | Use static templates | Dec 2025 |
+| Deposit display in offers | Separate "Payment Terms" section | Dec 2025 |
+| MVP deposit scope | Global settings (not per-room) | Dec 2025 |
+| HIL for MVP | Required for ALL AI messages | Dec 2025 |
