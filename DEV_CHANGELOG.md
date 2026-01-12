@@ -2,6 +2,28 @@
 
 ## 2026-01-12
 
+### Feature: Universal Past Date Validation
+
+**Problem:** Past dates in the initial message weren't being validated. Client could request "January 5, 2026" (past date when today is Jan 12) and the system would try to proceed instead of rejecting and suggesting alternatives.
+
+**Root Cause:** Past date validation was only inside the "smart shortcut" block which requires room + date + participants to all be present. If room wasn't specified, the validation never ran.
+
+**Fix Applied:**
+1. Moved past date validation OUTSIDE the smart shortcut `if` block - now applies universally
+2. Uses `normalize_iso_candidate()` to convert DD.MM.YYYY format to ISO before checking
+3. Uses `iso_date_is_past()` to determine if date is before today
+4. When past date detected: routes to Step 2 where `validate_window()` provides friendly rejection with alternatives
+
+**Files Modified:**
+- `workflows/steps/step1_intake/trigger/step1_handler.py` - Added universal past date check
+
+**Tested:** Playwright E2E with fresh client:
+1. Past date "January 5, 2026" → "Sorry, that date has already passed" + alternatives
+2. Custom date "February 20, 2026" → accepted, moved to room selection
+3. Room A selected → moved to offer (CHF 500.00)
+
+---
+
 ### Fix: HIL Approval Site Visit Text Override
 
 **Problem:** After HIL approval for Step 4/5, the response was always "Let's continue with site visit bookings..." instead of the actual workflow draft message. Additionally, `site_visit_state` was being prematurely forced to "proposed" during HIL approval.
