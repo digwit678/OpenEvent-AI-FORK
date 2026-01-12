@@ -62,7 +62,7 @@ _STEP_ACTION_PATTERNS: Dict[int, Tuple[str, ...]] = {
     ),
     3: (
         # Room selection patterns
-        r"\b(?:room\s+)?[abce]\b.*\b(?:works|looks\s+good|is\s+(?:good|fine|perfect))\b",
+        r"\b(?:room\s+)?[abce]\b.*\b(?:works|looks\s+good|sounds\s+(?:good|great|perfect)|is\s+(?:good|fine|perfect))\b",
         r"\bproceed\s+with\s+(?:room\s+)?[abce]\b",
         r"\bbook\s+(?:room\s+)?[abce]\b",
         r"\bgo\s+(?:with|for)\s+(?:room\s+)?[abce]\b",
@@ -71,6 +71,11 @@ _STEP_ACTION_PATTERNS: Dict[int, Tuple[str, ...]] = {
         r"\bselect\s+(?:room\s+)?[abce]\b",
         r"\b(?:we'?ll?|i'?ll?|let's)\s+(?:take|book)\s+(?:room\s+)?[abce]\b",
         r"\bpunkt[\s.]?null\b.*\b(?:works|good|fine|perfect)\b",
+        # Additional common phrases
+        r"\b(?:room\s+)?[abce]\b.*\bplease\s+proceed\b",  # "Room C... please proceed"
+        r"\b(?:i'?ll?|we'?ll?)\s+(?:go\s+with|take)\s+(?:room\s+)?[abce]\b",  # "I'll take Room B"
+        r"\bi\s+will\s+take\s+(?:room\s+)?[abce]\b",  # "I will take Room B"
+        r"\b(?:take|choose|pick)\s+(?:room\s+)?[abce]\b",  # "take Room B", "choose Room A"
     ),
     4: (
         # Offer acceptance patterns
@@ -104,11 +109,16 @@ _NEXT_STEP_MENTIONS: Dict[int, Tuple[str, ...]] = {
         # Asking about catering/offer (next after room selection)
         r"\bwhat\b.*\b(?:catering|menu|package|offer|price|cost)\b",
         r"\bshow\b.*\b(?:catering|menu|package|offer)\b",
-        r"\b(?:catering|menu|package)\s+(?:options?|choices?)\b",
+        r"\b(?:catering|menu|package)\s+(?:\w+\s+)?(?:options?|choices?)\b",  # handles "catering options", "catering your options"
         r"\bhow\s+much\b",
         r"\bthe\s+price[s]?\b",
         r"\bwhat\b.*\bprice\b",
         r"\bsend\b.*\b(?:the\s+)?offer\b",  # "send the offer" is asking about the next step
+        # Indirect questions about catering/menu (common phrasing)
+        r"\b(?:share|tell|more|info|information)\b.*\b(?:catering|menu|package|food|drinks?)\b",
+        r"\b(?:catering|menu|package|food)\b.*\?$",  # ends with question mark after mentioning catering
+        r"\b(?:about|regarding)\b.*\b(?:catering|menu|package|food)\b",  # "about your catering"
+        r"\b(?:do you|can you|could you)\b.*\b(?:catering|menu|food)\b",  # "could you share catering"
     ),
     5: (
         # Asking about negotiation/next steps (next after offer)

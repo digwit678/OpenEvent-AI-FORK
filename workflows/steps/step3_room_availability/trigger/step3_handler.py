@@ -471,6 +471,7 @@ def process(state: WorkflowState) -> GroupResult:
     # Example: "Room A looks good, what catering options do you have?"
     # -------------------------------------------------------------------------
     sequential_check = detect_sequential_workflow_request(message_text, current_step=3)
+    sequential_catering_lookahead = False
     if sequential_check.get("is_sequential"):
         # Client is selecting room AND asking about next step - natural flow
         classification["is_general"] = False
@@ -478,6 +479,14 @@ def process(state: WorkflowState) -> GroupResult:
         state.extras["general_qna_detected"] = False
         state.extras["workflow_lookahead"] = sequential_check.get("asks_next_step")
         state.extras["_general_qna_classification"] = classification
+        # If asking about catering (step 4), we should include catering info in response
+        if sequential_check.get("asks_next_step") == 4:
+            sequential_catering_lookahead = True
+            # Ensure catering_for is in secondary so deferred Q&A generates catering response
+            if "secondary" not in classification or not classification["secondary"]:
+                classification["secondary"] = ["catering_for"]
+            elif "catering_for" not in classification["secondary"]:
+                classification["secondary"].append("catering_for")
         if thread_id:
             trace_marker(
                 thread_id,
@@ -491,6 +500,9 @@ def process(state: WorkflowState) -> GroupResult:
     if general_qna_applicable and user_requested_room:
         deferred_general_qna = True
         general_qna_applicable = False
+    # Also defer Q&A when sequential catering lookahead detected (room selection + catering question)
+    elif sequential_catering_lookahead and user_requested_room:
+        deferred_general_qna = True
 
     # -------------------------------------------------------------------------
     # DETOUR RE-ENTRY GUARD (Dec 29, 2025)
