@@ -2,6 +2,251 @@
 
 ## 2026-01-12
 
+### Fix: HIL Approval Site Visit Text Override
+
+**Problem:** After HIL approval for Step 4/5, the response was always "Let's continue with site visit bookings..." instead of the actual workflow draft message. Additionally, `site_visit_state` was being prematurely forced to "proposed" during HIL approval.
+
+**Root Cause:** In `workflows/runtime/hil_tasks.py`:
+1. `_compose_hil_decision_reply()` hardcoded site visit text for all Step 5 approvals (lines 415-431)
+2. Lines 347-353 and 381-388 forced `site_visit_state = "proposed"` during approval
+
+**Fix Applied:**
+- Removed hardcoded site visit text replacement in Step 5 approval path
+- Removed forced `site_visit_state` setting in both Step 4 and Step 5 approval paths
+- The workflow now uses the actual draft message from the step handler
+- Site visit state is set naturally when the workflow reaches Step 7
+
+**Files Modified:**
+- `workflows/runtime/hil_tasks.py` (lines 347-353, 381-388, 415-431)
+
+**Tested:** Playwright E2E - Full flow with date change detour:
+1. Initial booking → Offer via smart shortcut
+2. Accept with billing → HIL approval shows confirmation (not site visit)
+3. Date change → Detour triggers → New offer with updated date
+4. Second HIL approval → Confirmation with new date (20.04.2026)
+
+---
+
+### Feature: Q&A Catering Detour Context Awareness
+
+**Problem:** When catering Q&A is asked during a detour (date change, room change), the response used stale/cached values instead of the NEW detoured context.
+
+**Solution:** Implemented priority-based catering context in `_catering_response()`:
+1. **Room confirmed** → Show catering for that specific room on that date
+2. **Date confirmed but room re-evaluating** → Show ALL catering options from all rooms on that date
+3. **Neither confirmed (double detour)** → Show monthly availability; if past 20th, include next month
+4. **Exclusion rule** (documented): Exclude unique catering from rooms unavailable all month
+
+**Key Changes:**
+- Added comprehensive rule documentation in function docstring
+- Context-aware preface: "Here are catering options for Room A on February 25:"
+- Detour-aware fallback: "In January, we offer these catering options:"
+- Fixed `_event_date_iso()` to handle multiple date formats (ISO, European, slash)
+
+**Files Modified:**
+- `workflows/qna/router.py` - `_catering_response()` with detour context rule
+- `workflows/qna/router.py` - `_event_date_iso()` multi-format parsing
+
+---
+
+### Feature: Smart Shortcut - Initial Message Direct-to-Offer
+
+**Problem:** When initial message contains room + date + participants (all verified), the system still went through Step 3 "Availability overview" before proceeding to offer, requiring an extra round-trip.
+
+**Solution:** Implemented inline availability verification in Step 1 that:
+1. Detects when initial message has room name + date + participant count
+2. Calls `evaluate_rooms()` inline to verify availability against calendar
+3. If room is available, sets ALL gatekeeping variables:
+   - `date_confirmed=True`
+   - `locked_room_id=<requested_room>`
+   - `room_eval_hash=requirements_hash`
+   - `current_step=4`
+4. Returns `action="smart_shortcut_to_offer"` to bypass Steps 2-3 entirely
+
+**Behavior:** Initial message like "I'd like to book Room B for Feb 15, 2026 with 20 participants" now goes directly to "Offer" header without intermediate "Availability overview".
+
+**Files Modified:**
+- `workflows/steps/step1_intake/trigger/step1_handler.py` (lines 803-897) - Smart shortcut logic
+- Added imports: `from services.room_eval import evaluate_rooms`
+
+**Tested:** Playwright E2E verification - initial message with Room B + date + participants → immediate "Offer" response
+
+---
+
+### Fix: Q&A Response Formatting - Removed Bullets
+
+**Problem:** Q&A responses were using bullet points for features which wasted vertical space. User requested features be listed inline with commas and sentences separated by newlines without bullets.
+
+**Fix Applied:**
+- Simplified formatting in `router.py` - removed all bullet logic
+- Lines separated by double newlines for proper markdown paragraph rendering
+- Feature lists remain inline as they're already joined in source functions (e.g., `list_room_features` joins with commas)
+
+**Files Modified:**
+- `workflows/qna/router.py` (lines 1003-1008)
+
+---
+
+### Fix: Room Confirmation Response for Shortcut Flow
+
+**Problem:** When client confirms a room after seeing options (e.g., "Room A sounds perfect"), the system should show acknowledgment before proceeding to offer.
+
+**Technical Finding:** The `room_choice_captured` shortcut in Step 1 sets `current_step=4` and bypasses Step 3 entirely. A "Room Confirmed" draft was added in Step 1's shortcut block, but it gets superseded by Step 4's offer draft when prerequisites are met.
+
+**Behavior Clarified:** When room is confirmed AND all prerequisites (date, participants) are met, proceeding directly to "Offer" is actually correct UX - it saves a round trip. The "Offer" header acknowledges the selection by immediately preparing the offer for the confirmed room.
+
+**Files Modified:**
+- `workflows/steps/step1_intake/trigger/step1_handler.py` (lines 912-941) - Added "Room Confirmed" draft for shortcut
+- `workflows/common/catalog.py` - Import for `list_room_features`
+
+---
+
+### Fix: False Manual Review for Clear Event Requests
+
+**Problem:** Clear event requests like "I'd like to book a private dinner for 20 guests on March 15, 2026" were triggering manual review fallback because LLM returned 0.7 confidence (threshold is 0.85).
+
+**Root Cause:** The LLM intent classifier sometimes returns lower confidence even for unambiguous event requests, causing the system to show "routed for manual review" message to clients.
+
+**Fix Applied:**
+- Added confidence boost logic in `step1_handler.py`
+- If LLM detects `event_request` intent with confidence < 0.85 BUT message has both date AND participants → boost confidence to 0.90
+- This prevents false fallback for clear event inquiries while preserving caution for ambiguous messages
+
+**Files Modified:**
+- `workflows/steps/step1_intake/trigger/step1_handler.py` - Confidence boost for clear event requests
+
+---
+
+### Fix: Room Extraction False Positives
+
+**Problem:** Room extraction regex was matching "room with" from phrases like "a room with a nice ambiance", falsely detecting a room selection.
+
+**Root Cause:** Regex `room\s*[a-z0-9]+` was too greedy, matching any word starting with a letter after "room".
+
+**Fix Applied:**
+- Updated regex to `room\s*[a-e0-9](?:\s|$|,|\.)` - only matches actual room names (Room A-E, Room 0-9)
+- Added false positive filter for preposition patterns ("room with", "room for", "room that", etc.)
+
+**Files Modified:**
+- `adapters/agent_adapter.py` - Improved room extraction regex with validation
+
+---
+
+### Fix: Catering Section Appearing for Event Type Keywords
+
+**Problem:** "Menu Options" section was appearing for messages mentioning "private dinner" because "dinner" was in `catering_for` keywords. This is wrong - "dinner" is an event type, not a catering question.
+
+**Root Cause:** The `_QNA_KEYWORDS["catering_for"]` list contained simple food words (dinner, lunch, coffee, snacks) which match event type descriptions, not catering questions.
+
+**Fix Applied:**
+- Removed false-trigger keywords: "dinner", "lunch", "coffee", "snacks", "aperitif", "apero"
+- Replaced with explicit question patterns: "what catering", "catering options", "do you offer catering", etc.
+- User feedback: Consider moving to full LLM-based detection for reliability (see OPEN_DECISIONS.md)
+
+**Files Modified:**
+- `detection/intent/classifier.py` - Updated `catering_for` keywords to question phrases
+
+---
+
+### Added: Playwright E2E Tests for Hybrid Q&A
+
+**Purpose:** Verify hybrid Q&A functionality end-to-end in the actual frontend UI.
+
+**Test Suites:**
+1. `Confirmation + General Q&A` - Room confirmation with parking/catering Q&A
+2. `Month-Constrained Availability` - February next year availability (BUG-010 regression)
+3. `No False Catering Detection` - Dinner event type should NOT trigger catering
+4. `No Fallback Messages` - Clear event requests should NOT show manual review
+
+**Files Created:**
+- `atelier-ai-frontend/e2e/hybrid-qna.spec.ts` - E2E test suite
+- `atelier-ai-frontend/package.json` - Added `test:e2e`, `test:e2e:ui`, `test:e2e:headed` scripts
+
+**E2E Verified via Playwright MCP:**
+- "Private dinner for 20 guests" → Room availability (no catering section) ✓
+- "Room B sounds perfect. What parking options?" → Room B + Parking Info + HIL task ✓
+
+---
+
+### Enhancement: Month-Constrained Availability Detection (BUG-010 continued)
+
+**Problem:** Hybrid messages like "Room B looks great. By the way, which rooms would be available for a larger event in February next year?" were not detecting the February availability Q&A because:
+1. "would be available in February" didn't match existing `free_dates` patterns
+2. "next year" wasn't being detected to force year + 1
+
+**Fixes Applied:**
+1. Added month-constrained patterns to `_QNA_REGEX_PATTERNS["free_dates"]` in `detection/intent/classifier.py`:
+   - `available in/for [month]` patterns (EN + DE)
+   - `would be available ... [month]` pattern
+2. Updated `_extract_anchor()` in `workflows/qna/router.py` to return `(month, day, force_next_year)`:
+   - Detects "next year" / "nächstes Jahr" patterns
+   - Passes `force_next_year` flag through to date resolution
+3. Updated `_resolve_anchor_date()` and `list_free_dates()` in `workflows/common/catalog.py`:
+   - When `force_next_year=True`, always adds +1 to current year
+4. Added German month names to `_MONTHS` dictionary in `workflows/qna/router.py`
+
+**Files Modified:**
+- `detection/intent/classifier.py` - Month-constrained Q&A patterns
+- `workflows/qna/router.py` - "next year" detection + German month names
+- `workflows/common/catalog.py` - `force_next_year` parameter support
+
+**Tests Added:**
+- `tests/detection/test_hybrid_qna.py` - 18 regression tests covering:
+  - Hybrid confirmation + Q&A detection
+  - Month-constrained availability detection (all months)
+  - "Next year" detection (EN/DE)
+  - Date resolution with force_next_year
+  - German month name detection
+  - State isolation (Q&A is "SELECT query")
+
+**E2E Verified:**
+- Room confirmation + February 2027 dates response ✓
+- Date change detour + catering Q&A ✓
+- Room shortcut + parking Q&A ✓
+
+---
+
+### Fix: Hybrid Q&A Response Structure (BUG-010)
+
+**Problem:** Hybrid messages (room confirmation + Q&A question) would not generate Q&A responses because of timing issue in the detection flow.
+
+**Root Cause:**
+1. Step1's room shortcut runs in `intake.process(state)` (line 405 in workflow_email.py)
+2. `unified_detection` with `qna_types` is populated in `run_pre_route_pipeline` (line 410)
+3. The room shortcut tried to use `unified_detection` but it wasn't populated yet!
+
+**Fix Applied:**
+1. Added fallback to `_general_qna_classification.secondary` when `unified_detection` is not available
+2. Stored `hybrid_qna_response` on `state.extras` so it survives across steps
+3. Added `hybrid_qna_response` to final payload in `_finalize_output`
+
+**Files Modified:**
+- `workflows/steps/step1_intake/trigger/step1_handler.py` - Fallback Q&A type detection
+- `workflow_email.py` - Added hybrid_qna to final payload
+
+---
+
+### Fix: Q&A Isolation from Main Workflow (BUG-009)
+
+**Problem:** Hybrid message "Room B looks great, let's proceed with that. By the way, which rooms would be available for a larger event in February next year?" would reset the confirmed date and route back to Step 2.
+
+**Root Cause:**
+1. LLM extracts `vague_month='february'` from the Q&A question portion
+2. This triggers `needs_vague_date_confirmation` check in Step 1
+3. Step 1 resets `date_confirmed=False` and routes to Step 2
+4. Additionally, Step 1's room shortcut bypassed Q&A handling entirely
+
+**Fixes Applied:**
+1. Added Q&A date guard in Step 1: When `general_qna_detected=True` AND `date_confirmed=True`, don't reset the date due to vague date tokens from Q&A
+2. Added Q&A bypass in Step 1 room shortcut: When Q&A is detected, don't use shortcut - let Step 3 handle hybrid via `deferred_general_qna` mechanism
+
+**Key Principle:** Q&A is a SELECT query - it should NEVER modify main workflow state variables like `date_confirmed`, `chosen_date`, etc.
+
+**Files Modified:**
+- `workflows/steps/step1_intake/trigger/step1_handler.py` (lines 841-856 and 924-949)
+
+---
+
 ### Fix: Eliminate Products Prompt Entirely (MVP Decision)
 
 **Problem:** Step 4 was still showing "Before I prepare your tailored proposal, could you share which catering or add-ons you'd like to include?" even after previous fixes.

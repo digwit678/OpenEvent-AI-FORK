@@ -344,13 +344,8 @@ def approve_task_and_send(
             if not decision_result.halt and (target_event.get("current_step") == 6):
                 process_transition(hil_state)
 
-            # Set site_visit_state to "proposed" so client's date preference is handled correctly
-            target_event.setdefault("site_visit_state", {
-                "status": "idle",
-                "proposed_slots": [],
-                "confirmed_date": None,
-                "confirmed_time": None,
-            })["status"] = "proposed"
+            # Don't force site_visit_state here - let Step 7 handle it naturally
+            # The workflow will set "proposed" when it's ready for site visit
 
             if hil_state.extras.get("persist"):
                 db_io.save_db(db, path, lock_path=lock_path)
@@ -383,14 +378,7 @@ def approve_task_and_send(
             if not decision_result.halt and (target_event.get("current_step") == 6):
                 process_transition(hil_state)
 
-            # Set site_visit_state to "proposed" so client's date preference is handled correctly
-            # (mirrors the Step 4 approval logic above)
-            target_event.setdefault("site_visit_state", {
-                "status": "idle",
-                "proposed_slots": [],
-                "confirmed_date": None,
-                "confirmed_time": None,
-            })["status"] = "proposed"
+            # Don't force site_visit_state here - let Step 7 handle it naturally
 
             if hil_state.extras.get("persist"):
                 db_io.save_db(db, path, lock_path=lock_path)
@@ -413,23 +401,9 @@ def approve_task_and_send(
     assistant_draft = {"headers": headers, "body": body_text, "body_markdown": body_text}
 
     note_text = (manager_notes or "").strip()
-    if step_num == 5:
-        new_body = _compose_hil_decision_reply("approve", note_text)
-        assistant_draft["body"] = new_body
-        assistant_draft["body_markdown"] = new_body
-        draft = dict(draft)
-        draft["body_markdown"] = new_body
-        draft["body"] = new_body
-        body_text = new_body
-        # Set site_visit_state to "proposed" so client's date preference is handled correctly
-        target_event.setdefault("site_visit_state", {
-            "status": "idle",
-            "proposed_slots": [],
-            "confirmed_date": None,
-            "confirmed_time": None,
-        })["status"] = "proposed"
-        db_io.save_db(db, path, lock_path=lock_path)
-    elif note_text:
+    # For Step 5 (negotiation) approvals, use the original draft message
+    # The workflow will naturally progress to site visit when ready
+    if note_text:
         appended = f"{body_text.rstrip()}\n\nManager note:\n{note_text}" if body_text.strip() else f"Manager note:\n{note_text}"
         body_text = appended
         assistant_draft["body"] = appended

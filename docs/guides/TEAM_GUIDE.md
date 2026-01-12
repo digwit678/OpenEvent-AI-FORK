@@ -154,12 +154,31 @@ All unit types that may appear in product data:
 **Files**: `backend/services/qna_readonly.py`, `backend/workflows/qna/engine.py`, `backend/workflows/qna/verbalizer.py`
 
 ### BUG-003: Hybrid Messages Ignore Q&A Part
-**Status**: Fixed (2026-01-05)
+**Status**: Fixed (2026-01-12)
 **Severity**: Medium
-**Symptom**: Message like "Book room for April 5 + do you have parking?" handles booking but drops parking question.
-**Root Cause**: Step 1 intake processed booking intent but didn't check for `qna_types` in unified detection.
-**Fix**: Added `generate_hybrid_qna_response()` function and hook in step 1 to append Q&A answers to booking responses.
-**Files**: `backend/workflows/qna/router.py`, `backend/workflows/steps/step1_intake/trigger/step1_handler.py`, `backend/api/routes/messages.py`
+**Symptom**: Message like "Room B looks great + which rooms in February?" handles room confirmation but drops Q&A question.
+**Root Cause**:
+1. Step 1 intake processed booking intent but didn't check for `qna_types` in unified detection
+2. **Timing issue**: `unified_detection` is populated AFTER `intake.process(state)` runs, so room shortcut couldn't access `qna_types`
+3. Month-constrained availability patterns ("available in February") weren't detected
+4. "Next year" relative date wasn't handled
+**Fix**:
+1. Added `generate_hybrid_qna_response()` function and hook in step 1
+2. Added fallback to `_general_qna_classification.secondary` when `unified_detection` not available
+3. Store `hybrid_qna_response` on `state.extras` so it survives across steps
+4. Added month-constrained patterns to `_QNA_REGEX_PATTERNS["free_dates"]`
+5. Added `force_next_year` detection to `_extract_anchor()` and `_resolve_anchor_date()`
+6. Added German month names support
+**Files**: `workflows/qna/router.py`, `workflows/steps/step1_intake/trigger/step1_handler.py`, `workflow_email.py`, `detection/intent/classifier.py`, `workflows/common/catalog.py`
+**Tests**: `tests/detection/test_hybrid_qna.py` (18 tests)
+
+**Hybrid Detection Requirements (for testing):**
+1. Message recognized as hybrid (confirmation + Q&A)
+2. Q&A part extracted correctly and NOT confused with main workflow part
+3. Response includes 2 sections: (a) workflow response, (b) Q&A answer
+4. Must work from every step: hybrid confirmation + Q&A, hybrid detours + Q&A, hybrid shortcuts + Q&A
+5. Month-constrained queries detect `free_dates` type (e.g., "available in February")
+6. "Next year" detection works (EN + DE)
 
 ### BUG-004: Product Arrangement Request Bypassed by Step 1 Auto-Lock
 **Status**: Fixed (2026-01-07)
@@ -210,3 +229,81 @@ All unit types that may appear in product data:
 1. Added flexible regex patterns in `sequential_workflow.py` for room selection ("sounds great/good/perfect", "please proceed") and catering questions ("share more about", "about your catering")
 2. Added `sequential_catering_lookahead` handling in `step3_handler.py` to ensure catering info is appended to room confirmation
 **Files**: `detection/qna/sequential_workflow.py`, `workflows/steps/step3_room_availability/trigger/step3_handler.py`
+
+### BUG-009: Q&A Date Constraints Bleeding Into Main Workflow
+**Status**: Fixed (2026-01-12)
+**Severity**: High
+**Symptom**: Hybrid message "Room B looks great, let's proceed with that. By the way, which rooms would be available for a larger event in February next year?" would reset the confirmed date and go back to Step 2 instead of proceeding with room selection.
+**Root Cause**: Two issues:
+1. LLM extracts `vague_month='february'` from the Q&A question
+2. This triggers `needs_vague_date_confirmation` in Step 1
+3. Step 1 resets `date_confirmed=False` and routes to Step 2
+4. Additionally, Step 1's room shortcut was bypassing Q&A handling entirely
+**Fix**:
+1. Added Q&A date guard in Step 1 (lines 924-949): Don't reset date when `general_qna_detected` AND `date_confirmed` are both True
+2. Added Q&A bypass in Step 1 room shortcut (lines 841-856): When Q&A is detected, don't use shortcut - let Step 3 handle hybrid via `deferred_general_qna`
+**Files**: `workflows/steps/step1_intake/trigger/step1_handler.py`
+**Key Learning**: Q&A should be isolated from main workflow state. Q&A constraints (like `vague_month` from a question) should only affect Q&A response generation, never modify workflow variables like `date_confirmed`.
+
+### BUG-010: Q&A Response Formatting - Bullets Instead of Inline Features
+**Status**: Fixed (2026-01-12)
+**Severity**: Low (UX)
+**Symptom**: Q&A responses were using bullet points for features which wasted vertical space. User requested features be listed inline with commas (e.g., "rooms a-c, feat 2, ...") and the last call-to-action sentence on a new line without bullet.
+**Root Cause**: The `generate_hybrid_qna_response()` function in `router.py` was adding bullet points to all items after the intro line.
+**Fix**: Simplified formatting in `router.py` lines 1003-1008: removed bullet logic entirely, using double newlines to separate lines while keeping feature lists inline as they're already joined in source functions (e.g., `list_room_features` joins with commas).
+**Files**: `workflows/qna/router.py`
+
+### BUG-011: Room Confirmation Shows "Availability overview" Instead of "Offer"
+**Status**: Open (regression found 2026-01-12)
+**Severity**: Medium (UX clarity)
+**Symptom**: When client confirms a room after Step 3 (e.g., "Room A sounds perfect"), the response header still shows "Availability overview" instead of "Offer". The Manager Tasks correctly shows "Step 4" and "offer message".
+**Root Cause**: The `room_choice_captured` shortcut in Step 1 sets `current_step=4` but the draft header is not being set correctly. The offer draft shows room features but wrong header.
+**Technical Detail**: `detect_room_choice()` in `room_detection.py` only activates when `current_step >= 3`. Follow-up room confirmations go through Step 1 → shortcut → Step 4. The "Room Confirmed" draft added was superseded or the verbalizer is overwriting the header.
+**Reproduction**:
+1. Send initial message with date + participants (no room)
+2. System shows "Availability overview" with room options
+3. Reply "Room A sounds perfect!"
+4. Response shows "Availability overview" header instead of "Offer"
+**Files**: `workflows/steps/step1_intake/trigger/step1_handler.py`, `ux/universal_verbalizer.py`
+**Key Learning**: Draft headers can be overwritten by verbalizer. Need to trace full flow to find where header is set.
+
+### BUG-012: Offer Missing Pricing When Triggered via Room Confirmation
+**Status**: Open (2026-01-12)
+**Severity**: High (missing critical info)
+**Symptom**: When offer is triggered via room confirmation shortcut, the draft shows room details (capacity, features) but NO pricing (CHF amount).
+**Comparison**: Smart shortcut (initial message with room+date+participants) correctly shows "Room B · CHF 750.00" and pricing.
+**Root Cause**: The room confirmation shortcut path doesn't call the offer pricing generation. The smart shortcut goes through Step 4's full offer pipeline which includes pricing.
+**Reproduction**:
+1. Send initial message with date + participants (no room)
+2. Confirm a room ("Room A sounds perfect!")
+3. Response shows room features but no CHF pricing
+**Files**: `workflows/steps/step1_intake/trigger/step1_handler.py`, `workflows/steps/step4_offer/`
+
+### BUG-013: HIL Approval Sends Site Visit Text Instead of Workflow Draft
+**Status**: Fixed (2026-01-12)
+**Severity**: Critical (UX Breaking)
+**Symptom**: After manager HIL approval for Step 4/5, the response was always "Let's continue with site visit bookings..." instead of the actual offer confirmation message.
+**Root Cause**: In `workflows/runtime/hil_tasks.py`:
+1. `_compose_hil_decision_reply()` hardcoded site visit text for all Step 5 approvals
+2. Lines 347-353 and 381-388 forced `site_visit_state = "proposed"` prematurely during HIL approval
+**Fix**:
+1. Removed hardcoded site visit text replacement - now uses actual draft from workflow
+2. Removed forced `site_visit_state` setting - let Step 7 handle naturally
+**Files**: `workflows/runtime/hil_tasks.py`
+**E2E Verified**: Full flow including date change detour - both initial offer confirmation and post-detour offer show correct messages, not site visit text.
+
+---
+
+## Q&A Rules During Detours
+
+### Rule: Q&A Should Use Detoured Date/Room Context
+
+When a detour is triggered (date change, room change, requirements change) AND a Q&A question is asked in the same message:
+
+1. **Date Detour + Catering Q&A**: Use the NEW detoured date as default for catering availability
+2. **Room Detour + Catering Q&A**: Show catering options for ALL rooms available on the date (since room is being re-evaluated)
+3. **Date + Room Detour**: Show all catering options available on the new date across all rooms
+
+**Implementation**: Q&A handlers should check for detour context in `event_entry` and use the updated values, not cached/stale values.
+
+**Files to update**: `workflows/qna/router.py`, `workflows/qna/general_qna.py`
