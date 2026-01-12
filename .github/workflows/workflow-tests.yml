@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - feature/*
+      - development-branch
   pull_request:
 
 jobs:
@@ -13,7 +13,8 @@ jobs:
     env:
       TZ: Europe/Zurich
       PYTHONHASHSEED: "1337"
-      AGENT_MODE: stub
+      OPENAI_API_KEY: ${{ secrets.OPENAI_KEY_OPENEVENT }}
+      AGENT_MODE: stub  # Use stubbed LLM for fast tests by default
     steps:
       - uses: actions/checkout@v4
 
@@ -32,15 +33,27 @@ jobs:
         run: |
           python - <<'PY'
           import importlib
+          # main.py is now at the root
           m = importlib.import_module('main')
           assert m is not None
+          print("✅ main.py importable")
           PY
 
       - name: Run smoke tests
         run: pytest tests/smoke -v
 
+      - name: Run detection tests
+        run: pytest tests/detection -v
+
       - name: Run regression tests
         run: pytest tests/regression -v
 
-      - name: Run detection tests
-        run: pytest tests/detection -v -q
+      - name: Run flow tests (stubbed LLM)
+        run: pytest tests/flow -v
+
+      - name: Run integration tests (live LLM)
+        if: ${{ env.OPENAI_API_KEY != '' }}
+        env:
+          AGENT_MODE: openai
+          OPENAI_TEST_MODE: "1"
+        run: pytest tests_integration -v -m integration || echo "Integration tests skipped or failed - non-blocking"
