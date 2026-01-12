@@ -68,3 +68,18 @@ node_modules/
 !.codex/skills/**
 .codex/config.toml
 .codex/lsp.json
+
+# Local dev scripts and utilities
+debug_env.py
+fetch_supabase_*.py
+test_api_request*.json
+
+# Root conftest (tests have their own)
+/conftest.py
+
+# Team-specific database files
+events_team-*.json
+
+# Binary docs (use markdown instead)
+docs/frontend/*.docx
+docs/frontend/*.html
