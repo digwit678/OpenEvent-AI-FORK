@@ -270,20 +270,81 @@ def _date_conflict_response(
     )
 
 
+def _is_event_date_change_request(message_text: str) -> bool:
+    """Check if message is requesting an EVENT date change (not site visit date).
+
+    When in site visit date_pending state, we need to distinguish between:
+    1. Site visit date selection: "Tuesday at 2pm", "the first one", "15.04.2026"
+    2. Event date change: "change the date to...", "actually, different date for the event"
+
+    Returns True if this is an EVENT date change request that should bypass
+    the site visit handler and go through normal change propagation.
+    """
+    import re
+    text_lower = message_text.lower()
+
+    # Event date change signals
+    event_date_signals = [
+        r"\b(change|switch|move)\s+(the\s+)?(event\s+)?(date|booking|reservation)\b",
+        r"\bevent\s+date\b",
+        r"\bbooking\s+date\b",
+        r"\breservation\s+date\b",
+        r"\bactually[,.]?\s*(i|we)?\s*(need|want|prefer|would\s+like)\s+(a\s+)?(different|another|new)\s+date\b",
+        r"\b(change|reschedule)\s+(the\s+)?event\b",
+        r"\bdate\s+of\s+(the\s+)?(event|booking|meeting|conference)\b",
+        r"\b(instead|rather)\b.*\bdate\b",  # "instead of that date" or "rather April 20"
+    ]
+
+    for pattern in event_date_signals:
+        if re.search(pattern, text_lower):
+            return True
+
+    # Check for explicit change intent + date without site visit context
+    change_verbs = ["change", "switch", "move", "reschedule", "modify"]
+    has_change_verb = any(verb in text_lower for verb in change_verbs)
+
+    # If there's a change verb but NO site visit keywords, it's likely an event date change
+    site_visit_keywords = ["site visit", "visit", "tour", "viewing", "walkthrough", "besichtigung"]
+    has_site_visit_keyword = any(kw in text_lower for kw in site_visit_keywords)
+
+    if has_change_verb and not has_site_visit_keyword:
+        # Check if date keywords are present
+        date_keywords = ["date", "day", "april", "may", "june", "july", "august", "september",
+                        "october", "november", "december", "january", "february", "march"]
+        has_date_keyword = any(kw in text_lower for kw in date_keywords)
+        if has_date_keyword:
+            return True
+
+    return False
+
+
 def _handle_date_selection(
     state: WorkflowState,
     event_entry: Dict[str, Any],
     detection: Optional[UnifiedDetectionResult] = None,
-) -> GroupResult:
+) -> Optional[GroupResult]:
     """Handle client's date selection for site visit.
 
-    When in date_pending state, ANY date mentioned should be interpreted
-    as the desired site visit date - the client doesn't need to explicitly
-    say "site visit" again.
+    When in date_pending state, dates are interpreted as site visit dates UNLESS
+    the message clearly indicates an EVENT date change request.
+
+    Returns:
+        GroupResult if site visit date handled, None if this is an event date change
+        that should be handled by normal workflow.
     """
     sv_state = get_site_visit_state(event_entry)
     slots = sv_state.get("proposed_slots", [])
     message_text = (state.message.body or "").strip()
+
+    # GUARD: Check if this is actually an EVENT date change request
+    # If so, cancel the site visit flow and let normal change propagation handle it
+    if _is_event_date_change_request(message_text):
+        # Reset site visit state so normal workflow can proceed
+        from workflows.common.site_visit_state import reset_site_visit_state
+        reset_site_visit_state(event_entry)
+        state.extras["persist"] = True
+        # Return None to signal that we didn't handle this - let workflow continue
+        return None
 
     # Try to parse selection from message (check if it matches a proposed slot)
     selected_slot = _parse_slot_selection(message_text, slots)

@@ -6,7 +6,10 @@ Refactored Dec 2025:
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 from domain import EventStatus
 from workflows.common.prompts import append_footer
@@ -107,6 +110,28 @@ def process(state: WorkflowState) -> GroupResult:
         )
     # -------------------------------------------------------------------------
 
+    # -------------------------------------------------------------------------
+    # EVENT DATE CHANGE GUARD: Detect event date changes during site visit flow
+    # If client is requesting an EVENT date change (not site visit date),
+    # reset the site visit state so structural change detection works correctly.
+    # -------------------------------------------------------------------------
+    visit_state_early = event_entry.get("site_visit_state") or {}
+    logger.info("[Step7][DATE_GUARD] visit_state_early.status=%s, message_text=%s",
+                visit_state_early.get("status"), message_text[:100] if message_text else "(empty)")
+    if visit_state_early.get("status") == "proposed":
+        from workflows.common.site_visit_handler import _is_event_date_change_request
+        is_date_change = _is_event_date_change_request(message_text)
+        logger.info("[Step7][DATE_GUARD] _is_event_date_change_request=%s", is_date_change)
+        if is_date_change:
+            logger.info("[Step7] Event date change detected - resetting site visit state for detour")
+            from workflows.common.site_visit_state import reset_site_visit_state
+            reset_site_visit_state(event_entry)
+            state.extras["persist"] = True
+            # Verify the reset worked
+            visit_state_after = event_entry.get("site_visit_state") or {}
+            logger.info("[Step7][DATE_GUARD] After reset: status=%s", visit_state_after.get("status"))
+    # -------------------------------------------------------------------------
+
     structural = _detect_structural_change(state.user_info, event_entry, message_text)
     if structural:
         # Handle structural change detour BEFORE Q&A
@@ -132,6 +157,9 @@ def process(state: WorkflowState) -> GroupResult:
 
     # -------------------------------------------------------------------------
     # SITE VISIT HANDLING: Check if client is responding to site visit proposal
+    # Note: Event date change detection is handled BEFORE structural change detection
+    # (see lines 113-125), so by the time we get here, site visit state will be reset
+    # if an event date change was detected.
     # -------------------------------------------------------------------------
     visit_state = event_entry.get("site_visit_state") or {}
     if visit_state.get("status") == "proposed":

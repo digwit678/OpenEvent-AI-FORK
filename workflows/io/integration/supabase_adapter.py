@@ -631,6 +631,17 @@ def create_offer(
         "deposit_enabled": deposit_enabled,
         "deposit_percentage": deposit_percentage,
         "status": "draft",
+        "products": [
+            {
+                "id": item.get("product_id") or str(uuid.uuid4()),
+                "name": item.get("name"),
+                "price": item.get("unit_price"),
+                "quantity": item.get("quantity"),
+                "total": item.get("total"),
+                "description": item.get("description", "")
+            }
+            for item in line_items
+        ]
     }
 
     result = client.table("offers").insert(offer).execute()

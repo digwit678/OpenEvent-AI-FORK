@@ -26,7 +26,6 @@ from .product_ops import (
     autofill_products_from_preferences as _autofill_products_from_preferences,
     products_ready as _products_ready,
     ensure_products_container as _ensure_products_container,
-    has_offer_update as _has_offer_update,
     infer_participant_count as _infer_participant_count,
     room_alias_map as _room_alias_map,
     room_aliases as _room_aliases,
@@ -510,7 +509,7 @@ def process(state: WorkflowState) -> GroupResult:
         )
 
     # No change detected: check if Q&A should be handled
-    has_offer_update = _has_offer_update(user_info)
+    # Note: has_offer_update previously used for deferred Q&A - now handled differently
 
     # -------------------------------------------------------------------------
     # SEQUENTIAL WORKFLOW DETECTION
@@ -540,12 +539,29 @@ def process(state: WorkflowState) -> GroupResult:
     if state.extras.get("products_change_detected"):
         general_qna_applicable = False
         logger.debug("[Step4] Skipping Q&A dispatch - products change detected")
-    if general_qna_applicable and has_offer_update:
-        deferred_general_qna = True
-        general_qna_applicable = False
+
+    # [FIX JAN-12-2026] At Step 4, Q&A should be sent SEPARATELY from offer (never in same message).
+    # Send Q&A first with requires_approval=False, then continue to generate offer.
+    # This ensures: 1) Q&A is answered immediately, 2) Offer goes through HIL approval.
     if general_qna_applicable:
-        result = _present_general_room_qna(state, event_entry, classification, thread_id)
-        return result
+        # Check if we should be generating an offer (room and date confirmed)
+        room_locked = bool(event_entry.get("locked_room_id"))
+        date_confirmed = event_entry.get("date_confirmed", False)
+        should_generate_offer = room_locked and date_confirmed
+
+        if should_generate_offer:
+            # Send Q&A first as a separate message (no HIL approval needed)
+            qa_result = _present_general_room_qna(state, event_entry, classification, thread_id)
+            if qa_result and state.draft_messages:
+                # Mark Q&A message as not requiring approval (send immediately)
+                for draft in state.draft_messages:
+                    draft["requires_approval"] = False
+                logger.debug("[Step4] Q&A sent separately before offer generation")
+            # Continue to generate offer below (don't return early)
+        else:
+            # Not ready for offer - just return Q&A (legacy behavior)
+            result = _present_general_room_qna(state, event_entry, classification, thread_id)
+            return result
 
     requirements = event_entry.get("requirements") or {}
     current_req_hash = event_entry.get("requirements_hash")
@@ -1060,6 +1076,8 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, sta
         if contact_parts:
             lines.append("Client: " + " · ".join(contact_parts))
         if billing_address:
+            # Add blank line before billing to create new paragraph in markdown
+            lines.append("")
             lines.append(f"Billing address: {billing_address}")
         lines.append("")
         spacer_added = True
@@ -1174,6 +1192,8 @@ def _compose_offer_summary(event_entry: Dict[str, Any], total_amount: float, sta
         catalog_link = generate_catering_catalog_link(query_params=query_params if query_params else None, snapshot_id=catalog_snapshot_id)
         lines.append("")
         lines.append(catalog_link)
+        # Add blank line before "Menu options" to create new paragraph in markdown
+        lines.append("")
         lines.append("Menu options you can add:")
         for entry in catering_alternatives:
             name = entry.get("name") or "Catering option"

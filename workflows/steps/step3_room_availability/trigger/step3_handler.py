@@ -706,9 +706,12 @@ def process(state: WorkflowState) -> GroupResult:
 
         if room_still_available:
             # Room is still available on the new date - update hash and skip to caller
+            # CRITICAL: Also invalidate offer_hash - date changed, so offer must be regenerated
+            # even though room is still available. The offer shows the date, so it MUST be updated.
             update_event_metadata(
                 event_entry,
                 room_eval_hash=current_req_hash,  # Re-validate room for new date
+                offer_hash=None,  # Force Step 4 to regenerate offer with new date
             )
             append_audit_entry(event_entry, 3, caller_step or 4, "room_revalidated_after_date_change")
 
@@ -845,8 +848,18 @@ def process(state: WorkflowState) -> GroupResult:
     body_markdown = assistant_draft.get("body", "")
     # Headers are rendered at TOP of message in frontend
     # Per UX design principle: conversational message first, summary info via info links
-    # Keep headers minimal - just "Availability overview" for context
-    headers = ["Availability overview"]
+    # Determine if this is a room CONFIRMATION (user selected a room) vs initial PRESENTATION
+    is_room_confirmation = (
+        user_requested_room
+        and selected_room
+        and user_requested_room.lower() == selected_room.lower()
+        and outcome in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}
+    )
+    if is_room_confirmation:
+        headers = ["Room Confirmed"]
+        outcome_topic = "room_confirmed"  # Override topic for verbalizer
+    else:
+        headers = ["Availability overview"]
     table_blocks = rendered.get("table_blocks")
     if not table_blocks and table_rows:
         label = f"Rooms for {display_chosen_date}" if display_chosen_date else "Room options"
@@ -888,6 +901,27 @@ def process(state: WorkflowState) -> GroupResult:
             f"I've found {num_rooms} alternative {room_word} that work."
         )
         intro_lines.append(f"Let me know which {room_word} you'd like and I'll prepare the offer.")
+    elif is_room_confirmation:
+        # User confirmed a specific room - acknowledge the selection
+        intro_lines.append(
+            f"Great choice! {selected_room} on {display_chosen_date or 'your date'} is confirmed "
+            f"for your event with {participants} guests."
+        )
+        # Show room features in a clean format
+        selected_room_data = next(
+            (vr for vr in verbalizer_rooms if vr.get("name") == selected_room),
+            {}
+        )
+        if selected_room_capacity:
+            intro_lines.append(f"Maximum capacity: {selected_room_capacity}")
+        # List room features
+        room_features = selected_room_data.get("features") or []
+        if room_features:
+            intro_lines.append("Features:")
+            for feature in room_features[:8]:  # Limit to 8 features
+                intro_lines.append(feature)
+        # Add next step guidance
+        intro_lines.append("I'll prepare the offer for you now.")
     elif selected_room and outcome in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}:
         # Build recommendation with gatekeeping variables (date, capacity, equipment)
         # Echo back client requirements ("sandwich check")
@@ -1122,7 +1156,7 @@ def process(state: WorkflowState) -> GroupResult:
     menu_content = None
     if qa_lines:
         menu_content = "\n".join(qa_lines)
-        # headers already set to ["Availability overview"] above
+        # headers already set above (either "Room Confirmed" or "Availability overview")
         state.record_subloop("general_q_a")
         state.extras["subloop"] = "general_q_a"
 
@@ -1131,7 +1165,7 @@ def process(state: WorkflowState) -> GroupResult:
         "body_markdown": body_markdown,
         "body_md": body_markdown,
         "step": 3,
-        "next_step": "Choose a room",
+        "next_step": "Review offer" if is_room_confirmation else "Choose a room",
         "thread_state": "Awaiting Client",
         "topic": outcome_topic,
         "room": selected_room,
@@ -1165,27 +1199,65 @@ def process(state: WorkflowState) -> GroupResult:
                 if product not in all_missing_products:
                     all_missing_products.append(product)
 
-    event_entry["room_pending_decision"] = {
-        "selected_room": selected_room,
-        "selected_status": outcome,
-        "requirements_hash": current_req_hash,
-        "summary": summary,
-        "hint": pending_hint,
-        "available_dates": available_dates_map.get(selected_room or "", []),
-        "missing_products": all_missing_products,  # All products that might be missing
-        "rooms_missing_products": rooms_missing_products,  # Per-room breakdown
-    }
+    # -------------------------------------------------------------------------
+    # ROOM CONFIRMATION: Lock room and advance to Step 4
+    # When client explicitly confirms a room, persist the selection immediately
+    # -------------------------------------------------------------------------
+    if is_room_confirmation and selected_room:
+        # Lock the room and advance to Step 4 (offer)
+        update_event_metadata(
+            event_entry,
+            locked_room_id=selected_room,
+            room_eval_hash=current_req_hash,
+            current_step=4,
+            thread_state=thread_state_label,
+            status="Option",  # Room selected → calendar blocked as Option
+        )
+        _reset_room_attempts(event_entry)
+        # Clear room_pending_decision since room is now locked
+        event_entry.pop("room_pending_decision", None)
+        event_entry["selected_room"] = selected_room
+        event_entry["selected_room_status"] = outcome
+        event_entry.setdefault("flags", {})["room_selected"] = True
 
-    update_event_metadata(
-        event_entry,
-        thread_state=thread_state_label,
-        current_step=3,
-    )
+        state.current_step = 4
+        state.set_thread_state(thread_state_label)
+        state.caller_step = event_entry.get("caller_step")
+        state.extras["persist"] = True
 
-    state.set_thread_state(thread_state_label)
-    state.caller_step = event_entry.get("caller_step")
-    state.current_step = 3
-    state.extras["persist"] = True
+        trace_db_write(
+            thread_id,
+            "Step3_Room",
+            "db.events.lock_room",
+            {"locked_room_id": selected_room, "room_eval_hash": current_req_hash, "status": "Option"},
+        )
+        trace_gate(thread_id, "Step3_Room", "room_confirmed", True, {"room": selected_room})
+        append_audit_entry(event_entry, 3, 4, "room_confirmed_by_client")
+
+        logger.info("[Step3] Room confirmed by client: %s -> advancing to Step 4", selected_room)
+    else:
+        # Room presented but not yet confirmed - store pending decision
+        event_entry["room_pending_decision"] = {
+            "selected_room": selected_room,
+            "selected_status": outcome,
+            "requirements_hash": current_req_hash,
+            "summary": summary,
+            "hint": pending_hint,
+            "available_dates": available_dates_map.get(selected_room or "", []),
+            "missing_products": all_missing_products,  # All products that might be missing
+            "rooms_missing_products": rooms_missing_products,  # Per-room breakdown
+        }
+
+        update_event_metadata(
+            event_entry,
+            thread_state=thread_state_label,
+            current_step=3,
+        )
+
+        state.set_thread_state(thread_state_label)
+        state.caller_step = event_entry.get("caller_step")
+        state.current_step = 3
+        state.extras["persist"] = True
 
     trace_state(
         thread_id,
@@ -1535,12 +1607,26 @@ def _skip_room_evaluation(state: WorkflowState, event_entry: dict) -> GroupResul
 
     caller = event_entry.get("caller_step")
     logger.debug("[Step3] _skip_room_evaluation caller_step=%s", caller)
-    if caller is not None:
+
+    # CRITICAL: If offer_hash is None, we MUST go through Step 4 to regenerate the offer
+    # This happens after date changes - the offer shows the date, so it must be updated
+    # Don't skip directly to caller (e.g., Step 5) without regenerating the offer first
+    needs_offer_regen = event_entry.get("offer_hash") is None and caller and caller >= 4
+
+    if caller is not None and not needs_offer_regen:
         append_audit_entry(event_entry, 3, caller, "room_eval_cache_hit")
         update_event_metadata(event_entry, current_step=caller, caller_step=None)
         state.current_step = caller
         state.caller_step = None
         logger.debug("[Step3] _skip_room_evaluation -> returning to caller step %s", caller)
+    elif needs_offer_regen:
+        # Date changed - must regenerate offer even though room is still available
+        # Route to Step 4, but preserve caller_step so Step 4 knows to return there after
+        logger.info("[Step3] _skip_room_evaluation -> routing to Step 4 for offer regeneration (caller=%s)", caller)
+        append_audit_entry(event_entry, 3, 4, "offer_regen_required_after_date_change")
+        update_event_metadata(event_entry, current_step=4)  # Keep caller_step so we return there after
+        state.current_step = 4
+        # Don't clear caller_step - Step 4/5 will use it to return after offer is regenerated
     else:
         # No caller - proceeding to step 4 (offer), update current_step so product detection works
         logger.warning("[Step3] NO CALLER - updating current_step to 4 for product detection")

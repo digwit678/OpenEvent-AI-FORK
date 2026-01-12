@@ -199,9 +199,16 @@ class StubAgentAdapter(AgentAdapter):
                 entities["participants"] = int(participants_match.group(1))
                 break
 
-        room_match = re.search(r"\b(room\s*[a-z0-9]+|punkt\.?null)\b", body, re.IGNORECASE)
+        # Room extraction - avoid false positives like "room with a nice ambiance"
+        # Match: "Room A", "Room B", "Room 1", "punkt.null" (specific room names)
+        # Exclude: "room with", "room for", "room that", etc.
+        room_match = re.search(r"\b(room\s*[a-e0-9](?:\s|$|,|\.)|punkt\.?null)\b", body, re.IGNORECASE)
         if room_match:
-            entities["room"] = room_match.group(0).strip()
+            extracted_room = room_match.group(0).strip().rstrip(",.")
+            # Additional validation: filter out preposition-like matches
+            false_positives = ["room with", "room for", "room that", "room in", "room at", "room on"]
+            if extracted_room.lower() not in false_positives:
+                entities["room"] = extracted_room
 
         # Event types that affect room/catering preferences
         # Prioritize food/catering types (affect product matching) over generic event types

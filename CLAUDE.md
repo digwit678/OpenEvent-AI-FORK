@@ -770,8 +770,9 @@ The workflow uses three distinct LLM roles, each with strict boundaries:
 
 ## Common Pitfalls
 
-- **dont treat the symptomps but the cause**
-
+- **don't treat the symptoms but the cause**
+- **always add or update regression tests when fixing bugs**
+- **for detection bugs/interferences: beware of overriding variables**
 ## General Techniques for Resilient Code
 
 ### Defensive State Access

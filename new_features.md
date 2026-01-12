@@ -54,3 +54,33 @@ Ideas collected during development sessions for future implementation.
 
 ---
 
+## ✅ IMPLEMENTED: Smart Shortcut - Initial Message Direct-to-Offer (Jan 12, 2026)
+
+**Status:** Implemented on 2026-01-12. See DEV_CHANGELOG.md for details.
+
+**Implementation:** Added inline availability verification in Step 1 (`step1_handler.py` lines 803-897):
+- Detects room + date + participants in initial message
+- Calls `evaluate_rooms()` inline to check availability
+- If room is available: sets `date_confirmed`, `locked_room_id`, `room_eval_hash`, `current_step=4`
+- Returns `action="smart_shortcut_to_offer"` to bypass Steps 2-3
+
+**Tested:** Playwright E2E verified - "I'd like to book Room B for Feb 15, 2026 with 20 participants" → immediate "Offer" header
+
+---
+
+## ✅ IMPLEMENTED: Q&A Detour Context Awareness (Jan 12, 2026)
+
+**Status:** Implemented on 2026-01-12. See DEV_CHANGELOG.md for details.
+
+**Implementation:** Updated `_catering_response()` in `router.py` with priority-based context:
+1. Room confirmed → Show catering for that room on that date
+2. Date confirmed but room re-evaluating → Show ALL catering from all rooms
+3. Neither confirmed (detour) → Show monthly availability (current + next if past 20th)
+
+**Key changes:**
+- Comprehensive rule documentation in function docstring
+- Context-aware preface messages
+- Fixed `_event_date_iso()` to handle multiple date formats
+
+---
+

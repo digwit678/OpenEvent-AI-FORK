@@ -350,6 +350,7 @@ TOPIC_HINTS = {
     "room_option": "Room has a tentative hold - explain clearly but don't alarm. Present it as 'we can secure this for you'",
     "room_unavailable": "Be professional and solution-focused. Quickly pivot to alternatives that DO work",
     "room_selected_follow_up": "Confirm room choice, smoothly transition to products/offer discussion",
+    "room_confirmed": "Client has confirmed their room choice. Lead with 'Great choice! [Room] is confirmed for [date].' then summarize key features briefly",
 
     # Step 4 - Offer
     "offer_intro": "Set up the offer professionally. Acknowledge choices so far. Keep it brief - the offer details follow",
