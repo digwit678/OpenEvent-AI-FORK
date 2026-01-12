@@ -1,5 +1,50 @@
 # Development Changelog
 
+## 2026-01-12
+
+### Feature: Supabase Integration with JSON Fallback
+
+**Summary:** Added `SupabaseWithFallbackAdapter` for safe Supabase integration testing.
+
+**What Was Implemented:**
+
+1. **JSON Fallback for Testing Mode**
+   - New `SupabaseWithFallbackAdapter` class wraps both adapters
+   - Tries Supabase first, falls back to JSON on any error
+   - LOUD logging with `[SUPABASE_FALLBACK]` prefix for visibility
+   - Tracks fallback count per session
+
+2. **Environment Configuration**
+   - `OE_ALLOW_JSON_FALLBACK`: explicit control over fallback behavior
+   - Defaults: enabled in dev (`ENV!=prod`), disabled in production
+   - Production (`ENV=prod`) uses strict Supabase without fallback
+
+3. **Adapter Selection Logic**
+   - `OE_INTEGRATION_MODE=json` → JSONDatabaseAdapter (default, unchanged)
+   - `OE_INTEGRATION_MODE=supabase` + dev → SupabaseWithFallbackAdapter
+   - `OE_INTEGRATION_MODE=supabase` + prod → SupabaseDatabaseAdapter (strict)
+
+**Files Modified:**
+- `workflows/io/integration/config.py` - Added `allow_json_fallback` config
+- `workflows/io/integration/adapter.py` - Added `SupabaseWithFallbackAdapter`
+
+**Branch Safety:**
+- Created `json-backend-stable` branch as backup of current JSON-only state
+- Testing branch (`development-branch`) has fallback enabled by default
+- Production branch should use `ENV=prod` for strict Supabase mode
+
+**To Enable Supabase:**
+```bash
+export OE_INTEGRATION_MODE=supabase
+export OE_SUPABASE_URL=<your-url>
+export OE_SUPABASE_KEY=<your-key>
+export OE_TEAM_ID=<team-uuid>
+export OE_SYSTEM_USER_ID=<user-uuid>
+# Optional: OE_ALLOW_JSON_FALLBACK=true/false
+```
+
+---
+
 ## 2026-01-11
 
 ### Fix: Eliminate Duplicate Catering/Products Prompt in Step 4
