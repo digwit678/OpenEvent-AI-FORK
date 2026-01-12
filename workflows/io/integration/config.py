@@ -20,13 +20,26 @@ Environment Variables:
     OE_SYSTEM_USER_ID: System user UUID for automated writes
     OE_EMAIL_ACCOUNT_ID: Email account UUID for email operations
     OE_HIL_ALL_LLM_REPLIES: Set to "true" to require HIL approval for all AI replies
+    OE_ALLOW_JSON_FALLBACK: "true"/"false" to control JSON fallback on Supabase errors
+                            Defaults to: allowed in dev, disabled in prod (ENV=prod)
+
+Fallback Behavior (Testing Branch):
+    When OE_INTEGRATION_MODE=supabase AND allow_json_fallback=True:
+    - If a Supabase operation fails, LOUDLY log and fall back to JSON storage
+    - This ensures development can continue even if Supabase is unavailable
+    - Fallback events are clearly marked in logs with [SUPABASE_FALLBACK]
+
+Production Behavior:
+    When ENV=prod (or OE_ALLOW_JSON_FALLBACK=false):
+    - Supabase errors propagate without fallback
+    - This ensures data consistency in production
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -61,11 +74,27 @@ class IntegrationConfig:
     # TODO: Set to True when integrating with OpenEvent frontend for full manager control
     hil_all_llm_replies: bool = False
 
+    # JSON fallback when Supabase fails (testing/dev only)
+    # When True: If Supabase operation fails, LOUDLY fall back to JSON storage
+    # When False: Supabase errors propagate (strict mode for production)
+    # Automatically disabled when ENV=prod
+    allow_json_fallback: bool = False
+
     @classmethod
     def from_env(cls) -> "IntegrationConfig":
         """Load configuration from environment variables."""
         mode = os.getenv("OE_INTEGRATION_MODE", "json").lower()
         hil_all_replies = os.getenv("OE_HIL_ALL_LLM_REPLIES", "false").lower() in ("true", "1", "yes")
+        env = os.getenv("ENV", "dev").lower()
+
+        # JSON fallback: allowed in dev/testing, disabled in production
+        # Can be explicitly controlled via OE_ALLOW_JSON_FALLBACK
+        fallback_env = os.getenv("OE_ALLOW_JSON_FALLBACK", "").lower()
+        if fallback_env:
+            allow_fallback = fallback_env in ("true", "1", "yes")
+        else:
+            # Default: allow in dev/testing, disallow in prod
+            allow_fallback = env != "prod"
 
         return cls(
             mode=mode,
@@ -82,6 +111,8 @@ class IntegrationConfig:
             use_supabase_snapshots=mode == "supabase",
             # HIL toggle for all LLM replies
             hil_all_llm_replies=hil_all_replies,
+            # JSON fallback (disabled in production)
+            allow_json_fallback=allow_fallback and mode == "supabase",
         )
 
     def is_supabase_mode(self) -> bool:
@@ -112,6 +143,19 @@ INTEGRATION_CONFIG = IntegrationConfig.from_env()
 def is_integration_mode() -> bool:
     """Quick check if running in Supabase integration mode."""
     return INTEGRATION_CONFIG.is_supabase_mode()
+
+
+def allow_json_fallback() -> bool:
+    """Check if JSON fallback is allowed when Supabase fails.
+
+    Returns True if:
+    - Running in Supabase mode AND
+    - Fallback is enabled (default in dev, disabled in prod)
+
+    When True, Supabase errors will LOUDLY log and fall back to JSON storage.
+    When False (production), Supabase errors propagate without fallback.
+    """
+    return INTEGRATION_CONFIG.allow_json_fallback
 
 
 def get_team_id() -> Optional[str]:
