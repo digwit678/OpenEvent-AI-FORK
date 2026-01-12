@@ -33,7 +33,8 @@ Goals for this phase:
   3. `docs/guides/TEAM_GUIDE.md` to be aware of current bugs and guidelines.
   4. `TO_DO_NEXT_SESS.md` - check this file every time to track pending implementation goals and long-term roadmap. Always update this file with new planned tasks before starting work.
   5. Workflow v4 specs in `backend/workflow/specs/` if relevant to the task.
-- For new ideas collected in the chat (often too big to implement in the same task, happy accidents/ideas that happened while fixing another problem) write them to new_features.md in root so we can discuss them later. 
+- For new ideas collected in the chat (often too big to implement in the same task, happy accidents/ideas that happened while fixing another problem) write them to new_features.md in root so we can discuss them later.
+- After writing or modifying code files, always run the code cleanup agent to optimize and format the code before considering the task complete.
 
 ## NO-TOUCH ZONES (Requires Explicit Permission)
 
@@ -910,3 +911,4 @@ Before deploying to production:
 - pyright / LSP  Smart reading glasses for your code
 - for the refactoring MCP plugin can help 
 - for browser e2e testing always use the playwright plugin to verify workflow runs end to end (till site-visit agent reply appears in chat) without fallback messages or errors.
+- After writing or modifying code files, always run the code cleanup agent to optimize and format the code before considering the task complete.
