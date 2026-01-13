@@ -463,7 +463,7 @@ def process(state: WorkflowState) -> GroupResult:
                 "body_markdown": (
                     f"Thank you for wanting to confirm! Before I can proceed with your booking, "
                     f"please complete the deposit payment of CHF {deposit_amount:,.2f}. "
-                    f"Once the deposit is received, I'll immediately send your confirmation for final approval. "
+                    f"Once the deposit is received, I'll finalize your booking. "
                     f"You can pay the deposit using the payment option shown in the offer."
                 ),
                 "step": 4,
@@ -646,13 +646,17 @@ def process(state: WorkflowState) -> GroupResult:
         room_name=room,
     )
 
-    # [HYBRID MESSAGE] Check if there's a sourcing prefix to prepend (from product sourcing flow)
-    # This creates a combined "Great news! + Offer" message instead of two separate messages
+    # [HYBRID MESSAGE] Check for prefixes to prepend:
+    # 1. Room confirmation prefix (from Step 3 when room is confirmed)
+    # 2. Sourcing prefix (from product sourcing flow)
+    # This creates a combined "Room confirmed + Offer" message instead of separate messages
+    room_confirmation_prefix = event_entry.pop("room_confirmation_prefix", "")  # Clear after use
     sourced_products = event_entry.get("sourced_products") or {}
     sourcing_prefix = sourced_products.get("sourcing_prefix", "")
 
-    # Combine verbalized intro with structured offer (keeping line items intact)
-    offer_body_markdown = sourcing_prefix + verbalized_intro + "\n\n" + "\n".join(summary_lines)
+    # Combine all prefixes with verbalized intro and structured offer
+    combined_prefix = room_confirmation_prefix + sourcing_prefix
+    offer_body_markdown = combined_prefix + verbalized_intro + "\n\n" + "\n".join(summary_lines)
 
     draft_message = {
         "body_markdown": offer_body_markdown,
@@ -663,7 +667,7 @@ def process(state: WorkflowState) -> GroupResult:
         "offer_id": offer_id,
         "offer_version": offer_version,
         "total_amount": total_amount,
-        "requires_approval": False,
+        "requires_approval": True,  # Offers ALWAYS need HIL approval
         "table_blocks": [
             {
                 "type": "table",

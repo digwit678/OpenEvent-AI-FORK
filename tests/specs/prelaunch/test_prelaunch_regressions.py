@@ -118,6 +118,7 @@ def test_out_of_context_should_not_drop_message_with_billing(tmp_path: Path) -> 
 
     class Unified:
         intent = "confirm_date"
+        billing_address = None
 
     def finalize_fn(result, _state, _path, _lock_path):
         return result.merged()
@@ -132,6 +133,84 @@ def test_out_of_context_should_not_drop_message_with_billing(tmp_path: Path) -> 
             finalize_fn,
         )
         is None
+    )
+
+
+def test_out_of_context_should_not_block_offer_confirmation(tmp_path: Path) -> None:
+    """Avoid OOC guidance when confirmation is misclassified during offer steps."""
+    state = WorkflowState(
+        message=IncomingMessage(
+            msg_id="m",
+            from_name="Client",
+            from_email="client@example.com",
+            subject="Re: offer",
+            body="That's fine.",
+            ts="2026-01-01T00:00:00Z",
+        ),
+        db_path=tmp_path / "db.json",
+        db={"events": []},
+    )
+    state.event_entry = {"event_id": "EVT", "current_step": 5}
+
+    class Unified:
+        intent = "confirm_date"
+        is_confirmation = True
+        is_acceptance = False
+        room_preference = None
+        billing_address = None
+        date = None
+        date_text = None
+
+    def finalize_fn(result, _state, _path, _lock_path):
+        return result.merged()
+
+    assert (
+        check_out_of_context(
+            state,
+            Unified(),  # type: ignore[arg-type]
+            tmp_path / "db.json",
+            tmp_path / ".db.lock",
+            finalize_fn,
+        )
+        is None
+    )
+
+
+def test_out_of_context_should_still_trigger_on_strong_acceptance(tmp_path: Path) -> None:
+    """OOC guidance should still apply when acceptance is explicit at the wrong step."""
+    state = WorkflowState(
+        message=IncomingMessage(
+            msg_id="m",
+            from_name="Client",
+            from_email="client@example.com",
+            subject="Re: booking",
+            body="We accept the offer.",
+            ts="2026-01-01T00:00:00Z",
+        ),
+        db_path=tmp_path / "db.json",
+        db={"events": []},
+    )
+    state.event_entry = {"event_id": "EVT", "current_step": 2}
+
+    class Unified:
+        intent = "accept_offer"
+        is_acceptance = True
+        is_rejection = False
+        billing_address = None
+        room_preference = None
+
+    def finalize_fn(result, _state, _path, _lock_path):
+        return result.merged()
+
+    assert (
+        check_out_of_context(
+            state,
+            Unified(),  # type: ignore[arg-type]
+            tmp_path / "db.json",
+            tmp_path / ".db.lock",
+            finalize_fn,
+        )
+        is not None
     )
 
 
@@ -271,7 +350,7 @@ def test_validate_hybrid_mode_should_fail_when_required_keys_missing(monkeypatch
 def test_out_of_context_should_still_persist_step1_updates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Fixed: OOC handler now tags msg_id before returning (Jan 2026)."""
     from backend.workflow_email import process_msg
-    from backend.workflows.io import database as db_io
+    from workflows.io import database as db_io
     from backend.detection.unified import UnifiedDetectionResult
 
     monkeypatch.setenv("AGENT_MODE", "stub")
@@ -281,7 +360,7 @@ def test_out_of_context_should_still_persist_step1_updates(tmp_path: Path, monke
     def fake_unified(*_args, **_kwargs):
         return UnifiedDetectionResult(intent="confirm_date")
 
-    monkeypatch.setattr("backend.workflows.runtime.pre_route.run_unified_detection", fake_unified)
+    monkeypatch.setattr("workflows.runtime.pre_route.run_unified_detection", fake_unified)
 
     db_path = tmp_path / "db.json"
     db = db_io.get_default_db()
@@ -343,7 +422,7 @@ def test_concurrent_process_msg_should_not_lose_updates(tmp_path: Path, monkeypa
     is held for the entire process_msg duration, serializing concurrent access.
     """
     from backend.workflow_email import process_msg
-    from backend.workflows.io import database as db_io
+    from workflows.io import database as db_io
 
     monkeypatch.setenv("AGENT_MODE", "stub")
     monkeypatch.setenv("DETECTION_MODE", "legacy")
@@ -390,8 +469,8 @@ def test_concurrent_process_msg_should_not_lose_updates(tmp_path: Path, monkeypa
 def test_step1_can_overwrite_event_date_from_unanchored_date(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Fixed: Guards and step handlers now skip date change detection for deposit payment context (Jan 2026)."""
     from backend.workflow_email import process_msg
-    from backend.workflows.io import database as db_io
-    from backend.workflows.common.requirements import requirements_hash
+    from workflows.io import database as db_io
+    from workflows.common.requirements import requirements_hash
 
     monkeypatch.setenv("AGENT_MODE", "stub")
     monkeypatch.setenv("DETECTION_MODE", "legacy")
@@ -493,5 +572,5 @@ def test_step1_can_overwrite_event_date_from_unanchored_date(monkeypatch: pytest
 ])
 def test_multilingual_acceptance_detection(text: str, expected: bool) -> None:
     """Multilingual confirmation detection supports EN, DE, FR, IT, ES (Jan 2026)."""
-    from backend.workflows.steps.step1_intake.trigger.gate_confirmation import looks_like_offer_acceptance
+    from workflows.steps.step1_intake.trigger.gate_confirmation import looks_like_offer_acceptance
     assert looks_like_offer_acceptance(text) == expected, f"Failed for: {text!r}"
