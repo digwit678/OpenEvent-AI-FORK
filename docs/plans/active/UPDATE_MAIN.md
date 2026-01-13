@@ -23,6 +23,45 @@
 
 ## Execution Steps
 
+### Step 0: Pre-Flight Check (CRITICAL)
+
+**NEVER proceed to sync without completing this pre-flight check.** All essential files must be committed on development-branch first.
+
+```bash
+# 1. Check for uncommitted changes
+git status
+
+# 2. If there are uncommitted changes, commit them first:
+git add -A
+git status  # Review what will be committed
+
+# 3. Look for essential uncommitted files in these directories:
+git status --porcelain | grep -E "^\?\?" | grep -E "(backend|workflows|detection|tests|configs)/"
+
+# 4. Specifically check these critical paths are NOT untracked:
+ls -la backend/workflows/steps/  # Should show step handlers
+ls -la detection/                 # Should show detection modules
+ls -la workflows/                 # Should show workflow modules
+```
+
+**Checklist before proceeding:**
+- [ ] `git status` shows clean working tree (no uncommitted changes)
+- [ ] All files in `backend/`, `workflows/`, `detection/`, `tests/`, `configs/` are tracked
+- [ ] No essential `.py` files are untracked (check `git status --porcelain | grep "\.py"`)
+- [ ] Recent changes are committed with descriptive message
+
+**If any files are uncommitted:**
+```bash
+# Commit all pending changes
+git add -A
+git commit -m "chore: commit all pending changes before main sync"
+git push origin development-branch
+```
+
+**Why this matters:** If essential files are uncommitted on development-branch, they won't be synced to main, causing import errors or missing functionality in production.
+
+---
+
 ### Step 1: Verify Current Branch
 
 ```bash
@@ -172,6 +211,12 @@ git checkout development-branch
 
 Before every push to `main` (Vercel production):
 
+**Pre-Flight (Step 0):**
+- [ ] `git status` shows clean working tree on development-branch
+- [ ] All essential files are committed (no untracked .py files in backend/workflows/detection/tests/)
+- [ ] Changes pushed to development-branch remote
+
+**Verification (Steps V1-V3):**
 - [ ] All tests pass on development-branch
 - [ ] Syntax verification passed (`from backend.main import app` works)
 - [ ] API endpoints return valid JSON (not errors)
