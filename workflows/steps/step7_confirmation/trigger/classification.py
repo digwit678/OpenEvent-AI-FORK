@@ -4,7 +4,7 @@ Extracted from step7_handler.py as part of F1 refactoring (Dec 2025).
 """
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .constants import (
     CONFIRM_KEYWORDS,
@@ -17,8 +17,17 @@ from .constants import (
 from .helpers import any_keyword_match, contains_word
 
 
-def classify_message(message_text: str, event_entry: Dict[str, Any]) -> str:
+def classify_message(
+    message_text: str,
+    event_entry: Dict[str, Any],
+    unified_detection: Optional[Any] = None,
+) -> str:
     """Classify client message intent for Step 7 routing.
+
+    Args:
+        message_text: The client message text
+        event_entry: Current event state
+        unified_detection: Optional unified detection result from LLM
 
     Returns one of: 'confirm', 'deposit_paid', 'site_visit', 'reserve',
                     'decline', 'change', 'question'
@@ -33,7 +42,23 @@ def classify_message(message_text: str, event_entry: Dict[str, Any]) -> str:
         ):
             return "deposit_paid"
 
-    # Keyword-based classification
+    # -------------------------------------------------------------------------
+    # FIX: Check unified detection for site_visit_request FIRST
+    # This fixes the bug where "Yes, can we visit next week?" returns "confirm"
+    # because CONFIRM_KEYWORDS ("yes") is checked before VISIT_KEYWORDS
+    # -------------------------------------------------------------------------
+    if unified_detection:
+        qna_types = getattr(unified_detection, "qna_types", []) or []
+        if "site_visit_request" in qna_types or "site_visit_overview" in qna_types:
+            return "site_visit"
+
+    # Check site visit state - if proposed, prioritize site visit keywords
+    site_visit_state = event_entry.get("site_visit_state") or {}
+    if site_visit_state.get("status") == "proposed":
+        if any_keyword_match(lowered, VISIT_KEYWORDS):
+            return "site_visit"
+
+    # Keyword-based classification (original order for non-site-visit cases)
     if any_keyword_match(lowered, CONFIRM_KEYWORDS):
         return "confirm"
     if any_keyword_match(lowered, VISIT_KEYWORDS):

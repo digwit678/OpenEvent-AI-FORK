@@ -22,6 +22,7 @@ from workflows.common.general_qna import (
     append_general_qna_to_primary,
     present_general_room_qna,
 )
+from workflows.common.detection_utils import get_unified_detection
 from workflows.io.database import append_audit_entry, update_event_metadata
 from workflows.nlu import detect_general_room_query
 from debug.hooks import trace_marker
@@ -205,7 +206,9 @@ def process(state: WorkflowState) -> GroupResult:
         logger.info("[Step7] deposit_just_paid signal detected - routing to confirmation")
         return _prepare_confirmation(state, event_entry)
 
-    classification = classify_message(message_text, event_entry)
+    # Get unified detection for improved site visit vs confirm classification
+    unified_detection = get_unified_detection(state)
+    classification = classify_message(message_text, event_entry, unified_detection)
     conf_state["last_response_type"] = classification
     general_qna_applicable = qna_classification.get("is_general")
     deferred_general_qna = general_qna_applicable and classification in {

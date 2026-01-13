@@ -326,6 +326,49 @@ Result: One combined message with "Great choice! Room F is confirmed... Here is 
 **Files**: `atelier-ai-frontend/app/page.tsx`
 **Note**: This fix only applies to development-branch (frontend). Main branch is backend-only.
 
+### BUG-018: Detection Interference - Regex Overriding LLM Signals
+**Status**: Fixed (2026-01-13)
+**Severity**: High (incorrect routing)
+**Symptom**: Multiple detection issues where regex/keyword patterns override correct LLM semantic intent:
+1. Step5 acceptance regex too permissive ("good" alone triggers acceptance)
+2. Step7 "Yes, can we visit next week?" returns confirm instead of site_visit
+3. Room detection "Is Room A available?" incorrectly locks Room A
+4. Q&A borderline heuristics ("need room") can't be vetoed by LLM
+**Root Cause**: Detection code was checking regex/keywords before consulting unified LLM detection signals, and in some cases ignoring the signals entirely.
+**Fix**: Implemented unified detection consumption across 4 areas:
+1. Step5: Use `unified_detection.is_acceptance/is_rejection` before regex fallback
+2. Step7: Check `qna_types` for `site_visit_request` before CONFIRM_KEYWORDS
+3. Room detection: Add question guard (? in text OR `is_question=True`)
+4. Q&A: Require LLM agreement for borderline heuristic matches
+**Files**:
+- `workflows/steps/step5_negotiation/trigger/classification.py` - unified acceptance/rejection
+- `workflows/steps/step7_confirmation/trigger/classification.py` - site visit precedence
+- `workflows/steps/step1_intake/trigger/room_detection.py` - question guard
+- `detection/qna/general_qna.py` - LLM veto logic for borderline
+**Tests**: `tests/detection/test_detection_interference.py` (13 tests: DET_INT_001 through DET_INT_010 + variants)
+**Zero Cost**: All fixes reuse unified detection already computed during pre-routing ($0 extra LLM calls)
+
+### BUG-019: Global Deposit Config Not Applied to New Events
+**Status**: Open (2026-01-13)
+**Severity**: High (missing deposit)
+**Symptom**: Despite configuring global deposit in UI (30%, 10 days), new events don't have `deposit_info` populated, and no deposit button appears after offer acceptance.
+**Root Cause**: Timing issue - the global deposit config must be saved to database BEFORE starting a new conversation. If events are created before the config is persisted, they won't pick up the deposit settings.
+**Workaround**: Ensure "Reset Client" and new conversation happens AFTER global deposit is configured and saved.
+**Investigation Needed**:
+1. The `state.db` snapshot might be stale when Step 4 calls `build_deposit_info()`
+2. Consider reloading config from database at offer generation time
+3. Check if `load_db()` in workflow_email.py needs refresh after config updates
+4. Verify `build_deposit_info()` is reading from persisted config, not in-memory snapshot
+**Reproduction**:
+1. Start new conversation (event created)
+2. In another tab, configure global deposit (30%, 10 days)
+3. Continue conversation to offer acceptance
+4. Result: No deposit button appears
+**Files**:
+- `workflows/steps/step4_offer/trigger/step4_handler.py:615-618` - build_deposit_info call
+- `backend/workflow_email.py` - state.db initialization
+- `backend/workflows/io/database.py` - config persistence
+
 ### BUG-013: HIL Approval Sends Site Visit Text Instead of Workflow Draft
 **Status**: Fixed (2026-01-12)
 **Severity**: Critical (UX Breaking)

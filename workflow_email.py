@@ -344,7 +344,6 @@ def _persist_if_needed(state: WorkflowState, path: Path, lock_path: Path) -> Non
 
 def _flush_pending_save(state: WorkflowState, path: Path, lock_path: Path) -> None:
     """[OpenEvent Database] Flush debounced writes at the end of the turn."""
-
     if state.extras.pop("_pending_save", False):
         logger.info("[WF][PERSIST] Flushing DB to %s for thread=%s", path, state.thread_id)
         db_io.save_db(state.db, path, lock_path=lock_path)

@@ -66,6 +66,7 @@ from .normalization import normalize_room_token as _normalize_room_token
 from .date_fallback import fallback_year_from_ts as _fallback_year_from_ts
 from .gate_confirmation import looks_like_offer_acceptance as _looks_like_offer_acceptance
 from .gate_confirmation import looks_like_billing_fragment as _looks_like_billing_fragment
+from workflows.common.detection_utils import get_unified_detection
 
 
 def _validate_extracted_room(room_value: Optional[str], message_text: Optional[str] = None) -> Optional[str]:
@@ -557,7 +558,9 @@ def process(state: WorkflowState) -> GroupResult:
         )
         state.extras["persist"] = True
     # Early room-choice detection so we don't rely on classifier confidence
-    early_room_choice = _detect_room_choice(body_text, linked_event)
+    # Pass unified detection to enable question guard ("Is Room A available?" should not lock)
+    unified_detection = get_unified_detection(state)
+    early_room_choice = _detect_room_choice(body_text, linked_event, unified_detection)
     if early_room_choice:
         user_info["room"] = early_room_choice
         user_info["_room_choice_detected"] = True
@@ -669,7 +672,8 @@ def process(state: WorkflowState) -> GroupResult:
             if end_time:
                 user_info["end_time"] = end_time
         else:
-            room_choice = _detect_room_choice(body_text, linked_event)
+            # unified_detection already fetched above, reuse it
+            room_choice = _detect_room_choice(body_text, linked_event, unified_detection)
             if room_choice:
                 intent = IntentLabel.EVENT_REQUEST
                 confidence = max(confidence, 0.96)

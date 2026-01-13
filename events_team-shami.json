@@ -1,440 +1,6 @@
 {
   "events": [
     {
-      "event_id": "1966abd9-43af-4505-92ca-a389f0e3e068",
-      "team_id": "team-shami",
-      "created_at": "2026-01-07T13:55:12.062069",
-      "status": "Lead",
-      "current_step": 3,
-      "caller_step": null,
-      "thread_state": "Awaiting Client",
-      "chosen_date": "20.02.2026",
-      "end_date": null,
-      "end_date_iso": null,
-      "date_confirmed": true,
-      "locked_room_id": null,
-      "requirements": {
-        "number_of_participants": 15,
-        "seating_layout": null,
-        "event_duration": {
-          "start": "14:00",
-          "end": "18:00"
-        },
-        "special_requirements": "We need a flipchart",
-        "preferred_room": null
-      },
-      "requirements_hash": "782ef5f829d1ab80ea7e714fcc5e73440e41ebf07f7ac6e1f39849964f50e4ce",
-      "room_eval_hash": null,
-      "offer_id": null,
-      "audit": [
-        {
-          "ts": "2026-01-07T13:55:12Z",
-          "actor": "system",
-          "from_step": 1,
-          "to_step": 3,
-          "reason": "date_updated_initial"
-        }
-      ],
-      "review_state": {
-        "state": "none",
-        "reviewed_at": null,
-        "message": null
-      },
-      "event_data": {
-        "Date Email Received": "07.01.2026",
-        "Status": "Lead",
-        "Event Date": "20.02.2026",
-        "Name": "Not specified",
-        "Email": "unknown@example.com",
-        "Phone": "Not specified",
-        "Company": "Not specified",
-        "Billing Address": "Not specified",
-        "Start Time": "14:00",
-        "End Time": "18:00",
-        "Preferred Room": "Not specified",
-        "Number of Participants": "15",
-        "Type of Event": "Not specified",
-        "Catering Preference": "Not specified",
-        "Billing Amount": "none",
-        "Deposit": "none",
-        "Language": "Not specified",
-        "Additional Info": "We need a flipchart"
-      },
-      "msgs": [
-        "da7dc9db-5384-4306-acb6-c25b0f973569"
-      ],
-      "captured": {},
-      "verified": {},
-      "captured_sources": [],
-      "deferred_intents": [],
-      "calendar_event_id": "openevent-1966abd9-43af-4505-92ca-a389f0e3e068",
-      "thread_id": "2eb7adf0-43a3-4e29-abff-7cd0170a641f",
-      "current_step_stage": "step_1",
-      "caller_step_stage": null,
-      "subflow_group": "intake",
-      "requested_window": {},
-      "offer_hash": null,
-      "offers": [],
-      "current_offer_id": null,
-      "offer_sequence": 0,
-      "products": [],
-      "selected_products": [],
-      "requested_products": [],
-      "selected_catering": [],
-      "negotiation_state": {
-        "counter_count": 0,
-        "manual_review_task_id": null
-      },
-      "transition_ready": false,
-      "calendar_blocks": [],
-      "deposit_state": {
-        "required": false,
-        "percent": 0,
-        "status": "not_required",
-        "due_amount": 0.0
-      },
-      "site_visit_state": {
-        "status": "idle",
-        "proposed_slots": [],
-        "scheduled_slot": null
-      },
-      "confirmation_state": {
-        "last_response_type": null
-      },
-      "products_state": {
-        "available_items": [],
-        "manager_added_items": [],
-        "line_items": [],
-        "pending_hil_requests": [],
-        "budgets": {},
-        "presented_interest": {},
-        "preask_pending": {}
-      },
-      "pending_intents": [],
-      "edit_trace": [],
-      "choice_context": null,
-      "gatekeeper_passed": {
-        "step2": false,
-        "step3": false,
-        "step4": false,
-        "step7": false
-      },
-      "decision": "pending",
-      "wish_products": [
-        "We need a flipchart",
-        "flipchart"
-      ],
-      "preferences": {
-        "wish_products": [
-          "We need a flipchart",
-          "flipchart"
-        ],
-        "keywords": [
-          "need",
-          "flipchart"
-        ],
-        "default_hint": "We need a flipchart",
-        "room_recommendations": [
-          {
-            "room": "Room B",
-            "score": 2.0,
-            "matched": [
-              "Flipchart"
-            ],
-            "closest": [],
-            "missing": [],
-            "matches_detail": [
-              {
-                "wish": "We need a flipchart",
-                "product": "Flipchart",
-                "score": 0.92
-              },
-              {
-                "wish": "flipchart",
-                "product": "Flipchart",
-                "score": 1.0
-              }
-            ],
-            "alternatives": []
-          },
-          {
-            "room": "Room A",
-            "score": 0.0,
-            "matched": [],
-            "closest": [],
-            "missing": [
-              "We need a flipchart",
-              "flipchart"
-            ],
-            "matches_detail": [],
-            "alternatives": [
-              {
-                "wish": "flipchart",
-                "product": "TV Display (65\")",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "Ice Cream Cart",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "DJ Service",
-                "score": 0.571
-              }
-            ]
-          },
-          {
-            "room": "Room C",
-            "score": 0.0,
-            "matched": [],
-            "closest": [],
-            "missing": [
-              "We need a flipchart",
-              "flipchart"
-            ],
-            "matches_detail": [],
-            "alternatives": [
-              {
-                "wish": "flipchart",
-                "product": "TV Display (65\")",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "Ice Cream Cart",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "BBQ Package",
-                "score": 0.571
-              }
-            ]
-          },
-          {
-            "room": "Room D",
-            "score": 0.0,
-            "matched": [],
-            "closest": [],
-            "missing": [
-              "We need a flipchart",
-              "flipchart"
-            ],
-            "matches_detail": [],
-            "alternatives": [
-              {
-                "wish": "flipchart",
-                "product": "TV Display (65\")",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "Ice Cream Cart",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "BBQ Package",
-                "score": 0.571
-              }
-            ]
-          },
-          {
-            "room": "Room E",
-            "score": 0.0,
-            "matched": [],
-            "closest": [],
-            "missing": [
-              "We need a flipchart",
-              "flipchart"
-            ],
-            "matches_detail": [],
-            "alternatives": [
-              {
-                "wish": "flipchart",
-                "product": "TV Display (65\")",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "Ice Cream Cart",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "BBQ Package",
-                "score": 0.571
-              }
-            ]
-          }
-        ],
-        "room_similarity": {
-          "Room B": 2.0,
-          "Room A": 0.0,
-          "Room C": 0.0,
-          "Room D": 0.0,
-          "Room E": 0.0
-        },
-        "room_match_breakdown": {
-          "Room B": {
-            "matched": [
-              "Flipchart"
-            ],
-            "closest": [],
-            "missing": [],
-            "matches_detail": [
-              {
-                "wish": "We need a flipchart",
-                "product": "Flipchart",
-                "score": 0.92
-              },
-              {
-                "wish": "flipchart",
-                "product": "Flipchart",
-                "score": 1.0
-              }
-            ],
-            "alternatives": []
-          },
-          "Room A": {
-            "matched": [],
-            "closest": [],
-            "missing": [
-              "We need a flipchart",
-              "flipchart"
-            ],
-            "matches_detail": [],
-            "alternatives": [
-              {
-                "wish": "flipchart",
-                "product": "TV Display (65\")",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "Ice Cream Cart",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "DJ Service",
-                "score": 0.571
-              }
-            ]
-          },
-          "Room C": {
-            "matched": [],
-            "closest": [],
-            "missing": [
-              "We need a flipchart",
-              "flipchart"
-            ],
-            "matches_detail": [],
-            "alternatives": [
-              {
-                "wish": "flipchart",
-                "product": "TV Display (65\")",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "Ice Cream Cart",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "BBQ Package",
-                "score": 0.571
-              }
-            ]
-          },
-          "Room D": {
-            "matched": [],
-            "closest": [],
-            "missing": [
-              "We need a flipchart",
-              "flipchart"
-            ],
-            "matches_detail": [],
-            "alternatives": [
-              {
-                "wish": "flipchart",
-                "product": "TV Display (65\")",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "Ice Cream Cart",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "BBQ Package",
-                "score": 0.571
-              }
-            ]
-          },
-          "Room E": {
-            "matched": [],
-            "closest": [],
-            "missing": [
-              "We need a flipchart",
-              "flipchart"
-            ],
-            "matches_detail": [],
-            "alternatives": [
-              {
-                "wish": "flipchart",
-                "product": "TV Display (65\")",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "Ice Cream Cart",
-                "score": 0.615
-              },
-              {
-                "wish": "flipchart",
-                "product": "BBQ Package",
-                "score": 0.571
-              }
-            ]
-          }
-        }
-      },
-      "weekdays_hint": [
-        15,
-        20
-      ],
-      "window_scope": {
-        "weekdays_hint": [
-          15,
-          20
-        ]
-      },
-      "last_client_message": "Hi, I need a room for 15 people on 20.02.2026 from 14:00-18:00. We need a flipch\nHi, I need a room for 15 people on 20.02.2026 from 14:00-18:00. We need a flipchart. Thanks!",
-      "room_proposal_attempts": 1,
-      "room_pending_decision": {
-        "selected_room": "Room D",
-        "selected_status": "Available",
-        "requirements_hash": "782ef5f829d1ab80ea7e714fcc5e73440e41ebf07f7ac6e1f39849964f50e4ce",
-        "summary": "Room availability summary — Room A: Option; Room B: Available; Room C: Available; Room D: Available; Room E: Available; Room F: Available.",
-        "hint": "Missing: We need a flipchart, flipchart",
-        "available_dates": [
-          "2026-02-21",
-          "2026-02-19",
-          "2026-02-22"
-        ],
-        "missing_products": [
-          "We need a flipchart",
-          "flipchart"
-        ]
-      },
-      "pending_hil_requests": []
-    },
-    {
       "event_id": "e5af5994-aeec-4db2-b6f9-72a3804c5246",
       "team_id": "team-shami",
       "created_at": "2026-01-07T13:59:49.772436",
@@ -3618,344 +3184,1616 @@
         "awaiting_billing_for_accept": false,
         "last_missing": []
       }
-    }
-  ],
-  "clients": {
-    "unknown@example.com": {
-      "profile": {
-        "name": "Not specified",
-        "org": null,
-        "phone": null
+    },
+    {
+      "event_id": "620cfb3c-c253-402d-a343-c70094d92ba4",
+      "team_id": "team-shami",
+      "created_at": "2026-01-13T16:57:07.531693",
+      "status": "Lead",
+      "current_step": 7,
+      "caller_step": null,
+      "thread_state": "In Progress",
+      "chosen_date": "20.03.2026",
+      "end_date": null,
+      "end_date_iso": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room A",
+      "requirements": {
+        "number_of_participants": 25,
+        "seating_layout": "dinner",
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": "Room A"
       },
-      "history": [
+      "requirements_hash": "92ca10cb46bee30ac450219f58fdc5fe3ec24e8e07eef8e2a4543151f31c8f9a",
+      "room_eval_hash": "92ca10cb46bee30ac450219f58fdc5fe3ec24e8e07eef8e2a4543151f31c8f9a",
+      "offer_id": null,
+      "audit": [
         {
-          "msg_id": "da7dc9db-5384-4306-acb6-c25b0f973569",
-          "ts": "2026-01-07T13:55:06.700011Z",
-          "subject": "Hi, I need a room for 15 people on 20.02.2026 from 14:00-18:00. We need a flipch",
-          "body_preview": "Hi, I need a room for 15 people on 20.02.2026 from 14:00-18:00. We need a flipchart. Thanks!",
-          "intent": "event_request",
-          "confidence": 0.95,
-          "user_info": {
-            "date": "2026-02-20",
-            "start_time": "14:00",
-            "end_time": "18:00",
-            "city": null,
-            "participants": 15,
-            "room": null,
-            "layout": null,
-            "name": null,
-            "email": null,
-            "type": null,
-            "catering": null,
-            "phone": null,
-            "company": null,
-            "language": null,
-            "notes": "We need a flipchart",
-            "billing_address": null,
-            "hil_approve_step": null,
-            "hil_decision": null,
-            "products_add": [],
-            "products_remove": [],
-            "room_type_hint": null,
-            "room_feedback": null,
-            "shortcut_capacity_ok": null,
-            "week_index": null,
-            "weekdays_hint": [
-              15,
-              20
+          "ts": "2026-01-13T16:57:07Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 1,
+          "reason": "info_update",
+          "fields": [
+            "Name"
+          ]
+        },
+        {
+          "ts": "2026-01-13T16:57:07Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 4,
+          "reason": "smart_shortcut_room_verified"
+        },
+        {
+          "ts": "2026-01-13T16:57:12Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_generated"
+        },
+        {
+          "ts": "2026-01-13T16:57:39Z",
+          "actor": "system",
+          "from_step": 5,
+          "to_step": 5,
+          "reason": "info_update",
+          "fields": [
+            "Billing Address"
+          ]
+        },
+        {
+          "ts": "2026-01-13T16:57:45Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 5,
+          "reason": "offer_accept_pending_hil"
+        },
+        {
+          "ts": "2026-01-13T16:57:59Z",
+          "actor": "system",
+          "from_step": 5,
+          "to_step": 6,
+          "reason": "offer_accepted_hil"
+        },
+        {
+          "ts": "2026-01-13T16:57:59Z",
+          "actor": "system",
+          "from_step": 6,
+          "to_step": 7,
+          "reason": "transition_ready"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "13.01.2026",
+        "Status": "Lead",
+        "Event Date": "20.03.2026",
+        "Name": "Peter",
+        "Email": "e2e-deposit-test@example.com",
+        "Phone": "Not specified",
+        "Company": "ABC Company",
+        "Billing Address": "ABC Company, Street 123, 8000 Zurich, Zurich",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Room A",
+        "Number of Participants": "25",
+        "Type of Event": "dinner",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "70d5b9fe-45a8-4acd-ba9f-310a8a3616d5"
+      ],
+      "captured": {},
+      "verified": {},
+      "captured_sources": [],
+      "deferred_intents": [],
+      "calendar_event_id": "openevent-620cfb3c-c253-402d-a343-c70094d92ba4",
+      "thread_id": "2ab71dde-4486-44a1-8dcb-a754c3779611",
+      "billing_details": {
+        "name_or_company": "ABC Company",
+        "street": "Street 123",
+        "postal_code": "8000",
+        "city": "Zurich",
+        "country": "Zurich",
+        "vat": null,
+        "raw": "ABC Company, Street 123, 8000 Zurich, Zurich"
+      },
+      "billing_validation": {},
+      "current_step_stage": "step_5",
+      "caller_step_stage": null,
+      "subflow_group": "negotiation",
+      "requested_window": {
+        "date_iso": "20.03.2026",
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "offer_hash": null,
+      "offers": [
+        {
+          "offer_id": "620cfb3c-c253-402d-a343-c70094d92ba4-OFFER-1",
+          "version": 1,
+          "status": "Accepted",
+          "created_at": "2026-01-13T16:57:09+00:00",
+          "total_amount": 500.0,
+          "pricing_inputs": {
+            "base_rate": 500.0,
+            "line_items": []
+          },
+          "accepted_at": "2026-01-13T16:57:59+00:00"
+        }
+      ],
+      "current_offer_id": "620cfb3c-c253-402d-a343-c70094d92ba4-OFFER-1",
+      "offer_sequence": 1,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": true,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "room_status": "Available",
+      "room_pending_decision": {
+        "selected_room": "Room A",
+        "selected_status": "Available",
+        "missing_products": []
+      },
+      "last_client_message": "Client follow-up (2026-01-13 16:57)\nWe accept the offer. Billing: ABC Company, Street 123, 8000 Zurich",
+      "pricing_inputs": {
+        "base_rate": 500.0,
+        "line_items": []
+      },
+      "offer_status": "Accepted",
+      "pending_hil_requests": [],
+      "hil_history": [
+        {
+          "task_id": "e28b196e-e6e1-42b2-adf6-bca893a2d72e",
+          "approved_at": "2026-01-13T16:57:28.808709Z",
+          "notes": null,
+          "step": 4,
+          "decision": "approved"
+        },
+        {
+          "task_id": "09f4eddf-07b7-4bc2-8f75-68c368e3927a",
+          "approved_at": "2026-01-13T16:57:59.877743Z",
+          "notes": null,
+          "step": 5,
+          "decision": "approved"
+        }
+      ],
+      "offer_accepted": true
+    },
+    {
+      "event_id": "1315c32e-5237-414c-af03-d91fff4dca3c",
+      "team_id": "team-shami",
+      "created_at": "2026-01-13T17:09:57.349624",
+      "status": "Lead",
+      "current_step": 7,
+      "caller_step": null,
+      "thread_state": "In Progress",
+      "chosen_date": "25.03.2026",
+      "end_date": null,
+      "end_date_iso": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room A",
+      "requirements": {
+        "number_of_participants": 30,
+        "seating_layout": "dinner",
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": "Room A"
+      },
+      "requirements_hash": "884f09d950511db09524a091086ef223cd2c1939fe91fd2561f4f37901ea4a76",
+      "room_eval_hash": "884f09d950511db09524a091086ef223cd2c1939fe91fd2561f4f37901ea4a76",
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-13T17:09:57Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 1,
+          "reason": "info_update",
+          "fields": [
+            "Name"
+          ]
+        },
+        {
+          "ts": "2026-01-13T17:09:57Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 4,
+          "reason": "smart_shortcut_room_verified"
+        },
+        {
+          "ts": "2026-01-13T17:10:01Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_generated"
+        },
+        {
+          "ts": "2026-01-13T17:10:20Z",
+          "actor": "system",
+          "from_step": 5,
+          "to_step": 5,
+          "reason": "info_update",
+          "fields": [
+            "Billing Address"
+          ]
+        },
+        {
+          "ts": "2026-01-13T17:10:25Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 5,
+          "reason": "offer_accept_pending_hil"
+        },
+        {
+          "ts": "2026-01-13T17:10:37Z",
+          "actor": "system",
+          "from_step": 5,
+          "to_step": 6,
+          "reason": "offer_accepted_hil"
+        },
+        {
+          "ts": "2026-01-13T17:10:37Z",
+          "actor": "system",
+          "from_step": 6,
+          "to_step": 7,
+          "reason": "transition_ready"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "13.01.2026",
+        "Status": "Lead",
+        "Event Date": "25.03.2026",
+        "Name": "Maria Santos",
+        "Email": "e2e-full-flow@example.com",
+        "Phone": "Not specified",
+        "Company": "ABC Corporation",
+        "Billing Address": "ABC Corporation, Bahnhofstrasse 50, 8001 Zurich, Switzerland",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Room A",
+        "Number of Participants": "30",
+        "Type of Event": "dinner",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "2c82a669-2252-44e3-961f-068350be784c"
+      ],
+      "captured": {},
+      "verified": {},
+      "captured_sources": [],
+      "deferred_intents": [],
+      "calendar_event_id": "openevent-1315c32e-5237-414c-af03-d91fff4dca3c",
+      "thread_id": "6976a455-721b-40bf-adc1-0a08face6f5a",
+      "billing_details": {
+        "name_or_company": "ABC Corporation",
+        "street": "Bahnhofstrasse 50",
+        "postal_code": "8001",
+        "city": "Zurich",
+        "country": "Switzerland",
+        "vat": null,
+        "raw": "ABC Corporation, Bahnhofstrasse 50, 8001 Zurich, Switzerland"
+      },
+      "billing_validation": {},
+      "current_step_stage": "step_5",
+      "caller_step_stage": null,
+      "subflow_group": "negotiation",
+      "requested_window": {
+        "date_iso": "25.03.2026",
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "offer_hash": null,
+      "offers": [
+        {
+          "offer_id": "1315c32e-5237-414c-af03-d91fff4dca3c-OFFER-1",
+          "version": 1,
+          "status": "Accepted",
+          "created_at": "2026-01-13T17:09:59+00:00",
+          "total_amount": 500.0,
+          "pricing_inputs": {
+            "base_rate": 500.0,
+            "line_items": []
+          },
+          "accepted_at": "2026-01-13T17:10:37+00:00"
+        }
+      ],
+      "current_offer_id": "1315c32e-5237-414c-af03-d91fff4dca3c-OFFER-1",
+      "offer_sequence": 1,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": true,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "room_status": "Available",
+      "room_pending_decision": {
+        "selected_room": "Room A",
+        "selected_status": "Available",
+        "missing_products": []
+      },
+      "last_client_message": "Client follow-up (2026-01-13 17:10)\nWe accept the offer. Our billing address is: ABC Corporation, Bahnhofstrasse 50, 8001 Zurich, Switzerland",
+      "pricing_inputs": {
+        "base_rate": 500.0,
+        "line_items": []
+      },
+      "offer_status": "Accepted",
+      "pending_hil_requests": [],
+      "hil_history": [
+        {
+          "task_id": "6be112e4-722a-4706-a877-abfc1b87aeb1",
+          "approved_at": "2026-01-13T17:10:09.854636Z",
+          "notes": null,
+          "step": 4,
+          "decision": "approved"
+        },
+        {
+          "task_id": "cfb9991a-70cd-47f1-90c9-1ae475477456",
+          "approved_at": "2026-01-13T17:10:37.617503Z",
+          "notes": null,
+          "step": 5,
+          "decision": "approved"
+        }
+      ],
+      "offer_accepted": true
+    },
+    {
+      "event_id": "5ed3eb16-e53b-4c81-aed4-b6ec053dff41",
+      "team_id": "team-shami",
+      "created_at": "2026-01-13T17:11:26.340513",
+      "status": "Lead",
+      "current_step": 2,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": null,
+      "end_date": null,
+      "end_date_iso": null,
+      "date_confirmed": false,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": null,
+        "seating_layout": null,
+        "event_duration": {},
+        "special_requirements": "Arrange a site visit before finalizing",
+        "preferred_room": null
+      },
+      "requirements_hash": "6b2b2f7e1240b08664de8ad14528768aae3427aa1f1071df99be591c3ff03c4d",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-13T17:11:26Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 2,
+          "reason": "date_missing"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "13.01.2026",
+        "Status": "Lead",
+        "Event Date": "Not specified",
+        "Name": "Maria Santos",
+        "Email": "e2e-full-flow@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Not specified",
+        "Number of Participants": "Not specified",
+        "Type of Event": "Not specified",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Arrange a site visit before finalizing"
+      },
+      "msgs": [
+        "e516f195-1183-4bf1-907e-f2b0d27efeb7"
+      ],
+      "captured": {},
+      "verified": {},
+      "captured_sources": [],
+      "deferred_intents": [],
+      "calendar_event_id": "openevent-5ed3eb16-e53b-4c81-aed4-b6ec053dff41",
+      "thread_id": "6976a455-721b-40bf-adc1-0a08face6f5a",
+      "current_step_stage": "step_2",
+      "caller_step_stage": null,
+      "subflow_group": "date_confirmation",
+      "requested_window": {},
+      "offer_hash": null,
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "date_pending",
+        "proposed_slots": [
+          "05.02.2026 at 10:00",
+          "05.02.2026 at 14:00",
+          "05.02.2026 at 16:00"
+        ],
+        "scheduled_slot": null,
+        "date_iso": null,
+        "time_slot": null,
+        "initiated_at_step": 2,
+        "has_event_conflict": false,
+        "room_id": null,
+        "room_pending_decision": false,
+        "inherited_from_event": false
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "wish_products": [
+        "Arrange a site visit before finalizing"
+      ],
+      "preferences": {
+        "wish_products": [
+          "Arrange a site visit before finalizing"
+        ],
+        "keywords": [
+          "arrange",
+          "site",
+          "visit",
+          "before",
+          "finalizing"
+        ],
+        "default_hint": "Arrange a site visit before finalizing",
+        "room_recommendations": [
+          {
+            "room": "Room A",
+            "score": 0.0,
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange a site visit before finalizing"
             ],
-            "window": {
-              "weekdays_hint": [
-                15,
-                20
-              ]
-            },
-            "event_date": "20.02.2026",
-            "preferences": {
-              "wish_products": [
-                "We need a flipchart",
-                "flipchart"
-              ],
-              "keywords": [
-                "need",
-                "flipchart"
-              ],
-              "default_hint": "We need a flipchart",
-              "room_recommendations": [
-                {
-                  "room": "Room B",
-                  "score": 2.0,
-                  "matched": [
-                    "Flipchart"
-                  ],
-                  "closest": [],
-                  "missing": [],
-                  "matches_detail": [
-                    {
-                      "wish": "We need a flipchart",
-                      "product": "Flipchart",
-                      "score": 0.92
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "Flipchart",
-                      "score": 1.0
-                    }
-                  ],
-                  "alternatives": []
-                },
-                {
-                  "room": "Room A",
-                  "score": 0.0,
-                  "matched": [],
-                  "closest": [],
-                  "missing": [
-                    "We need a flipchart",
-                    "flipchart"
-                  ],
-                  "matches_detail": [],
-                  "alternatives": [
-                    {
-                      "wish": "flipchart",
-                      "product": "TV Display (65\")",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "Ice Cream Cart",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "DJ Service",
-                      "score": 0.571
-                    }
-                  ]
-                },
-                {
-                  "room": "Room C",
-                  "score": 0.0,
-                  "matched": [],
-                  "closest": [],
-                  "missing": [
-                    "We need a flipchart",
-                    "flipchart"
-                  ],
-                  "matches_detail": [],
-                  "alternatives": [
-                    {
-                      "wish": "flipchart",
-                      "product": "TV Display (65\")",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "Ice Cream Cart",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "BBQ Package",
-                      "score": 0.571
-                    }
-                  ]
-                },
-                {
-                  "room": "Room D",
-                  "score": 0.0,
-                  "matched": [],
-                  "closest": [],
-                  "missing": [
-                    "We need a flipchart",
-                    "flipchart"
-                  ],
-                  "matches_detail": [],
-                  "alternatives": [
-                    {
-                      "wish": "flipchart",
-                      "product": "TV Display (65\")",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "Ice Cream Cart",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "BBQ Package",
-                      "score": 0.571
-                    }
-                  ]
-                },
-                {
-                  "room": "Room E",
-                  "score": 0.0,
-                  "matched": [],
-                  "closest": [],
-                  "missing": [
-                    "We need a flipchart",
-                    "flipchart"
-                  ],
-                  "matches_detail": [],
-                  "alternatives": [
-                    {
-                      "wish": "flipchart",
-                      "product": "TV Display (65\")",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "Ice Cream Cart",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "BBQ Package",
-                      "score": 0.571
-                    }
-                  ]
-                }
-              ],
-              "room_similarity": {
-                "Room B": 2.0,
-                "Room A": 0.0,
-                "Room C": 0.0,
-                "Room D": 0.0,
-                "Room E": 0.0
-              },
-              "room_match_breakdown": {
-                "Room B": {
-                  "matched": [
-                    "Flipchart"
-                  ],
-                  "closest": [],
-                  "missing": [],
-                  "matches_detail": [
-                    {
-                      "wish": "We need a flipchart",
-                      "product": "Flipchart",
-                      "score": 0.92
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "Flipchart",
-                      "score": 1.0
-                    }
-                  ],
-                  "alternatives": []
-                },
-                "Room A": {
-                  "matched": [],
-                  "closest": [],
-                  "missing": [
-                    "We need a flipchart",
-                    "flipchart"
-                  ],
-                  "matches_detail": [],
-                  "alternatives": [
-                    {
-                      "wish": "flipchart",
-                      "product": "TV Display (65\")",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "Ice Cream Cart",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "DJ Service",
-                      "score": 0.571
-                    }
-                  ]
-                },
-                "Room C": {
-                  "matched": [],
-                  "closest": [],
-                  "missing": [
-                    "We need a flipchart",
-                    "flipchart"
-                  ],
-                  "matches_detail": [],
-                  "alternatives": [
-                    {
-                      "wish": "flipchart",
-                      "product": "TV Display (65\")",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "Ice Cream Cart",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "BBQ Package",
-                      "score": 0.571
-                    }
-                  ]
-                },
-                "Room D": {
-                  "matched": [],
-                  "closest": [],
-                  "missing": [
-                    "We need a flipchart",
-                    "flipchart"
-                  ],
-                  "matches_detail": [],
-                  "alternatives": [
-                    {
-                      "wish": "flipchart",
-                      "product": "TV Display (65\")",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "Ice Cream Cart",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "BBQ Package",
-                      "score": 0.571
-                    }
-                  ]
-                },
-                "Room E": {
-                  "matched": [],
-                  "closest": [],
-                  "missing": [
-                    "We need a flipchart",
-                    "flipchart"
-                  ],
-                  "matches_detail": [],
-                  "alternatives": [
-                    {
-                      "wish": "flipchart",
-                      "product": "TV Display (65\")",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "Ice Cream Cart",
-                      "score": 0.615
-                    },
-                    {
-                      "wish": "flipchart",
-                      "product": "BBQ Package",
-                      "score": 0.571
-                    }
-                  ]
-                }
-              }
-            }
+            "matches_detail": [],
+            "alternatives": []
+          },
+          {
+            "room": "Room B",
+            "score": 0.0,
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange a site visit before finalizing"
+            ],
+            "matches_detail": [],
+            "alternatives": []
+          },
+          {
+            "room": "Room C",
+            "score": 0.0,
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange a site visit before finalizing"
+            ],
+            "matches_detail": [],
+            "alternatives": []
+          },
+          {
+            "room": "Room D",
+            "score": 0.0,
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange a site visit before finalizing"
+            ],
+            "matches_detail": [],
+            "alternatives": []
+          },
+          {
+            "room": "Room E",
+            "score": 0.0,
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange a site visit before finalizing"
+            ],
+            "matches_detail": [],
+            "alternatives": []
+          }
+        ],
+        "room_similarity": {
+          "Room A": 0.0,
+          "Room B": 0.0,
+          "Room C": 0.0,
+          "Room D": 0.0,
+          "Room E": 0.0
+        },
+        "room_match_breakdown": {
+          "Room A": {
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange a site visit before finalizing"
+            ],
+            "matches_detail": [],
+            "alternatives": []
+          },
+          "Room B": {
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange a site visit before finalizing"
+            ],
+            "matches_detail": [],
+            "alternatives": []
+          },
+          "Room C": {
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange a site visit before finalizing"
+            ],
+            "matches_detail": [],
+            "alternatives": []
+          },
+          "Room D": {
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange a site visit before finalizing"
+            ],
+            "matches_detail": [],
+            "alternatives": []
+          },
+          "Room E": {
+            "matched": [],
+            "closest": [],
+            "missing": [
+              "Arrange a site visit before finalizing"
+            ],
+            "matches_detail": [],
+            "alternatives": []
+          }
+        }
+      },
+      "last_client_message": "Client follow-up (2026-01-13 17:11)\nYes, can we arrange a site visit before we finalize?",
+      "pending_hil_requests": [],
+      "hil_history": [
+        {
+          "task_id": "3bffd8ea-d854-4c05-b5e0-4f2f19f4567c",
+          "approved_at": "2026-01-13T17:11:45.853852Z",
+          "notes": null,
+          "step": 2,
+          "decision": "approved"
+        }
+      ]
+    },
+    {
+      "event_id": "fe3b26ed-251a-4c67-8db1-3b0bd9c1993b",
+      "team_id": "team-shami",
+      "created_at": "2026-01-13T17:39:21.031049",
+      "status": "Lead",
+      "current_step": 5,
+      "caller_step": null,
+      "thread_state": "Awaiting Client",
+      "chosen_date": "25.03.2026",
+      "end_date": null,
+      "end_date_iso": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room A",
+      "requirements": {
+        "number_of_participants": 20,
+        "seating_layout": "dinner",
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": "Room A"
+      },
+      "requirements_hash": "1e504b0e6a07a31c7a7f2f5992a384ce15b5bcf43a8a20f4669baabe2785d6eb",
+      "room_eval_hash": "1e504b0e6a07a31c7a7f2f5992a384ce15b5bcf43a8a20f4669baabe2785d6eb",
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-13T17:39:21Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 1,
+          "reason": "info_update",
+          "fields": [
+            "Name"
+          ]
+        },
+        {
+          "ts": "2026-01-13T17:39:21Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 4,
+          "reason": "smart_shortcut_room_verified"
+        },
+        {
+          "ts": "2026-01-13T17:39:29Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_generated"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "13.01.2026",
+        "Status": "Lead",
+        "Event Date": "25.03.2026",
+        "Name": "Maria Fischer",
+        "Email": "maria.fischer.test@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "Not Specified",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Room A",
+        "Number of Participants": "20",
+        "Type of Event": "dinner",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [],
+      "captured": {},
+      "verified": {},
+      "captured_sources": [],
+      "deferred_intents": [],
+      "calendar_event_id": "openevent-fe3b26ed-251a-4c67-8db1-3b0bd9c1993b",
+      "thread_id": "aa538789-f3e8-4a88-beb0-7a00957c39ed",
+      "billing_details": {
+        "name_or_company": "Not specified",
+        "street": null,
+        "postal_code": null,
+        "city": null,
+        "country": "Not Specified",
+        "vat": null,
+        "raw": "Not specified"
+      },
+      "billing_validation": {
+        "missing": [
+          "street",
+          "postal_code",
+          "city"
+        ]
+      },
+      "current_step_stage": "step_4",
+      "caller_step_stage": null,
+      "subflow_group": "offer_review",
+      "requested_window": {
+        "date_iso": "25.03.2026",
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "offer_hash": null,
+      "offers": [
+        {
+          "offer_id": "fe3b26ed-251a-4c67-8db1-3b0bd9c1993b-OFFER-1",
+          "version": 1,
+          "status": "Draft",
+          "created_at": "2026-01-13T17:39:28+00:00",
+          "total_amount": 500.0,
+          "pricing_inputs": {
+            "base_rate": 500.0,
+            "line_items": []
           }
         }
       ],
-      "event_ids": []
+      "current_offer_id": "fe3b26ed-251a-4c67-8db1-3b0bd9c1993b-OFFER-1",
+      "offer_sequence": 1,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "room_status": "Available",
+      "room_pending_decision": {
+        "selected_room": "Room A",
+        "selected_status": "Available",
+        "missing_products": []
+      },
+      "last_client_message": "Hello,\nHello,\n\nMy name is Maria Fischer and I'm planning a private dinner for 20 guests on 25 March 2026.\n\nWe would like Room A if available.\n\nLooking forward to your response.\n\nMaria\nmaria.fischer.test@example.com",
+      "candidate_dates": [
+        "25.03.2026"
+      ],
+      "last_general_qna": {
+        "topic": "non_event_info",
+        "date_pattern": null,
+        "timestamp": "2026-01-13T17:39:28.058929Z"
+      },
+      "pricing_inputs": {
+        "base_rate": 500.0,
+        "line_items": []
+      },
+      "offer_status": "Draft",
+      "pending_hil_requests": [
+        {
+          "task_id": "c883d713-4e50-4b39-900c-d902f3af0512",
+          "signature": "731e15cb5fdc4292eeed65ec4cb0e361947e38e57eb5f1107a20d3c0b681f105",
+          "step": 4,
+          "draft": {
+            "step": 4,
+            "next_step": "Await feedback",
+            "thread_state": "Awaiting Client",
+            "topic": "offer_draft",
+            "offer_id": "fe3b26ed-251a-4c67-8db1-3b0bd9c1993b-OFFER-1",
+            "offer_version": 1,
+            "total_amount": 500.0,
+            "requires_approval": true,
+            "table_blocks": [
+              {
+                "type": "table",
+                "header": [
+                  "Field",
+                  "Value"
+                ],
+                "rows": [
+                  [
+                    "Event Date",
+                    "25.03.2026"
+                  ],
+                  [
+                    "Room",
+                    "Room A"
+                  ],
+                  [
+                    "Billing address",
+                    "Not Specified"
+                  ],
+                  [
+                    "Total",
+                    "CHF 500.00"
+                  ]
+                ]
+              }
+            ],
+            "actions": [
+              {
+                "type": "send_offer",
+                "label": "Send to client",
+                "offer_id": "fe3b26ed-251a-4c67-8db1-3b0bd9c1993b-OFFER-1"
+              }
+            ],
+            "headers": [
+              "Offer"
+            ],
+            "body_markdown": "Here is your offer for Room A, accommodating 20 participants. \n\nLet me know if you have any questions or need further details!\n\nOffer draft for 25.03.2026 · Room A\n\nClient: Maria Fischer · maria.fischer.test@example.com\n\nBilling address: Not Specified\n\n**Room booking**\n- Room A · CHF 500.00\n\nNo optional products selected yet.\n\n---\n**Total: CHF 500.00**\n---\n\n\n<a href=\"http://localhost:3000/info/qna?snapshot_id=snap_20260113_173928_fa8bffe1\" target=\"_blank\" rel=\"noopener noreferrer\">View Catering information</a>\n\nMenu options you can add:\n- Seasonal Garden Trio · CHF 92.00 per event\n  <a href=\"http://localhost:3000/info/catering/seasonal-garden-trio?snapshot_id=snap_20260113_173928_8473c8bd\" target=\"_blank\" rel=\"noopener noreferrer\">View Seasonal Garden Trio details</a>\n- Alpine Roots Degustation · CHF 105.00 per event\n  <a href=\"http://localhost:3000/info/catering/alpine-roots-degustation?snapshot_id=snap_20260113_173928_8e85db99\" target=\"_blank\" rel=\"noopener noreferrer\">View Alpine Roots Degustation details</a>\n- Lakeview Signature Journey · CHF 118.00 per event\n  <a href=\"http://localhost:3000/info/catering/lakeview-signature-journey?snapshot_id=snap_20260113_173928_0b70c111\" target=\"_blank\" rel=\"noopener noreferrer\">View Lakeview Signature Journey details</a>\n\nPlease review and approve to confirm.",
+            "footer": "Step: 4 Offer · Next: Await feedback · State: Awaiting Client",
+            "subloop": "general_q_a",
+            "body": "Here is your offer for Room A, accommodating 20 participants. \n\nLet me know if you have any questions or need further details!\n\nOffer draft for 25.03.2026 · Room A\n\nClient: Maria Fischer · maria.fischer.test@example.com\n\nBilling address: Not Specified\n\n**Room booking**\n- Room A · CHF 500.00\n\nNo optional products selected yet.\n\n---\n**Total: CHF 500.00**\n---\n\n\n<a href=\"http://localhost:3000/info/qna?snapshot_id=snap_20260113_173928_fa8bffe1\" target=\"_blank\" rel=\"noopener noreferrer\">View Catering information</a>\n\nMenu options you can add:\n- Seasonal Garden Trio · CHF 92.00 per event\n  <a href=\"http://localhost:3000/info/catering/seasonal-garden-trio?snapshot_id=snap_20260113_173928_8473c8bd\" target=\"_blank\" rel=\"noopener noreferrer\">View Seasonal Garden Trio details</a>\n- Alpine Roots Degustation · CHF 105.00 per event\n  <a href=\"http://localhost:3000/info/catering/alpine-roots-degustation?snapshot_id=snap_20260113_173928_8e85db99\" target=\"_blank\" rel=\"noopener noreferrer\">View Alpine Roots Degustation details</a>\n- Lakeview Signature Journey · CHF 118.00 per event\n  <a href=\"http://localhost:3000/info/catering/lakeview-signature-journey?snapshot_id=snap_20260113_173928_0b70c111\" target=\"_blank\" rel=\"noopener noreferrer\">View Lakeview Signature Journey details</a>\n\nPlease review and approve to confirm.\n\n---\nStep: 4 Offer · Next: Await feedback · State: Awaiting Client",
+            "created_at_step": 4
+          },
+          "thread_id": "aa538789-f3e8-4a88-beb0-7a00957c39ed",
+          "type": "offer_message",
+          "client_id": "maria.fischer.test@example.com",
+          "event_id": "fe3b26ed-251a-4c67-8db1-3b0bd9c1993b",
+          "payload": {
+            "step_id": 4,
+            "intent": "event_request",
+            "event_id": "fe3b26ed-251a-4c67-8db1-3b0bd9c1993b",
+            "draft_msg": "Here is your offer for Room A, accommodating 20 participants. \n\nLet me know if you have any questions or need further details!\n\nOffer draft for 25.03.2026 · Room A\n\nClient: Maria Fischer · maria.fischer.test@example.com\n\nBilling address: Not Specified\n\n**Room booking**\n- Room A · CHF 500.00\n\nNo optional products selected yet.\n\n---\n**Total: CHF 500.00**\n---\n\n\n<a href=\"http://localhost:3000/info/qna?snapshot_id=snap_20260113_173928_fa8bffe1\" target=\"_blank\" rel=\"noopener noreferrer\">View Catering information</a>\n\nMenu options you can add:\n- Seasonal Garden Trio · CHF 92.00 per event\n  <a href=\"http://localhost:3000/info/catering/seasonal-garden-trio?snapshot_id=snap_20260113_173928_8473c8bd\" target=\"_blank\" rel=\"noopener noreferrer\">View Seasonal Garden Trio details</a>\n- Alpine Roots Degustation · CHF 105.00 per event\n  <a href=\"http://localhost:3000/info/catering/alpine-roots-degustation?snapshot_id=snap_20260113_173928_8e85db99\" target=\"_blank\" rel=\"noopener noreferrer\">View Alpine Roots Degustation details</a>\n- Lakeview Signature Journey · CHF 118.00 per event\n  <a href=\"http://localhost:3000/info/catering/lakeview-signature-journey?snapshot_id=snap_20260113_173928_0b70c111\" target=\"_blank\" rel=\"noopener noreferrer\">View Lakeview Signature Journey details</a>\n\nPlease review and approve to confirm.\n\n---\nStep: 4 Offer · Next: Await feedback · State: Awaiting Client",
+            "language": null,
+            "caller_step": null,
+            "requirements_hash": "1e504b0e6a07a31c7a7f2f5992a384ce15b5bcf43a8a20f4669baabe2785d6eb",
+            "room_eval_hash": "1e504b0e6a07a31c7a7f2f5992a384ce15b5bcf43a8a20f4669baabe2785d6eb",
+            "thread_id": "aa538789-f3e8-4a88-beb0-7a00957c39ed"
+          }
+        }
+      ]
     },
+    {
+      "event_id": "e0824b56-f095-478f-a81c-d01085503775",
+      "team_id": "team-shami",
+      "created_at": "2026-01-13T17:47:53.208051",
+      "status": "Lead",
+      "current_step": 5,
+      "caller_step": null,
+      "thread_state": "Waiting on HIL",
+      "chosen_date": "20.04.2026",
+      "end_date": null,
+      "end_date_iso": null,
+      "date_confirmed": false,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": 25,
+        "seating_layout": null,
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": "Room B"
+      },
+      "requirements_hash": "5032155f95b929312e04125dd814dae386c65eb45d9dfc5614ddd29ae9987f77",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-13T17:47:53Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 1,
+          "reason": "info_update",
+          "fields": [
+            "Name"
+          ]
+        },
+        {
+          "ts": "2026-01-13T17:47:54Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 4,
+          "reason": "smart_shortcut_room_verified"
+        },
+        {
+          "ts": "2026-01-13T17:47:57Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_generated"
+        },
+        {
+          "ts": "2026-01-13T17:48:15Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_accept_blocked_missing_billing"
+        },
+        {
+          "ts": "2026-01-13T17:48:23Z",
+          "actor": "system",
+          "from_step": 5,
+          "to_step": 5,
+          "reason": "info_update",
+          "fields": [
+            "Name",
+            "Billing Address"
+          ]
+        },
+        {
+          "ts": "2026-01-13T17:49:28Z",
+          "actor": "system",
+          "from_step": 5,
+          "to_step": 5,
+          "reason": "info_update",
+          "fields": [
+            "Name"
+          ]
+        },
+        {
+          "ts": "2026-01-13T17:49:29Z",
+          "actor": "system",
+          "from_step": 5,
+          "to_step": 4,
+          "reason": "room_choice_captured"
+        },
+        {
+          "ts": "2026-01-13T18:04:27Z",
+          "actor": "system",
+          "from_step": 7,
+          "to_step": 2,
+          "reason": "date_updated"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "13.01.2026",
+        "Status": "Lead",
+        "Event Date": "20.04.2026",
+        "Name": "Maria",
+        "Email": "maria.test@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "Hello, I want to book Room A for March 25, 8001 Zurich, Mariatestexamplecom",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Room B",
+        "Number of Participants": "25",
+        "Type of Event": "Not specified",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "cb55ae04-b291-43c7-a29b-d7e445d97033",
+        "2bba6486-e1eb-480c-8f73-b87f30cd8719",
+        "f6e577ad-b379-4839-a850-fa8fcce749de"
+      ],
+      "captured": {
+        "date": "2026-04-20",
+        "event_date": "20.04.2026",
+        "preferred_room": "Room B",
+        "contact": {
+          "email": "maria.test@example.com"
+        }
+      },
+      "verified": {},
+      "captured_sources": [
+        "f6e577ad-b379-4839-a850-fa8fcce749de:date",
+        "f6e577ad-b379-4839-a850-fa8fcce749de:event_date",
+        "f6e577ad-b379-4839-a850-fa8fcce749de:preferred_room",
+        "f6e577ad-b379-4839-a850-fa8fcce749de:contact.email"
+      ],
+      "deferred_intents": [
+        "room_selection",
+        "contact_update"
+      ],
+      "calendar_event_id": "openevent-e0824b56-f095-478f-a81c-d01085503775",
+      "thread_id": "63f4e40e-fe77-4066-8252-d770cddf6a2d",
+      "billing_details": {
+        "name_or_company": "Hello",
+        "street": "I want to book Room A for March 25",
+        "postal_code": "8001",
+        "city": "Zurich",
+        "country": "Mariatestexamplecom",
+        "vat": null,
+        "raw": "Hello, I want to book Room A for March 25, 2026 for 20 people.\n\nBest, Maria\nmaria.test@example.com"
+      },
+      "billing_validation": {},
+      "current_step_stage": "step_2",
+      "caller_step_stage": null,
+      "subflow_group": "date_confirmation",
+      "requested_window": {
+        "date_iso": "25.03.2026",
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "offer_hash": null,
+      "offers": [
+        {
+          "offer_id": "e0824b56-f095-478f-a81c-d01085503775-OFFER-1",
+          "version": 1,
+          "status": "Draft",
+          "created_at": "2026-01-13T17:47:56+00:00",
+          "total_amount": 500.0,
+          "pricing_inputs": {
+            "base_rate": 500.0,
+            "line_items": []
+          }
+        }
+      ],
+      "current_offer_id": "e0824b56-f095-478f-a81c-d01085503775-OFFER-1",
+      "offer_sequence": 1,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": "question"
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "room_status": "Available",
+      "room_pending_decision": {
+        "selected_room": "Room A",
+        "selected_status": "Available",
+        "missing_products": []
+      },
+      "last_client_message": "Hello, I want to book Room B for April 20, 2026 for 25 people. My email is maria\nHello, I want to book Room B for April 20, 2026 for 25 people. My email is maria.test@example.com",
+      "pricing_inputs": {
+        "base_rate": 500.0,
+        "line_items": []
+      },
+      "offer_status": "Draft",
+      "pending_hil_requests": [],
+      "hil_history": [
+        {
+          "task_id": "96e054c7-3ebd-4a53-a884-3e17c1e69346",
+          "approved_at": "2026-01-13T17:48:05.107172Z",
+          "notes": null,
+          "step": 4,
+          "decision": "approved"
+        }
+      ],
+      "offer_accepted": true,
+      "billing_requirements": {
+        "awaiting_billing_for_accept": false,
+        "last_missing": []
+      },
+      "vague_month": "april",
+      "weekdays_hint": [
+        25
+      ],
+      "window_scope": {
+        "month": "April",
+        "weekdays_hint": [
+          25
+        ]
+      },
+      "date_proposal_attempts": 0,
+      "date_proposal_history": [],
+      "pending_time_request": {
+        "display_date": "20.04.2026",
+        "iso_date": "2026-04-20",
+        "start_time": null,
+        "end_time": null,
+        "source_message_id": "f6e577ad-b379-4839-a850-fa8fcce749de",
+        "created_at": "2026-01-13T18:04:29Z",
+        "_request_count": 1
+      },
+      "gatekeeper_explain": {
+        "ready": false,
+        "missing_now": [
+          "date_confirmed",
+          "locked_room_id",
+          "offer_status"
+        ],
+        "reason": "date_confirmed"
+      }
+    },
+    {
+      "event_id": "898437b3-8453-44f7-9451-927fe2f5a48e",
+      "team_id": "team-shami",
+      "created_at": "2026-01-13T18:04:47.140196",
+      "status": "Lead",
+      "current_step": 2,
+      "caller_step": null,
+      "thread_state": "Awaiting Client Response",
+      "chosen_date": null,
+      "end_date": null,
+      "end_date_iso": null,
+      "date_confirmed": false,
+      "locked_room_id": null,
+      "requirements": {
+        "number_of_participants": null,
+        "seating_layout": null,
+        "event_duration": {
+          "start": "14:00",
+          "end": "18:00"
+        },
+        "special_requirements": null,
+        "preferred_room": null
+      },
+      "requirements_hash": "235eca9cc1a07d0df68c2de0190fe5ebe88dead82655381c240e7102f68b5744",
+      "room_eval_hash": null,
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-13T18:04:47Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 2,
+          "reason": "date_missing"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "13.01.2026",
+        "Status": "Lead",
+        "Event Date": "Not specified",
+        "Name": "Maria",
+        "Email": "maria.test@example.com",
+        "Phone": "Not specified",
+        "Company": "Not specified",
+        "Billing Address": "Not specified",
+        "Start Time": "14:00",
+        "End Time": "18:00",
+        "Preferred Room": "Not specified",
+        "Number of Participants": "Not specified",
+        "Type of Event": "Not specified",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "4383281f-0aa9-4d29-8ee9-19baa3370a13"
+      ],
+      "captured": {
+        "start_time": "14:00",
+        "end_time": "18:00"
+      },
+      "verified": {},
+      "captured_sources": [
+        "4383281f-0aa9-4d29-8ee9-19baa3370a13:start_time",
+        "4383281f-0aa9-4d29-8ee9-19baa3370a13:end_time"
+      ],
+      "deferred_intents": [],
+      "calendar_event_id": "openevent-898437b3-8453-44f7-9451-927fe2f5a48e",
+      "thread_id": "573fa2ab-74fe-426b-88a8-19a21a24e2f9",
+      "current_step_stage": "step_2",
+      "caller_step_stage": null,
+      "subflow_group": "date_confirmation",
+      "requested_window": {},
+      "offer_hash": null,
+      "offers": [],
+      "current_offer_id": null,
+      "offer_sequence": 0,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "last_client_message": "Client follow-up (2026-01-13 18:04)\n14:00-18:00 works for me",
+      "date_proposal_attempts": 1,
+      "candidate_dates": [
+        "2026-01-13"
+      ],
+      "date_proposal_history": [
+        "2026-01-13"
+      ],
+      "gatekeeper_explain": {
+        "ready": false,
+        "missing_now": [
+          "date_confirmed",
+          "locked_room_id",
+          "offer_status"
+        ],
+        "reason": "date_confirmed"
+      },
+      "pending_hil_requests": []
+    },
+    {
+      "event_id": "d264273c-938b-4963-8919-f3e786d703b9",
+      "team_id": "team-shami",
+      "created_at": "2026-01-13T18:22:28.565254",
+      "status": "Lead",
+      "current_step": 7,
+      "caller_step": null,
+      "thread_state": "Waiting on HIL",
+      "chosen_date": "25.03.2026",
+      "end_date": null,
+      "end_date_iso": null,
+      "date_confirmed": true,
+      "locked_room_id": "Room B",
+      "requirements": {
+        "number_of_participants": 20,
+        "seating_layout": null,
+        "event_duration": {},
+        "special_requirements": null,
+        "preferred_room": "Room B"
+      },
+      "requirements_hash": "c88a7a95aa332b6f4add79ce84182f7858cd4db0c51f25cf94a81a3a41d3be98",
+      "room_eval_hash": "c88a7a95aa332b6f4add79ce84182f7858cd4db0c51f25cf94a81a3a41d3be98",
+      "offer_id": null,
+      "audit": [
+        {
+          "ts": "2026-01-13T18:22:28Z",
+          "actor": "system",
+          "from_step": 1,
+          "to_step": 4,
+          "reason": "smart_shortcut_room_verified"
+        },
+        {
+          "ts": "2026-01-13T18:22:33Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_generated"
+        },
+        {
+          "ts": "2026-01-13T18:23:52Z",
+          "actor": "system",
+          "from_step": 5,
+          "to_step": 5,
+          "reason": "info_update",
+          "fields": [
+            "Billing Address"
+          ]
+        },
+        {
+          "ts": "2026-01-13T18:23:55Z",
+          "actor": "system",
+          "from_step": 4,
+          "to_step": 4,
+          "reason": "offer_accept_blocked_deposit_unpaid"
+        }
+      ],
+      "review_state": {
+        "state": "none",
+        "reviewed_at": null,
+        "message": null
+      },
+      "event_data": {
+        "Date Email Received": "13.01.2026",
+        "Status": "Lead",
+        "Event Date": "25.03.2026",
+        "Name": "Client (GUI)",
+        "Email": "e2e-no-year@example.com",
+        "Phone": "Not specified",
+        "Company": "NoYear AG",
+        "Billing Address": "NoYear AG, Testweg 10, 8000 Zurich, Switzerland",
+        "Start Time": "Not specified",
+        "End Time": "Not specified",
+        "Preferred Room": "Room B",
+        "Number of Participants": "20",
+        "Type of Event": "Not specified",
+        "Catering Preference": "Not specified",
+        "Billing Amount": "none",
+        "Deposit": "none",
+        "Language": "Not specified",
+        "Additional Info": "Not specified"
+      },
+      "msgs": [
+        "81957ba3-2423-4f37-8109-26c63d8f4822",
+        "3a7e570d-9aad-46c8-a104-e583c8f444bb"
+      ],
+      "captured": {},
+      "verified": {},
+      "captured_sources": [],
+      "deferred_intents": [],
+      "calendar_event_id": "openevent-d264273c-938b-4963-8919-f3e786d703b9",
+      "thread_id": "541dde18-8280-4b64-af15-e3904e9710f8",
+      "current_step_stage": "step_7",
+      "caller_step_stage": null,
+      "subflow_group": "confirmation",
+      "requested_window": {
+        "date_iso": "25.03.2026",
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "offer_hash": null,
+      "offers": [
+        {
+          "offer_id": "d264273c-938b-4963-8919-f3e786d703b9-OFFER-1",
+          "version": 1,
+          "status": "Draft",
+          "created_at": "2026-01-13T18:22:30+00:00",
+          "total_amount": 750.0,
+          "pricing_inputs": {
+            "base_rate": 750.0,
+            "line_items": []
+          }
+        }
+      ],
+      "current_offer_id": "d264273c-938b-4963-8919-f3e786d703b9-OFFER-1",
+      "offer_sequence": 1,
+      "products": [],
+      "selected_products": [],
+      "requested_products": [],
+      "selected_catering": [],
+      "negotiation_state": {
+        "counter_count": 0,
+        "manual_review_task_id": null
+      },
+      "transition_ready": false,
+      "calendar_blocks": [],
+      "deposit_state": {
+        "required": false,
+        "percent": 0,
+        "status": "not_required",
+        "due_amount": 0.0
+      },
+      "site_visit_state": {
+        "status": "idle",
+        "proposed_slots": [],
+        "scheduled_slot": null
+      },
+      "confirmation_state": {
+        "last_response_type": null,
+        "pending": {
+          "kind": "final_confirmation"
+        }
+      },
+      "products_state": {
+        "available_items": [],
+        "manager_added_items": [],
+        "line_items": [],
+        "pending_hil_requests": [],
+        "budgets": {},
+        "presented_interest": {},
+        "preask_pending": {}
+      },
+      "pending_intents": [],
+      "edit_trace": [],
+      "choice_context": null,
+      "gatekeeper_passed": {
+        "step2": false,
+        "step3": false,
+        "step4": false,
+        "step7": false
+      },
+      "decision": "pending",
+      "room_status": "Available",
+      "room_pending_decision": {
+        "selected_room": "Room B",
+        "selected_status": "Available",
+        "missing_products": []
+      },
+      "last_client_message": "Deposit paid for event d264273c-938b-4963-8919-f3e786d703b9\nI have paid the deposit.",
+      "billing_details": {
+        "name_or_company": "NoYear AG",
+        "street": "Testweg 10",
+        "postal_code": "8000",
+        "city": "Zurich",
+        "country": "Switzerland",
+        "vat": null,
+        "raw": "NoYear AG, Testweg 10, 8000 Zurich, Switzerland"
+      },
+      "billing_validation": {},
+      "pricing_inputs": {
+        "base_rate": 750.0,
+        "line_items": []
+      },
+      "offer_status": "Draft",
+      "deposit_info": {
+        "deposit_required": true,
+        "deposit_amount": 225.0,
+        "deposit_vat_included": 16.86,
+        "deposit_type": "percentage",
+        "deposit_percentage": 30,
+        "deposit_due_date": "2026-01-23",
+        "deposit_deadline_days": 10,
+        "deposit_paid": true,
+        "deposit_paid_at": "2026-01-13T18:24:01.417680Z"
+      },
+      "pending_hil_requests": [],
+      "hil_history": [
+        {
+          "task_id": "63cb3f37-ffcd-4e02-87a8-2f3dd4168fc0",
+          "approved_at": "2026-01-13T18:22:41.665462Z",
+          "notes": null,
+          "step": 4,
+          "decision": "approved"
+        },
+        {
+          "task_id": "784c0b82-8282-4d1d-8d57-0aa4ea8a3ad0",
+          "approved_at": "2026-01-13T18:24:23.887687Z",
+          "notes": null,
+          "step": 7,
+          "decision": "approved"
+        }
+      ],
+      "offer_accepted": true
+    }
+  ],
+  "clients": {
     "e2e-source-test@example.com": {
       "profile": {
         "name": "Not specified",
@@ -8291,6 +9129,821 @@
         }
       ],
       "event_ids": []
+    },
+    "e2e-deposit-test@example.com": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "cd560414-c219-4082-a673-2a6f5d3c4266",
+          "ts": "2026-01-13T16:57:05.058186Z",
+          "subject": "From: e2e-deposit-test@example.com",
+          "body_preview": "From: e2e-deposit-test@example.com\nSubject: Event booking\n\nWe would like to book Room A for a corporate dinner on March 20 for 25 guests.\n\nBest regards,\nPeter",
+          "intent": "event_request",
+          "confidence": 0.95,
+          "user_info": {
+            "date": "2026-03-20",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 25,
+            "room": "Room A",
+            "layout": null,
+            "name": "Peter",
+            "email": "e2e-deposit-test@example.com",
+            "type": "dinner",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              25
+            ],
+            "window": {
+              "month": "March",
+              "weekdays_hint": [
+                25
+              ]
+            },
+            "event_date": "20.03.2026",
+            "vague_month": "march",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [],
+              "keywords": [
+                "dinner"
+              ],
+              "default_hint": "Products available"
+            }
+          }
+        },
+        {
+          "msg_id": "70d5b9fe-45a8-4acd-ba9f-310a8a3616d5",
+          "ts": "2026-01-13T16:57:37.175959Z",
+          "subject": "Client follow-up (2026-01-13 16:57)",
+          "body_preview": "We accept the offer. Billing: ABC Company, Street 123, 8000 Zurich",
+          "intent": "event_request",
+          "confidence": 0.99,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": "ABC Company",
+            "language": null,
+            "notes": null,
+            "billing_address": "Street 123, 8000 Zurich",
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null
+          }
+        }
+      ],
+      "event_ids": []
+    },
+    "e2e-full-flow@example.com": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "07c74433-4f89-4287-a922-efdcd3a8b454",
+          "ts": "2026-01-13T17:09:55.203613Z",
+          "subject": "From: e2e-full-flow@example.com",
+          "body_preview": "From: e2e-full-flow@example.com\nSubject: Event booking request\n\nHello,\n\nWe would like to book Room A for a corporate dinner on 25 March for 30 guests.\n\nBest reg",
+          "intent": "event_request",
+          "confidence": 0.95,
+          "user_info": {
+            "date": "2026-03-25",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 30,
+            "room": "Room A",
+            "layout": null,
+            "name": "Maria Santos",
+            "email": "e2e-full-flow@example.com",
+            "type": "dinner",
+            "catering": null,
+            "phone": null,
+            "company": "ABC Corporation",
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              25,
+              30
+            ],
+            "window": {
+              "month": "March",
+              "weekdays_hint": [
+                25,
+                30
+              ]
+            },
+            "event_date": "25.03.2026",
+            "vague_month": "march",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [],
+              "keywords": [
+                "dinner"
+              ],
+              "default_hint": "Products available"
+            }
+          }
+        },
+        {
+          "msg_id": "2c82a669-2252-44e3-961f-068350be784c",
+          "ts": "2026-01-13T17:10:18.149902Z",
+          "subject": "Client follow-up (2026-01-13 17:10)",
+          "body_preview": "We accept the offer. Our billing address is: ABC Corporation, Bahnhofstrasse 50, 8001 Zurich, Switzerland",
+          "intent": "event_request",
+          "confidence": 0.99,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": "ABC Corporation",
+            "language": null,
+            "notes": null,
+            "billing_address": "ABC Corporation, Bahnhofstrasse 50, 8001 Zurich, Switzerland",
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "e516f195-1183-4bf1-907e-f2b0d27efeb7",
+          "ts": "2026-01-13T17:11:21.949645Z",
+          "subject": "Client follow-up (2026-01-13 17:11)",
+          "body_preview": "Yes, can we arrange a site visit before we finalize?",
+          "intent": "confirm_date_partial",
+          "confidence": 0.93,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": "Arrange a site visit before finalizing",
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null,
+            "preferences": {
+              "wish_products": [
+                "Arrange a site visit before finalizing"
+              ],
+              "keywords": [
+                "arrange",
+                "site",
+                "visit",
+                "before",
+                "finalizing"
+              ],
+              "default_hint": "Arrange a site visit before finalizing",
+              "room_recommendations": [
+                {
+                  "room": "Room A",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange a site visit before finalizing"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": []
+                },
+                {
+                  "room": "Room B",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange a site visit before finalizing"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": []
+                },
+                {
+                  "room": "Room C",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange a site visit before finalizing"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": []
+                },
+                {
+                  "room": "Room D",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange a site visit before finalizing"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": []
+                },
+                {
+                  "room": "Room E",
+                  "score": 0.0,
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange a site visit before finalizing"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": []
+                }
+              ],
+              "room_similarity": {
+                "Room A": 0.0,
+                "Room B": 0.0,
+                "Room C": 0.0,
+                "Room D": 0.0,
+                "Room E": 0.0
+              },
+              "room_match_breakdown": {
+                "Room A": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange a site visit before finalizing"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": []
+                },
+                "Room B": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange a site visit before finalizing"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": []
+                },
+                "Room C": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange a site visit before finalizing"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": []
+                },
+                "Room D": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange a site visit before finalizing"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": []
+                },
+                "Room E": {
+                  "matched": [],
+                  "closest": [],
+                  "missing": [
+                    "Arrange a site visit before finalizing"
+                  ],
+                  "matches_detail": [],
+                  "alternatives": []
+                }
+              }
+            }
+          }
+        }
+      ],
+      "event_ids": []
+    },
+    "maria.fischer.test@example.com": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "f421cc0c-c1ad-47f7-871d-208014666be9",
+          "ts": "2026-01-13T17:39:17.078085Z",
+          "subject": "Hello,",
+          "body_preview": "Hello,\n\nMy name is Maria Fischer and I'm planning a private dinner for 20 guests on 25 March 2026.\n\nWe would like Room A if available.\n\nLooking forward to your ",
+          "intent": "event_request",
+          "confidence": 0.95,
+          "user_info": {
+            "date": "2026-03-25",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 20,
+            "room": "Room A",
+            "layout": null,
+            "name": "Maria Fischer",
+            "email": "maria.fischer.test@example.com",
+            "type": "dinner",
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              20,
+              25
+            ],
+            "window": {
+              "month": "March",
+              "weekdays_hint": [
+                20,
+                25
+              ]
+            },
+            "event_date": "25.03.2026",
+            "vague_month": "march",
+            "vague_time_of_day": "evening",
+            "preferences": {
+              "wish_products": [],
+              "keywords": [
+                "dinner"
+              ],
+              "default_hint": "Products available"
+            }
+          }
+        }
+      ],
+      "event_ids": []
+    },
+    "maria.test@example.com": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "2fe43ad3-0ab7-445a-bcbf-6edd85e58aae",
+          "ts": "2026-01-13T17:47:51.126317Z",
+          "subject": "Hello, I want to book Room A for March 25, 2026 for 20 people.",
+          "body_preview": "Hello, I want to book Room A for March 25, 2026 for 20 people.\n\nBest, Maria\nmaria.test@example.com",
+          "intent": "event_request",
+          "confidence": 0.95,
+          "user_info": {
+            "date": "2026-03-25",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 20,
+            "room": "Room A",
+            "layout": null,
+            "name": "Maria",
+            "email": "maria.test@example.com",
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              20
+            ],
+            "window": {
+              "month": "March",
+              "weekdays_hint": [
+                20
+              ]
+            },
+            "event_date": "25.03.2026",
+            "vague_month": "march"
+          }
+        },
+        {
+          "msg_id": "cb55ae04-b291-43c7-a29b-d7e445d97033",
+          "ts": "2026-01-13T17:48:11.985636Z",
+          "subject": "Client follow-up (2026-01-13 17:48)",
+          "body_preview": "Yes, I accept the offer!",
+          "intent": "event_request",
+          "confidence": 0.99,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "2bba6486-e1eb-480c-8f73-b87f30cd8719",
+          "ts": "2026-01-13T17:48:21.086895Z",
+          "subject": "Client follow-up (2026-01-13 17:48)",
+          "body_preview": "Maria Fischer, Bahnhofstrasse 10, 8001 Zurich, Switzerland",
+          "intent": "other",
+          "confidence": 0.95,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": "Maria Fischer",
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": "Bahnhofstrasse 10, 8001 Zurich, Switzerland",
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "de71e0a4-e1ec-4288-8f27-8723affc27af",
+          "ts": "2026-01-13T17:49:26.730519Z",
+          "subject": "Hello, I want to book Room A for March 25, 2026 for 20 people.",
+          "body_preview": "Hello, I want to book Room A for March 25, 2026 for 20 people.\n\nBest, Maria\nmaria.test@example.com",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2026-03-25",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 20,
+            "room": "Room A",
+            "layout": null,
+            "name": "Maria",
+            "email": "maria.test@example.com",
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              20
+            ],
+            "window": {
+              "month": "March",
+              "weekdays_hint": [
+                20
+              ]
+            },
+            "event_date": "25.03.2026",
+            "vague_month": "march",
+            "_room_choice_detected": true
+          }
+        },
+        {
+          "msg_id": "f6e577ad-b379-4839-a850-fa8fcce749de",
+          "ts": "2026-01-13T18:04:25.536245Z",
+          "subject": "Hello, I want to book Room B for April 20, 2026 for 25 people. My email is maria",
+          "body_preview": "Hello, I want to book Room B for April 20, 2026 for 25 people. My email is maria.test@example.com",
+          "intent": "event_request",
+          "confidence": 1.0,
+          "user_info": {
+            "date": "2026-04-20",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 25,
+            "room": "Room B",
+            "layout": null,
+            "name": null,
+            "email": "maria.test@example.com",
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              25
+            ],
+            "window": {
+              "month": "April",
+              "weekdays_hint": [
+                25
+              ]
+            },
+            "event_date": "20.04.2026",
+            "vague_month": "april",
+            "_room_choice_detected": true
+          }
+        },
+        {
+          "msg_id": "4383281f-0aa9-4d29-8ee9-19baa3370a13",
+          "ts": "2026-01-13T18:04:45.583981Z",
+          "subject": "Client follow-up (2026-01-13 18:04)",
+          "body_preview": "14:00-18:00 works for me",
+          "intent": "event_request",
+          "confidence": 0.99,
+          "user_info": {
+            "date": null,
+            "start_time": "14:00",
+            "end_time": "18:00",
+            "city": null,
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null
+          }
+        }
+      ],
+      "event_ids": []
+    },
+    "e2e-no-year@example.com": {
+      "profile": {
+        "name": "Not specified",
+        "org": null,
+        "phone": null
+      },
+      "history": [
+        {
+          "msg_id": "6bf5d687-06e4-4651-ab8a-5d6970966519",
+          "ts": "2026-01-13T18:22:26.475923Z",
+          "subject": "Hello, I want to book Room B for March 25 for 20 people. My email is e2e-no-year",
+          "body_preview": "Hello, I want to book Room B for March 25 for 20 people. My email is e2e-no-year@example.com",
+          "intent": "event_request",
+          "confidence": 0.95,
+          "user_info": {
+            "date": "2026-03-25",
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": 20,
+            "room": "Room B",
+            "layout": null,
+            "name": null,
+            "email": "e2e-no-year@example.com",
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": [
+              20
+            ],
+            "window": {
+              "month": "March",
+              "weekdays_hint": [
+                20
+              ]
+            },
+            "event_date": "25.03.2026",
+            "vague_month": "march"
+          }
+        },
+        {
+          "msg_id": "81957ba3-2423-4f37-8109-26c63d8f4822",
+          "ts": "2026-01-13T18:23:50.646224Z",
+          "subject": "Client follow-up (2026-01-13 18:23)",
+          "body_preview": "I accept this offer. My billing address is: NoYear AG, Testweg 10, 8000 Zurich, Switzerland",
+          "intent": "event_request",
+          "confidence": 0.99,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": "Zurich",
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": "NoYear AG",
+            "language": null,
+            "notes": null,
+            "billing_address": "NoYear AG, Testweg 10, 8000 Zurich, Switzerland",
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null
+          }
+        },
+        {
+          "msg_id": "3a7e570d-9aad-46c8-a104-e583c8f444bb",
+          "ts": "2026-01-13T18:24:01.425314Z",
+          "subject": "Deposit paid for event d264273c-938b-4963-8919-f3e786d703b9",
+          "body_preview": "I have paid the deposit.",
+          "intent": "event_request",
+          "confidence": 0.95,
+          "user_info": {
+            "date": null,
+            "start_time": null,
+            "end_time": null,
+            "city": null,
+            "participants": null,
+            "room": null,
+            "layout": null,
+            "name": null,
+            "email": null,
+            "type": null,
+            "catering": null,
+            "phone": null,
+            "company": null,
+            "language": null,
+            "notes": null,
+            "billing_address": null,
+            "hil_approve_step": null,
+            "hil_decision": null,
+            "products_add": [],
+            "products_remove": [],
+            "room_type_hint": null,
+            "room_feedback": null,
+            "shortcut_capacity_ok": null,
+            "week_index": null,
+            "weekdays_hint": null,
+            "window": null,
+            "event_date": null
+          }
+        }
+      ],
+      "event_ids": []
     }
   },
   "tasks": [
@@ -8413,7 +10066,237 @@
         "thread_id": "248aef02-c49b-4693-959a-e733cb2c1225"
       },
       "notes": ""
+    },
+    {
+      "task_id": "e28b196e-e6e1-42b2-adf6-bca893a2d72e",
+      "created_at": "2026-01-13T16:57:12.067664",
+      "type": "offer_message",
+      "status": "approved",
+      "client_id": "e2e-deposit-test@example.com",
+      "event_id": "620cfb3c-c253-402d-a343-c70094d92ba4",
+      "payload": {
+        "step_id": 4,
+        "intent": "event_request",
+        "event_id": "620cfb3c-c253-402d-a343-c70094d92ba4",
+        "draft_msg": "Here is your offer for Room A, which is ideal for your gathering of 25 participants. \n\nI’ll provide the details shortly.\n\nOffer draft for 20.03.2026 · Room A\n\nClient: Peter · e2e-deposit-test@example.com\n\nBilling address: Not Specified\n\n**Room booking**\n- Room A · CHF 500.00\n\nNo optional products selected yet.\n\n---\n**Total: CHF 500.00**\n---\n\n\n<a href=\"http://localhost:3000/info/qna?snapshot_id=snap_20260113_165709_2b6223c8\" target=\"_blank\" rel=\"noopener noreferrer\">View Catering information</a>\n\nMenu options you can add:\n- Seasonal Garden Trio · CHF 92.00 per event\n  <a href=\"http://localhost:3000/info/catering/seasonal-garden-trio?snapshot_id=snap_20260113_165709_86078a81\" target=\"_blank\" rel=\"noopener noreferrer\">View Seasonal Garden Trio details</a>\n- Alpine Roots Degustation · CHF 105.00 per event\n  <a href=\"http://localhost:3000/info/catering/alpine-roots-degustation?snapshot_id=snap_20260113_165709_cf99b641\" target=\"_blank\" rel=\"noopener noreferrer\">View Alpine Roots Degustation details</a>\n- Lakeview Signature Journey · CHF 118.00 per event\n  <a href=\"http://localhost:3000/info/catering/lakeview-signature-journey?snapshot_id=snap_20260113_165709_4797263a\" target=\"_blank\" rel=\"noopener noreferrer\">View Lakeview Signature Journey details</a>\n\nPlease review and approve to confirm.\n\n---\nStep: 4 Offer · Next: Await feedback · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "92ca10cb46bee30ac450219f58fdc5fe3ec24e8e07eef8e2a4543151f31c8f9a",
+        "room_eval_hash": "92ca10cb46bee30ac450219f58fdc5fe3ec24e8e07eef8e2a4543151f31c8f9a",
+        "thread_id": "2ab71dde-4486-44a1-8dcb-a754c3779611"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "09f4eddf-07b7-4bc2-8f75-68c368e3927a",
+      "created_at": "2026-01-13T16:57:45.120902",
+      "type": "offer_message",
+      "status": "approved",
+      "client_id": "e2e-deposit-test@example.com",
+      "event_id": "620cfb3c-c253-402d-a343-c70094d92ba4",
+      "payload": {
+        "step_id": 5,
+        "intent": "event_request",
+        "event_id": "620cfb3c-c253-402d-a343-c70094d92ba4",
+        "draft_msg": "Thank you for accepting the offer. We are ready to proceed with the confirmation.\n\nThe details for your booking on **20.03.2026** in Room A are as follows:\n\nClient: Peter from ABC Company  \nEmail: e2e-deposit-test@example.com  \nBilling address: ABC Company, Street 123, 8000 Zurich  \n\nCurrently, no optional products have been selected.\n\nThe total for your booking is **CHF 500.00**.\n\nPlease review and approve so we can finalize the confirmation.\n\n---\nStep: 5 Event Preparation · Next: 5 Event Preparation · State: Waiting on HIL",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "92ca10cb46bee30ac450219f58fdc5fe3ec24e8e07eef8e2a4543151f31c8f9a",
+        "room_eval_hash": "92ca10cb46bee30ac450219f58fdc5fe3ec24e8e07eef8e2a4543151f31c8f9a",
+        "thread_id": "2ab71dde-4486-44a1-8dcb-a754c3779611"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "6be112e4-722a-4706-a877-abfc1b87aeb1",
+      "created_at": "2026-01-13T17:10:01.105075",
+      "type": "offer_message",
+      "status": "approved",
+      "client_id": "e2e-full-flow@example.com",
+      "event_id": "1315c32e-5237-414c-af03-d91fff4dca3c",
+      "payload": {
+        "step_id": 4,
+        "intent": "event_request",
+        "event_id": "1315c32e-5237-414c-af03-d91fff4dca3c",
+        "draft_msg": "Here is your offer for Room A, which is ideal for your gathering of 30 participants.\n\nOffer draft for 25.03.2026 · Room A\n\nClient: Maria Santos · ABC Corporation · e2e-full-flow@example.com\n\nBilling address: Not Specified\n\n**Room booking**\n- Room A · CHF 500.00\n\nNo optional products selected yet.\n\n---\n**Total: CHF 500.00**\n---\n\n\n<a href=\"http://localhost:3000/info/qna?snapshot_id=snap_20260113_170959_cd6fe38f\" target=\"_blank\" rel=\"noopener noreferrer\">View Catering information</a>\n\nMenu options you can add:\n- Seasonal Garden Trio · CHF 92.00 per event\n  <a href=\"http://localhost:3000/info/catering/seasonal-garden-trio?snapshot_id=snap_20260113_170959_e441807e\" target=\"_blank\" rel=\"noopener noreferrer\">View Seasonal Garden Trio details</a>\n- Alpine Roots Degustation · CHF 105.00 per event\n  <a href=\"http://localhost:3000/info/catering/alpine-roots-degustation?snapshot_id=snap_20260113_170959_87f0b5a9\" target=\"_blank\" rel=\"noopener noreferrer\">View Alpine Roots Degustation details</a>\n- Lakeview Signature Journey · CHF 118.00 per event\n  <a href=\"http://localhost:3000/info/catering/lakeview-signature-journey?snapshot_id=snap_20260113_170959_d970b65c\" target=\"_blank\" rel=\"noopener noreferrer\">View Lakeview Signature Journey details</a>\n\nPlease review and approve to confirm.\n\n---\nStep: 4 Offer · Next: Await feedback · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "884f09d950511db09524a091086ef223cd2c1939fe91fd2561f4f37901ea4a76",
+        "room_eval_hash": "884f09d950511db09524a091086ef223cd2c1939fe91fd2561f4f37901ea4a76",
+        "thread_id": "6976a455-721b-40bf-adc1-0a08face6f5a"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "cfb9991a-70cd-47f1-90c9-1ae475477456",
+      "created_at": "2026-01-13T17:10:25.362880",
+      "type": "offer_message",
+      "status": "approved",
+      "client_id": "e2e-full-flow@example.com",
+      "event_id": "1315c32e-5237-414c-af03-d91fff4dca3c",
+      "payload": {
+        "step_id": 5,
+        "intent": "event_request",
+        "event_id": "1315c32e-5237-414c-af03-d91fff4dca3c",
+        "draft_msg": "Thank you for accepting the offer, Maria. \n\nWe are ready to proceed with the confirmation for **25.03.2026** in Room A at a total of **CHF 500.00**. \n\nPlease review the details and approve so we can finalize everything. If you have any questions or need adjustments, feel free to reach out.\n\n---\nStep: 5 Event Preparation · Next: 5 Event Preparation · State: Waiting on HIL",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "884f09d950511db09524a091086ef223cd2c1939fe91fd2561f4f37901ea4a76",
+        "room_eval_hash": "884f09d950511db09524a091086ef223cd2c1939fe91fd2561f4f37901ea4a76",
+        "thread_id": "6976a455-721b-40bf-adc1-0a08face6f5a"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "3bffd8ea-d854-4c05-b5e0-4f2f19f4567c",
+      "created_at": "2026-01-13T17:11:30.261703",
+      "type": "date_confirmation_message",
+      "status": "approved",
+      "client_id": "e2e-full-flow@example.com",
+      "event_id": "5ed3eb16-e53b-4c81-aed4-b6ec053dff41",
+      "payload": {
+        "step_id": 2,
+        "intent": "confirm_date_partial",
+        "event_id": "5ed3eb16-e53b-4c81-aed4-b6ec053dff41",
+        "draft_msg": "I can arrange a site visit for you. Here are some available times to see our venue on **05.02.2026**:\n\n- **10:00**\n- **14:00**\n- **16:00**\n\nWhich time works best for you? If you have other preferences, feel free to share.\n\n---\nStep: 2 Date Confirmation · Next: Pick a visit slot · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "6b2b2f7e1240b08664de8ad14528768aae3427aa1f1071df99be591c3ff03c4d",
+        "room_eval_hash": null,
+        "thread_id": "6976a455-721b-40bf-adc1-0a08face6f5a"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "c883d713-4e50-4b39-900c-d902f3af0512",
+      "created_at": "2026-01-13T17:39:29.345196",
+      "type": "offer_message",
+      "status": "pending",
+      "client_id": "maria.fischer.test@example.com",
+      "event_id": "fe3b26ed-251a-4c67-8db1-3b0bd9c1993b",
+      "payload": {
+        "step_id": 4,
+        "intent": "event_request",
+        "event_id": "fe3b26ed-251a-4c67-8db1-3b0bd9c1993b",
+        "draft_msg": "Here is your offer for Room A, accommodating 20 participants. \n\nLet me know if you have any questions or need further details!\n\nOffer draft for 25.03.2026 · Room A\n\nClient: Maria Fischer · maria.fischer.test@example.com\n\nBilling address: Not Specified\n\n**Room booking**\n- Room A · CHF 500.00\n\nNo optional products selected yet.\n\n---\n**Total: CHF 500.00**\n---\n\n\n<a href=\"http://localhost:3000/info/qna?snapshot_id=snap_20260113_173928_fa8bffe1\" target=\"_blank\" rel=\"noopener noreferrer\">View Catering information</a>\n\nMenu options you can add:\n- Seasonal Garden Trio · CHF 92.00 per event\n  <a href=\"http://localhost:3000/info/catering/seasonal-garden-trio?snapshot_id=snap_20260113_173928_8473c8bd\" target=\"_blank\" rel=\"noopener noreferrer\">View Seasonal Garden Trio details</a>\n- Alpine Roots Degustation · CHF 105.00 per event\n  <a href=\"http://localhost:3000/info/catering/alpine-roots-degustation?snapshot_id=snap_20260113_173928_8e85db99\" target=\"_blank\" rel=\"noopener noreferrer\">View Alpine Roots Degustation details</a>\n- Lakeview Signature Journey · CHF 118.00 per event\n  <a href=\"http://localhost:3000/info/catering/lakeview-signature-journey?snapshot_id=snap_20260113_173928_0b70c111\" target=\"_blank\" rel=\"noopener noreferrer\">View Lakeview Signature Journey details</a>\n\nPlease review and approve to confirm.\n\n---\nStep: 4 Offer · Next: Await feedback · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "1e504b0e6a07a31c7a7f2f5992a384ce15b5bcf43a8a20f4669baabe2785d6eb",
+        "room_eval_hash": "1e504b0e6a07a31c7a7f2f5992a384ce15b5bcf43a8a20f4669baabe2785d6eb",
+        "thread_id": "aa538789-f3e8-4a88-beb0-7a00957c39ed"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "96e054c7-3ebd-4a53-a884-3e17c1e69346",
+      "created_at": "2026-01-13T17:47:57.724197",
+      "type": "offer_message",
+      "status": "approved",
+      "client_id": "maria.test@example.com",
+      "event_id": "e0824b56-f095-478f-a81c-d01085503775",
+      "payload": {
+        "step_id": 4,
+        "intent": "event_request",
+        "event_id": "e0824b56-f095-478f-a81c-d01085503775",
+        "draft_msg": "Here is your offer for Room A, which is perfect for your gathering of 20 participants. \n\nLet me know if you have any questions or if you would like to proceed!\n\nOffer draft for 25.03.2026 · Room A\n\nClient: Maria · maria.test@example.com\n\nBilling address: Not Specified\n\n**Room booking**\n- Room A · CHF 500.00\n\nNo optional products selected yet.\n\n---\n**Total: CHF 500.00**\n---\n\n\n<a href=\"http://localhost:3000/info/qna?snapshot_id=snap_20260113_174756_78666df9\" target=\"_blank\" rel=\"noopener noreferrer\">View Catering information</a>\n\nMenu options you can add:\n- Seasonal Garden Trio · CHF 92.00 per event\n  <a href=\"http://localhost:3000/info/catering/seasonal-garden-trio?snapshot_id=snap_20260113_174756_cb9bfd2d\" target=\"_blank\" rel=\"noopener noreferrer\">View Seasonal Garden Trio details</a>\n- Alpine Roots Degustation · CHF 105.00 per event\n  <a href=\"http://localhost:3000/info/catering/alpine-roots-degustation?snapshot_id=snap_20260113_174756_6c81cd66\" target=\"_blank\" rel=\"noopener noreferrer\">View Alpine Roots Degustation details</a>\n- Lakeview Signature Journey · CHF 118.00 per event\n  <a href=\"http://localhost:3000/info/catering/lakeview-signature-journey?snapshot_id=snap_20260113_174756_0613cb5b\" target=\"_blank\" rel=\"noopener noreferrer\">View Lakeview Signature Journey details</a>\n\nPlease review and approve to confirm.\n\n---\nStep: 4 Offer · Next: Await feedback · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "6c17f56c525d63357cb5420ae1c00ead3ee938f72b6b7453486a8f2d883d64b2",
+        "room_eval_hash": "6c17f56c525d63357cb5420ae1c00ead3ee938f72b6b7453486a8f2d883d64b2",
+        "thread_id": "63f4e40e-fe77-4066-8252-d770cddf6a2d"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "41f8e120-8e77-4393-ba74-90a38ced4104",
+      "created_at": "2026-01-13T17:48:25.355918",
+      "type": "message_manager",
+      "status": "pending",
+      "client_id": "maria.test@example.com",
+      "event_id": "e0824b56-f095-478f-a81c-d01085503775",
+      "payload": {
+        "snippet": "Maria Fischer, Bahnhofstrasse 10, 8001 Zurich, Switzerland",
+        "thread_id": "63f4e40e-fe77-4066-8252-d770cddf6a2d",
+        "step_id": 5,
+        "reason": "client_requested_manager",
+        "event_summary": {
+          "client_name": "Not specified",
+          "email": "maria.test@example.com",
+          "chosen_date": "25.03.2026",
+          "locked_room": "Room A",
+          "current_step": 5
+        }
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "4e30e59c-7590-47fa-8395-1634f5d727bd",
+      "created_at": "2026-01-13T17:49:32.698327",
+      "type": "confirmation_message",
+      "status": "pending",
+      "client_id": "maria.test@example.com",
+      "event_id": "e0824b56-f095-478f-a81c-d01085503775",
+      "payload": {
+        "step_id": 7,
+        "intent": "event_request",
+        "event_id": "e0824b56-f095-478f-a81c-d01085503775",
+        "draft_msg": "I'm here to help! Could you provide a bit more detail so I can give you the best advice?\n\n---\nStep: 7 Event Confirmation · Next: Provide details · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "6c17f56c525d63357cb5420ae1c00ead3ee938f72b6b7453486a8f2d883d64b2",
+        "room_eval_hash": "6c17f56c525d63357cb5420ae1c00ead3ee938f72b6b7453486a8f2d883d64b2",
+        "thread_id": "c23891ab-50d8-45b2-a1f4-b88322922d95"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "63cb3f37-ffcd-4e02-87a8-2f3dd4168fc0",
+      "created_at": "2026-01-13T18:22:33.034836",
+      "type": "offer_message",
+      "status": "approved",
+      "client_id": "e2e-no-year@example.com",
+      "event_id": "d264273c-938b-4963-8919-f3e786d703b9",
+      "payload": {
+        "step_id": 4,
+        "intent": "event_request",
+        "event_id": "d264273c-938b-4963-8919-f3e786d703b9",
+        "draft_msg": "Here is your offer for Room B, which is suitable for 20 participants. \n\nLet me know if you have any questions or need further details!\n\nOffer draft for 25.03.2026 · Room B\n\nClient: e2e-no-year@example.com\n\nBilling address: Not Specified\n\n**Room booking**\n- Room B · CHF 750.00\n\nNo optional products selected yet.\n\n---\n**Total: CHF 750.00**\n\n**Deposit to reserve: CHF 225.00** (required before confirmation)\n\n**Deposit due by:** 23 January 2026\n---\n\n\n<a href=\"http://localhost:3000/info/qna?snapshot_id=snap_20260113_182230_18d722ff\" target=\"_blank\" rel=\"noopener noreferrer\">View Catering information</a>\n\nMenu options you can add:\n- Seasonal Garden Trio · CHF 92.00 per event\n  <a href=\"http://localhost:3000/info/catering/seasonal-garden-trio?snapshot_id=snap_20260113_182230_95658dc1\" target=\"_blank\" rel=\"noopener noreferrer\">View Seasonal Garden Trio details</a>\n- Alpine Roots Degustation · CHF 105.00 per event\n  <a href=\"http://localhost:3000/info/catering/alpine-roots-degustation?snapshot_id=snap_20260113_182230_a0fc97cf\" target=\"_blank\" rel=\"noopener noreferrer\">View Alpine Roots Degustation details</a>\n- Lakeview Signature Journey · CHF 118.00 per event\n  <a href=\"http://localhost:3000/info/catering/lakeview-signature-journey?snapshot_id=snap_20260113_182230_5a74d0fa\" target=\"_blank\" rel=\"noopener noreferrer\">View Lakeview Signature Journey details</a>\n\nPlease review and approve to confirm.\n\n---\nStep: 4 Offer · Next: Await feedback · State: Awaiting Client",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "c88a7a95aa332b6f4add79ce84182f7858cd4db0c51f25cf94a81a3a41d3be98",
+        "room_eval_hash": "c88a7a95aa332b6f4add79ce84182f7858cd4db0c51f25cf94a81a3a41d3be98",
+        "thread_id": "541dde18-8280-4b64-af15-e3904e9710f8"
+      },
+      "notes": ""
+    },
+    {
+      "task_id": "784c0b82-8282-4d1d-8d57-0aa4ea8a3ad0",
+      "created_at": "2026-01-13T18:24:06.394539",
+      "type": "confirmation_message",
+      "status": "approved",
+      "client_id": "e2e-no-year@example.com",
+      "event_id": "d264273c-938b-4963-8919-f3e786d703b9",
+      "payload": {
+        "step_id": 7,
+        "intent": "event_request",
+        "event_id": "d264273c-938b-4963-8919-f3e786d703b9",
+        "draft_msg": "We’re thrilled to confirm your booking for **Room B** on **25.03.2026**. Your deposit of CHF 225 has been received.\n\nWould you like to schedule a site visit before we finalize the details?\n\n---\nStep: 7 Event Confirmation · Next: Finalize booking (HIL) · State: Waiting on HIL",
+        "language": null,
+        "caller_step": null,
+        "requirements_hash": "c88a7a95aa332b6f4add79ce84182f7858cd4db0c51f25cf94a81a3a41d3be98",
+        "room_eval_hash": "c88a7a95aa332b6f4add79ce84182f7858cd4db0c51f25cf94a81a3a41d3be98",
+        "thread_id": "541dde18-8280-4b64-af15-e3904e9710f8"
+      },
+      "notes": ""
     }
   ],
-  "config": {}
+  "config": {
+    "global_deposit": {
+      "deposit_enabled": true,
+      "deposit_type": "percentage",
+      "deposit_percentage": 30,
+      "deposit_fixed_amount": 0.0,
+      "deposit_deadline_days": 10
+    }
+  }
 }

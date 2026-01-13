@@ -31,6 +31,7 @@ from workflows.common.general_qna import (
     present_general_room_qna,
     _fallback_structured_body,
 )
+from workflows.common.detection_utils import get_unified_detection
 from workflows.change_propagation import (
     ChangeType,
     detect_change_type,
@@ -303,8 +304,10 @@ def process(state: WorkflowState) -> GroupResult:
         user_info.get("room"),
         (message_text[:100] if message_text else None),
     )
+    # Get unified detection for question guard ("Is Room A available?" should not lock)
+    unified_detection = get_unified_detection(state)
     if message_text and not user_info.get("_room_choice_detected"):
-        detected_room = _detect_room_choice(message_text, event_entry)
+        detected_room = _detect_room_choice(message_text, event_entry, unified_detection)
         logger.info("[Step3][DEBUG] _detect_room_choice returned: %s", detected_room)
         if detected_room:
             user_info["room"] = detected_room

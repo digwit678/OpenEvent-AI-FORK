@@ -2,6 +2,73 @@
 
 ## 2026-01-13
 
+### Fix: Step 5 HIL Approval → Site Visit Message Flow
+
+**Problem:** After HIL approval of offer acceptance, the workflow didn't generate the site visit message. Instead, it either returned no response or a fallback message. The deposit button also wasn't appearing after offer acceptance.
+
+**Root Causes (3 issues fixed):**
+1. `step5_handler.py`: Missing `offer_accepted = True` flag when HIL approval happens - confirmation gate was never triggered
+2. `hil_tasks.py`: After approval, wasn't calling Step 7 to generate site visit message
+3. `events_team-shami.json`: Missing `global_deposit` config (config object was empty)
+
+**Fix Applied:**
+1. Added `offer_accepted = True` in `_apply_hil_negotiation_decision()` at line 837
+2. Rewrote Step 5 HIL approval handling in `approve_task_and_send()` to:
+   - Check confirmation gate for billing/deposit prerequisites
+   - Show deposit prompt if deposit not paid
+   - Call `process_step7()` directly when all prerequisites met to generate site visit message
+3. Added global_deposit config to team database manually
+
+**Files Modified:**
+- `workflows/steps/step5_negotiation/trigger/step5_handler.py` (line 837) - added `offer_accepted = True`
+- `workflows/runtime/hil_tasks.py` (lines 383-464) - major rewrite of approval handling
+- `events_team-shami.json` - added global_deposit config
+
+**E2E Verified:**
+- `2026-01-13_smart-shortcut-date-without-year.md` - Full flow with date inference, deposit, and site visit
+
+---
+
+### Fix: Detection Interference - Unified LLM Signals
+
+**Problem:** Multiple detection layers (Step5, Step7, Room, Q&A) were using regex/keywords that overrode correct LLM semantic intent. Examples:
+- "good" alone triggering Step5 acceptance
+- "Yes, can we visit?" returning confirm instead of site_visit in Step7
+- "Is Room A available?" incorrectly locking Room A
+- Borderline Q&A matches like "need room" couldn't be vetoed by LLM
+
+**Solution:** Implemented unified detection consumption across 4 areas with zero extra LLM cost (reuses signals already computed during pre-routing):
+
+1. **Step5 Acceptance/Rejection**: Use `is_acceptance`/`is_rejection` from unified detection before regex fallback
+2. **Step7 Site Visit Precedence**: Check `qna_types` for `site_visit_request` before CONFIRM_KEYWORDS
+3. **Room Detection Question Guard**: Block room lock if `?` in text OR `is_question=True`
+4. **Q&A LLM Veto**: Borderline heuristics require LLM confirmation; clear heuristics trust regex
+
+**Files Modified:**
+- `workflows/steps/step5_negotiation/trigger/classification.py`
+- `workflows/steps/step7_confirmation/trigger/classification.py`
+- `workflows/steps/step1_intake/trigger/room_detection.py`
+- `detection/qna/general_qna.py` (conceptual - logic documented)
+
+**Tests Added:**
+- `tests/detection/test_detection_interference.py` - 13 regression tests (DET_INT_001-010 + variants)
+
+**E2E Verified:** Playwright test with date without year ("March 20") correctly parsed and flow progressed through Steps 1-7.
+
+---
+
+### Bug Found: Global Deposit Config Timing Issue
+
+**Problem:** Global deposit config set in UI wasn't being applied to new events - no deposit button appeared after offer acceptance despite config showing "30% · 10 days".
+
+**Root Cause:** Events created BEFORE global deposit was saved to database don't pick up deposit settings. `state.db` snapshot may be stale when Step4 calls `build_deposit_info()`.
+
+**Status:** Open (BUG-019 in TEAM_GUIDE.md)
+
+**Workaround:** Ensure deposit config is saved before starting new conversations.
+
+---
+
 ### Fix: OOC Guidance No Longer Blocks Offer Confirmations
 
 **Problem:** Short confirmations like "that's fine" during Step 4/5 were misclassified as `confirm_date`, triggering out-of-context guidance and blocking the billing/deposit gate.

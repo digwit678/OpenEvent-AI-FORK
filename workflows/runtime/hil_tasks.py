@@ -351,6 +351,8 @@ def approve_task_and_send(
                 db_io.save_db(db, path, lock_path=lock_path)
 
     # If this approval is for a negotiation (Step 5), apply the decision so the workflow progresses.
+    # BUG FIX (2026-01-13): After Step 5 HIL approval, we must continue to Step 7 to generate
+    # the site visit message instead of returning the original HIL draft (which was manager-facing).
     if step_num == 5:
         pending_decision = target_event.get("negotiation_pending_decision")
         if pending_decision:
@@ -378,7 +380,88 @@ def approve_task_and_send(
             if not decision_result.halt and (target_event.get("current_step") == 6):
                 process_transition(hil_state)
 
-            # Don't force site_visit_state here - let Step 7 handle it naturally
+            # BUG FIX (2026-01-13): After Step 5 HIL approval, check confirmation gate
+            # and either prompt for deposit or generate site visit message.
+            current_step = target_event.get("current_step")
+            if current_step in (6, 7) and not decision_result.halt:
+                from workflows.common.confirmation_gate import check_confirmation_gate, get_next_prompt
+
+                # Check if all prerequisites are met (billing + deposit)
+                gate_status = check_confirmation_gate(target_event)
+
+                if not gate_status.ready_for_hil:
+                    # Not ready - need deposit or billing first
+                    next_prompt = get_next_prompt(gate_status, step=5)
+                    if next_prompt:
+                        update_event_metadata(target_event, current_step=5, thread_state="Awaiting Client")
+                        db_io.save_db(db, path, lock_path=lock_path)
+
+                        body_text = next_prompt.get("body_markdown") or next_prompt.get("body") or ""
+                        assistant_draft = {"headers": [], "body": body_text, "body_markdown": body_text}
+                        return {
+                            "action": "awaiting_prerequisites",
+                            "event_id": target_event.get("event_id"),
+                            "thread_state": "Awaiting Client",
+                            "draft": {"body": body_text, "body_markdown": body_text, "headers": []},
+                            "res": {
+                                "assistant_draft": assistant_draft,
+                                "assistant_draft_text": body_text,
+                            },
+                            "actions": [{"type": "send_reply"}],
+                            "thread_id": thread_id,
+                            "pending_deposit": gate_status.deposit_required and not gate_status.deposit_paid,
+                        }
+
+                # All prerequisites met - proceed to Step 7 for site visit
+                update_event_metadata(target_event, current_step=7, thread_state="Processing")
+
+                # Generate site visit message by calling Step 7 handler
+                from workflows.steps.step7_confirmation.trigger.process import process as process_step7
+
+                # Create a fresh state for Step 7 processing
+                step7_message = IncomingMessage.from_dict({
+                    "msg_id": f"hil-continue-{task_id}",
+                    "from_email": target_event.get("event_data", {}).get("Email"),
+                    "subject": "Continue to confirmation",
+                    "body": "",  # Empty body - just continuing the workflow
+                    "ts": datetime.utcnow().isoformat() + "Z",
+                })
+                step7_state = WorkflowState(message=step7_message, db_path=path, db=db)
+                step7_state.client_id = (target_event.get("event_data", {}).get("Email") or "").lower()
+                step7_state.event_entry = target_event
+                step7_state.current_step = 7
+                step7_state.thread_state = "Processing"
+
+                # Call Step 7 to generate the site visit message
+                _step7_result = process_step7(step7_state)  # Result stored in state.draft_messages
+
+                # Get the generated message from state
+                draft_messages = step7_state.draft_messages or []
+                if draft_messages:
+                    draft = draft_messages[0]
+                    body_text = draft.get("body_markdown") or draft.get("body") or ""
+                else:
+                    # Fallback message if Step 7 didn't generate one
+                    body_text = "Thank you for accepting the offer. We will be in touch shortly to finalize the details."
+
+                if step7_state.extras.get("persist"):
+                    db_io.save_db(db, path, lock_path=lock_path)
+                else:
+                    db_io.save_db(db, path, lock_path=lock_path)
+
+                assistant_draft = {"headers": [], "body": body_text, "body_markdown": body_text}
+                return {
+                    "action": "send_reply",
+                    "event_id": target_event.get("event_id"),
+                    "thread_state": step7_state.thread_state,
+                    "draft": {"body": body_text, "body_markdown": body_text, "headers": []},
+                    "res": {
+                        "assistant_draft": assistant_draft,
+                        "assistant_draft_text": body_text,
+                    },
+                    "actions": [{"type": "send_reply"}],
+                    "thread_id": thread_id,
+                }
 
             if hil_state.extras.get("persist"):
                 db_io.save_db(db, path, lock_path=lock_path)
@@ -401,8 +484,7 @@ def approve_task_and_send(
     assistant_draft = {"headers": headers, "body": body_text, "body_markdown": body_text}
 
     note_text = (manager_notes or "").strip()
-    # For Step 5 (negotiation) approvals, use the original draft message
-    # The workflow will naturally progress to site visit when ready
+    # For non-Step-5 approvals, append manager notes if provided
     if note_text:
         appended = f"{body_text.rstrip()}\n\nManager note:\n{note_text}" if body_text.strip() else f"Manager note:\n{note_text}"
         body_text = appended
