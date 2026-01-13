@@ -111,8 +111,11 @@ def _build_event_summary(event_entry: Dict[str, Any]) -> Optional[Dict[str, Any]
         event_summary["offer_total"] = total_amount
 
     # Include deposit info for client-side payment button
+    # IMPORTANT: Only include deposit_info at Step 4+ (after offer is generated with pricing)
+    # This prevents stale/premature deposit info from showing in earlier steps
+    current_step = event_entry.get("current_step", 1)
     deposit_info = event_entry.get("deposit_info")
-    if deposit_info:
+    if deposit_info and current_step >= 4:
         event_summary["deposit_info"] = {
             "deposit_required": deposit_info.get("deposit_required", False),
             "deposit_amount": deposit_info.get("deposit_amount"),
