@@ -193,7 +193,7 @@ def get_next_prompt(status: GateStatus, step: int = 5) -> Optional[Dict[str, Any
         prompt = (
             f"Thank you for providing your billing details! Before I can proceed with your booking, "
             f"please complete the deposit payment of CHF {status.deposit_amount:,.2f}. "
-            f"Once the deposit is received, I'll immediately send your confirmation for final approval."
+            f"Once the deposit is received, I'll finalize your booking."
         )
         return {
             "body_markdown": prompt,

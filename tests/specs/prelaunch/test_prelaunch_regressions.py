@@ -118,6 +118,7 @@ def test_out_of_context_should_not_drop_message_with_billing(tmp_path: Path) -> 
 
     class Unified:
         intent = "confirm_date"
+        billing_address = None
 
     def finalize_fn(result, _state, _path, _lock_path):
         return result.merged()
@@ -132,6 +133,84 @@ def test_out_of_context_should_not_drop_message_with_billing(tmp_path: Path) -> 
             finalize_fn,
         )
         is None
+    )
+
+
+def test_out_of_context_should_not_block_offer_confirmation(tmp_path: Path) -> None:
+    """Avoid OOC guidance when confirmation is misclassified during offer steps."""
+    state = WorkflowState(
+        message=IncomingMessage(
+            msg_id="m",
+            from_name="Client",
+            from_email="client@example.com",
+            subject="Re: offer",
+            body="That's fine.",
+            ts="2026-01-01T00:00:00Z",
+        ),
+        db_path=tmp_path / "db.json",
+        db={"events": []},
+    )
+    state.event_entry = {"event_id": "EVT", "current_step": 5}
+
+    class Unified:
+        intent = "confirm_date"
+        is_confirmation = True
+        is_acceptance = False
+        room_preference = None
+        billing_address = None
+        date = None
+        date_text = None
+
+    def finalize_fn(result, _state, _path, _lock_path):
+        return result.merged()
+
+    assert (
+        check_out_of_context(
+            state,
+            Unified(),  # type: ignore[arg-type]
+            tmp_path / "db.json",
+            tmp_path / ".db.lock",
+            finalize_fn,
+        )
+        is None
+    )
+
+
+def test_out_of_context_should_still_trigger_on_strong_acceptance(tmp_path: Path) -> None:
+    """OOC guidance should still apply when acceptance is explicit at the wrong step."""
+    state = WorkflowState(
+        message=IncomingMessage(
+            msg_id="m",
+            from_name="Client",
+            from_email="client@example.com",
+            subject="Re: booking",
+            body="We accept the offer.",
+            ts="2026-01-01T00:00:00Z",
+        ),
+        db_path=tmp_path / "db.json",
+        db={"events": []},
+    )
+    state.event_entry = {"event_id": "EVT", "current_step": 2}
+
+    class Unified:
+        intent = "accept_offer"
+        is_acceptance = True
+        is_rejection = False
+        billing_address = None
+        room_preference = None
+
+    def finalize_fn(result, _state, _path, _lock_path):
+        return result.merged()
+
+    assert (
+        check_out_of_context(
+            state,
+            Unified(),  # type: ignore[arg-type]
+            tmp_path / "db.json",
+            tmp_path / ".db.lock",
+            finalize_fn,
+        )
+        is not None
     )
 
 

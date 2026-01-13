@@ -463,7 +463,7 @@ def process(state: WorkflowState) -> GroupResult:
                 "body_markdown": (
                     f"Thank you for wanting to confirm! Before I can proceed with your booking, "
                     f"please complete the deposit payment of CHF {deposit_amount:,.2f}. "
-                    f"Once the deposit is received, I'll immediately send your confirmation for final approval. "
+                    f"Once the deposit is received, I'll finalize your booking. "
                     f"You can pay the deposit using the payment option shown in the offer."
                 ),
                 "step": 4,

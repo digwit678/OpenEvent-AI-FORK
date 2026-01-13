@@ -196,6 +196,15 @@ def process(state: WorkflowState) -> GroupResult:
             owner_step="Step7_Confirmation",
         )
 
+    # -------------------------------------------------------------------------
+    # DEPOSIT JUST PAID: Check for deposit_just_paid flag from Pay Deposit button
+    # This synthetic message may not classify correctly via keywords, so handle first
+    # -------------------------------------------------------------------------
+    is_deposit_signal = (state.message.extras or {}).get("deposit_just_paid", False)
+    if is_deposit_signal:
+        logger.info("[Step7] deposit_just_paid signal detected - routing to confirmation")
+        return _prepare_confirmation(state, event_entry)
+
     classification = classify_message(message_text, event_entry)
     conf_state["last_response_type"] = classification
     general_qna_applicable = qna_classification.get("is_general")
@@ -323,12 +332,39 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
         payload = base_payload(state, event_entry)
         return GroupResult(action="confirmation_deposit_requested", payload=payload, halt=True)
 
-    room_fragment = f" for {room_name}" if room_name else ""
-    date_fragment = f" on {event_date}" if event_date else ""
-    final_message = (
-        f"Wonderful, we're ready to proceed with your booking{room_fragment}{date_fragment}. "
-        "I'll place the booking and send a confirmation message shortly."
+    # Build proper offer confirmation message with all details for HIL review
+    room_fragment = f"**{room_name}**" if room_name else "the venue"
+    date_fragment = f"**{event_date}**" if event_date else "the requested date"
+
+    # Get billing details
+    billing_details = event_entry.get("billing_details") or {}
+    billing_str = ", ".join(filter(None, [
+        billing_details.get("company"),
+        billing_details.get("street"),
+        billing_details.get("postal_code"),
+        billing_details.get("city"),
+        billing_details.get("country"),
+    ]))
+    if not billing_str:
+        billing_str = "Not specified"
+
+
+    # Build confirmation message with offer summary
+    final_message_parts = [
+        f"We're excited to move forward with your booking for {room_fragment} on {date_fragment}.",
+    ]
+
+    # Add deposit paid confirmation if applicable
+    if deposit_paid and deposit_amount:
+        deposit_str = f"CHF {deposit_amount:,.2f}".rstrip("0").rstrip(".")
+        final_message_parts.append(f"Your deposit of {deposit_str} has been received.")
+
+    final_message_parts.append(
+        "Would you like to arrange a site visit before we finalize everything?"
     )
+
+    final_message = " ".join(final_message_parts)
+
     draft = {
         "body": append_footer(
             final_message,
@@ -503,6 +539,13 @@ def _process_hil_confirmation(state: WorkflowState, event_entry: Dict[str, Any])
 
         update_event_metadata(event_entry, transition_ready=True, thread_state="Awaiting Client")
         append_audit_entry(event_entry, 7, 7, "confirmation_sent")
+
+        # After confirmation HIL approval, automatically offer site visit if allowed
+        if site_visit_allowed(event_entry):
+            logger.info("[Step7] HIL approved confirmation - auto-offering site visit")
+            return handle_site_visit(state, event_entry)
+
+        # If site visit not allowed, just confirm
         state.set_thread_state("Awaiting Client")
         state.extras["persist"] = True
         payload = base_payload(state, event_entry)
