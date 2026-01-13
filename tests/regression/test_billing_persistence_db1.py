@@ -24,7 +24,14 @@ from workflows.io import database as db_io
 
 
 # Run with AGENT_MODE=stub
-pytestmark = pytest.mark.usefixtures("stub_agent_mode")
+# Skip if Gemini API key not available (required for detection step)
+pytestmark = [
+    pytest.mark.usefixtures("stub_agent_mode"),
+    pytest.mark.skipif(
+        not os.environ.get("GOOGLE_API_KEY") and not os.environ.get("gemini_key_openevent"),
+        reason="Requires GOOGLE_API_KEY for detection (integration test)"
+    ),
+]
 
 
 @pytest.fixture
