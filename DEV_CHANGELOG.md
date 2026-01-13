@@ -2,6 +2,46 @@
 
 ## 2026-01-13
 
+### Feature: Room Confirmation + Offer Combined Message
+
+**Problem:** When a client confirmed a room selection, the system sent two separate messages: "Room confirmed!" and then "Here is your offer...". This was redundant and not aligned with the expected UX of a single combined message.
+
+**Solution:** Implemented a room confirmation prefix mechanism:
+1. Step 3 now stores `room_confirmation_prefix` in `event_entry` when client confirms a room
+2. Step 3 returns `halt=False` to continue immediately to Step 4
+3. Step 4 pops and prepends the prefix to the offer body
+
+**Result:** One combined message:
+```
+Great choice! Room F on 22.02.2026 is confirmed for your event with 25 guests.
+
+Here is your offer for Room F...
+```
+
+**Files Modified:**
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py` - Set prefix and halt=False on confirmation
+- `workflows/steps/step4_offer/trigger/step4_handler.py` - Pop and prepend prefix to offer body
+
+**Tests Added:**
+- `tests/regression/test_room_confirm_offer_combined.py` - 6 tests covering prefix setting, consumption, combined format, and halt behavior
+
+---
+
+### Fix: Deposit Showing Before Offer Stage (Session Filtering)
+
+**Problem:** Dynamic deposit UI was showing before the client even started a conversation, displaying stale deposits from previous sessions.
+
+**Root Cause:** The frontend `unpaidDepositInfo` computed value used all tasks without filtering by current session's `thread_id`.
+
+**Fix Applied:**
+1. Added early return if `sessionId` is null (no session = no deposit)
+2. Filter tasks by `thread_id === sessionId` to only show deposits for current conversation
+
+**Files Modified:**
+- `atelier-ai-frontend/app/page.tsx` - Session-based deposit filtering in `unpaidDepositInfo` useMemo
+
+---
+
 ### Fix: Date Parsing "of" Keyword + LLM Current Date Context
 
 **Problem:** Dates like "16th of February" (with "of" keyword) without a year weren't being parsed correctly. The regex pattern `\s+(?P<month>...)` expected whitespace directly between day and month, but "of" broke the pattern.

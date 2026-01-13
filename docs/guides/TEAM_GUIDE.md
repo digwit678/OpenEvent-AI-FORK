@@ -254,30 +254,36 @@ All unit types that may appear in product data:
 **Files**: `workflows/qna/router.py`
 
 ### BUG-011: Room Confirmation Shows "Availability overview" Instead of "Offer"
-**Status**: Open (regression found 2026-01-12)
+**Status**: Fixed (2026-01-13)
 **Severity**: Medium (UX clarity)
 **Symptom**: When client confirms a room after Step 3 (e.g., "Room A sounds perfect"), the response header still shows "Availability overview" instead of "Offer". The Manager Tasks correctly shows "Step 4" and "offer message".
-**Root Cause**: The `room_choice_captured` shortcut in Step 1 sets `current_step=4` but the draft header is not being set correctly. The offer draft shows room features but wrong header.
-**Technical Detail**: `detect_room_choice()` in `room_detection.py` only activates when `current_step >= 3`. Follow-up room confirmations go through Step 1 → shortcut → Step 4. The "Room Confirmed" draft added was superseded or the verbalizer is overwriting the header.
-**Reproduction**:
-1. Send initial message with date + participants (no room)
-2. System shows "Availability overview" with room options
-3. Reply "Room A sounds perfect!"
-4. Response shows "Availability overview" header instead of "Offer"
-**Files**: `workflows/steps/step1_intake/trigger/step1_handler.py`, `ux/universal_verbalizer.py`
-**Key Learning**: Draft headers can be overwritten by verbalizer. Need to trace full flow to find where header is set.
+**Root Cause**: Room confirmation was creating a separate draft message in Step 3 that got superseded by Step 4's offer. The two messages weren't being combined.
+**Fix**: Implemented room confirmation prefix mechanism:
+1. Step 3 stores `room_confirmation_prefix` ("Great choice! Room X is confirmed...") in event_entry
+2. Step 3 returns `halt=False` to continue immediately to Step 4
+3. Step 4 pops prefix and prepends it to offer body
+Result: One combined message with "Great choice! Room F is confirmed... Here is your offer..."
+**Files**: `workflows/steps/step3_room_availability/trigger/step3_handler.py`, `workflows/steps/step4_offer/trigger/step4_handler.py`
+**Tests**: `tests/regression/test_room_confirm_offer_combined.py`
 
 ### BUG-012: Offer Missing Pricing When Triggered via Room Confirmation
-**Status**: Open (2026-01-12)
+**Status**: Fixed (2026-01-13) - Part of BUG-011 fix
 **Severity**: High (missing critical info)
 **Symptom**: When offer is triggered via room confirmation shortcut, the draft shows room details (capacity, features) but NO pricing (CHF amount).
-**Comparison**: Smart shortcut (initial message with room+date+participants) correctly shows "Room B · CHF 750.00" and pricing.
-**Root Cause**: The room confirmation shortcut path doesn't call the offer pricing generation. The smart shortcut goes through Step 4's full offer pipeline which includes pricing.
-**Reproduction**:
-1. Send initial message with date + participants (no room)
-2. Confirm a room ("Room A sounds perfect!")
-3. Response shows room features but no CHF pricing
-**Files**: `workflows/steps/step1_intake/trigger/step1_handler.py`, `workflows/steps/step4_offer/`
+**Root Cause**: Room confirmation shortcut was creating a separate Step 3 draft instead of proceeding to Step 4's full offer pipeline.
+**Fix**: Same as BUG-011 - Step 3 now returns `halt=False` so Step 4's full offer generation runs, including pricing.
+**Files**: Same as BUG-011
+
+### BUG-014: Deposit UI Showing Before Offer Stage
+**Status**: Fixed (2026-01-13)
+**Severity**: Medium (UX confusion)
+**Symptom**: Dynamic deposit UI ("💰 Deposit Required: CHF X") showing before client even started a conversation, displaying stale deposits from previous sessions.
+**Root Cause**: Frontend `unpaidDepositInfo` computed value used all tasks without filtering by current session's `thread_id`.
+**Fix**:
+1. Added early return if `sessionId` is null (no session = no deposit)
+2. Filter tasks by `thread_id === sessionId` to only show deposits for current conversation
+**Files**: `atelier-ai-frontend/app/page.tsx`
+**Note**: This fix only applies to development-branch (frontend). Main branch is backend-only.
 
 ### BUG-013: HIL Approval Sends Site Visit Text Instead of Workflow Draft
 **Status**: Fixed (2026-01-12)
