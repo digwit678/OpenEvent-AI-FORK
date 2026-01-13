@@ -234,7 +234,10 @@ class WorkflowState:
         combined_body = f"{body_markdown}{FOOTER_SEPARATOR}{footer}" if body_markdown else footer
         message["body"] = combined_body
 
-        message.setdefault("requires_approval", True)
+        # Default: no HIL approval needed for agent drafts (testing/future mode)
+        # Set requires_approval=True explicitly for: offers, detours, special requests
+        # Production mode uses OE_HIL_ALL_LLM_REPLIES=true to override and approve ALL
+        message.setdefault("requires_approval", False)
         message.setdefault("created_at_step", step_value)
         self.draft_messages.append(message)
 

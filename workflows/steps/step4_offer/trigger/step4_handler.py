@@ -663,7 +663,7 @@ def process(state: WorkflowState) -> GroupResult:
         "offer_id": offer_id,
         "offer_version": offer_version,
         "total_amount": total_amount,
-        "requires_approval": False,
+        "requires_approval": True,  # Offers ALWAYS need HIL approval
         "table_blocks": [
             {
                 "type": "table",

@@ -23,6 +23,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -149,6 +150,7 @@ MESSAGE:
 {message}
 
 CONTEXT (if available):
+- Today's date: {today}
 - Current workflow step: {current_step}
 - Event has date confirmed: {date_confirmed}
 - Event has room locked: {room_locked}
@@ -222,6 +224,7 @@ def run_unified_detection(
     # Build the prompt
     prompt = UNIFIED_DETECTION_PROMPT.format(
         message=message,
+        today=date.today().isoformat(),
         current_step=current_step or "unknown",
         date_confirmed=date_confirmed,
         room_locked=room_locked,

@@ -236,7 +236,7 @@ def process(state: WorkflowState) -> GroupResult:
                 "topic": "offer_accepted_hil_gate_passed",
                 "next_step": "Pending Final Approval",
                 "thread_state": "Waiting on HIL",
-                "requires_approval": True,
+                "requires_approval": False,  # Confirmation of acceptance, not the offer itself
             }
             state.add_draft_message(draft)
             update_event_metadata(event_entry, current_step=5, thread_state="Waiting on HIL")
@@ -569,7 +569,7 @@ def process(state: WorkflowState) -> GroupResult:
         ),
         "step": 5,
         "topic": "negotiation_clarification",
-        "requires_approval": True,
+        "requires_approval": False,  # Standard clarification response
     }
     state.add_draft_message(clarification)
     update_event_metadata(event_entry, current_step=5, thread_state="Awaiting Client Response")

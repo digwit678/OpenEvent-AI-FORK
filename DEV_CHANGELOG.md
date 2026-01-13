@@ -1,5 +1,32 @@
 # Development Changelog
 
+## 2026-01-13
+
+### Fix: Date Parsing "of" Keyword + LLM Current Date Context
+
+**Problem:** Dates like "16th of February" (with "of" keyword) without a year weren't being parsed correctly. The regex pattern `\s+(?P<month>...)` expected whitespace directly between day and month, but "of" broke the pattern.
+
+Additionally, the LLM unified detection was instructed to "assume current year" but never received the actual current date, so it couldn't reliably determine what year to use.
+
+**Fixes Applied:**
+1. **datetime_parse.py** - Added `(?:of\s+)?` to the `_DATE_TEXTUAL_DMY` regex to make "of" optional
+2. **datetime_parse.py** - Changed `datetime.utcnow().year` to `date.today().year` (fixes deprecation warning + uses local timezone)
+3. **detection/unified.py** - Added `today={date}` to the LLM prompt context so it knows the current date
+
+**Files Modified:**
+- `workflows/common/datetime_parse.py` - Regex fix + deprecation fix
+- `detection/unified.py` - Added date import and today context to LLM prompt
+
+**Tests Added:**
+- `tests/unit/test_datetime_parse.py` - 12 new unit tests covering:
+  - "of" keyword variations ("16th of February")
+  - Year defaulting to current year
+  - Explicit year override
+  - Numeric formats (DD.MM.YYYY, DD.MM.YY, ISO)
+  - Regression tests for "of" keyword
+
+---
+
 ## 2026-01-12
 
 ### Feature: Universal Past Date Validation
