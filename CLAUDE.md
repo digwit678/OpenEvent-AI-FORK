@@ -544,6 +544,35 @@ AGENT_MODE=openai pytest backend/tests/flow/ -v
 pytest backend/tests/detection/ backend/tests/regression/ backend/tests/flow/ -v --tb=short
 ```
 
+### E2E Test Documentation (REQUIRED)
+
+**After every successful frontend E2E test (via Playwright), document the test scenario in `backend/e2e-scenarios/`.**
+
+**When to create a new E2E scenario document:**
+- First time testing a particular workflow variant
+- A variant is "new" if it has different steps or different flow order (not just cosmetic differences)
+- Example variants: with/without deposit, with/without site visit, date change mid-flow, etc.
+
+**Document naming convention:**
+```
+YYYY-MM-DD_<variant-type>.md
+```
+Examples:
+- `2026-01-13_full-workflow-with-deposit-and-site-visit.md`
+- `2026-01-14_workflow-without-deposit.md`
+- `2026-01-15_date-change-after-room-selection.md`
+
+**Document structure:**
+1. **Header:** Date, variant type, status (PASSED/FAILED)
+2. **Test Summary:** What flow this test verifies
+3. **Conversation Sequence:** Every message (client and Shami) in order with exact text
+4. **Actions Sequence:** Table of all actions (HIL approvals, button clicks, etc.)
+5. **Key Verifications:** What was specifically verified
+6. **Files Involved:** Which workflow files were exercised
+7. **Distinguishing Characteristics:** What makes this variant unique
+
+**Purpose:** These documents allow other developers to reproduce exact E2E tests, verify the same flows work correctly, and understand expected behavior for each workflow variant.
+
 ### Dependencies
 ```bash
 # Python (backend)
@@ -907,8 +936,9 @@ Before deploying to production:
 | Test suite | `backend/tests/` |
 | Workflow specs | `backend/workflow/specs/` |
 
-## Plugins and Extensions
+## Plugins, Subagents and Skills
 - pyright / LSP  Smart reading glasses for your code
 - for the refactoring MCP plugin can help 
 - for browser e2e testing always use the playwright plugin to verify workflow runs end to end (till site-visit agent reply appears in chat) without fallback messages or errors.
-- After writing or modifying code files, always run the code cleanup agent to optimize and format the code before considering the task complete.
+- After writing or modifying code files, always run the code-simplifier agent to optimize and format the code before considering the task complete.
+- Use the doc-agent to update or create any MD files (docs) needed based on your changes.
