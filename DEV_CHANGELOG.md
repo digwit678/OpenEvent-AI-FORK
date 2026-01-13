@@ -2,6 +2,80 @@
 
 ## 2026-01-13
 
+### Fix: OOC Guidance No Longer Blocks Offer Confirmations
+
+**Problem:** Short confirmations like "that's fine" during Step 4/5 were misclassified as `confirm_date`, triggering out-of-context guidance and blocking the billing/deposit gate.
+
+**Fix Applied:**
+1. Bypass OOC guidance for confirmation/acceptance signals at Steps 4-5
+2. Skip OOC when billing details are present (capture path)
+3. Require intent evidence (date/acceptance/rejection/counter) before OOC can block
+
+**Files Modified:**
+- `workflows/runtime/pre_route.py`
+- `tests/specs/prelaunch/test_prelaunch_regressions.py`
+
+**Tests Added:**
+- `test_out_of_context_should_not_block_offer_confirmation`
+- `test_out_of_context_should_still_trigger_on_strong_acceptance`
+
+### Fix: Deposit Payment Must Trigger Step 7 (Site Visit / Confirmation)
+
+**Problem:** After clicking "Pay Deposit", the workflow halted at Step 5 without continuing to Step 7 for site visit proposal or final confirmation. The UI showed no response or a generic fallback message after deposit payment.
+
+**Root Causes (4 issues fixed):**
+1. `step5_handler.py`: Returned `halt=True` when gate passed, stopping workflow
+2. `pre_route.py`: Out-of-context detection blocked `deposit_just_paid` synthetic messages
+3. `step7_handler.py`: Didn't check `deposit_just_paid` flag, leading to misclassification
+4. `page.tsx`: `confirmation_message` task type missing from `canAction` list (no Approve button)
+
+**Fix Applied:**
+1. Changed `halt=True` to `halt=False` in the `ready_for_hil` branch (Step 5)
+2. Added bypass for `deposit_just_paid` messages in out-of-context check
+3. Added early check for `deposit_just_paid` flag in Step 7 before classification
+4. Added `transition_message` and `confirmation_message` to frontend `canAction` list
+
+**Files Modified:**
+- `workflows/steps/step5_negotiation/trigger/step5_handler.py` (lines 227-246) - halt=False, route to Step 7
+- `workflows/runtime/pre_route.py` (lines 239-243) - bypass out-of-context check for deposit_just_paid messages
+- `workflows/steps/step7_confirmation/trigger/step7_handler.py` (lines 199-206) - check deposit_just_paid before classification
+- `atelier-ai-frontend/app/page.tsx` (line 1505) - add confirmation_message to canAction list
+
+**Tests Added:**
+- `tests/regression/test_deposit_triggers_step7.py` - 6 tests covering:
+  - GateStatus.ready_for_hil property logic
+  - check_confirmation_gate detecting ready state from event_entry
+  - Step 5 routing to Step 7 when gate passes
+  - Workflow continuation after deposit payment (halt=False)
+  - deposit_just_paid signal bypassing billing capture
+
+**E2E Verified:** Full flow from inquiry → room → offer → accept → billing → deposit → Step 7 HIL → confirmation message
+
+---
+
+### Fix: Deposit Step Gating (Only Show at Step 4+)
+
+**Problem:** Deposit UI was showing in earlier workflow steps before the offer was generated, displaying stale deposit data.
+
+**Root Cause:** `_build_event_summary` in `api/routes/tasks.py` always returned `deposit_info` regardless of current step.
+
+**Fix Applied:**
+1. Added `current_step >= 4` check before including deposit_info in API response
+2. This ensures deposit only shows after offer is generated with pricing
+
+**Files Modified:**
+- `api/routes/tasks.py` (lines 113-126) - Step-based deposit filtering
+
+**Tests Added:**
+- `tests/regression/test_deposit_step_gating.py` - 13 tests covering:
+  - Steps 1-3 hiding deposit_info
+  - Steps 4+ showing deposit_info
+  - Both fixed and percentage deposit types
+  - Null deposit_info handling
+  - Field preservation
+
+---
+
 ### Feature: Room Confirmation + Offer Combined Message
 
 **Problem:** When a client confirmed a room selection, the system sent two separate messages: "Room confirmed!" and then "Here is your offer...". This was redundant and not aligned with the expected UX of a single combined message.

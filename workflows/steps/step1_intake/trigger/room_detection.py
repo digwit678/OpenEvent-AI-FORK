@@ -41,10 +41,12 @@ def detect_room_choice(
     lowered = text.lower()
     condensed = normalize_room_token(text)
 
-    # direct match against known room labels
+    # direct match against known room labels (with word boundaries to avoid "room for" matching "Room F")
     for room in rooms:
         room_lower = room.lower()
-        if room_lower in lowered:
+        # Use word boundary regex to avoid "room for" matching "room f"
+        room_pattern = rf"\b{re.escape(room_lower)}\b"
+        if re.search(room_pattern, lowered):
             return room
         if normalize_room_token(room) and normalize_room_token(room) == condensed:
             return room

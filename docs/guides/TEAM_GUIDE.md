@@ -274,6 +274,47 @@ Result: One combined message with "Great choice! Room F is confirmed... Here is 
 **Fix**: Same as BUG-011 - Step 3 now returns `halt=False` so Step 4's full offer generation runs, including pricing.
 **Files**: Same as BUG-011
 
+### BUG-015: Deposit Payment Does Not Trigger Step 7 (Site Visit / Confirmation)
+**Status**: Fixed (2026-01-13)
+**Severity**: Critical (Workflow Breaking)
+**Symptom**: After clicking "Pay Deposit" button, nothing happens or a generic fallback message appears instead of proper confirmation/site visit message.
+**Root Cause**: Four issues found:
+1. In `step5_handler.py`, when `gate_status.ready_for_hil` was True, the handler returned `halt=True` instead of `halt=False`
+2. In `pre_route.py`, the out-of-context detection was blocking `deposit_just_paid` messages (classified as `confirm_date`)
+3. In `step7_handler.py`, the `deposit_just_paid` message flag wasn't checked before classification, causing misclassification to "question" → generic fallback
+4. In `page.tsx`, the `confirmation_message` task type wasn't in the `canAction` list, so Step 7 HIL tasks had no Approve button
+**Fix**:
+1. Changed `halt=True` to `halt=False` in the `ready_for_hil` branch (step5_handler.py)
+2. Added bypass for `deposit_just_paid` messages in `check_out_of_context()` (pre_route.py)
+3. Added early check for `deposit_just_paid` flag before classification (step7_handler.py)
+4. Added `transition_message` and `confirmation_message` to `canAction` list (page.tsx)
+**Files**:
+- `workflows/steps/step5_negotiation/trigger/step5_handler.py`
+- `workflows/runtime/pre_route.py`
+- `workflows/steps/step7_confirmation/trigger/step7_handler.py`
+- `atelier-ai-frontend/app/page.tsx`
+**Tests**: `tests/regression/test_deposit_triggers_step7.py` (6 tests)
+**E2E Verified**: Full flow from inquiry → room → offer → accept → billing → deposit → Step 7 HIL → confirmation message in chat.
+**Note**: This was a recurring bug with multiple layers. The fix required changes in 4 files across backend and frontend.
+
+### BUG-016: Deposit Info Showing Before Offer Stage (Backend)
+**Status**: Fixed (2026-01-13)
+**Severity**: Medium (UX confusion)
+**Symptom**: Deposit information returned in API response before Step 4, showing stale/premature deposit data.
+**Root Cause**: `_build_event_summary()` in `api/routes/tasks.py` always included `deposit_info` regardless of current workflow step.
+**Fix**: Added `current_step >= 4` check before including deposit_info in API response.
+**Files**: `api/routes/tasks.py`
+**Tests**: `tests/regression/test_deposit_step_gating.py` (13 tests)
+
+### BUG-017: OOC Guidance Blocks Offer Confirmation
+**Status**: Fixed (2026-01-13)
+**Severity**: High (workflow blocked)
+**Symptom**: Client replies like "that's fine" after the offer in Step 5 and gets "We're in negotiation..." guidance instead of billing/deposit prompts.
+**Root Cause**: `pre_route.check_out_of_context` relied on unified intent labels; simple confirmations were misclassified as `confirm_date`, triggering out-of-context guidance before Step 5.
+**Fix**: Treat confirmation/acceptance signals as in-context for Steps 4-5 and gate OOC on intent evidence (date/acceptance/rejection/counter signals + billing detection).
+**Files**: `workflows/runtime/pre_route.py`
+**Tests**: `tests/specs/prelaunch/test_prelaunch_regressions.py` (OOC confirmation bypass)
+
 ### BUG-014: Deposit UI Showing Before Offer Stage
 **Status**: Fixed (2026-01-13)
 **Severity**: Medium (UX confusion)

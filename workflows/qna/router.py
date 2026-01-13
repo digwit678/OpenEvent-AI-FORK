@@ -605,17 +605,18 @@ def _site_visit_response() -> List[str]:
 def _general_response(event_entry: Optional[Dict[str, Any]]) -> List[str]:
     step = _current_step(event_entry)
     if step == 2:
+        # Informational only - CTA is always at the end of Step 2 handler's message
         return [
-            "Once we pick a date I can check rooms and availability instantly.",
-            "Rooms come with Wi-Fi, projector-ready HDMI, and daylight lighting.",
+            "Our rooms feature Wi-Fi, projector-ready HDMI, and natural daylight.",
         ]
     if step == 3:
+        # Only room info here - CTA is always at the end of Step 3 handler's message
         return [
             "Rooms A–C include projectors and configurable seating.",
-            "Tell me which room you prefer and I'll hold it while we build the offer.",
         ]
+    # Informational only - CTAs are handled by step handlers
     return [
-        "Happy to help with any venue questions — just let me know what you'd like to explore.",
+        "Feel free to ask about rooms, catering, equipment, or site visits.",
     ]
 
 

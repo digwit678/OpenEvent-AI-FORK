@@ -4,6 +4,20 @@ Ideas collected during development sessions for future implementation.
 
 ---
 
+## Detection Interference Hardening (Jan 13, 2026)
+
+**Context:** OOC guidance bug triage surfaced multiple detection conflicts (acceptance vs room/date, shortcuts, Q&A heuristics).
+
+**Proposed Solution:** Gate high-impact routing with existing unified detection outputs, and strip quoted history before regex-driven routing.
+
+**Details:** See `docs/reports/DETECTION_INTERFERENCE_IDEAS.md` (cost notes + full list).
+
+**Files to modify:** `workflows/runtime/pre_route.py`, `workflows/steps/step1_intake/trigger/*`, `workflows/planner/*`, `detection/qna/general_qna.py`.
+
+**Priority:** Medium (robustness).
+
+---
+
 ## Capacity Limit Handling (Dec 25, 2025)
 
 **Context:** During capacity change testing, discovered system doesn't handle "capacity exceeds all rooms" case.
@@ -83,4 +97,3 @@ Ideas collected during development sessions for future implementation.
 - Fixed `_event_date_iso()` to handle multiple date formats
 
 ---
-
