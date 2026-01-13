@@ -209,7 +209,6 @@ def save_db(db: Dict[str, Any], path: Path, lock_path: Optional[Path] = None, *,
         lock_path: Optional explicit lock path
         _lock_held: If True, skip lock acquisition (caller already holds lock)
     """
-
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     out_db = {

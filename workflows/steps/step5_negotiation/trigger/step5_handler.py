@@ -36,6 +36,7 @@ from workflows.common.general_qna import (
     present_general_room_qna,
     _fallback_structured_body,
 )
+from workflows.common.detection_utils import get_unified_detection
 from workflows.qna.engine import build_structured_qna_result
 from workflows.qna.extraction import ensure_qna_extraction
 from workflows.io.database import append_audit_entry, update_event_metadata
@@ -265,9 +266,14 @@ def process(state: WorkflowState) -> GroupResult:
     message_text = (state.message.body or "").strip()
     user_info = state.user_info or {}
 
+    # Get unified detection result (already computed during pre-routing, $0 cost)
+    unified_detection = get_unified_detection(state)
+
     # [CHANGE DETECTION] Run FIRST to detect structural changes
     # Pass message_text so we can parse dates directly from the message
-    structural = _detect_structural_change(state.user_info, event_entry, message_text)
+    structural = _detect_structural_change(
+        state.user_info, event_entry, message_text, unified_detection
+    )
 
     if structural:
         # Handle structural change detour BEFORE Q&A
@@ -340,8 +346,9 @@ def process(state: WorkflowState) -> GroupResult:
             owner_step="Step5_Negotiation",
         )
 
-    classification, classification_confidence = _classify_message(message_text)
-    detected_intents = _collect_detected_intents(message_text)
+    # Pass unified_detection for accurate LLM-based acceptance/rejection detection
+    classification, classification_confidence = _classify_message(message_text, unified_detection)
+    detected_intents = _collect_detected_intents(message_text, unified_detection)
 
     # -------------------------------------------------------------------------
     # NONSENSE GATE: Check for off-topic/nonsense using existing confidence
@@ -677,13 +684,21 @@ def _detect_structural_change(
     user_info: Dict[str, Any],
     event_entry: Dict[str, Any],
     message_text: str = "",
+    unified_detection: Optional[Any] = None,
 ) -> Optional[tuple[int, str]]:
     # -------------------------------------------------------------------------
     # ACCEPTANCE GUARD: Skip change detection for acceptance messages
     # LLM extraction may produce false positive "room" values from acceptance
     # messages like "I accept" which should NOT trigger room change detection.
     # -------------------------------------------------------------------------
-    if message_text:
+    # FIX: Use unified LLM detection (is_acceptance) as primary source
+    # This is more accurate than regex patterns for semantic acceptance detection
+    if unified_detection and unified_detection.is_acceptance:
+        # LLM detected acceptance - skip all change detection
+        return None
+
+    # Fallback to regex pattern matching if unified detection unavailable
+    if message_text and not unified_detection:
         is_acceptance, confidence, _ = matches_acceptance_pattern(message_text.lower())
         if is_acceptance and confidence >= 0.7:
             # Message looks like an acceptance - skip all change detection
@@ -819,6 +834,7 @@ def _apply_hil_negotiation_decision(state: WorkflowState, event_entry: Dict[str,
             offer["status"] = "Accepted"
             offer["accepted_at"] = timestamp
     event_entry["offer_status"] = "Accepted"
+    event_entry["offer_accepted"] = True  # Critical: enables confirmation gate check
     event_entry.pop("negotiation_pending_decision", None)
     append_audit_entry(event_entry, 5, 6, "offer_accepted_hil")
     update_event_metadata(event_entry, current_step=6, thread_state="In Progress")

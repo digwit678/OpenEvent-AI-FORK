@@ -421,9 +421,28 @@ def detect_general_room_query(msg_text: str, state: WorkflowState) -> Dict[str, 
         llm_called = True
         llm_result = llm_classify(text)
 
-    is_general = bool(
-        heuristics.get("heuristic_general") or llm_result.get("label") == "general_room_query"
+    # -------------------------------------------------------------------------
+    # FIX: LLM veto for borderline heuristic matches
+    # Previously: is_general = heuristics OR llm (LLM could only add, never veto)
+    # Now: borderline matches require LLM confirmation; clear heuristics are trusted
+    # -------------------------------------------------------------------------
+    is_clear_heuristic = (
+        heuristics.get("heuristic_general")
+        and not heuristics.get("borderline")  # Has strong signals, not borderline
     )
+    is_general_from_llm = llm_result.get("label") == "general_room_query"
+
+    # For borderline matches (e.g., "need room", "looking for venue"), require LLM agreement
+    is_borderline_confirmed = (
+        heuristics.get("borderline")
+        and is_general_from_llm
+    )
+
+    # Final decision:
+    # - Clear heuristic signals (?, interrogative, explicit patterns) → trust heuristic
+    # - Borderline signals → require LLM confirmation
+    # - LLM says "general" alone → accept it
+    is_general = bool(is_clear_heuristic or is_borderline_confirmed or is_general_from_llm)
 
     combined_constraints = _merge_constraints(parsed, llm_result.get("constraints") or {})
 

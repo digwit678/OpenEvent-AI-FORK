@@ -17,7 +17,7 @@ Usage:
 from __future__ import annotations
 
 import re
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from detection.response.matchers import (
     is_room_selection,
@@ -25,6 +25,7 @@ from detection.response.matchers import (
     matches_counter_pattern,
     matches_decline_pattern,
 )
+from detection.unified import UnifiedDetectionResult
 
 # N2 refactoring: Import constants
 from .constants import (
@@ -42,12 +43,19 @@ from .constants import (
 )
 
 
-def collect_detected_intents(message_text: str) -> List[Tuple[str, float]]:
+def collect_detected_intents(
+    message_text: str,
+    unified_detection: Optional[UnifiedDetectionResult] = None,
+) -> List[Tuple[str, float]]:
     """
     Detect all possible intents from message text with confidence scores.
 
     Returns a list of (intent, confidence) tuples for each detected intent.
     Multiple intents can be detected from the same message.
+
+    Args:
+        message_text: The message text to analyze
+        unified_detection: Optional unified detection result from LLM (preferred)
 
     Recognized intents:
         - room_selection: Client is choosing a room
@@ -62,13 +70,24 @@ def collect_detected_intents(message_text: str) -> List[Tuple[str, float]]:
     if is_room_selection(lowered):
         intents.append((INTENT_ROOM_SELECTION, CONFIDENCE_ROOM_SELECTION))
 
-    accept, accept_conf, _ = matches_acceptance_pattern(lowered)
-    if accept:
-        intents.append((INTENT_ACCEPT, accept_conf))
+    # FIX: Use unified LLM detection as primary for acceptance/rejection
+    # This is more accurate than regex patterns for semantic detection
+    if unified_detection:
+        if unified_detection.is_acceptance:
+            # LLM detected acceptance - use high confidence
+            intents.append((INTENT_ACCEPT, 0.95))
+        if unified_detection.is_rejection:
+            # LLM detected rejection - use high confidence
+            intents.append((INTENT_DECLINE, 0.95))
+    else:
+        # Fallback to regex if unified detection unavailable
+        accept, accept_conf, _ = matches_acceptance_pattern(lowered)
+        if accept:
+            intents.append((INTENT_ACCEPT, accept_conf))
 
-    decline, decline_conf, _ = matches_decline_pattern(lowered)
-    if decline:
-        intents.append((INTENT_DECLINE, decline_conf))
+        decline, decline_conf, _ = matches_decline_pattern(lowered)
+        if decline:
+            intents.append((INTENT_DECLINE, decline_conf))
 
     counter, counter_conf, _ = matches_counter_pattern(lowered)
     if counter:
@@ -83,18 +102,25 @@ def collect_detected_intents(message_text: str) -> List[Tuple[str, float]]:
     return intents
 
 
-def classify_message(message_text: str) -> Tuple[str, float]:
+def classify_message(
+    message_text: str,
+    unified_detection: Optional[UnifiedDetectionResult] = None,
+) -> Tuple[str, float]:
     """
     Classify a message into a single primary intent with confidence.
 
     Returns the highest-confidence intent from collect_detected_intents,
     or (INTENT_CLARIFICATION, CONFIDENCE_LOWEST) as the default fallback.
 
+    Args:
+        message_text: The message text to analyze
+        unified_detection: Optional unified detection result from LLM (preferred)
+
     Returns:
         Tuple of (intent_name, confidence_score)
     """
     lowered = (message_text or "").lower()
-    candidates = collect_detected_intents(lowered)
+    candidates = collect_detected_intents(lowered, unified_detection)
 
     if candidates:
         best = max(candidates, key=lambda item: item[1])

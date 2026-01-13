@@ -12,12 +12,19 @@ from .normalization import normalize_room_token
 
 
 def detect_room_choice(
-    message_text: str, linked_event: Optional[Dict[str, Any]]
+    message_text: str,
+    linked_event: Optional[Dict[str, Any]],
+    unified_detection: Optional[Any] = None,
 ) -> Optional[str]:
     """Detect room selection in message text.
 
     Note: This function calls load_rooms() to get available rooms.
     Consider refactoring to accept rooms parameter in future.
+
+    Args:
+        message_text: The message text to analyze
+        linked_event: The linked event entry
+        unified_detection: Optional unified detection result from LLM
 
     Returns:
         Room name if detected, None otherwise.
@@ -39,6 +46,17 @@ def detect_room_choice(
     if not text:
         return None
     lowered = text.lower()
+
+    # -------------------------------------------------------------------------
+    # FIX: Question guard - don't lock room if message is a question
+    # "Is Room A available?" should NOT lock Room A
+    # -------------------------------------------------------------------------
+    if "?" in lowered:
+        return None
+
+    # Also check unified detection is_question signal
+    if unified_detection and getattr(unified_detection, "is_question", False):
+        return None
     condensed = normalize_room_token(text)
 
     # direct match against known room labels (with word boundaries to avoid "room for" matching "Room F")

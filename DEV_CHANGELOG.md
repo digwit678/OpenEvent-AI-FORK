@@ -1,5 +1,213 @@
 # Development Changelog
 
+## 2026-01-13
+
+### Fix: Step 5 HIL Approval → Site Visit Message Flow
+
+**Problem:** After HIL approval of offer acceptance, the workflow didn't generate the site visit message. Instead, it either returned no response or a fallback message. The deposit button also wasn't appearing after offer acceptance.
+
+**Root Causes (3 issues fixed):**
+1. `step5_handler.py`: Missing `offer_accepted = True` flag when HIL approval happens - confirmation gate was never triggered
+2. `hil_tasks.py`: After approval, wasn't calling Step 7 to generate site visit message
+3. `events_team-shami.json`: Missing `global_deposit` config (config object was empty)
+
+**Fix Applied:**
+1. Added `offer_accepted = True` in `_apply_hil_negotiation_decision()` at line 837
+2. Rewrote Step 5 HIL approval handling in `approve_task_and_send()` to:
+   - Check confirmation gate for billing/deposit prerequisites
+   - Show deposit prompt if deposit not paid
+   - Call `process_step7()` directly when all prerequisites met to generate site visit message
+3. Added global_deposit config to team database manually
+
+**Files Modified:**
+- `workflows/steps/step5_negotiation/trigger/step5_handler.py` (line 837) - added `offer_accepted = True`
+- `workflows/runtime/hil_tasks.py` (lines 383-464) - major rewrite of approval handling
+- `events_team-shami.json` - added global_deposit config
+
+**E2E Verified:**
+- `2026-01-13_smart-shortcut-date-without-year.md` - Full flow with date inference, deposit, and site visit
+
+---
+
+### Fix: Detection Interference - Unified LLM Signals
+
+**Problem:** Multiple detection layers (Step5, Step7, Room, Q&A) were using regex/keywords that overrode correct LLM semantic intent. Examples:
+- "good" alone triggering Step5 acceptance
+- "Yes, can we visit?" returning confirm instead of site_visit in Step7
+- "Is Room A available?" incorrectly locking Room A
+- Borderline Q&A matches like "need room" couldn't be vetoed by LLM
+
+**Solution:** Implemented unified detection consumption across 4 areas with zero extra LLM cost (reuses signals already computed during pre-routing):
+
+1. **Step5 Acceptance/Rejection**: Use `is_acceptance`/`is_rejection` from unified detection before regex fallback
+2. **Step7 Site Visit Precedence**: Check `qna_types` for `site_visit_request` before CONFIRM_KEYWORDS
+3. **Room Detection Question Guard**: Block room lock if `?` in text OR `is_question=True`
+4. **Q&A LLM Veto**: Borderline heuristics require LLM confirmation; clear heuristics trust regex
+
+**Files Modified:**
+- `workflows/steps/step5_negotiation/trigger/classification.py`
+- `workflows/steps/step7_confirmation/trigger/classification.py`
+- `workflows/steps/step1_intake/trigger/room_detection.py`
+- `detection/qna/general_qna.py` (conceptual - logic documented)
+
+**Tests Added:**
+- `tests/detection/test_detection_interference.py` - 13 regression tests (DET_INT_001-010 + variants)
+
+**E2E Verified:** Playwright test with date without year ("March 20") correctly parsed and flow progressed through Steps 1-7.
+
+---
+
+### Bug Found: Global Deposit Config Timing Issue
+
+**Problem:** Global deposit config set in UI wasn't being applied to new events - no deposit button appeared after offer acceptance despite config showing "30% · 10 days".
+
+**Root Cause:** Events created BEFORE global deposit was saved to database don't pick up deposit settings. `state.db` snapshot may be stale when Step4 calls `build_deposit_info()`.
+
+**Status:** Open (BUG-019 in TEAM_GUIDE.md)
+
+**Workaround:** Ensure deposit config is saved before starting new conversations.
+
+---
+
+### Fix: OOC Guidance No Longer Blocks Offer Confirmations
+
+**Problem:** Short confirmations like "that's fine" during Step 4/5 were misclassified as `confirm_date`, triggering out-of-context guidance and blocking the billing/deposit gate.
+
+**Fix Applied:**
+1. Bypass OOC guidance for confirmation/acceptance signals at Steps 4-5
+2. Skip OOC when billing details are present (capture path)
+3. Require intent evidence (date/acceptance/rejection/counter) before OOC can block
+
+**Files Modified:**
+- `workflows/runtime/pre_route.py`
+- `tests/specs/prelaunch/test_prelaunch_regressions.py`
+
+**Tests Added:**
+- `test_out_of_context_should_not_block_offer_confirmation`
+- `test_out_of_context_should_still_trigger_on_strong_acceptance`
+
+### Fix: Deposit Payment Must Trigger Step 7 (Site Visit / Confirmation)
+
+**Problem:** After clicking "Pay Deposit", the workflow halted at Step 5 without continuing to Step 7 for site visit proposal or final confirmation. The UI showed no response or a generic fallback message after deposit payment.
+
+**Root Causes (4 issues fixed):**
+1. `step5_handler.py`: Returned `halt=True` when gate passed, stopping workflow
+2. `pre_route.py`: Out-of-context detection blocked `deposit_just_paid` synthetic messages
+3. `step7_handler.py`: Didn't check `deposit_just_paid` flag, leading to misclassification
+4. `page.tsx`: `confirmation_message` task type missing from `canAction` list (no Approve button)
+
+**Fix Applied:**
+1. Changed `halt=True` to `halt=False` in the `ready_for_hil` branch (Step 5)
+2. Added bypass for `deposit_just_paid` messages in out-of-context check
+3. Added early check for `deposit_just_paid` flag in Step 7 before classification
+4. Added `transition_message` and `confirmation_message` to frontend `canAction` list
+
+**Files Modified:**
+- `workflows/steps/step5_negotiation/trigger/step5_handler.py` (lines 227-246) - halt=False, route to Step 7
+- `workflows/runtime/pre_route.py` (lines 239-243) - bypass out-of-context check for deposit_just_paid messages
+- `workflows/steps/step7_confirmation/trigger/step7_handler.py` (lines 199-206) - check deposit_just_paid before classification
+- `atelier-ai-frontend/app/page.tsx` (line 1505) - add confirmation_message to canAction list
+
+**Tests Added:**
+- `tests/regression/test_deposit_triggers_step7.py` - 6 tests covering:
+  - GateStatus.ready_for_hil property logic
+  - check_confirmation_gate detecting ready state from event_entry
+  - Step 5 routing to Step 7 when gate passes
+  - Workflow continuation after deposit payment (halt=False)
+  - deposit_just_paid signal bypassing billing capture
+
+**E2E Verified:** Full flow from inquiry → room → offer → accept → billing → deposit → Step 7 HIL → confirmation message
+
+---
+
+### Fix: Deposit Step Gating (Only Show at Step 4+)
+
+**Problem:** Deposit UI was showing in earlier workflow steps before the offer was generated, displaying stale deposit data.
+
+**Root Cause:** `_build_event_summary` in `api/routes/tasks.py` always returned `deposit_info` regardless of current step.
+
+**Fix Applied:**
+1. Added `current_step >= 4` check before including deposit_info in API response
+2. This ensures deposit only shows after offer is generated with pricing
+
+**Files Modified:**
+- `api/routes/tasks.py` (lines 113-126) - Step-based deposit filtering
+
+**Tests Added:**
+- `tests/regression/test_deposit_step_gating.py` - 13 tests covering:
+  - Steps 1-3 hiding deposit_info
+  - Steps 4+ showing deposit_info
+  - Both fixed and percentage deposit types
+  - Null deposit_info handling
+  - Field preservation
+
+---
+
+### Feature: Room Confirmation + Offer Combined Message
+
+**Problem:** When a client confirmed a room selection, the system sent two separate messages: "Room confirmed!" and then "Here is your offer...". This was redundant and not aligned with the expected UX of a single combined message.
+
+**Solution:** Implemented a room confirmation prefix mechanism:
+1. Step 3 now stores `room_confirmation_prefix` in `event_entry` when client confirms a room
+2. Step 3 returns `halt=False` to continue immediately to Step 4
+3. Step 4 pops and prepends the prefix to the offer body
+
+**Result:** One combined message:
+```
+Great choice! Room F on 22.02.2026 is confirmed for your event with 25 guests.
+
+Here is your offer for Room F...
+```
+
+**Files Modified:**
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py` - Set prefix and halt=False on confirmation
+- `workflows/steps/step4_offer/trigger/step4_handler.py` - Pop and prepend prefix to offer body
+
+**Tests Added:**
+- `tests/regression/test_room_confirm_offer_combined.py` - 6 tests covering prefix setting, consumption, combined format, and halt behavior
+
+---
+
+### Fix: Deposit Showing Before Offer Stage (Session Filtering)
+
+**Problem:** Dynamic deposit UI was showing before the client even started a conversation, displaying stale deposits from previous sessions.
+
+**Root Cause:** The frontend `unpaidDepositInfo` computed value used all tasks without filtering by current session's `thread_id`.
+
+**Fix Applied:**
+1. Added early return if `sessionId` is null (no session = no deposit)
+2. Filter tasks by `thread_id === sessionId` to only show deposits for current conversation
+
+**Files Modified:**
+- `atelier-ai-frontend/app/page.tsx` - Session-based deposit filtering in `unpaidDepositInfo` useMemo
+
+---
+
+### Fix: Date Parsing "of" Keyword + LLM Current Date Context
+
+**Problem:** Dates like "16th of February" (with "of" keyword) without a year weren't being parsed correctly. The regex pattern `\s+(?P<month>...)` expected whitespace directly between day and month, but "of" broke the pattern.
+
+Additionally, the LLM unified detection was instructed to "assume current year" but never received the actual current date, so it couldn't reliably determine what year to use.
+
+**Fixes Applied:**
+1. **datetime_parse.py** - Added `(?:of\s+)?` to the `_DATE_TEXTUAL_DMY` regex to make "of" optional
+2. **datetime_parse.py** - Changed `datetime.utcnow().year` to `date.today().year` (fixes deprecation warning + uses local timezone)
+3. **detection/unified.py** - Added `today={date}` to the LLM prompt context so it knows the current date
+
+**Files Modified:**
+- `workflows/common/datetime_parse.py` - Regex fix + deprecation fix
+- `detection/unified.py` - Added date import and today context to LLM prompt
+
+**Tests Added:**
+- `tests/unit/test_datetime_parse.py` - 12 new unit tests covering:
+  - "of" keyword variations ("16th of February")
+  - Year defaulting to current year
+  - Explicit year override
+  - Numeric formats (DD.MM.YYYY, DD.MM.YY, ISO)
+  - Regression tests for "of" keyword
+
+---
+
 ## 2026-01-12
 
 ### Feature: Universal Past Date Validation

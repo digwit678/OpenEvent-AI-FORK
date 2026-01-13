@@ -254,30 +254,120 @@ All unit types that may appear in product data:
 **Files**: `workflows/qna/router.py`
 
 ### BUG-011: Room Confirmation Shows "Availability overview" Instead of "Offer"
-**Status**: Open (regression found 2026-01-12)
+**Status**: Fixed (2026-01-13)
 **Severity**: Medium (UX clarity)
 **Symptom**: When client confirms a room after Step 3 (e.g., "Room A sounds perfect"), the response header still shows "Availability overview" instead of "Offer". The Manager Tasks correctly shows "Step 4" and "offer message".
-**Root Cause**: The `room_choice_captured` shortcut in Step 1 sets `current_step=4` but the draft header is not being set correctly. The offer draft shows room features but wrong header.
-**Technical Detail**: `detect_room_choice()` in `room_detection.py` only activates when `current_step >= 3`. Follow-up room confirmations go through Step 1 → shortcut → Step 4. The "Room Confirmed" draft added was superseded or the verbalizer is overwriting the header.
-**Reproduction**:
-1. Send initial message with date + participants (no room)
-2. System shows "Availability overview" with room options
-3. Reply "Room A sounds perfect!"
-4. Response shows "Availability overview" header instead of "Offer"
-**Files**: `workflows/steps/step1_intake/trigger/step1_handler.py`, `ux/universal_verbalizer.py`
-**Key Learning**: Draft headers can be overwritten by verbalizer. Need to trace full flow to find where header is set.
+**Root Cause**: Room confirmation was creating a separate draft message in Step 3 that got superseded by Step 4's offer. The two messages weren't being combined.
+**Fix**: Implemented room confirmation prefix mechanism:
+1. Step 3 stores `room_confirmation_prefix` ("Great choice! Room X is confirmed...") in event_entry
+2. Step 3 returns `halt=False` to continue immediately to Step 4
+3. Step 4 pops prefix and prepends it to offer body
+Result: One combined message with "Great choice! Room F is confirmed... Here is your offer..."
+**Files**: `workflows/steps/step3_room_availability/trigger/step3_handler.py`, `workflows/steps/step4_offer/trigger/step4_handler.py`
+**Tests**: `tests/regression/test_room_confirm_offer_combined.py`
 
 ### BUG-012: Offer Missing Pricing When Triggered via Room Confirmation
-**Status**: Open (2026-01-12)
+**Status**: Fixed (2026-01-13) - Part of BUG-011 fix
 **Severity**: High (missing critical info)
 **Symptom**: When offer is triggered via room confirmation shortcut, the draft shows room details (capacity, features) but NO pricing (CHF amount).
-**Comparison**: Smart shortcut (initial message with room+date+participants) correctly shows "Room B · CHF 750.00" and pricing.
-**Root Cause**: The room confirmation shortcut path doesn't call the offer pricing generation. The smart shortcut goes through Step 4's full offer pipeline which includes pricing.
+**Root Cause**: Room confirmation shortcut was creating a separate Step 3 draft instead of proceeding to Step 4's full offer pipeline.
+**Fix**: Same as BUG-011 - Step 3 now returns `halt=False` so Step 4's full offer generation runs, including pricing.
+**Files**: Same as BUG-011
+
+### BUG-015: Deposit Payment Does Not Trigger Step 7 (Site Visit / Confirmation)
+**Status**: Fixed (2026-01-13)
+**Severity**: Critical (Workflow Breaking)
+**Symptom**: After clicking "Pay Deposit" button, nothing happens or a generic fallback message appears instead of proper confirmation/site visit message.
+**Root Cause**: Four issues found:
+1. In `step5_handler.py`, when `gate_status.ready_for_hil` was True, the handler returned `halt=True` instead of `halt=False`
+2. In `pre_route.py`, the out-of-context detection was blocking `deposit_just_paid` messages (classified as `confirm_date`)
+3. In `step7_handler.py`, the `deposit_just_paid` message flag wasn't checked before classification, causing misclassification to "question" → generic fallback
+4. In `page.tsx`, the `confirmation_message` task type wasn't in the `canAction` list, so Step 7 HIL tasks had no Approve button
+**Fix**:
+1. Changed `halt=True` to `halt=False` in the `ready_for_hil` branch (step5_handler.py)
+2. Added bypass for `deposit_just_paid` messages in `check_out_of_context()` (pre_route.py)
+3. Added early check for `deposit_just_paid` flag before classification (step7_handler.py)
+4. Added `transition_message` and `confirmation_message` to `canAction` list (page.tsx)
+**Files**:
+- `workflows/steps/step5_negotiation/trigger/step5_handler.py`
+- `workflows/runtime/pre_route.py`
+- `workflows/steps/step7_confirmation/trigger/step7_handler.py`
+- `atelier-ai-frontend/app/page.tsx`
+**Tests**: `tests/regression/test_deposit_triggers_step7.py` (6 tests)
+**E2E Verified**: Full flow from inquiry → room → offer → accept → billing → deposit → Step 7 HIL → confirmation message in chat.
+**Note**: This was a recurring bug with multiple layers. The fix required changes in 4 files across backend and frontend.
+
+### BUG-016: Deposit Info Showing Before Offer Stage (Backend)
+**Status**: Fixed (2026-01-13)
+**Severity**: Medium (UX confusion)
+**Symptom**: Deposit information returned in API response before Step 4, showing stale/premature deposit data.
+**Root Cause**: `_build_event_summary()` in `api/routes/tasks.py` always included `deposit_info` regardless of current workflow step.
+**Fix**: Added `current_step >= 4` check before including deposit_info in API response.
+**Files**: `api/routes/tasks.py`
+**Tests**: `tests/regression/test_deposit_step_gating.py` (13 tests)
+
+### BUG-017: OOC Guidance Blocks Offer Confirmation
+**Status**: Fixed (2026-01-13)
+**Severity**: High (workflow blocked)
+**Symptom**: Client replies like "that's fine" after the offer in Step 5 and gets "We're in negotiation..." guidance instead of billing/deposit prompts.
+**Root Cause**: `pre_route.check_out_of_context` relied on unified intent labels; simple confirmations were misclassified as `confirm_date`, triggering out-of-context guidance before Step 5.
+**Fix**: Treat confirmation/acceptance signals as in-context for Steps 4-5 and gate OOC on intent evidence (date/acceptance/rejection/counter signals + billing detection).
+**Files**: `workflows/runtime/pre_route.py`
+**Tests**: `tests/specs/prelaunch/test_prelaunch_regressions.py` (OOC confirmation bypass)
+
+### BUG-014: Deposit UI Showing Before Offer Stage
+**Status**: Fixed (2026-01-13)
+**Severity**: Medium (UX confusion)
+**Symptom**: Dynamic deposit UI ("💰 Deposit Required: CHF X") showing before client even started a conversation, displaying stale deposits from previous sessions.
+**Root Cause**: Frontend `unpaidDepositInfo` computed value used all tasks without filtering by current session's `thread_id`.
+**Fix**:
+1. Added early return if `sessionId` is null (no session = no deposit)
+2. Filter tasks by `thread_id === sessionId` to only show deposits for current conversation
+**Files**: `atelier-ai-frontend/app/page.tsx`
+**Note**: This fix only applies to development-branch (frontend). Main branch is backend-only.
+
+### BUG-018: Detection Interference - Regex Overriding LLM Signals
+**Status**: Fixed (2026-01-13)
+**Severity**: High (incorrect routing)
+**Symptom**: Multiple detection issues where regex/keyword patterns override correct LLM semantic intent:
+1. Step5 acceptance regex too permissive ("good" alone triggers acceptance)
+2. Step7 "Yes, can we visit next week?" returns confirm instead of site_visit
+3. Room detection "Is Room A available?" incorrectly locks Room A
+4. Q&A borderline heuristics ("need room") can't be vetoed by LLM
+**Root Cause**: Detection code was checking regex/keywords before consulting unified LLM detection signals, and in some cases ignoring the signals entirely.
+**Fix**: Implemented unified detection consumption across 4 areas:
+1. Step5: Use `unified_detection.is_acceptance/is_rejection` before regex fallback
+2. Step7: Check `qna_types` for `site_visit_request` before CONFIRM_KEYWORDS
+3. Room detection: Add question guard (? in text OR `is_question=True`)
+4. Q&A: Require LLM agreement for borderline heuristic matches
+**Files**:
+- `workflows/steps/step5_negotiation/trigger/classification.py` - unified acceptance/rejection
+- `workflows/steps/step7_confirmation/trigger/classification.py` - site visit precedence
+- `workflows/steps/step1_intake/trigger/room_detection.py` - question guard
+- `detection/qna/general_qna.py` - LLM veto logic for borderline
+**Tests**: `tests/detection/test_detection_interference.py` (13 tests: DET_INT_001 through DET_INT_010 + variants)
+**Zero Cost**: All fixes reuse unified detection already computed during pre-routing ($0 extra LLM calls)
+
+### BUG-019: Global Deposit Config Not Applied to New Events
+**Status**: Open (2026-01-13)
+**Severity**: High (missing deposit)
+**Symptom**: Despite configuring global deposit in UI (30%, 10 days), new events don't have `deposit_info` populated, and no deposit button appears after offer acceptance.
+**Root Cause**: Timing issue - the global deposit config must be saved to database BEFORE starting a new conversation. If events are created before the config is persisted, they won't pick up the deposit settings.
+**Workaround**: Ensure "Reset Client" and new conversation happens AFTER global deposit is configured and saved.
+**Investigation Needed**:
+1. The `state.db` snapshot might be stale when Step 4 calls `build_deposit_info()`
+2. Consider reloading config from database at offer generation time
+3. Check if `load_db()` in workflow_email.py needs refresh after config updates
+4. Verify `build_deposit_info()` is reading from persisted config, not in-memory snapshot
 **Reproduction**:
-1. Send initial message with date + participants (no room)
-2. Confirm a room ("Room A sounds perfect!")
-3. Response shows room features but no CHF pricing
-**Files**: `workflows/steps/step1_intake/trigger/step1_handler.py`, `workflows/steps/step4_offer/`
+1. Start new conversation (event created)
+2. In another tab, configure global deposit (30%, 10 days)
+3. Continue conversation to offer acceptance
+4. Result: No deposit button appears
+**Files**:
+- `workflows/steps/step4_offer/trigger/step4_handler.py:615-618` - build_deposit_info call
+- `backend/workflow_email.py` - state.db initialization
+- `backend/workflows/io/database.py` - config persistence
 
 ### BUG-013: HIL Approval Sends Site Visit Text Instead of Workflow Draft
 **Status**: Fixed (2026-01-12)
