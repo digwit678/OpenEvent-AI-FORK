@@ -6,7 +6,6 @@ that after billing is provided and deposit is paid, the workflow creates
 an HIL task for manager approval.
 """
 import json
-import os
 import tempfile
 import uuid
 from pathlib import Path
@@ -14,12 +13,6 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime
 
 import pytest
-
-# Skip if Gemini API key not available (required for detection step)
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("GOOGLE_API_KEY") and not os.environ.get("gemini_key_openevent"),
-    reason="Requires GOOGLE_API_KEY for detection (integration test)"
-)
 
 from workflows.common.types import IncomingMessage
 from workflows.common.confirmation_gate import check_confirmation_gate
@@ -132,8 +125,8 @@ class TestDepositToHILIntegration:
         }
 
         # Stub the LLM calls
-        with patch("workflows.steps.step1_intake.llm.intent_classifier.classify_intent") as mock_classify, \
-             patch("workflows.steps.step1_intake.llm.analysis.extract_user_information") as mock_extract:
+        with patch("backend.workflows.steps.step1_intake.llm.intent_classifier.classify_intent") as mock_classify, \
+             patch("backend.workflows.steps.step1_intake.llm.analysis.extract_user_information") as mock_extract:
 
             # Mock LLM responses
             from domain import IntentLabel
@@ -309,8 +302,8 @@ class TestFullBillingThenDepositFlow:
         }
 
         # Stub the LLM calls
-        with patch("workflows.steps.step1_intake.llm.intent_classifier.classify_intent") as mock_classify, \
-             patch("workflows.steps.step1_intake.llm.analysis.extract_user_information") as mock_extract:
+        with patch("backend.workflows.steps.step1_intake.llm.intent_classifier.classify_intent") as mock_classify, \
+             patch("backend.workflows.steps.step1_intake.llm.analysis.extract_user_information") as mock_extract:
 
             from domain import IntentLabel
             mock_classify.return_value = (IntentLabel.EVENT_REQUEST, 0.95)
@@ -358,8 +351,8 @@ class TestFullBillingThenDepositFlow:
             "deposit_just_paid": True,
         }
 
-        with patch("workflows.steps.step1_intake.llm.intent_classifier.classify_intent") as mock_classify, \
-             patch("workflows.steps.step1_intake.llm.analysis.extract_user_information") as mock_extract:
+        with patch("backend.workflows.steps.step1_intake.llm.intent_classifier.classify_intent") as mock_classify, \
+             patch("backend.workflows.steps.step1_intake.llm.analysis.extract_user_information") as mock_extract:
 
             from domain import IntentLabel
             mock_classify.return_value = (IntentLabel.EVENT_REQUEST, 0.95)

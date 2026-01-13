@@ -296,8 +296,16 @@ def process(state: WorkflowState) -> GroupResult:
     # This sets _room_choice_detected so is_room_confirmation works later.
     # Must run BEFORE change detection to avoid treating confirmation as a change.
     # -------------------------------------------------------------------------
+    # DEBUG: Log incoming state for room detection
+    logger.info(
+        "[Step3][DEBUG] BEFORE room detection: user_info._room_choice_detected=%s, user_info.room=%s, message_text=%s",
+        user_info.get("_room_choice_detected"),
+        user_info.get("room"),
+        (message_text[:100] if message_text else None),
+    )
     if message_text and not user_info.get("_room_choice_detected"):
         detected_room = _detect_room_choice(message_text, event_entry)
+        logger.info("[Step3][DEBUG] _detect_room_choice returned: %s", detected_room)
         if detected_room:
             user_info["room"] = detected_room
             user_info["_room_choice_detected"] = True
@@ -485,6 +493,18 @@ def process(state: WorkflowState) -> GroupResult:
     room_change_detected_flag = state.user_info.get("_room_choice_detected") or (change_type == ChangeType.ROOM)
     user_requested_room = state.user_info.get("room") if room_change_detected_flag else None
     locked_room_id = event_entry.get("locked_room_id")
+
+    # DEBUG: Trace room confirmation logic
+    logger.info(
+        "[Step3][DEBUG] room_change_detected_flag=%s, _room_choice_detected=%s, change_type=%s, "
+        "user_info.room=%s, user_requested_room=%s, locked_room_id=%s",
+        room_change_detected_flag,
+        state.user_info.get("_room_choice_detected"),
+        change_type,
+        state.user_info.get("room"),
+        user_requested_room,
+        locked_room_id,
+    )
 
     # -------------------------------------------------------------------------
     # SEQUENTIAL WORKFLOW DETECTION

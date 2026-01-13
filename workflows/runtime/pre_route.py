@@ -12,6 +12,7 @@ Contains pre-routing checks that run after intake but before the step router:
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,65 @@ STEP_GUIDANCE: Dict[int, str] = {
     6: "We're finalizing the booking details.",
     7: "Your booking is confirmed! Let us know if you have any questions.",
 }
+
+
+# =============================================================================
+# OOC EVIDENCE GUARDS
+# =============================================================================
+
+_DATE_EVIDENCE_PATTERN = re.compile(
+    r"\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b",
+    re.IGNORECASE,
+)
+_MONTH_TOKENS = (
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+)
+_WEEKDAY_TOKENS = (
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+)
+_COUNTER_KEYWORDS = ("counter", "discount", "lower", "cheaper", "price", "budget", "instead")
+_CURRENCY_TOKENS = ("chf", "eur", "usd", "$")
+
+
+def _get_pre_filter_signals(state: WorkflowState) -> Dict[str, bool]:
+    pre_filter = (state.extras or {}).get("pre_filter")
+    if isinstance(pre_filter, dict):
+        signals = pre_filter.get("signals")
+        if isinstance(signals, dict):
+            return signals
+    return {}
+
+
+def _has_date_evidence(
+    text: str,
+    unified_result: Optional[UnifiedDetectionResult],
+) -> bool:
+    if unified_result and (unified_result.date or unified_result.date_text):
+        return True
+    if not text:
+        return False
+    text_lower = text.lower()
+    if _DATE_EVIDENCE_PATTERN.search(text_lower):
+        return True
+    if any(token in text_lower for token in _MONTH_TOKENS):
+        return True
+    if any(token in text_lower for token in _WEEKDAY_TOKENS):
+        return True
+    return False
+
+
+def _has_counter_evidence(text: str) -> bool:
+    if not text:
+        return False
+    text_lower = text.lower()
+    if any(token in text_lower for token in _CURRENCY_TOKENS):
+        return True
+    if any(token in text_lower for token in _COUNTER_KEYWORDS) and re.search(r"\b\d{2,}\b", text_lower):
+        return True
+    if re.search(r"\b(can|could|would)\s+you\s+do\s+\d", text_lower):
+        return True
+    return False
 
 
 # Type aliases for callback functions
@@ -196,6 +256,16 @@ def is_out_of_context(
     if unified_result.room_preference:
         return False
 
+    # Offer-stage confirmations can be misclassified as confirm_date.
+    # Let Step 4/5 handlers decide instead of blocking early.
+    if intent in {"confirm_date", "confirm_date_partial"} and current_step in {4, 5}:
+        if unified_result.is_confirmation or unified_result.is_acceptance:
+            logger.debug(
+                "[OOC_CHECK] Treating confirmation as in-context at step %s",
+                current_step,
+            )
+            return False
+
     # Check if this intent has step restrictions
     valid_steps = INTENT_VALID_STEPS.get(intent)
     if valid_steps is None:
@@ -236,7 +306,25 @@ def check_out_of_context(
         logger.debug("[OOC_CHECK] Skipping check - continuation message")
         return None
 
+    # Deposit payment messages bypass out-of-context check
+    # These are synthetic messages from the Pay Deposit button that trigger Step 7
+    if state.message and (state.message.extras or {}).get("deposit_just_paid"):
+        logger.debug("[OOC_CHECK] Skipping check - deposit_just_paid message")
+        return None
+
     if not state.event_entry:
+        return None
+
+    # Billing details should be captured even if intent looks out-of-context
+    if (state.user_info or {}).get("billing_address"):
+        logger.debug("[OOC_CHECK] Skipping check - billing_address present")
+        return None
+    if unified_result and unified_result.billing_address:
+        logger.debug("[OOC_CHECK] Skipping check - billing_address detected by unified LLM")
+        return None
+    pre_filter_signals = _get_pre_filter_signals(state)
+    if pre_filter_signals.get("billing"):
+        logger.debug("[OOC_CHECK] Skipping check - billing signal present")
         return None
 
     # Bypass OOC check when waiting for "continue without product" response
@@ -248,6 +336,28 @@ def check_out_of_context(
     current_step = state.event_entry.get("current_step")
     intent = unified_result.intent if unified_result else None
     logger.debug("[OOC_CHECK] intent=%s, current_step=%s", intent, current_step)
+
+    message_text = (state.message.body or "") if state.message else ""
+    if intent in {"confirm_date", "confirm_date_partial"} and not _has_date_evidence(message_text, unified_result):
+        logger.debug("[OOC_CHECK] Skipping check - no date evidence for intent %s", intent)
+        return None
+    if intent == "accept_offer":
+        has_acceptance = pre_filter_signals.get("acceptance", False)
+        if unified_result and unified_result.is_acceptance:
+            has_acceptance = True
+        if not has_acceptance:
+            logger.debug("[OOC_CHECK] Skipping check - no acceptance evidence")
+            return None
+    if intent == "decline_offer":
+        has_rejection = pre_filter_signals.get("rejection", False)
+        if unified_result and unified_result.is_rejection:
+            has_rejection = True
+        if not has_rejection:
+            logger.debug("[OOC_CHECK] Skipping check - no rejection evidence")
+            return None
+    if intent == "counter_offer" and not _has_counter_evidence(message_text):
+        logger.debug("[OOC_CHECK] Skipping check - no counter evidence")
+        return None
 
     if not is_out_of_context(unified_result, current_step):
         return None

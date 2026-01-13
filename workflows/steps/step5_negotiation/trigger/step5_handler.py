@@ -225,33 +225,24 @@ def process(state: WorkflowState) -> GroupResult:
                 event_entry["deposit_state"] = fresh_entry.get("deposit_state", {})
 
         if gate_status.ready_for_hil:
-            # All prerequisites met - continue to HIL
-            # Use the existing _handle_accept flow
-            response = _handle_accept(event_entry)
-            # _handle_accept returns {"draft": {"body": ...}, ...}
-            accept_draft = response.get("draft") or {}
-            draft = {
-                "body_markdown": accept_draft.get("body", "Offer accepted - pending final approval."),
-                "step": 5,
-                "topic": "offer_accepted_hil_gate_passed",
-                "next_step": "Pending Final Approval",
-                "thread_state": "Waiting on HIL",
-                "requires_approval": False,  # Confirmation of acceptance, not the offer itself
-            }
-            state.add_draft_message(draft)
-            update_event_metadata(event_entry, current_step=5, thread_state="Waiting on HIL")
-            state.set_thread_state("Waiting on HIL")
-            set_hil_open(thread_id, True)
+            # All prerequisites met (billing + deposit + offer accepted) - continue to Step 7
+            # Step 7 will handle site visit proposal or final confirmation
+            logger.info("[STEP5] Gate passed: billing=%s, deposit=%s, offer_accepted=%s -> routing to Step 7",
+                        gate_status.billing_complete, gate_status.deposit_paid, gate_status.offer_accepted)
+            update_event_metadata(event_entry, current_step=7, thread_state="In Progress")
+            state.current_step = 7
+            state.set_thread_state("In Progress")
             state.extras["persist"] = True
             return GroupResult(
-                action="offer_accept_pending_hil",
+                action="offer_accept_gate_passed",
                 payload={
                     "client_id": state.client_id,
                     "event_id": event_id,
                     "billing_complete": gate_status.billing_complete,
                     "deposit_paid": gate_status.deposit_paid,
+                    "routed_to_step": 7,
                 },
-                halt=True,
+                halt=False,  # Continue to Step 7 for site visit / confirmation
             )
 
         # Not ready - check if we need to prompt for missing items

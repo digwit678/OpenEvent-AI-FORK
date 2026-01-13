@@ -37,6 +37,7 @@ from workflows.io.database import (
     default_event_record,
     find_event_idx_by_id,
     last_event_for_email,
+    load_rooms,
     tag_message,
     update_event_entry,
     update_event_metadata,
@@ -65,6 +66,63 @@ from .normalization import normalize_room_token as _normalize_room_token
 from .date_fallback import fallback_year_from_ts as _fallback_year_from_ts
 from .gate_confirmation import looks_like_offer_acceptance as _looks_like_offer_acceptance
 from .gate_confirmation import looks_like_billing_fragment as _looks_like_billing_fragment
+
+
+def _validate_extracted_room(room_value: Optional[str], message_text: Optional[str] = None) -> Optional[str]:
+    """Validate that extracted room matches a known room name exactly (case-insensitive).
+
+    The LLM entity extraction can produce false positives like extracting "Room F"
+    from "room for 30 people". This filter:
+    1. Ensures the room name exists in the database
+    2. Detects false positives from "room <preposition>" patterns
+
+    Returns:
+        The room name if valid, None otherwise.
+    """
+    if not room_value:
+        return None
+
+    # Get valid room names from database
+    valid_rooms = load_rooms()
+    if not valid_rooms:
+        return None
+
+    # Case-insensitive exact match against known rooms
+    room_lower = room_value.strip().lower()
+    canonical_room = None
+    for valid_room in valid_rooms:
+        if valid_room.lower() == room_lower:
+            canonical_room = valid_room
+            break
+
+    if not canonical_room:
+        return None
+
+    # [FALSE POSITIVE DETECTION] Check if extraction might be from "room <preposition>"
+    # Pattern: "room for", "room to", "room in", etc. where LLM extracts "Room F", "Room T", etc.
+    if message_text:
+        text_lower = message_text.lower()
+        # Common prepositions that follow "room" in generic phrases
+        prepositions = ["for", "to", "in", "at", "with", "on", "is", "as", "and", "or", "the"]
+        # Extract the room suffix (e.g., "F" from "Room F")
+        room_suffix = canonical_room.split()[-1].lower() if " " in canonical_room else canonical_room.lower()
+
+        for prep in prepositions:
+            # Check if message has "room <preposition>" pattern
+            pattern = rf"\broom\s+{prep}\b"
+            if re.search(pattern, text_lower) and prep.startswith(room_suffix):
+                # The extracted room letter matches a preposition - likely false positive
+                # Additional check: is there an explicit room selection in the message?
+                explicit_room_pattern = rf"\broom\s*{room_suffix}\b"
+                # Don't reject if there's also an explicit "Room F" or "room f" in the message
+                if not re.search(explicit_room_pattern, text_lower):
+                    logger.debug(
+                        "[Step1][ROOM_FALSE_POSITIVE] Detected 'room %s' pattern without explicit room selection",
+                        prep,
+                    )
+                    return None
+
+    return canonical_room
 
 
 def _extract_billing_from_body(body: str) -> Optional[str]:
@@ -403,6 +461,19 @@ def process(state: WorkflowState) -> GroupResult:
         json.dumps(user_info, ensure_ascii=False),
         outputs=user_info,
     )
+    # [ROOM VALIDATION] Reject false positive room extractions (e.g., "Room F" from "room for")
+    # The LLM can misinterpret phrases like "room for 30 people" as a room selection.
+    # Only accept room values that exactly match known room names.
+    if user_info.get("room"):
+        original_text = f"{message_payload.get('subject', '')} {message_payload.get('body', '')}".strip()
+        validated_room = _validate_extracted_room(user_info["room"], message_text=original_text)
+        if validated_room != user_info["room"]:
+            logger.debug(
+                "[Step1][ROOM_VALIDATION] Rejected room extraction: %r -> %r",
+                user_info["room"],
+                validated_room,
+            )
+        user_info["room"] = validated_room
     # [REGEX FALLBACK] If LLM failed to extract date, try regex parsing
     # This handles cases like "February 14th, 2026" that LLM might miss
     if not user_info.get("date") and not user_info.get("event_date"):
