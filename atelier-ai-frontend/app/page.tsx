@@ -1071,9 +1071,18 @@ function EmailThreadUIContent() {
   // Check if there's an unpaid deposit that blocks confirmation
   // Check both: (1) pending tasks and (2) workflow response deposit_info (for when no HIL task exists)
   // IMPORTANT: Only show deposit at Step 4+ (after room selection, when offer is generated)
+  // IMPORTANT: Only show for CURRENT SESSION tasks (not stale tasks from previous sessions)
   const unpaidDepositInfo = useMemo(() => {
-    // First check tasks (from pending HIL)
+    // No session = no deposit UI (prevents showing stale deposits from previous sessions)
+    if (!sessionId) {
+      return null;
+    }
+    // First check tasks (from pending HIL) - ONLY for current session
     for (const task of tasks) {
+      // Filter to current session only - don't show stale deposits from other sessions
+      if (task.payload?.thread_id !== sessionId) {
+        continue;
+      }
       const eventSummary = task.payload?.event_summary;
       const depositInfo = eventSummary?.deposit_info;
       const currentStep = eventSummary?.current_step ?? 1;
@@ -1096,7 +1105,7 @@ function EmailThreadUIContent() {
       };
     }
     return null;
-  }, [tasks, sessionDepositInfo]);
+  }, [tasks, sessionDepositInfo, sessionId]);
 
   // Block confirmation if deposit is required but not paid
   // See docs/plans/OPEN_DECISIONS.md DECISION-002 for why we use template message instead of LLM

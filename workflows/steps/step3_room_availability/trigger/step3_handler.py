@@ -68,6 +68,8 @@ from rooms import rank as rank_rooms_profiles, get_max_capacity, any_room_fits_c
 
 from ..condition.decide import room_status_on_date
 from ..llm.analysis import summarize_room_statuses
+# Room choice detection (reused from Step 1)
+from workflows.steps.step1_intake.trigger.room_detection import detect_room_choice as _detect_room_choice
 from .constants import (
     ROOM_OUTCOME_UNAVAILABLE,
     ROOM_OUTCOME_AVAILABLE,
@@ -287,6 +289,26 @@ def process(state: WorkflowState) -> GroupResult:
     # Capture requirements from workflow context (statements only, not questions)
     if message_text and state.user_info:
         capture_workflow_requirements(state, message_text, state.user_info)
+
+    # -------------------------------------------------------------------------
+    # ROOM CONFIRMATION DETECTION (Step 3-specific)
+    # Detect when user selects a room (e.g., "Room A sounds good", "I'll take Room B")
+    # This sets _room_choice_detected so is_room_confirmation works later.
+    # Must run BEFORE change detection to avoid treating confirmation as a change.
+    # -------------------------------------------------------------------------
+    if message_text and not user_info.get("_room_choice_detected"):
+        detected_room = _detect_room_choice(message_text, event_entry)
+        if detected_room:
+            user_info["room"] = detected_room
+            user_info["_room_choice_detected"] = True
+            state.user_info = user_info  # Ensure state is updated
+            if thread_id:
+                trace_marker(
+                    thread_id,
+                    "room_selection_detected",
+                    detail=f"User selected room: {detected_room}",
+                    owner_step="Step3_Room",
+                )
 
     # -------------------------------------------------------------------------
     # NONSENSE GATE: Check for off-topic/nonsense using existing confidence
@@ -880,6 +902,8 @@ def process(state: WorkflowState) -> GroupResult:
     # Structured room data is in table_blocks (rendered separately in UI)
     # Keep it concise - structured data is in the link, not repeated here
     intro_lines: List[str] = []
+    # CTA/closing sentence collected separately - ALWAYS appended LAST (after catering teaser etc.)
+    closing_cta: Optional[str] = None
     num_rooms = len(verbalizer_rooms) if verbalizer_rooms else 0
     room_word = "room" if num_rooms == 1 else "rooms"
 
@@ -895,33 +919,26 @@ def process(state: WorkflowState) -> GroupResult:
     client_prefs = event_entry.get("preferences") or {}
     wish_products_list = client_prefs.get("wish_products") or []
 
+
     if user_requested_room and user_requested_room != selected_room:
         intro_lines.append(
             f"{user_requested_room} isn't available on {display_chosen_date or 'your date'}. "
             f"I've found {num_rooms} alternative {room_word} that work."
         )
-        intro_lines.append(f"Let me know which {room_word} you'd like and I'll prepare the offer.")
+        closing_cta = f"Let me know which {room_word} you'd like and I'll prepare the offer."
     elif is_room_confirmation:
-        # User confirmed a specific room - acknowledge the selection
-        intro_lines.append(
+        # User confirmed a specific room - store confirmation intro for Step 4 (offer)
+        # The confirmation message becomes the INTRO to the offer (one combined message)
+        # No separate draft message here - Step 4 will prepend this to the offer
+        confirmation_intro = (
             f"Great choice! {selected_room} on {display_chosen_date or 'your date'} is confirmed "
             f"for your event with {participants} guests."
         )
-        # Show room features in a clean format
-        selected_room_data = next(
-            (vr for vr in verbalizer_rooms if vr.get("name") == selected_room),
-            {}
-        )
-        if selected_room_capacity:
-            intro_lines.append(f"Maximum capacity: {selected_room_capacity}")
-        # List room features
-        room_features = selected_room_data.get("features") or []
-        if room_features:
-            intro_lines.append("Features:")
-            for feature in room_features[:8]:  # Limit to 8 features
-                intro_lines.append(feature)
-        # Add next step guidance
-        intro_lines.append("I'll prepare the offer for you now.")
+        # Store for Step 4 to prepend to offer
+        event_entry["room_confirmation_prefix"] = confirmation_intro + "\n\n"
+        # No closing_cta or intro_lines needed - Step 4 handles the full message
+        # Set flag to skip draft message creation (handled below)
+        closing_cta = None  # Explicitly no CTA - Step 4 will handle it
     elif selected_room and outcome in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}:
         # Build recommendation with gatekeeping variables (date, capacity, equipment)
         # Echo back client requirements ("sandwich check")
@@ -1014,14 +1031,14 @@ def process(state: WorkflowState) -> GroupResult:
                 if alt_descriptions:
                     intro_lines.append(f"Alternatives: {'; '.join(alt_descriptions)}.")
 
-            intro_lines.append(f"Let me know which room you'd prefer and I'll prepare the offer.")
+            closing_cta = f"Let me know which room you'd prefer and I'll prepare the offer."
         else:
-            intro_lines.append(f"Would you like me to prepare an offer for {selected_room}?")
+            closing_cta = f"Would you like me to prepare an offer for {selected_room}?"
     else:
         intro_lines.append(
             f"The requested date isn't available. Here are {num_rooms} alternative {room_word}."
         )
-        intro_lines.append(f"Let me know which {room_word} you'd like and I'll prepare the offer.")
+        closing_cta = f"Let me know which {room_word} you'd like and I'll prepare the offer."
 
     # -------------------------------------------------------------------------
     # CATERING TEASER: Only suggest if:
@@ -1072,6 +1089,8 @@ def process(state: WorkflowState) -> GroupResult:
             products_state = event_entry.setdefault("products_state", {})
             products_state["catering_teaser_shown"] = True
 
+    # NOTE: closing_cta is appended AFTER room_link (see below) to ensure CTA is truly last
+
     # body_markdown = ONLY conversational prose (structured data is in table_blocks)
     # Use double newline for paragraph breaks (empty strings in list)
     body_parts = []
@@ -1116,12 +1135,16 @@ def process(state: WorkflowState) -> GroupResult:
         participants=participants or event_entry.get("number_of_participants", 0),
         snapshot_id=snapshot_id,
     )
-    # Conversational message FIRST, then summary/link at end
-    # (per UX design principle: direct address to client first)
+    # Conversational message FIRST, then link, then CTA at the very end
+    # (UX principle: CTA/closing sentence is always the final actionable element)
     if body_markdown:
         body_markdown = "\n".join([body_markdown, "", room_link])
     else:
         body_markdown = room_link
+
+    # CTA/closing sentence ALWAYS appended LAST (after room_link and all other content)
+    if closing_cta:
+        body_markdown = "\n".join([body_markdown, "", closing_cta])
 
     shortcut_note = None
     if state.extras.get("qna_shortcut"):
@@ -1160,29 +1183,35 @@ def process(state: WorkflowState) -> GroupResult:
         state.record_subloop("general_q_a")
         state.extras["subloop"] = "general_q_a"
 
-    draft_message = {
-        "body": body_markdown,
-        "body_markdown": body_markdown,
-        "body_md": body_markdown,
-        "step": 3,
-        "next_step": "Review offer" if is_room_confirmation else "Choose a room",
-        "thread_state": "Awaiting Client",
-        "topic": outcome_topic,
-        "room": selected_room,
-        "status": outcome,
-        "table_blocks": table_blocks,
-        "actions": actions_payload,
-        "headers": headers,
-        "menu_info": menu_content,  # Separate field for menu data (rendered in info cards)
-    }
+    # Skip draft message when room is confirmed - Step 4 will send combined message with offer
+    # The confirmation intro is stored in event_entry["room_confirmation_prefix"] for Step 4
+    if not is_room_confirmation:
+        draft_message = {
+            "body": body_markdown,
+            "body_markdown": body_markdown,
+            "body_md": body_markdown,
+            "step": 3,
+            "next_step": "Choose a room",
+            "thread_state": "Awaiting Client",
+            "topic": outcome_topic,
+            "room": selected_room,
+            "status": outcome,
+            "table_blocks": table_blocks,
+            "actions": actions_payload,
+            "headers": headers,
+            "menu_info": menu_content,  # Separate field for menu data (rendered in info cards)
+        }
+        # Do not escalate room availability to HIL; approvals only happen at offer/negotiation (Step 5).
+        hil_required = False
+        thread_state_label = "Awaiting Client"
+        draft_message["thread_state"] = thread_state_label
+        draft_message["requires_approval"] = hil_required
+        draft_message["rooms_summary"] = verbalizer_rooms
+        state.add_draft_message(draft_message)
+
     attempt = _increment_room_attempt(event_entry)
-    # Do not escalate room availability to HIL; approvals only happen at offer/negotiation (Step 5).
     hil_required = False
     thread_state_label = "Awaiting Client"
-    draft_message["thread_state"] = thread_state_label
-    draft_message["requires_approval"] = hil_required
-    draft_message["rooms_summary"] = verbalizer_rooms
-    state.add_draft_message(draft_message)
 
     pending_hint = _derive_hint(selected_entry, preferences, explicit_preferences) if selected_entry else None
 
@@ -1297,7 +1326,10 @@ def process(state: WorkflowState) -> GroupResult:
     payload["hil_escalated"] = hil_required
     if capacity_shortcut:
         payload["shortcut_capacity_ok"] = True
-    result = GroupResult(action="room_avail_result", payload=payload, halt=True)
+    # When room is confirmed, DON'T halt - continue to Step 4 to generate offer automatically
+    # Step 4 will use the room_confirmation_prefix to create combined message
+    should_halt = not is_room_confirmation
+    result = GroupResult(action="room_avail_result", payload=payload, halt=should_halt)
     if deferred_general_qna:
         _append_deferred_general_qna(state, event_entry, classification, thread_id)
     return result
