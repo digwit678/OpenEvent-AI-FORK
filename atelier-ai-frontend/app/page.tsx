@@ -1502,7 +1502,7 @@ function EmailThreadUIContent() {
                   const draftMsg = task.payload?.draft_body || (task.payload as any)?.draft_msg || task.payload?.snippet || '';
                   const eventSummary = task.payload?.event_summary;
                   const depositInfo = eventSummary?.deposit_info;
-                  const canAction = ['ask_for_date', 'manual_review', 'offer_message', 'room_availability_message', 'date_confirmation_message', 'source_missing_product'].includes(task.type);
+                  const canAction = ['ask_for_date', 'manual_review', 'offer_message', 'room_availability_message', 'date_confirmation_message', 'source_missing_product', 'transition_message', 'confirmation_message'].includes(task.type);
                   const isSourceMissingProduct = task.type === 'source_missing_product';
 
                   return (
