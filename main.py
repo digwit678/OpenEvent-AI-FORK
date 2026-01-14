@@ -37,6 +37,13 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
+# Configure logging to show INFO level by default (DEBUG for dev)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+
 logger = logging.getLogger(__name__)
 # NOTE: domain, conversation_manager imports moved to routes/messages.py
 from legacy.session_store import active_conversations  # Used in root endpoint

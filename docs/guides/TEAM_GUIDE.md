@@ -55,6 +55,30 @@ See [SETUP_API_KEYS.md](./SETUP_API_KEYS.md) for full guide.
 
 ---
 
+## HIGH-RISK: Regex-Based Detection Areas (Bug Magnets)
+
+**CRITICAL WARNING:** The following 4 detection areas still use regex/keyword matching instead of LLM semantic understanding. These are the most common source of bugs due to:
+- False positives (keywords in wrong context)
+- False negatives (paraphrased intent missed)
+- Interference with other flows (one detection consuming input meant for another)
+
+| # | Detection Area | Location | Common Issues |
+|---|----------------|----------|---------------|
+| 1 | **Billing Address Capture** | `step5_handler.py` | Consumes messages meant for date/room changes (BUG-023) |
+| 2 | **Site Visit Keywords** | `router.py` | False positives from emails/URLs containing "tour" (BUG-021) |
+| 3 | **Date Change Detection** | `change_propagation.py` | Format mismatches causing loops (BUG-020) |
+| 4 | **Room Selection Shortcuts** | `step1_handler.py`, `room_detection.py` | Auto-locks room before arrangement requests processed |
+
+**Prevention Pattern:** When adding code in these areas:
+1. Always add **early-exit guards** for higher-priority intents (e.g., date change before billing capture)
+2. Use **word-boundary regex** (`\btour\b`) not substring matching (`"tour" in text`)
+3. **Normalize values** before comparison (ISO dates, lowercase room names)
+4. Add **regression tests** for each new pattern
+
+**Long-term:** Migrate these to LLM-based semantic detection when cost/latency allows.
+
+---
+
 ## Overview
 - **Actors & responsibilities**
   - *Trigger nodes* (purple) parse incoming client messages and orchestrate state transitions for each workflow group.【F:backend/workflows/steps/step1_intake/trigger/process.py†L30-L207】【F:backend/workflow_email.py†L86-L145】
@@ -368,6 +392,96 @@ Result: One combined message with "Great choice! Room F is confirmed... Here is 
 - `workflows/steps/step4_offer/trigger/step4_handler.py:615-618` - build_deposit_info call
 - `backend/workflow_email.py` - state.db initialization
 - `backend/workflows/io/database.py` - config persistence
+
+### BUG-020: Date Change Detour Loop (Step2 ↔ Step4 Endless Loop)
+**Status**: Fixed (2026-01-13)
+**Severity**: Critical (workflow stuck)
+**Symptom**: When regenerating an offer after a detour (e.g., returning from Step 2 date confirmation), the workflow would endlessly loop between Step 2 and Step 4. The message containing the date was re-detected as a date change, triggering another detour.
+**Root Cause**: `detect_change_type_enhanced()` in `change_propagation.py` compared old and new date values as raw strings without normalizing formats. Dates like "05.03.2026" vs "2026-03-05" were treated as different, triggering spurious detours.
+**Fix**: Added `_normalize_date_value()` helper that converts any date format to ISO YYYY-MM-DD before comparison. If normalized old and new dates match, returns `is_change=False` instead of triggering a detour.
+**Files**: `workflows/change_propagation.py` (lines 849-866, 1055-1070)
+
+### BUG-021: Site Visit Keyword False Positives from Email Addresses
+**Status**: Fixed (2026-01-13)
+**Severity**: Medium
+**Symptom**: Site visit intercept triggered incorrectly when email addresses or URLs contained substrings matching site visit keywords (e.g., "detour" in email addresses, "tour" inside URLs).
+**Root Cause**: `_check_site_visit_intercept()` in `router.py` used simple substring matching (`kw in message_lower`) which matched keywords embedded within email addresses and URLs.
+**Fix**:
+1. Strip email addresses and URLs from message text before keyword matching
+2. Changed from substring matching to regex word-boundary patterns (`\bsite\s+visit\b`, `\btour\b`, etc.)
+**Files**: `workflows/runtime/router.py` (lines 190-210)
+**Prevention**: Always use word-boundary regex for keyword detection to avoid false positives from structured text.
+
+### BUG-022: Deposit UI Showing Before Offer Acceptance
+**Status**: Fixed (2026-01-13)
+**Severity**: High (UX confusing)
+**Symptom**: Deposit card and "Pay Deposit" button appeared in the frontend as soon as an offer was drafted (Step 4), before the client actually accepted the offer.
+**Root Cause**:
+1. Backend sets `current_step=5` immediately after drafting the offer (pre-acceptance)
+2. Frontend showed deposit button whenever `deposit_info` existed and `current_step >= 4`
+**Fix**:
+1. Added `offer_accepted` field to `deposit_info` in API responses
+2. Gated frontend deposit UI and "Mark Deposit Paid" button on `offer_accepted === true`
+**Files**:
+- `api/routes/messages.py` - add `offer_accepted` to deposit_info
+- `api/routes/tasks.py` - add `offer_accepted` to event_summary.deposit_info
+- `atelier-ai-frontend/app/page.tsx` - gate deposit UI on `offer_accepted`
+**Tests**: `tests_root/specs/gatekeeping/test_hil_gates.py`
+
+### BUG-023: Billing Capture Mode Interferes with Date Change Detection
+**Status**: Fixed (2026-01-13)
+**Severity**: Medium
+**Symptom**: When in billing capture mode (awaiting billing address after offer acceptance), a date change request like "Actually, I need to change the date to March 20, 2026" gets captured as billing address instead of triggering date change detection.
+**Root Cause**: Billing capture mode blindly captured any message as billing address without checking for higher-priority intents like date changes.
+**Fix**: Added `_looks_like_date_change()` guard in `step5_handler.py` that checks for date change intent (change verbs + date keywords/patterns) BEFORE billing capture. If detected, skips billing capture and lets change detection handle the message.
+**Files**: `workflows/steps/step5_negotiation/trigger/step5_handler.py` (lines 85-110, 196-201)
+**E2E Reference**: `backend/e2e-scenarios/2026-01-13_date-change-detour-after-offer.md`
+
+### BUG-024: Date Change During Billing Capture Not Acknowledged in Response
+**Status**: Fixed (2026-01-14)
+**Severity**: Medium (UX Issue)
+**Symptom**: When client requests a date change while in billing capture mode (after accepting offer, before providing billing address), the date IS changed in the database but the response only prompts for billing without acknowledging the date change.
+**Root Cause**: Two issues:
+1. `step1_handler.py` detected the date change and logged it, but didn't actually update `event_entry.chosen_date` or set an acknowledgment flag
+2. `step5_handler.py` used wrong key (`body`) instead of `body_markdown` when prepending acknowledgment to billing prompt
+**Fix**:
+1. In `step1_handler.py` (lines 1532-1542): Added `update_event_metadata()` call and `_pending_date_change_ack` flag setting when date change detected during billing flow
+2. In `step5_handler.py` (line 307): Changed `next_prompt["body"]` to `next_prompt["body_markdown"]` to match the actual key from `get_next_prompt()`
+**Files**:
+- `workflows/steps/step1_intake/trigger/step1_handler.py` (lines 1532-1542)
+- `workflows/steps/step5_negotiation/trigger/step5_handler.py` (line 307)
+**Tests**: E2E verified - date change to 20.06.2026 acknowledged in response: "I've updated your event to **20.06.2026**. Thanks for confirming..."
+
+### BUG-025: Date Change Detour Not Triggering During Billing Flow
+**Status**: Fixed (2026-01-14)
+**Severity**: High (Workflow Breaking)
+**Symptom**: When client requests a date change while in billing flow (after accepting offer), the system kept asking for billing address instead of triggering the detour to Step 2 → Step 3 → Step 4 with a new offer.
+**Root Cause**: The `correct_billing_flow_step()` function in `pre_route.py` was forcing `current_step=5` whenever `in_billing_flow` was true. This ran AFTER step1_handler detected the date change and set the step to 2, overwriting the detour routing.
+**Fix**: In `step1_handler.py`, when a date change is detected during billing flow, clear the billing flow state (`awaiting_billing_for_accept=False`, `offer_accepted=False`) BEFORE the step change. This ensures `correct_billing_flow_step()` sees `in_billing_flow=False` and doesn't override the detour.
+**Files**:
+- `workflows/steps/step1_intake/trigger/step1_handler.py` (lines 1258-1268)
+**E2E Reference**: `backend/e2e-scenarios/2026-01-14_date-change-during-billing-flow.md`
+**Related Bugs**: Builds on BUG-023 (billing capture interference) and BUG-024 (date change acknowledgment)
+
+### BUG-026: HIL Approval Shows body_markdown Instead of body
+**Status**: Fixed (2026-01-14)
+**Severity**: High (UX Breaking)
+**Symptom**: After manager clicks "Approve & Send" on a Step 7 HIL task, the chat displayed the offer summary (`body_markdown`) instead of the site visit prompt (`body`).
+**Root Cause**: The `add_draft_message()` function in `workflows/common/types.py` was always overwriting `body` with content derived from `body_markdown` at lines 234-235, even when both were explicitly provided and different.
+**Design Principle**:
+- `body` = client-facing message (e.g., site visit prompt)
+- `body_markdown` = manager-only display in HIL panel (e.g., offer summary for review)
+- When they differ, client ALWAYS receives `body`
+**Fix**:
+1. Modified `add_draft_message()` to preserve original `body` when both fields are explicitly provided and different
+2. Added defensive code and logging in `hil_tasks.py` when body differs from body_markdown
+**Files**:
+- `workflows/common/types.py` - Preserve body when body_markdown differs
+- `workflows/runtime/hil_tasks.py` - Defensive code + warning log
+- `main.py` - Added `logging.basicConfig()` for logger visibility
+**Tests**: `tests/regression/test_hil_body_vs_markdown.py` (3 tests)
+**E2E Verified**: `.playwright-mcp/.playwright-mcp/e2e-hil-body-fix-verified.png`
+**Related Bugs**: Opposite of BUG-013 (which had site visit text replacing offer draft)
 
 ### BUG-013: HIL Approval Sends Site Visit Text Instead of Workflow Draft
 **Status**: Fixed (2026-01-12)

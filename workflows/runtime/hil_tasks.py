@@ -439,7 +439,8 @@ def approve_task_and_send(
                 draft_messages = step7_state.draft_messages or []
                 if draft_messages:
                     draft = draft_messages[0]
-                    body_text = draft.get("body_markdown") or draft.get("body") or ""
+                    # Use body (client message) first, not body_markdown (manager display)
+                    body_text = draft.get("body") or draft.get("body_markdown") or ""
                 else:
                     # Fallback message if Step 7 didn't generate one
                     body_text = "Thank you for accepting the offer. We will be in touch shortly to finalize the details."
@@ -469,8 +470,33 @@ def approve_task_and_send(
     db_io.save_db(db, path, lock_path=lock_path)
 
     draft = target_request.get("draft") or {}
-    body_text = draft.get("body_markdown") or draft.get("body") or ""
     headers = draft.get("headers") or []
+
+    # CRITICAL: body = client-facing message, body_markdown = manager-only display
+    # When they differ, ALWAYS use body for the client message.
+    # This is a common bug source - add defensive logging and assertions.
+    raw_body = draft.get("body") or ""
+    raw_body_markdown = draft.get("body_markdown") or ""
+
+    if raw_body and raw_body_markdown and raw_body != raw_body_markdown:
+        # They differ - use body (client message), log the difference
+        logger.warning(
+            "[HIL_APPROVAL] body differs from body_markdown (step=%s). "
+            "Using body for client. body[:80]=%r, body_markdown[:80]=%r",
+            target_request.get('step'),
+            raw_body[:80],
+            raw_body_markdown[:80],
+        )
+        body_text = raw_body
+    else:
+        # Same or one is empty - use whichever is available
+        body_text = raw_body or raw_body_markdown
+
+    # ALWAYS sync draft body and body_markdown to prevent frontend from showing wrong content
+    # (frontend prioritizes body_markdown, so we must set it to the client message)
+    draft = dict(draft)
+    draft["body"] = body_text
+    draft["body_markdown"] = body_text
 
     # If manager provided an edited message, use it instead of the original draft
     # This is used for AI Reply Approval when manager edits the AI-generated text
@@ -730,7 +756,8 @@ def reject_task_and_send(
     db_io.save_db(db, path, lock_path=lock_path)
 
     draft = target_request.get("draft") or {}
-    body_text = draft.get("body_markdown") or draft.get("body") or ""
+    # Use body (client message) first, not body_markdown (manager display)
+    body_text = draft.get("body") or draft.get("body_markdown") or ""
     headers = draft.get("headers") or []
     assistant_draft = {"headers": headers, "body": body_text, "body_markdown": body_text}
 

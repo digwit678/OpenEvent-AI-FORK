@@ -1,6 +1,269 @@
 # Development Changelog
 
+## 2026-01-14
+
+### Fix: HIL Approval Shows Wrong Message (body vs body_markdown)
+
+**Problem:** After manager clicks "Approve & Send" on a Step 7 HIL task, the chat displayed the offer summary (`body_markdown`) instead of the site visit prompt (`body`).
+
+**Root Cause:** The `add_draft_message()` function in `workflows/common/types.py` was always overwriting `body` with content derived from `body_markdown`, even when both were explicitly provided and different.
+
+**Solution Implemented:**
+
+1. **`workflows/common/types.py`** - Modified `add_draft_message()` to preserve original `body` when both `body` and `body_markdown` are explicitly provided and different:
+   ```python
+   if explicit_body_provided and explicit_body_markdown and raw_body != explicit_body_markdown:
+       # Both were explicitly set and different - preserve body
+       # (body = client message, body_markdown = manager display)
+   ```
+
+2. **`workflows/runtime/hil_tasks.py`** - Added defensive code and logging when `body` differs from `body_markdown`:
+   ```python
+   if raw_body and raw_body_markdown and raw_body != raw_body_markdown:
+       logger.warning("[HIL_APPROVAL] body differs from body_markdown...")
+       body_text = raw_body  # Always use body for client
+   ```
+
+3. **`main.py`** - Added `logging.basicConfig()` so logger output is visible in console.
+
+**Design Principle:**
+- `body` = client-facing message (e.g., site visit prompt)
+- `body_markdown` = manager-only display in HIL panel (e.g., offer summary for review)
+- When they differ, the client ALWAYS receives `body`
+
+**Files Modified:**
+- `workflows/common/types.py` - Preserve body when body_markdown differs
+- `workflows/runtime/hil_tasks.py` - Defensive code + logging
+- `main.py` - Logger configuration
+
+**Tests Added:**
+- `tests/regression/test_hil_body_vs_markdown.py` (3 tests)
+
+**E2E Verified:** `.playwright-mcp/.playwright-mcp/e2e-hil-body-fix-verified.png`
+- After HIL approval, chat correctly shows: "Would you like to schedule a site visit..."
+
+---
+
+### Fix: HIL Toggle Logic - Autonomous vs Supervised Modes
+
+**Problem:** The HIL toggle behavior was inverted. The expected behavior is:
+- **Toggle OFF (autonomous):** Agent sends offers directly; manager reviews ONLY after deposit is paid
+- **Toggle ON (supervised):** Manager reviews ALL messages including offers
+
+**Solution Implemented:**
+
+1. **Step 4 Offer:** Changed `requires_approval` to depend on toggle:
+   ```python
+   "requires_approval": is_hil_all_replies_enabled(),  # Only HIL when toggle ON
+   ```
+
+2. **Step 7 Site Visit Prompt (after deposit):** Set `requires_approval: True`:
+   - This is the manager's ONLY review point when toggle OFF
+   - Ensures manager can verify booking details before final confirmation
+
+3. **Frontend:** Updated `handlePayDeposit()` to handle both modes:
+   - If `requires_approval: True` → Wait for HIL approval (shows in Manager Tasks)
+   - If `requires_approval: False` → Display response directly in chat
+
+**HIL Behavior Summary:**
+| Toggle | Offer (Step 4)     | Site Visit Prompt (Step 7) |
+|--------|--------------------|-----------------------------|
+| OFF    | → Direct to client | → HIL (manager's ONLY review) |
+| ON     | → HIL for approval | → HIL for approval           |
+
+**Files Modified:**
+- `workflows/steps/step4_offer/trigger/step4_handler.py` - `requires_approval: is_hil_all_replies_enabled()`
+- `workflows/steps/step7_confirmation/trigger/step7_handler.py` - `requires_approval: True` for site visit prompt
+- `atelier-ai-frontend/app/page.tsx` - Handle both HIL and direct response modes
+
+**E2E Verified:** `.playwright-mcp/.playwright-mcp/e2e-hil-offer-confirmation-correct.png`
+- Toggle OFF mode tested:
+  - Offer → Direct to client ✅ (NO HIL)
+  - After deposit → Full offer confirmation to HIL ✅ (manager's ONLY review)
+  - HIL shows: Date, Room, Billing, Total, Deposit status
+
+---
+
+### Architecture: HIL Queue Deduplication (No Double Approval)
+
+**Problem:** When `OE_HIL_ALL_LLM_REPLIES=true`, the system was creating BOTH:
+1. Step-specific HIL tasks (offer_message, confirmation_message)
+2. AI reply approval tasks (ai_reply_approval)
+
+This caused managers to see the same message twice - once in each queue.
+
+**Solution Implemented:**
+- When `OE_HIL_ALL_LLM_REPLIES=true` → automatically skip step-specific HIL task creation
+- All messages go through a single "AI Reply Approval" queue
+- No more double-approval for offers and confirmations
+
+**Logic:**
+```python
+# ONLY create step-specific HIL when all-replies toggle is OFF
+if event_entry and not hil_all_replies_on:
+    enqueue_hil_tasks(state, event_entry)
+```
+
+**Also Fixed:** Ensure correct offer message is sent to HIL by preferring approval drafts when available.
+
+**Files Modified:**
+- `workflow_email.py` (lines 638-644, 699-719)
+
+---
+
+### Removed: Manager Escalation HIL Feature (Obsolete)
+
+**Problem:** The "speak with manager" escalation feature was:
+1. Triggering false positives on billing addresses (e.g., "Company, Street 123")
+2. Redundant - in this system, the AI assistant IS the manager's representative
+3. All special requests already go through HIL approval
+
+**Solution:** Removed manager escalation detection from the pre-route pipeline entirely.
+
+**Files Modified:**
+- `workflows/runtime/pre_route.py` - Removed `handle_manager_escalation()` from pipeline
+
+---
+
+### Feature: Time Extraction in Unified Detection
+
+**Enhancement:** Added `start_time` and `end_time` fields to the unified detection system.
+
+**Purpose:** Extract times from client messages (e.g., "10:00 to 16:00", "morning", "afternoon") to avoid unnecessary time confirmation prompts.
+
+**Files Modified:**
+- `detection/unified.py` - Added start_time/end_time to UnifiedDetectionResult and LLM prompt
+
+---
+
+### Feature: Event-Relative Deposit Due Date Calculation
+
+**Problem:** Deposit due date was calculated as `min(today + X, event - Y)` which resulted in dates based on TODAY rather than being purely event-relative. This meant the deposit due date didn't change when the event date changed during a detour.
+
+**Solution Implemented:** The deposit due date is now calculated as:
+```python
+due_date = event_date - deadline_days  # e.g., event - 10 days
+```
+
+With a minimum of `today + 1` to ensure due date is always in the future.
+
+**Example:**
+- Event: June 14, 2026 → Deposit due: **June 4, 2026** (14 - 10 = 4)
+- Event: June 25, 2026 → Deposit due: **June 15, 2026** (25 - 10 = 15)
+- Event: Jan 21, 2026 (close) → Deposit due: **Jan 15, 2026** (minimum enforced)
+
+**Files Modified:**
+- `workflows/common/pricing.py` - Simplified `calculate_deposit_due_date()` to use `event_date - deadline_days`
+
+**E2E Verified:** `.playwright-mcp/deposit-recalculated-after-date-change.png`
+- Date change detour: June 14 → June 25
+- Deposit due changed: June 4 → **June 15** ✅
+- Full flow verified: Inquiry → Offer → Accept → Date Change → New Offer → Deposit recalculated
+
+---
+
+### Fix: Date Change Detour Not Triggering During Billing Flow (BUG-025)
+
+**Problem:** When a client requests a date change during billing flow (after accepting offer but before providing billing address), the detour to Step 2 → Step 3 → Step 4 was not triggering. Instead, the system kept asking for billing address.
+
+**Root Cause:** The `correct_billing_flow_step()` function in `pre_route.py` was forcing `current_step=5` whenever `in_billing_flow` was true. This happened AFTER step1_handler detected the date change and set the step to 2 for the detour, overwriting the detour routing.
+
+**Fix Applied:** In step1_handler.py, when a date change is detected during billing flow, clear the billing flow state (`awaiting_billing_for_accept=False`, `offer_accepted=False`) BEFORE the step change. This ensures `correct_billing_flow_step()` sees `in_billing_flow=False` and doesn't override the detour.
+
+**Files Modified:**
+- `workflows/steps/step1_intake/trigger/step1_handler.py` (lines 1258-1268)
+
+**E2E Verified:** `backend/e2e-scenarios/2026-01-14_date-change-during-billing-flow.md`
+- Original offer: 14.06.2026
+- Date change requested during billing flow
+- New offer generated: **25.06.2026**
+- Detour flow: Step 5 (billing) → Step 2 → Step 3 → Step 4 (new offer)
+
+---
+
+### Fix: Date Change Acknowledgment Missing in Billing Flow (BUG-024)
+
+**Problem:** When client requests a date change during billing capture mode (after accepting offer), the date was updated in the database but the response only prompted for billing without acknowledging the date change.
+
+**Root Cause:** Two issues:
+1. `step1_handler.py` detected the date change but didn't actually update `event_entry.chosen_date` or set the `_pending_date_change_ack` flag
+2. `step5_handler.py` used wrong key (`body`) instead of `body_markdown` when prepending acknowledgment to billing prompt
+
+**Fix Applied:**
+1. Added `update_event_metadata()` call and `_pending_date_change_ack` flag setting in step1_handler when date change detected during billing flow
+2. Changed `next_prompt["body"]` to `next_prompt["body_markdown"]` in step5_handler to match actual key from `get_next_prompt()`
+
+**Files Modified:**
+- `workflows/steps/step1_intake/trigger/step1_handler.py` (lines 1532-1542)
+- `workflows/steps/step5_negotiation/trigger/step5_handler.py` (line 307)
+
+**E2E Verified:** Date change acknowledged in response: "I've updated your event to **20.06.2026**. Thanks for confirming..."
+
+---
+
 ## 2026-01-13
+
+### Fix: Billing Capture Interference with Date Change (BUG-023)
+
+**Problem:** When in billing capture mode (after offer acceptance), date change requests like "Actually, I need to change the date to March 20" were captured as billing addresses instead of triggering proper date change detection.
+
+**Root Cause:** Billing capture blindly captured any message without checking for higher-priority intents.
+
+**Fix Applied:** Added `_looks_like_date_change()` guard that checks for date change intent (change verbs + date keywords/patterns) BEFORE billing capture. If detected, skips billing capture.
+
+**Files Modified:**
+- `workflows/steps/step5_negotiation/trigger/step5_handler.py` - added guard function and check
+
+**E2E Verified:** `backend/e2e-scenarios/2026-01-13_date-change-detour-after-offer.md`
+
+---
+
+### Fix: Deposit UI Timing - Gate on Offer Acceptance (BUG-022)
+
+**Problem:** Deposit card and "Pay Deposit" button appeared as soon as an offer was drafted (Step 4), before the client actually accepted.
+
+**Root Cause:** Frontend showed deposit whenever `deposit_info` existed and `current_step >= 4`, but backend sets step=5 during offer drafting.
+
+**Fix Applied:**
+1. Added `offer_accepted` field to `deposit_info` in API responses
+2. Gated frontend deposit UI on `offer_accepted === true`
+
+**Files Modified:**
+- `api/routes/messages.py` - add `offer_accepted` to deposit_info
+- `api/routes/tasks.py` - add `offer_accepted` to event_summary.deposit_info
+- `atelier-ai-frontend/app/page.tsx` - gate deposit UI + tasks panel on `offer_accepted`
+
+**Tests:** `tests_root/specs/gatekeeping/test_hil_gates.py` (pass)
+
+---
+
+### Fix: Date Change Detour Loop Prevention (BUG-020)
+
+**Problem:** After a detour (e.g., returning from Step 2 date confirmation), the workflow endlessly looped between Step 2 and Step 4. The same date was re-detected as a "change" because formats differed.
+
+**Root Cause:** `detect_change_type_enhanced()` compared date strings without normalization - "05.03.2026" vs "2026-03-05" were treated as different.
+
+**Fix Applied:** Added `_normalize_date_value()` helper to convert any date format to ISO YYYY-MM-DD before comparison. Returns `is_change=False` if normalized dates match.
+
+**Files Modified:**
+- `workflows/change_propagation.py` (lines 849-866, 1055-1070)
+
+---
+
+### Fix: Site Visit Keyword False Positives (BUG-021)
+
+**Problem:** Site visit intercept triggered incorrectly from email addresses containing "tour" or similar substrings.
+
+**Root Cause:** Simple substring matching (`kw in message_lower`) matched keywords embedded in emails/URLs.
+
+**Fix Applied:**
+1. Strip emails and URLs from message text before matching
+2. Use regex word-boundary patterns (`\bsite\s+visit\b`, `\btour\b`) instead of substring
+
+**Files Modified:**
+- `workflows/runtime/router.py` (lines 190-210)
+
+---
 
 ### Fix: Step 5 HIL Approval → Site Visit Message Flow
 
