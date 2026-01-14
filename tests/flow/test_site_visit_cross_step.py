@@ -8,6 +8,8 @@ IMPORTANT: Site visits are VENUE-WIDE (not room-specific).
 """
 import pytest
 
+pytestmark = pytest.mark.v4
+
 from workflows.common.site_visit_state import (
     SiteVisitState,
     cancel_site_visit,
@@ -200,9 +202,10 @@ class TestSiteVisitHandler:
         result = UnifiedDetectionResult(intent="general_qna", qna_types=["site_visit_request"])
         assert is_site_visit_intent(result) is True
 
-        # Detection with site_visit_overview
+        # Detection with site_visit_overview - should NOT trigger booking
+        # (site_visit_overview is for info questions like "do you offer tours?")
         result = UnifiedDetectionResult(intent="general_qna", qna_types=["site_visit_overview"])
-        assert is_site_visit_intent(result) is True
+        assert is_site_visit_intent(result) is False
 
         # Detection with Site Visit step anchor
         result = UnifiedDetectionResult(intent="general_qna", step_anchor="Site Visit")

@@ -52,6 +52,7 @@ interface DepositInfo {
   deposit_due_date?: string | null;
   deposit_paid: boolean;
   deposit_paid_at?: string | null;
+  offer_accepted?: boolean | null;
 }
 
 interface PendingTaskPayload {
@@ -95,6 +96,7 @@ interface WorkflowDepositInfo {
   deposit_due_date: string | null;
   deposit_paid: boolean;
   event_id: string | null;
+  offer_accepted?: boolean | null;
 }
 
 interface WorkflowReply {
@@ -519,6 +521,7 @@ function EmailThreadUIContent() {
           deposit_amount: reply.deposit_info.deposit_amount ?? null,
           deposit_due_date: reply.deposit_info.deposit_due_date ?? null,
           deposit_paid: reply.deposit_info.deposit_paid,
+          offer_accepted: reply.deposit_info.offer_accepted ?? null,
           event_id: (reply.deposit_info as any).event_id ?? null,
         });
       }
@@ -1010,6 +1013,7 @@ function EmailThreadUIContent() {
           status: string;
           response?: string;
           workflow_action?: string;
+          draft_messages?: Array<{ requires_approval?: boolean; body?: string; body_markdown?: string }>;
         }>(`${API_BASE}/event/deposit/pay`, {
           method: 'POST',
           body: JSON.stringify({ event_id: eventId }),
@@ -1018,9 +1022,22 @@ function EmailThreadUIContent() {
         await refreshTasks();
         setSessionDepositInfo((prev) => prev ? { ...prev, deposit_paid: true } : null);
 
-        // NOTE: Don't append the response to chat here - the HIL task should appear
-        // in the Tasks panel for manager approval. The message will be sent to chat
-        // only after the manager approves the task.
+        // Check if the response requires HIL approval
+        // If ANY draft message requires approval, wait for HIL (will show in Tasks panel)
+        // If ALL drafts have requires_approval=false, display directly in chat
+        const draftMessages = result.draft_messages || [];
+        const needsHilApproval = draftMessages.some(d => d.requires_approval !== false);
+
+        if (!needsHilApproval && result.response) {
+          // No HIL needed - display response directly in chat
+          appendMessage({
+            role: 'assistant',
+            content: result.response,
+            timestamp: new Date(),
+          });
+        }
+        // If needsHilApproval=true, the HIL task will appear in the Tasks panel
+        // and the message will be sent to chat after manager approves
 
         alert(
           `Deposit of CHF ${depositAmount.toLocaleString('de-CH', {
@@ -1035,7 +1052,7 @@ function EmailThreadUIContent() {
         setDepositPayingFor(null);
       }
     },
-    [refreshTasks]
+    [refreshTasks, appendMessage]
   );
 
   const handleKeyPress = useCallback(
@@ -1070,7 +1087,7 @@ function EmailThreadUIContent() {
 
   // Check if there's an unpaid deposit that blocks confirmation
   // Check both: (1) pending tasks and (2) workflow response deposit_info (for when no HIL task exists)
-  // IMPORTANT: Only show deposit at Step 4+ (after room selection, when offer is generated)
+  // IMPORTANT: Only show deposit after offer acceptance (prevents early payment before approval)
   // IMPORTANT: Only show for CURRENT SESSION tasks (not stale tasks from previous sessions)
   const unpaidDepositInfo = useMemo(() => {
     // No session = no deposit UI (prevents showing stale deposits from previous sessions)
@@ -1087,7 +1104,7 @@ function EmailThreadUIContent() {
       const depositInfo = eventSummary?.deposit_info;
       const currentStep = eventSummary?.current_step ?? 1;
       // Only show deposit button at Step 4+ (after room selection and offer generation)
-      if (currentStep >= 4 && depositInfo?.deposit_required && !depositInfo.deposit_paid) {
+      if (currentStep >= 4 && depositInfo?.deposit_required && depositInfo.offer_accepted && !depositInfo.deposit_paid) {
         return {
           amount: depositInfo.deposit_amount ?? 0,
           dueDate: depositInfo.deposit_due_date,
@@ -1097,7 +1114,7 @@ function EmailThreadUIContent() {
     }
     // Then check sessionDepositInfo (from workflow response, for when no HIL task exists)
     // Backend only sends deposit_info at Step 4+, so this is already step-validated
-    if (sessionDepositInfo?.deposit_required && !sessionDepositInfo.deposit_paid) {
+    if (sessionDepositInfo?.deposit_required && sessionDepositInfo.offer_accepted && !sessionDepositInfo.deposit_paid) {
       return {
         amount: sessionDepositInfo.deposit_amount ?? 0,
         dueDate: sessionDepositInfo.deposit_due_date,
@@ -1525,7 +1542,7 @@ function EmailThreadUIContent() {
                         </div>
                       )}
 
-                      {depositInfo?.deposit_required && (
+                      {depositInfo?.deposit_required && depositInfo.offer_accepted && (
                         <div className={`mb-3 p-2 rounded-lg text-xs ${depositInfo.deposit_paid ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
                           <div className="font-semibold">
                             Deposit: CHF {(depositInfo.deposit_amount ?? 0).toLocaleString('de-CH', { minimumFractionDigits: 2 })}

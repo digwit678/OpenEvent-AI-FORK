@@ -1018,6 +1018,7 @@ class TestSiteVisitConfirmation:
    - Cancel/reschedule site visits
 
 2. **Enhanced Detection**
+   - **LLM-based detection**: Transition from regex/keyword matching in `router.py` to LLM-based intent detection to handle nuanced requests and avoid false positives from emails/URLs.
    - Multi-language support
    - Handle "can I see it first?" type requests
    - Detect site visit changes/cancellations

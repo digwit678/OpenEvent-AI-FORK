@@ -40,6 +40,7 @@ This list was compiled by scanning repo markdown for: `TODO`, `TBD`, `FIXME`, un
 - Playwright E2E spec checklist items are not all marked complete (treat these as “needs rerun + update status”, and implement missing automation if desired) — `tests/playwright/e2e/` (multiple `*.md` files; see checklists in each file).
 - Date drift/corruption report in older Playwright notes does not reproduce in current stub runs; re-run Playwright to confirm and update status — `tests/playwright/e2e/04_core_step_gating/test_room_before_date.md` (entire file).
 - Date mismatch “Feb 7 becomes Feb 20” does not reproduce for explicit confirmation in stub runs; keep as a watch item and re-validate in real UI/OpenAI mode — `docs/guides/TEAM_GUIDE.md` (“Date Mismatch: Feb 7 becomes Feb 20 (Open - Investigating)”).
+- Mandatory time-slot booking (event + site visit) with manager-defined ranges — `docs/plans/active/time_slot_booking_plan.md`, `docs/plans/active/time_slot_booking_implementation_plan.md`.
 - `docs/internal/backend/BACKEND_CODE_REVIEW_DEC_2025.md` “Immediate Action Items” contains stale checkboxes (example: Step 3 `request` NameError is already guarded); close or update this checklist after triage — `docs/internal/backend/BACKEND_CODE_REVIEW_DEC_2025.md` (entire file).
 - Bundle the “add-ons/catering” question into the room-choice message (and accept combined replies: room + catering in one turn). Keep details in info pages; list only menu category names in chat — `docs/guides/step4_step5_requirements.md` (entire file), `DEV_CHANGELOG.md:3242`, `docs/plans/completed/JUNIOR_DEV_FOLLOW_UP.md` (entire file).
 
@@ -67,6 +68,7 @@ This list was compiled by scanning repo markdown for: `TODO`, `TBD`, `FIXME`, un
 - Gemini dual-provider migration plan (unchecked implementation checklist) — `docs/plans/completed/MIGRATION_TO_GEMINI_STRATEGY.md` (Phase 1–3 checklists).
 - Multi-tenant expansion plan (unchecked implementation checklist) — `docs/plans/active/MULTI_TENANT_EXPANSION_PLAN.md` (“Implementation Checklist”).
 - Multi-variable Q&A plan / hybrid detection work (treat as future capability unless it is currently breaking workflow) — `docs/plans/active/MULTI_VARIABLE_QNA_PLAN.md` (entire file; see “Open Questions” section).
+- On-demand site visit scheduling (LLM-only trigger + confirm gate) — `docs/plans/active/site_visit_on_demand_plan.md`.
 - Test pages / Q&A shortcut follow-ups (verbalizer shortcut wiring, menus-to-rooms mapping, tests not run) — `DEV_CHANGELOG.md` (“Links, Test Pages, and Q&A Shortcuts” → “Open TODO / Testing”).
 - Junior-dev follow-up checklist for test pages/links/Q&A shortcut behavior — `docs/plans/completed/JUNIOR_DEV_FOLLOW_UP.md` (“Testing Checklist”).
 - Full-stack link/test-pages manual validation checklist (may be stale; re-run or archive) — `docs/plans/completed/DONE__JUNIOR_DEV_LINKS_IMPLEMENTATION_GUIDE.md` (entire file).

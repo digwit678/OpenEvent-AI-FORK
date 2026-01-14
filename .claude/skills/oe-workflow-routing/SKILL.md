@@ -19,6 +19,7 @@ description: Fast routing triage for workflow messages; points to docs/workflow-
 - "Routing map lives at `docs/workflow-routing-map.md`. Start with state fields, pre-route early exits, guard forcing, then router loop."
 
 ## Key files to open
+- `docs/architecture/MASTER_ARCHITECTURE_SHEET.md` (Read this for rules/invariants)
 - `docs/workflow-routing-map.md`
 - `backend/workflow_email.py`
 - `backend/workflows/runtime/pre_route.py`

@@ -2,6 +2,89 @@
 
 ## 2026-01-14
 
+### Fix: Final Message Acknowledges Scheduled Site Visit Instead of Prompting
+
+**Problem:** After offer acceptance → billing → deposit payment, the final confirmation message asked "Would you like to schedule a site visit?" even when a site visit was already scheduled earlier in the conversation.
+
+**Root Cause:** Three code paths generated site visit prompts without checking if one was already scheduled:
+1. `step7_handler.py:_prepare_confirmation()` - Always asked about site visits
+2. `step4_handler.py:_auto_confirm_without_hil()` - Always prompted for site visit
+3. `site_visit.py:handle_site_visit()` - Didn't check for already-scheduled visits
+
+**Solution Implemented:**
+
+1. **`workflows/steps/step7_confirmation/trigger/step7_handler.py`** - Added check in `_prepare_confirmation()`:
+   - Imports `is_site_visit_scheduled` from `site_visit_state`
+   - If site visit scheduled: Shows "Your site visit is scheduled for [date] at [time]"
+   - If not scheduled: Shows "Would you like to arrange a site visit?"
+
+2. **`workflows/steps/step7_confirmation/trigger/site_visit.py`** - Added check in `handle_site_visit()`:
+   - Added `_site_visit_already_scheduled_response()` function
+   - Returns acknowledgment message instead of offering new slots
+
+3. **`workflows/steps/step4_offer/trigger/step4_handler.py`** - Added check in `_auto_confirm_without_hil()`:
+   - If site visit scheduled: Shows acknowledgment with date/time
+   - If not scheduled: Prompts for site visit preferences
+
+**Files Modified:**
+- `workflows/steps/step7_confirmation/trigger/step7_handler.py`
+- `workflows/steps/step7_confirmation/trigger/site_visit.py`
+- `workflows/steps/step4_offer/trigger/step4_handler.py`
+
+**E2E Verified:**
+- Full flow: Inquiry → Site visit (with detour) → Room A → Offer → Accept → Billing → Deposit → Final message
+- Final message shows "Your site visit is scheduled for 13.08.2026 at 10:00" instead of asking to schedule
+- Site visit detour (blocked event day) works correctly
+
+**E2E Scenario:** `backend/e2e-scenarios/2026-01-14_site-visit-detour-with-scheduled-acknowledgment.md`
+
+---
+
+### Feature: 2-Step Site Visit Flow (Date Selection → Time Selection)
+
+**Problem:** The previous site visit implementation auto-selected dates when room conflicts occurred, and the "14:00" pattern was being incorrectly parsed as a date.
+
+**Solution Implemented:**
+
+1. **Added `time_pending` state** to `SiteVisitStatus` enum for tracking date-selected-waiting-for-time status
+2. **Separated date and time selection** into distinct conversation steps:
+   - First: Agent offers 3-5 available dates
+   - Client selects a date
+   - Second: Agent offers time slots for the selected date (10:00, 14:00, 16:00)
+   - Client selects a time
+3. **Added state fields** to `SiteVisitState`:
+   - `proposed_dates: List[str]` - tracks dates offered to client
+   - `selected_date: str | None` - tracks client's date selection
+4. **Added helper functions**:
+   - `is_site_visit_pending_time()` - check if waiting for time selection
+   - `set_time_pending()` - transition to time_pending state
+5. **Rewrote `_offer_date_slots()`** to offer dates only (not combined date+time)
+6. **Added `_generate_available_dates()`** function for date generation
+7. **Added `_generate_time_slots_for_date()`** function for time slot generation
+8. **Updated `_handle_date_selection()`** to transition to `time_pending` instead of completing immediately
+9. **Added `_handle_time_selection()`** for handling time slot selection after date is confirmed
+10. **Fixed `_date_conflict_response()`** to offer alternative dates instead of auto-selecting
+
+**Design Principle:**
+- Date and time are NEVER combined in one message
+- Client always explicitly selects both date and time
+- No auto-selection or fallback logic that skips client input
+
+**Files Modified:**
+- `workflows/common/site_visit_state.py` - Added `time_pending` status, `proposed_dates`, `selected_date` fields, helper functions
+- `workflows/common/site_visit_handler.py` - Implemented 2-step flow with separate date/time handlers
+
+**Tests:**
+- All 28 site visit tests pass
+- E2E verified with Playwright (full workflow through site visit)
+
+**E2E Verified:**
+- Client sees separate date selection and time selection prompts
+- No "14:00" date parsing errors
+- No auto-date-selection on conflicts
+
+---
+
 ### Fix: HIL Approval Shows Wrong Message (body vs body_markdown)
 
 **Problem:** After manager clicks "Approve & Send" on a Step 7 HIL task, the chat displayed the offer summary (`body_markdown`) instead of the site visit prompt (`body`).

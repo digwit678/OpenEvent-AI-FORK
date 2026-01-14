@@ -420,9 +420,21 @@ def process(state: WorkflowState) -> GroupResult:
     # [CHANGE DETECTION] Tap incoming stream BEFORE Q&A dispatch to detect client revisions
     # ("actually we're 50 now") and route them back to dependent nodes while hashes stay valid.
     # Use enhanced detection with dual-condition logic (revision signal + bound target)
+    #
+    # GUARD: Skip date change detection when site visit flow is active
+    # When client selects a date for site visit, it should NOT update the event date
+    from workflows.common.site_visit_state import is_site_visit_active
+    site_visit_active = is_site_visit_active(event_entry)
+
     user_info = state.user_info or {}
     enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
     change_type = enhanced_result.change_type if enhanced_result.is_change else None
+
+    # If site visit is active, suppress date change detection
+    # Date in message is for site visit selection, not event date change
+    if site_visit_active and change_type and change_type.value == "date":
+        logger.info("[STEP2][SV_GUARD] Site visit active - suppressing date change detection")
+        change_type = None
 
     if change_type is not None:
         # Change detected: route it per DAG rules and skip Q&A dispatch
@@ -452,15 +464,34 @@ def process(state: WorkflowState) -> GroupResult:
         if decision.next_step != 2:
             update_event_metadata(event_entry, current_step=decision.next_step)
 
-            # For date changes: Keep room lock, invalidate room_eval_hash so Step 3 re-verifies
+            # For date changes: Update the date, keep room lock, invalidate room_eval_hash
             # Step 3 will check if the locked room is still available on the new date
-            if change_type.value == "date" and decision.next_step == 2:
-                update_event_metadata(
-                    event_entry,
-                    date_confirmed=False,
-                    room_eval_hash=None,  # Invalidate to trigger re-verification in Step 3
-                    # NOTE: Keep locked_room_id to allow fast-skip if room still available
-                )
+            if change_type.value == "date":
+                # Get the new date from user_info
+                new_date = user_info.get("date") or user_info.get("event_date")
+                if new_date:
+                    # Normalize to DD.MM.YYYY format
+                    from workflows.common.datetime_parse import parse_all_dates
+                    from datetime import date as dt_date
+                    parsed = list(parse_all_dates(str(new_date), fallback_year=dt_date.today().year, limit=1))
+                    if parsed:
+                        new_date_str = parsed[0].strftime("%d.%m.%Y")
+                        update_event_metadata(
+                            event_entry,
+                            chosen_date=new_date_str,
+                            date_confirmed=True,  # Date is now confirmed
+                            room_eval_hash=None,  # Invalidate to trigger re-verification in Step 3
+                            # NOTE: Keep locked_room_id to allow fast-skip if room still available
+                        )
+                        logger.info("[STEP2][DATE_CHANGE] Updated date from %s to %s",
+                                    event_entry.get("chosen_date"), new_date_str)
+                elif decision.next_step == 2:
+                    # No new date found, just invalidate for re-confirmation
+                    update_event_metadata(
+                        event_entry,
+                        date_confirmed=False,
+                        room_eval_hash=None,
+                    )
             # For requirements changes, clear the lock since room may no longer fit
             elif change_type.value == "requirements" and decision.next_step in (2, 3):
                 # BUG FIX: Only set date_confirmed=False when going to Step 2
@@ -474,6 +505,11 @@ def process(state: WorkflowState) -> GroupResult:
                 update_event_metadata(event_entry, **metadata_updates)
 
             append_audit_entry(event_entry, 2, decision.next_step, f"{change_type.value}_change_detected")
+
+            # BUG-024 FIX: Set flag for date change acknowledgment in step5
+            # This flag is persisted to event_entry so it survives across routing loops
+            if change_type.value == "date":
+                event_entry["_pending_date_change_ack"] = True
 
             # Skip Q&A: return detour signal
             # CRITICAL: Update event_entry BEFORE state.current_step so routing loop sees the change
@@ -1839,6 +1875,14 @@ def _finalize_confirmation(
         },
         remove_deferred=["date_confirmation"],
     )
+    if event_entry.get("caller_step") is not None:
+        # Prevent downstream steps from re-detecting the same date change
+        # within this routing loop (e.g., Step 4 looping back to Step 2).
+        state.extras["detour_change_applied"] = "date"
+        # BUG-024 FIX: Also persist to event_entry for acknowledgment in step5
+        # The flag in state.extras is lost between routing loops
+        event_entry["_pending_date_change_ack"] = True
+        state.extras["persist"] = True
 
     autorun_failed = False
     autorun_result: Optional[GroupResult] = None

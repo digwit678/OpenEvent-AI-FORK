@@ -4,6 +4,22 @@ Ideas collected during development sessions for future implementation.
 
 ---
 
+## ✅ IMPLEMENTED: Event-Relative Deposit Due Date (Jan 14, 2026)
+
+**Status:** Implemented on 2026-01-14. See DEV_CHANGELOG.md for details.
+
+**Implementation:** Modified `calculate_deposit_due_date()` in `workflows/common/pricing.py`:
+- Added `event_date` parameter (optional)
+- Added `min_days_before_event` config option (default 14 days)
+- Due date = `min(today + deadline_days, event_date - min_days_before_event)`
+- Ensures due date is at least 1 day from today
+
+**Files modified:**
+- `workflows/common/pricing.py` - Updated `calculate_deposit_due_date()` and `build_deposit_info()`
+- `workflows/steps/step4_offer/trigger/step4_handler.py` - Pass event date to deposit calculation
+
+---
+
 ## Detection Interference Hardening (Jan 13, 2026)
 
 **Context:** OOC guidance bug triage surfaced multiple detection conflicts (acceptance vs room/date, shortcuts, Q&A heuristics).
@@ -15,6 +31,40 @@ Ideas collected during development sessions for future implementation.
 **Files to modify:** `workflows/runtime/pre_route.py`, `workflows/steps/step1_intake/trigger/*`, `workflows/planner/*`, `detection/qna/general_qna.py`.
 
 **Priority:** Medium (robustness).
+
+## LLM-Based Site Visit Detection (Jan 13, 2026)
+
+**Context:** Current site visit detection in `workflows/runtime/router.py` relies on regex and keyword matching. While improved with email/URL stripping, it still risks false positives or missing nuanced requests.
+
+**Proposed Solution:** Move site visit detection into the unified LLM-based intent classification. Use the LLM to distinguish between "I want to visit" and "How do I visit?" or "I visited before".
+
+**Files to modify:** `workflows/runtime/router.py`, `backend/llm/intent_classifier.py`, `detection/site_visit/`.
+
+**Priority:** Medium.
+
+---
+
+## On-Demand Site Visit Scheduling (Any Step + Confirm Gate) (Mar 2026)
+
+**Context:** Site visits are currently default after offer steps and can auto-confirm when a date is proposed. Clients want to book at any step, and scheduling should never auto-confirm without explicit client confirmation.
+
+**Proposed Solution:** Reuse unified detection output (no extra LLM cost) to trigger site visit requests at any step, add a confirm_pending state so booking only happens after explicit confirmation, and default suggestions to event_date - 7 days (or today + 7 if no event date). See `docs/plans/active/site_visit_on_demand_plan.md`.
+
+**Files to modify:** `detection/unified.py`, `workflows/runtime/router.py`, `workflows/common/site_visit_handler.py`, `workflows/common/site_visit_state.py`, `workflows/common/room_rules.py`, `tests/*`.
+
+**Priority:** High.
+
+---
+
+## Mandatory Time Slot Booking (Event + Site Visit) (Mar 2026)
+
+**Context:** Date confirmations currently default to a single slot label and do not enforce time selection. Site visits use hour-based slots and can confirm without a time range. We need manager-defined time ranges and mandatory slot selection for every booked date.
+
+**Proposed Solution:** Introduce manager-configured time ranges for event and site visit bookings, enforce time-slot selection unless the client explicitly requests full-day or multi-day bookings, and route time-slot prompts/suggestions through the verbalizer. Group dates under shared time ranges to avoid repeating the same slots. See `docs/plans/active/time_slot_booking_plan.md` and `docs/plans/active/time_slot_booking_implementation_plan.md`.
+
+**Files to modify:** `workflows/io/config_store.py`, `workflows/steps/step2_date_confirmation/trigger/step2_handler.py`, `workflows/common/site_visit_handler.py`, `ux/universal_verbalizer.py`, `api/routes/config.py`, `tests/*`.
+
+**Priority:** High.
 
 ---
 

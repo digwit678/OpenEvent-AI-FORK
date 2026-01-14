@@ -483,6 +483,27 @@ Result: One combined message with "Great choice! Room F is confirmed... Here is 
 **E2E Verified**: `.playwright-mcp/.playwright-mcp/e2e-hil-body-fix-verified.png`
 **Related Bugs**: Opposite of BUG-013 (which had site visit text replacing offer draft)
 
+### BUG-027: Site Visit Auto-Selecting Dates and "14:00" Parsing as Date
+**Status**: Fixed (2026-01-14)
+**Severity**: Medium (UX/Flow Issue)
+**Symptom**:
+1. When room conflicts occurred during site visit scheduling, the system auto-selected an alternative date instead of offering options to the client
+2. Time pattern "14:00" was being incorrectly parsed as a date, causing flow errors
+**Root Cause**: Site visit flow combined date and time selection in a single step, leading to premature decisions and parsing ambiguities.
+**Fix**: Implemented 2-step site visit flow:
+1. **Step 1 - Date Selection**: Agent offers 3-5 available dates → client selects one
+2. **Step 2 - Time Selection**: Agent offers time slots (10:00, 14:00, 16:00) for selected date → client selects one
+3. Added `time_pending` status to track "date selected, waiting for time" state
+4. Added `proposed_dates` and `selected_date` fields to SiteVisitState
+5. Separated handler functions: `_handle_date_selection()` and `_handle_time_selection()`
+6. Fixed `_date_conflict_response()` to offer alternatives instead of auto-selecting
+**Files**:
+- `workflows/common/site_visit_state.py` - State model updates
+- `workflows/common/site_visit_handler.py` - 2-step flow implementation
+**Tests**: All 28 site visit tests pass
+**E2E Verified**: Playwright test confirms separate date/time selection prompts work correctly
+**Design Principle**: Client must explicitly select BOTH date and time - no auto-selection or fallback logic
+
 ### BUG-013: HIL Approval Sends Site Visit Text Instead of Workflow Draft
 **Status**: Fixed (2026-01-12)
 **Severity**: Critical (UX Breaking)

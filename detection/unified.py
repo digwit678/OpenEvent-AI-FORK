@@ -76,6 +76,8 @@ class UnifiedDetectionResult:
     date_text: Optional[str] = None    # Original text "next Tuesday"
     participants: Optional[int] = None
     duration_hours: Optional[float] = None
+    start_time: Optional[str] = None   # HH:MM format (24h) - extracted from message
+    end_time: Optional[str] = None     # HH:MM format (24h) - extracted from message
     room_preference: Optional[str] = None
     products: List[str] = field(default_factory=list)
     billing_address: Optional[Dict[str, str]] = None
@@ -111,6 +113,8 @@ class UnifiedDetectionResult:
                 "date_text": self.date_text,
                 "participants": self.participants,
                 "duration_hours": self.duration_hours,
+                "start_time": self.start_time,
+                "end_time": self.end_time,
                 "room_preference": self.room_preference,
                 "products": self.products,
                 "billing_address": self.billing_address,
@@ -175,6 +179,8 @@ Return a JSON object with this exact structure:
     "date_text": original date text from message or null,
     "participants": integer or null,
     "duration_hours": float or null,
+    "start_time": "HH:MM" (24h format) or null - extract if client mentions a time like "14:00", "2pm", "afternoon" (afternoon=14:00, morning=09:00, evening=18:00),
+    "end_time": "HH:MM" (24h format) or null - extract if client mentions end time. If only start given, infer end as start + 4 hours,
     "room_preference": room name or null,
     "products": ["catering", "projector", ...] or [],
     "billing_address": {{"company": "", "street": "", "postal_code": "", "city": "", "country": ""}} or null,
@@ -285,6 +291,8 @@ def run_unified_detection(
             date_text=entities.get("date_text"),
             participants=entities.get("participants"),
             duration_hours=entities.get("duration_hours"),
+            start_time=entities.get("start_time"),
+            end_time=entities.get("end_time"),
             room_preference=entities.get("room_preference"),
             products=entities.get("products", []),
             billing_address=entities.get("billing_address"),
@@ -334,6 +342,8 @@ def run_unified_detection(
                     date_text=entities.get("date_text"),
                     participants=entities.get("participants"),
                     duration_hours=entities.get("duration_hours"),
+                    start_time=entities.get("start_time"),
+                    end_time=entities.get("end_time"),
                     room_preference=entities.get("room_preference"),
                     products=entities.get("products", []),
                     billing_address=entities.get("billing_address"),
@@ -382,9 +392,16 @@ def run_unified_detection(
                     date=entities.get("date"),
                     date_text=entities.get("date_text"),
                     participants=entities.get("participants"),
+                    duration_hours=entities.get("duration_hours"),
+                    start_time=entities.get("start_time"),
+                    end_time=entities.get("end_time"),
                     room_preference=entities.get("room_preference"),
                     products=entities.get("products", []),
+                    billing_address=entities.get("billing_address"),
+                    site_visit_room=entities.get("site_visit_room"),
+                    site_visit_date=entities.get("site_visit_date"),
                     qna_types=data.get("qna_types", []),
+                    step_anchor=data.get("step_anchor"),
                     raw_response=data,
                 )
             except Exception:

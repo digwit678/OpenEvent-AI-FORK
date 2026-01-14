@@ -809,6 +809,7 @@ async def send_message(request: SendMessageRequest):
                                 "deposit_amount": raw_deposit.get("deposit_amount"),
                                 "deposit_due_date": raw_deposit.get("deposit_due_date"),
                                 "deposit_paid": raw_deposit.get("deposit_paid", False),
+                                "offer_accepted": bool(event.get("offer_accepted")),
                                 "event_id": conversation_state.event_id,
                             }
                     break

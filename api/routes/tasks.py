@@ -123,6 +123,7 @@ def _build_event_summary(event_entry: Dict[str, Any]) -> Optional[Dict[str, Any]
             "deposit_due_date": deposit_info.get("deposit_due_date"),
             "deposit_paid": deposit_info.get("deposit_paid", False),
             "deposit_paid_at": deposit_info.get("deposit_paid_at"),
+            "offer_accepted": bool(event_entry.get("offer_accepted")),
         }
 
     return event_summary
