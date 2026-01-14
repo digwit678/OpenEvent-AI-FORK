@@ -29,6 +29,7 @@ from workflows.common.room_rules import site_visit_allowed
 from workflows.common.site_visit_state import (
     get_site_visit_state,
     set_site_visit_date,
+    is_site_visit_scheduled,
 )
 from workflows.common.types import GroupResult, WorkflowState
 from workflows.io.database import append_audit_entry, update_event_metadata
@@ -42,6 +43,10 @@ def handle_site_visit(state: WorkflowState, event_entry: Dict[str, Any]) -> Grou
     This is the Step 7 specific entry point. For cross-step site visit handling,
     see backend/workflows/common/site_visit_handler.py
     """
+    # Check if site visit is already scheduled - show acknowledgment instead of proposing new slots
+    if is_site_visit_scheduled(event_entry):
+        return _site_visit_already_scheduled_response(state, event_entry)
+
     if not site_visit_allowed(event_entry):
         conf_state = event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})
         conf_state["pending"] = None
@@ -64,7 +69,8 @@ def handle_site_visit(state: WorkflowState, event_entry: Dict[str, Any]) -> Grou
         ),
         "step": 7,
         "topic": "confirmation_site_visit",
-        "requires_approval": True,
+        # Routine message - no HIL needed when toggle OFF
+        "requires_approval": False,
     }
     state.add_draft_message(draft)
     event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})["pending"] = {
@@ -89,7 +95,8 @@ def site_visit_unavailable_response(state: WorkflowState, event_entry: Dict[str,
         ),
         "step": 7,
         "topic": "confirmation_question",
-        "requires_approval": True,
+        # Routine message - no HIL needed when toggle OFF
+        "requires_approval": False,
     }
     state.add_draft_message(draft)
     update_event_metadata(event_entry, thread_state="Awaiting Client")
@@ -97,6 +104,38 @@ def site_visit_unavailable_response(state: WorkflowState, event_entry: Dict[str,
     state.extras["persist"] = True
     payload = base_payload(state, event_entry)
     return GroupResult(action="confirmation_question", payload=payload, halt=True)
+
+
+def _site_visit_already_scheduled_response(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:
+    """Response when site visit is already scheduled - acknowledge it instead of proposing new slots."""
+    sv_state = event_entry.get("site_visit_state") or {}
+    sv_date = sv_state.get("date_iso", "")
+    sv_time = sv_state.get("time_slot", "")
+    sv_display = f"{sv_date} at {sv_time}" if sv_time else sv_date
+
+    body = (
+        f"Your site visit is already scheduled for {sv_display}. "
+        "We'll finalize the details closer to your event date. "
+        "If you'd like to change the visit time, just let me know!"
+    )
+
+    draft = {
+        "body": append_footer(
+            body,
+            step=7,
+            next_step="Continue with booking",
+            thread_state="Awaiting Client",
+        ),
+        "step": 7,
+        "topic": "site_visit_already_scheduled",
+        "requires_approval": False,
+    }
+    state.add_draft_message(draft)
+    update_event_metadata(event_entry, thread_state="Awaiting Client")
+    state.set_thread_state("Awaiting Client")
+    state.extras["persist"] = True
+    payload = base_payload(state, event_entry)
+    return GroupResult(action="site_visit_already_scheduled", payload=payload, halt=True)
 
 
 def generate_visit_slots(event_entry: Dict[str, Any]) -> List[str]:
@@ -269,7 +308,8 @@ def handle_site_visit_preference(
         ),
         "step": 7,
         "topic": "site_visit_preference_slots",
-        "requires_approval": True,
+        # Routine message - no HIL needed when toggle OFF
+        "requires_approval": False,
     }
     state.add_draft_message(draft)
     event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})["pending"] = {
@@ -365,7 +405,8 @@ def handle_site_visit_confirmation(state: WorkflowState, event_entry: Dict[str, 
         ),
         "step": 7,
         "topic": "site_visit_clarification",
-        "requires_approval": True,
+        # Routine message - no HIL needed when toggle OFF
+        "requires_approval": False,
     }
     state.add_draft_message(draft)
     update_event_metadata(event_entry, thread_state="Awaiting Client")

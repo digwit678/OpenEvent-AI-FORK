@@ -202,11 +202,16 @@ class WorkflowState:
         next_step = message.get("next_step", step_value)
         thread_state = message.get("thread_state") or self.thread_state or "Awaiting Client"
 
-        body_markdown = message.pop("body_markdown", None)
+        # Extract body_markdown if explicitly provided (for manager-only display)
+        explicit_body_markdown = message.pop("body_markdown", None)
         raw_body = message.get("body")
         footer = message.get("footer")
 
-        if body_markdown is None and isinstance(raw_body, str) and raw_body:
+        # Track if body was explicitly provided (for client-facing message)
+        explicit_body_provided = "body" in message and isinstance(raw_body, str)
+
+        # Derive body_markdown from body if not explicitly provided
+        if explicit_body_markdown is None and isinstance(raw_body, str) and raw_body:
             if FOOTER_SEPARATOR in raw_body:
                 before, _, after = raw_body.partition(FOOTER_SEPARATOR)
                 body_markdown = before.strip()
@@ -214,9 +219,8 @@ class WorkflowState:
                     footer = after.strip()
             else:
                 body_markdown = raw_body.strip()
-
-        if body_markdown is None:
-            body_markdown = ""
+        else:
+            body_markdown = explicit_body_markdown or ""
 
         if not footer:
             footer = compose_footer(step_value or 0, next_step, thread_state)
@@ -231,8 +235,19 @@ class WorkflowState:
         if subloop:
             message["subloop"] = subloop
 
-        combined_body = f"{body_markdown}{FOOTER_SEPARATOR}{footer}" if body_markdown else footer
-        message["body"] = combined_body
+        # CRITICAL: Preserve original body when both body and body_markdown were explicitly
+        # provided and differ. This allows body = client message (e.g., site visit prompt)
+        # while body_markdown = manager display (e.g., offer summary).
+        # BUG FIX: Previously this always overwrote body with body_markdown content.
+        if explicit_body_provided and explicit_body_markdown and raw_body and raw_body != explicit_body_markdown:
+            # Both were explicitly set and different - preserve body, just ensure footer
+            if FOOTER_SEPARATOR not in str(raw_body) and footer:
+                message["body"] = f"{str(raw_body).rstrip()}\n{FOOTER_SEPARATOR}{footer}"
+            # else: keep body as-is (already has footer or doesn't need one)
+        else:
+            # Normal case: derive body from body_markdown + footer
+            combined_body = f"{body_markdown}{FOOTER_SEPARATOR}{footer}" if body_markdown else footer
+            message["body"] = combined_body
 
         # Default: no HIL approval needed for agent drafts (testing/future mode)
         # Set requires_approval=True explicitly for: offers, detours, special requests

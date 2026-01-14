@@ -16,7 +16,11 @@ from workflows.common.site_visit_handler import (
     handle_site_visit_request,
     is_site_visit_intent,
 )
-from workflows.common.site_visit_state import is_site_visit_active
+from workflows.common.site_visit_state import (
+    is_site_visit_active,
+    is_site_visit_scheduled,
+    is_site_visit_change_request,
+)
 from workflows.common.types import GroupResult, WorkflowState
 from workflows.steps import step2_date_confirmation as date_confirmation
 from workflows.steps import step3_room_availability as room_availability
@@ -97,7 +101,10 @@ def run_routing_loop(
 
         step = event_entry.get("current_step")
         logger.debug("[WF][ROUTE][%d] current_step=%s", iteration, step)
-        print(f"[ROUTE][{iteration}] current_step={step}, site_visit_status={event_entry.get('site_visit_state', {}).get('status')}")
+        sv_state = event_entry.get('site_visit_state', {})
+        sv_status = sv_state.get('status', 'idle')
+        sv_selected_date = sv_state.get('selected_date')
+        print(f"[ROUTE][{iteration}] step={step}, sv_status={sv_status}, sv_selected_date={sv_selected_date}")
 
         # =================================================================
         # SITE VISIT INTERCEPT: Handle site visit requests at ANY step
@@ -106,6 +113,12 @@ def run_routing_loop(
         site_visit_result = _check_site_visit_intercept(state, event_entry)
         if site_visit_result:
             last_result = site_visit_result
+            # Log state AFTER site visit handler
+            sv_state_after = event_entry.get('site_visit_state', {})
+            print(f"[ROUTE][SV_INTERCEPT] action={last_result.action}, "
+                  f"sv_status_after={sv_state_after.get('status')}, "
+                  f"sv_selected_date={sv_state_after.get('selected_date')}, "
+                  f"halt={last_result.halt}")
             debug_fn(f"site_visit_intercept_step{step}", state)
             persist_fn(state, path, lock_path)
             if last_result.halt:
@@ -178,32 +191,20 @@ def _check_site_visit_intercept(
                 detection is not None, is_site_visit_intent(detection) if detection else False)
     if is_site_visit_intent(detection):
         current_step = event_entry.get("current_step", 1)
-        logger.info("[WF][SITE_VISIT_GUARD] is_site_visit_intent=True, current_step=%s", current_step)
+        logger.info("[WF][SITE_VISIT] Site visit intent detected at step %s", current_step)
 
-        # GUARD: Don't trigger site visit for early-stage events unless
-        # the message has EXPLICIT site visit keywords
-        if current_step < 5:
-            # Check for explicit site visit keywords in the message
-            message = state.message
-            message_text = (message.body or "") + " " + (message.subject or "") if message else ""
-            message_lower = message_text.lower()
-
-            # These are EXPLICIT site visit request keywords
-            explicit_keywords = [
-                "site visit", "tour", "walkthrough", "visit the venue",
-                "view the venue", "see the room", "see the venue",
-                "want to visit", "would like to visit", "can we visit",
-                "besichtigung", "besichtigen",  # German
-            ]
-            has_explicit_keyword = any(kw in message_lower for kw in explicit_keywords)
-
-            if not has_explicit_keyword:
-                logger.debug("[WF][SITE_VISIT] Skipping site visit intercept at step %s - "
-                            "no explicit keywords and step < 5", current_step)
-                return None
-
+        # Site visits can now be triggered at ANY step (2-7) based on LLM detection.
+        # The early-step keyword guard was removed to allow on-demand site visits.
+        # LLM-based detection (qna_types includes "site_visit_request") is sufficient.
         logger.debug("[WF][SITE_VISIT] New site visit request detected at step %s",
                     current_step)
+        return handle_site_visit_request(state, event_entry, detection)
+
+    # Check for site visit CHANGE request (when already scheduled)
+    # This handles "change the site visit to X" when sv_status=scheduled
+    message_text = (state.message.body or "").strip()
+    if is_site_visit_scheduled(event_entry) and is_site_visit_change_request(message_text):
+        logger.info("[WF][SITE_VISIT] Site visit change request detected (status=scheduled)")
         return handle_site_visit_request(state, event_entry, detection)
 
     return None

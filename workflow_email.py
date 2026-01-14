@@ -345,9 +345,16 @@ def _persist_if_needed(state: WorkflowState, path: Path, lock_path: Path) -> Non
 def _flush_pending_save(state: WorkflowState, path: Path, lock_path: Path) -> None:
     """[OpenEvent Database] Flush debounced writes at the end of the turn."""
     if state.extras.pop("_pending_save", False):
+        # Log site visit state before save for debugging
+        if state.event_entry:
+            sv_state = state.event_entry.get("site_visit_state", {})
+            print(f"[WF][PERSIST] Saving: sv_status={sv_state.get('status')}, "
+                  f"sv_selected_date={sv_state.get('selected_date')}, "
+                  f"sv_proposed_slots={sv_state.get('proposed_slots', [])}")
         logger.info("[WF][PERSIST] Flushing DB to %s for thread=%s", path, state.thread_id)
         db_io.save_db(state.db, path, lock_path=lock_path)
         logger.info("[WF][PERSIST] DB saved successfully")
+        print(f"[WF][PERSIST] DB saved to {path}")
     else:
         logger.debug("[WF][PERSIST] No pending save for thread=%s", state.thread_id)
 
@@ -402,6 +409,12 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     classification = _ensure_general_qna_classification(state, combined_text)
     _debug_state("init", state, extra={"entity": "client"})
     last_result = intake.process(state)
+    # Log loaded site visit state for debugging
+    if state.event_entry:
+        sv_state = state.event_entry.get("site_visit_state", {})
+        print(f"[WF][LOAD] After intake: sv_status={sv_state.get('status')}, "
+              f"sv_selected_date={sv_state.get('selected_date')}, "
+              f"event_id={state.event_entry.get('event_id')}")
     _debug_state("post_intake", state, extra={"intent": state.intent.value if state.intent else None})
 
     # Run pre-routing pipeline (P1 extraction)
@@ -635,9 +648,11 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
     hil_all_replies_on = is_hil_all_replies_enabled()
     if state.draft_messages:
         payload["draft_messages"] = state.draft_messages
-        # ALWAYS create step-specific HIL tasks (offer confirmation, special requests, etc.)
-        # These are the original workflow HIL tasks - they work regardless of the AI reply toggle
-        if event_entry:
+        # Step-specific HIL tasks (offer confirmation, special requests, etc.)
+        # ONLY create when all-replies toggle is OFF
+        # When OE_HIL_ALL_LLM_REPLIES=true, ALL messages go through single HIL queue
+        # so step-specific HIL is redundant (avoids double-approval)
+        if event_entry and not hil_all_replies_on:
             enqueue_hil_tasks(state, event_entry)
         requires_approval_flags = [draft.get("requires_approval", True) for draft in state.draft_messages]
     else:
@@ -694,8 +709,26 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
         if hil_all_replies_on:
             # When toggle ON: ALL AI-generated replies go to separate "AI Reply Approval" queue
             # This allows managers to review/edit EVERY outbound message before it reaches clients
-            latest_draft = state.draft_messages[-1]
-            draft_body = latest_draft.get("body_markdown") or latest_draft.get("body") or ""
+            # Use approval drafts (offers, confirmations) if available, otherwise all drafts
+            approval_drafts_for_hil = [d for d in state.draft_messages if d.get("requires_approval", True)]
+            if approval_drafts_for_hil:
+                # Combine all approval drafts (e.g., offer with multiple sections)
+                combined_body_parts = []
+                for d in approval_drafts_for_hil:
+                    body = d.get("body_markdown") or d.get("body") or ""
+                    if body:
+                        combined_body_parts.append(body)
+                draft_body = "\n\n".join(combined_body_parts)
+                latest_draft = approval_drafts_for_hil[0]
+            else:
+                # No approval drafts, combine all drafts
+                combined_body_parts = []
+                for d in state.draft_messages:
+                    body = d.get("body_markdown") or d.get("body") or ""
+                    if body:
+                        combined_body_parts.append(body)
+                draft_body = "\n\n".join(combined_body_parts)
+                latest_draft = state.draft_messages[-1]
             draft_step = latest_draft.get("step", state.current_step)
             thread_id = _thread_identifier(state)
 

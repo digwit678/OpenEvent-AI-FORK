@@ -43,6 +43,8 @@ from workflows.common.confirmation_gate import (
     auto_continue_if_ready,
     get_next_prompt,
 )
+from workflows.common.site_visit_state import is_site_visit_scheduled
+from workflows.io.integration.config import is_hil_all_replies_enabled
 from workflows.common.types import GroupResult, WorkflowState
 # MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
 from detection.intent.confidence import check_nonsense_gate
@@ -53,6 +55,7 @@ from workflows.common.general_qna import (
     _fallback_structured_body,
 )
 from workflows.change_propagation import (
+    ChangeType,
     detect_change_type,
     detect_change_type_enhanced,
     route_change_on_updated_variable,
@@ -310,6 +313,15 @@ def process(state: WorkflowState) -> GroupResult:
     # Use enhanced detection with dual-condition logic (revision signal + bound target)
     enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
     change_type = enhanced_result.change_type if enhanced_result.is_change else None
+    if state.extras.get("detour_change_applied") == "date" and change_type == ChangeType.DATE:
+        change_type = None
+        if thread_id:
+            trace_marker(
+                thread_id,
+                "SKIP_DUPLICATE_DATE_DETOUR",
+                detail="Date change already applied in detour flow; skipping re-detection in Step4",
+                owner_step="Step4_Offer",
+            )
 
     if change_type is not None:
         # Change detected: route it per DAG rules and skip Q&A dispatch
@@ -613,7 +625,18 @@ def process(state: WorkflowState) -> GroupResult:
 
     # Attach deposit info based on global deposit configuration
     deposit_config = (state.db.get("config") or {}).get("global_deposit") or {}
-    deposit_info = build_deposit_info(total_amount, deposit_config)
+    # Parse event date for deposit due date calculation (relative to event, not just today)
+    # Try multiple date formats: DD.MM.YYYY (stored format) and YYYY-MM-DD (ISO format)
+    event_date_dt = None
+    chosen_date_str = event_entry.get("chosen_date")
+    if chosen_date_str:
+        for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
+            try:
+                event_date_dt = datetime.strptime(chosen_date_str, fmt)
+                break
+            except (ValueError, TypeError):
+                continue
+    deposit_info = build_deposit_info(total_amount, deposit_config, event_date=event_date_dt)
     if deposit_info:
         event_entry["deposit_info"] = deposit_info
 
@@ -667,7 +690,9 @@ def process(state: WorkflowState) -> GroupResult:
         "offer_id": offer_id,
         "offer_version": offer_version,
         "total_amount": total_amount,
-        "requires_approval": True,  # Offers ALWAYS need HIL approval
+        # When toggle ON: All messages go to HIL including offers
+        # When toggle OFF: Offers are sent automatically (manager reviews only after deposit)
+        "requires_approval": is_hil_all_replies_enabled(),
         "table_blocks": [
             {
                 "type": "table",
@@ -1429,7 +1454,18 @@ def _auto_confirm_without_hil(
     body_lines.append("")
     body_lines.append("\n".join(summary_lines))
     body_lines.append("")
-    body_lines.append("Next step: let's line up a site visit. Do you have preferred dates or times?")
+    # Show appropriate next step based on site visit status
+    if is_site_visit_scheduled(event_entry):
+        sv_state = event_entry.get("site_visit_state") or {}
+        sv_date = sv_state.get("date_iso", "")
+        sv_time = sv_state.get("time_slot", "")
+        sv_display = f"{sv_date} at {sv_time}" if sv_time else sv_date
+        body_lines.append(
+            f"Your site visit is already scheduled for {sv_display}. "
+            "We'll finalize the details closer to your event date."
+        )
+    else:
+        body_lines.append("Next step: let's line up a site visit. Do you have preferred dates or times?")
     body = "\n".join(line for line in body_lines if line)
 
     draft = {

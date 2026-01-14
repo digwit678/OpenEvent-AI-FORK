@@ -53,6 +53,7 @@ from detection.keywords.buckets import (
     get_all_revision_markers,
     TARGET_PATTERNS,
 )
+from workflows.common.site_visit_state import is_site_visit_scheduled
 
 
 class ChangeType(Enum):
@@ -687,7 +688,9 @@ def detect_change_type(
 
     # === SITE VISIT CHANGE ===
     # Pattern: site visit mentioned + date/time change intent
-    if message_text and current_step >= 7:
+    # Check when: (a) step >= 7, OR (b) site visit is already scheduled at any step
+    has_scheduled_visit = is_site_visit_scheduled(event_state)
+    if message_text and (current_step >= 7 or has_scheduled_visit):
         site_visit_keywords = ["site visit", "visit", "tour", "walkthrough", "viewing", "see the space"]
         site_visit_mentioned = any(keyword in text_lower for keyword in site_visit_keywords)
 
@@ -845,6 +848,24 @@ def _extract_old_new_values(
         new_value = user_info.get("products") or user_info.get("products_add")
 
     return old_value, new_value
+
+
+def _normalize_date_value(value: Any) -> Optional[str]:
+    """Normalize date-like values to ISO YYYY-MM-DD for equality checks."""
+    if not value:
+        return None
+    from datetime import date as dt_date
+    from workflows.common.datetime_parse import parse_all_dates
+
+    if isinstance(value, dt_date):
+        return value.isoformat()
+    text = str(value).strip()
+    if not text:
+        return None
+    parsed = list(parse_all_dates(text, fallback_year=dt_date.today().year, limit=1))
+    if parsed:
+        return parsed[0].isoformat()
+    return None
 
 
 def _determine_detour_mode(
@@ -1034,6 +1055,22 @@ def detect_change_type_enhanced(
             old_value=old_value,
             new_value=new_value,
         )
+    if change_type == ChangeType.DATE and old_value and new_value:
+        old_iso = _normalize_date_value(old_value)
+        new_iso = _normalize_date_value(new_value)
+        if old_iso and new_iso and old_iso == new_iso:
+            return EnhancedChangeResult(
+                is_change=False,
+                change_type=None,
+                mode=None,
+                confidence=0.3,
+                alternative_intent=MessageIntent.CONFIRMATION,
+                revision_signals=intent_result.revision_signals,
+                target_matches=intent_result.target_matches,
+                language=intent_result.language,
+                old_value=old_value,
+                new_value=new_value,
+            )
 
     return EnhancedChangeResult(
         is_change=True,

@@ -24,7 +24,7 @@ def looks_like_offer_acceptance(text: str) -> bool:
     that contain approval verbs.
 
     Supports multilingual detection (EN, DE, FR, IT, ES) via centralized
-    is_confirmation() from backend.detection.keywords.buckets.
+    is_confirmation() from detection.keywords.buckets.
 
     Excludes date confirmations ("We confirm the date...") which should be
     handled by the date confirmation flow, not offer acceptance.

@@ -84,6 +84,34 @@ __all__ = ["process"]
 # N2: MAX_COUNTERS moved to constants.py as MAX_COUNTER_PROPOSALS
 
 
+def _looks_like_date_change(text: str) -> bool:
+    """
+    Quick heuristic to detect if message looks like a date change request.
+    Used to prevent billing capture from swallowing date change messages.
+
+    This guards against BUG-023: Billing capture interfering with date change detection.
+    """
+    if not text:
+        return False
+    text_lower = text.lower()
+
+    # Change intent verbs
+    change_verbs = ["change", "reschedule", "move", "switch", "different", "another"]
+    # Redefinition markers
+    redefinition = ["actually", "instead", "rather", "wait", "sorry", "no,"]
+    # Date keywords
+    date_keywords = ["date", "day", "when", "march", "april", "may", "june", "july",
+                     "august", "september", "october", "november", "december", "january", "february"]
+
+    has_change_intent = any(v in text_lower for v in change_verbs) or any(r in text_lower for r in redefinition)
+    has_date_reference = any(d in text_lower for d in date_keywords)
+
+    # Also check for date patterns like "20.03.2026" or "March 20"
+    date_pattern = bool(re.search(r'\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+(?:march|april|may|june|july|august|september|october|november|december|january|february)', text_lower))
+
+    return has_change_intent and (has_date_reference or date_pattern)
+
+
 def _menu_name_set() -> set[str]:
     return {
         str(entry.get("menu_name") or "").strip().lower()
@@ -164,9 +192,15 @@ def process(state: WorkflowState) -> GroupResult:
         if not is_deposit_signal:
             message_text = (state.message.body or "").strip()
             if message_text:
-                event_entry.setdefault("event_data", {})["Billing Address"] = message_text
-                state.extras["persist"] = True
-                logger.debug("[BILLING_CAPTURE] Stored billing address from message: %s...", message_text[:80])
+                # BUG-023 FIX: Check if message looks like a date change request
+                # Date changes have higher priority than billing capture
+                if _looks_like_date_change(message_text):
+                    logger.debug("[BILLING_CAPTURE] Skipping - message looks like date change: %s...", message_text[:80])
+                    # Don't capture as billing - let change detection handle it
+                else:
+                    event_entry.setdefault("event_data", {})["Billing Address"] = message_text
+                    state.extras["persist"] = True
+                    logger.debug("[BILLING_CAPTURE] Stored billing address from message: %s...", message_text[:80])
 
     # Refresh billing details (parses event_data["Billing Address"] into structured fields)
     billing_missing = _refresh_billing(event_entry)
@@ -230,6 +264,21 @@ def process(state: WorkflowState) -> GroupResult:
             # Step 7 will handle site visit proposal or final confirmation
             logger.info("[STEP5] Gate passed: billing=%s, deposit=%s, offer_accepted=%s -> routing to Step 7",
                         gate_status.billing_complete, gate_status.deposit_paid, gate_status.offer_accepted)
+
+            # BUG-024 FIX: Add acknowledgment if date was just changed via detour
+            # Check event_entry (persisted) not state.extras (lost between loops)
+            pending_date_ack = event_entry.get("_pending_date_change_ack")
+            if pending_date_ack:
+                new_date = event_entry.get("chosen_date") or "your requested date"
+                ack_msg = f"I've updated your event to **{new_date}**. "
+                state.add_draft_message({
+                    "body": ack_msg + "All prerequisites are complete, proceeding to confirmation.",
+                    "step": 5,
+                    "topic": "date_change_acknowledged",
+                })
+                event_entry.pop("_pending_date_change_ack", None)  # Clear flag
+                state.extras["persist"] = True
+
             update_event_metadata(event_entry, current_step=7, thread_state="In Progress")
             state.current_step = 7
             state.set_thread_state("In Progress")
@@ -249,6 +298,16 @@ def process(state: WorkflowState) -> GroupResult:
         # Not ready - check if we need to prompt for missing items
         next_prompt = get_next_prompt(gate_status, step=5)
         if next_prompt:
+            # BUG-024 FIX: Add acknowledgment if date was just changed via detour
+            # Check event_entry (persisted) not state.extras (lost between loops)
+            pending_date_ack = event_entry.get("_pending_date_change_ack")
+            if pending_date_ack:
+                new_date = event_entry.get("chosen_date") or "your requested date"
+                ack_msg = f"I've updated your event to **{new_date}**. "
+                # Use body_markdown (the actual key from get_next_prompt), not body
+                next_prompt["body_markdown"] = ack_msg + next_prompt.get("body_markdown", "")
+                event_entry.pop("_pending_date_change_ack", None)  # Clear flag
+                state.extras["persist"] = True
             state.add_draft_message(next_prompt)
             update_event_metadata(event_entry, current_step=5, thread_state="Awaiting Client")
             state.set_thread_state("Awaiting Client")

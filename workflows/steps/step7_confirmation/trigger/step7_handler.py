@@ -15,6 +15,7 @@ from domain import EventStatus
 from workflows.common.prompts import append_footer
 from workflows.common.requirements import merge_client_profile
 from workflows.common.room_rules import site_visit_allowed
+from workflows.common.site_visit_state import is_site_visit_scheduled
 from workflows.common.types import GroupResult, WorkflowState
 # MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
 from detection.intent.confidence import check_nonsense_gate
@@ -28,6 +29,7 @@ from workflows.nlu import detect_general_room_query
 from debug.hooks import trace_marker
 from utils.profiler import profile_step
 from utils.page_snapshots import delete_snapshots_for_event
+from workflows.steps.step5_negotiation import _offer_summary_lines
 
 # F1: Extracted modules
 from .classification import classify_message
@@ -325,7 +327,8 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
             ),
             "step": 7,
             "topic": "confirmation_deposit_pending",
-            "requires_approval": True,
+            # Routine message - no HIL needed when toggle OFF
+            "requires_approval": False,
         }
         state.add_draft_message(draft)
         conf_state["pending"] = {"kind": "deposit_request"}
@@ -339,7 +342,7 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
     room_fragment = f"**{room_name}**" if room_name else "the venue"
     date_fragment = f"**{event_date}**" if event_date else "the requested date"
 
-    # Get billing details
+    # Get billing details for display
     billing_details = event_entry.get("billing_details") or {}
     billing_str = ", ".join(filter(None, [
         billing_details.get("company"),
@@ -351,38 +354,89 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
     if not billing_str:
         billing_str = "Not specified"
 
+    # Get offer total
+    total_amount = 0.0
+    offers = event_entry.get("offers") or []
+    current_offer_id = event_entry.get("current_offer_id")
+    for offer in offers:
+        if offer.get("offer_id") == current_offer_id:
+            total_amount = offer.get("total_amount", 0.0)
+            break
 
-    # Build confirmation message with offer summary
-    final_message_parts = [
+    # Get participants count
+    requirements = event_entry.get("requirements") or {}
+    participants = requirements.get("number_of_participants") or event_entry.get("participants")
+
+    # Get deposit due date
+    deposit_due_date = deposit_info.get("deposit_due_date") or deposit_state.get("due_date")
+
+    # Build comprehensive offer summary for HIL review (manager's ONLY review when toggle OFF)
+    summary_lines = _offer_summary_lines(event_entry, include_cta=False)
+    offer_body_markdown = "\n".join(summary_lines)
+
+    # Build confirmation message for client (sent after HIL approval)
+    client_message_parts = [
         f"We're excited to move forward with your booking for {room_fragment} on {date_fragment}.",
     ]
-
-    # Add deposit paid confirmation if applicable
     if deposit_paid and deposit_amount:
         deposit_str = f"CHF {deposit_amount:,.2f}".rstrip("0").rstrip(".")
-        final_message_parts.append(f"Your deposit of {deposit_str} has been received.")
+        client_message_parts.append(f"Your deposit of {deposit_str} has been received.")
+    # Show appropriate next step based on site visit status
+    if is_site_visit_scheduled(event_entry):
+        sv_state = event_entry.get("site_visit_state") or {}
+        sv_date = sv_state.get("date_iso", "")
+        sv_time = sv_state.get("time_slot", "")
+        sv_display = f"{sv_date} at {sv_time}" if sv_time else sv_date
+        client_message_parts.append(
+            f"Your site visit is already scheduled for {sv_display}. "
+            "We'll finalize the details closer to your event date."
+        )
+    else:
+        client_message_parts.append(
+            "Would you like to arrange a site visit before we finalize everything?"
+        )
+    client_message = " ".join(client_message_parts)
 
-    final_message_parts.append(
-        "Would you like to arrange a site visit before we finalize everything?"
-    )
-
-    final_message = " ".join(final_message_parts)
+    # Build deposit status string with due date
+    if deposit_paid:
+        deposit_status = f"CHF {deposit_amount:,.2f} ✅ Paid"
+    elif deposit_due_date:
+        deposit_status = f"CHF {deposit_amount:,.2f} (due: {deposit_due_date})"
+    else:
+        deposit_status = f"CHF {deposit_amount:,.2f} Pending"
 
     draft = {
         "body": append_footer(
-            final_message,
+            client_message,
             step=7,
-            next_step="Finalize booking (HIL)",
-            thread_state="Waiting on HIL",
+            next_step="Finalize booking",
+            thread_state="In Progress",
         ),
+        "body_markdown": offer_body_markdown,  # Full offer summary for HIL panel
         "step": 7,
-        "topic": "confirmation_final",
+        "topic": "offer_confirmation",  # Changed from confirmation_final to offer_confirmation
+        # Manager's ONLY review point when toggle OFF - full offer review
         "requires_approval": True,
+        # Add table blocks for HIL display
+        "table_blocks": [
+            {
+                "type": "table",
+                "header": ["Field", "Value"],
+                "rows": [
+                    ["Event Date", event_date or "TBD"],
+                    ["Room", room_name or "TBD"],
+                    ["Participants", str(participants) if participants else "TBD"],
+                    ["Billing Address", billing_str],
+                    ["Total", f"CHF {total_amount:,.2f}"],
+                    ["Deposit", deposit_status],
+                ],
+            }
+        ],
     }
     state.add_draft_message(draft)
     conf_state["pending"] = {"kind": "final_confirmation"}
-    update_event_metadata(event_entry, thread_state="Waiting on HIL")
-    state.set_thread_state("Waiting on HIL")
+    update_event_metadata(event_entry, thread_state="Awaiting Client")
+    state.set_thread_state("Awaiting Client")
     state.extras["persist"] = True
     payload = base_payload(state, event_entry)
     return GroupResult(action="confirmation_draft", payload=payload, halt=True)
@@ -443,7 +497,8 @@ def _handle_reserve(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
         ),
         "step": 7,
         "topic": "confirmation_reserve",
-        "requires_approval": True,
+        # Routine message - no HIL needed when toggle OFF
+        "requires_approval": False,
     }
     state.add_draft_message(draft)
     event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})["pending"] = {
@@ -471,19 +526,20 @@ def _handle_decline(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
         "body": append_footer(
             "Thank you for letting us know. We've released the date, and we'd be happy to assist with any future events.",
             step=7,
-            next_step="Close booking (HIL)",
-            thread_state="Waiting on HIL",
+            next_step="Close booking",
+            thread_state="In Progress",
         ),
         "step": 7,
         "topic": "confirmation_decline",
-        "requires_approval": True,
+        # Routine acknowledgment - no HIL needed when toggle OFF
+        "requires_approval": False,
     }
     state.add_draft_message(draft)
     event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})["pending"] = {
         "kind": "decline"
     }
-    update_event_metadata(event_entry, thread_state="Waiting on HIL")
-    state.set_thread_state("Waiting on HIL")
+    update_event_metadata(event_entry, thread_state="Closed")
+    state.set_thread_state("Closed")
     state.extras["persist"] = True
     payload = base_payload(state, event_entry)
     return GroupResult(action="confirmation_decline", payload=payload, halt=True)
@@ -491,6 +547,10 @@ def _handle_decline(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
 
 def _handle_question(state: WorkflowState) -> GroupResult:
     """Handle general questions or unclear messages."""
+    event_entry = state.event_entry
+    if not event_entry:
+        # Should not happen at Step 7, but handle gracefully
+        return GroupResult(action="error_no_event", payload={}, halt=True)
     draft = {
         "body": append_footer(
             "Happy to help. Could you share a bit more detail so I can advise?",
@@ -500,13 +560,14 @@ def _handle_question(state: WorkflowState) -> GroupResult:
         ),
         "step": 7,
         "topic": "confirmation_question",
-        "requires_approval": True,
+        # Routine Q&A - no HIL needed when toggle OFF
+        "requires_approval": False,
     }
     state.add_draft_message(draft)
-    update_event_metadata(state.event_entry, thread_state="Awaiting Client")
+    update_event_metadata(event_entry, thread_state="Awaiting Client")
     state.set_thread_state("Awaiting Client")
     state.extras["persist"] = True
-    payload = base_payload(state, state.event_entry)
+    payload = base_payload(state, event_entry)
     return GroupResult(action="confirmation_question", payload=payload, halt=True)
 
 

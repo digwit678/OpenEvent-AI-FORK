@@ -1177,13 +1177,43 @@ def process(state: WorkflowState) -> GroupResult:
         re.IGNORECASE
     )
     is_deposit_date_context = bool(message_text and _deposit_date_pattern.search(message_text))
-    if in_billing_flow or is_deposit_date_context:
-        # In billing flow or deposit payment context, don't detect date changes
+    # Check if this looks like a date change request (even during billing flow)
+    from workflows.steps.step5_negotiation.trigger.step5_handler import _looks_like_date_change
+    message_looks_like_date_change = _looks_like_date_change(message_text)
+
+    # GUARD: Skip date change detection when site visit flow is active
+    # When client selects a date for site visit, it should NOT update the event date
+    from workflows.common.site_visit_state import (
+        is_site_visit_active,
+        is_site_visit_scheduled,
+        is_site_visit_change_request,
+    )
+    site_visit_active = is_site_visit_active(event_entry)
+    # Also check if this is a site visit CHANGE request (when already scheduled)
+    site_visit_scheduled = is_site_visit_scheduled(event_entry)
+    is_sv_change_request = is_site_visit_change_request(message_text or "")
+
+    if is_deposit_date_context:
+        # Deposit payment context - don't detect date changes
         # "We paid the deposit on 02.01.2026" - the date is payment date, not event date
+        change_type = None
+    elif in_billing_flow and not message_looks_like_date_change:
+        # In billing flow with normal billing input - skip change detection
+        # But if it looks like a date change, let detection run for proper detour
         change_type = None
     else:
         enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
         change_type = enhanced_result.change_type if enhanced_result.is_change else None
+        # If site visit is active OR it's a site visit change request, suppress date change detection
+        # Date in message is for site visit selection/change, not event date change
+        suppress_for_sv_active = site_visit_active and change_type and change_type.value == "date"
+        suppress_for_sv_change = site_visit_scheduled and is_sv_change_request and change_type and change_type.value == "date"
+        if suppress_for_sv_active:
+            logger.info("[Step1][SV_GUARD] Site visit active - suppressing date change detection")
+            change_type = None
+        elif suppress_for_sv_change:
+            logger.info("[Step1][SV_GUARD] Site visit change request detected - suppressing event date change detection")
+            change_type = None
         logger.debug("[Step1][CHANGE_DETECT] user_info.date=%s, user_info.event_date=%s",
                     user_info.get('date'), user_info.get('event_date'))
         logger.debug("[Step1][CHANGE_DETECT] is_change=%s, change_type=%s",
@@ -1220,7 +1250,6 @@ def process(state: WorkflowState) -> GroupResult:
 
     # Handle change routing using DAG-based change propagation
     logger.info("[Step1][CHANGE_ROUTING] change_type=%s, previous_step=%s", change_type, previous_step)
-    print(f"[Step1][CHANGE_ROUTING] change_type={change_type}, previous_step={previous_step}")
     if change_type is not None and previous_step > 1:
         decision = route_change_on_updated_variable(event_entry, change_type, from_step=previous_step)
         logger.info("[Step1][CHANGE_ROUTING] decision: next_step=%s, caller_step=%s",
@@ -1246,6 +1275,18 @@ def process(state: WorkflowState) -> GroupResult:
             update_event_metadata(event_entry, current_step=decision.next_step)
             audit_reason = f"{change_type.value}_change_detected"
             append_audit_entry(event_entry, previous_step, decision.next_step, audit_reason)
+
+            # [BILLING FLOW DETOUR FIX] When a date change is detected during billing flow,
+            # we must clear awaiting_billing_for_accept so that correct_billing_flow_step()
+            # won't force step back to 5. The client is no longer providing billing for
+            # the old offer - they want a new date, which means a new offer.
+            if in_billing_flow and change_type.value == "date":
+                billing_req = event_entry.get("billing_requirements") or {}
+                billing_req["awaiting_billing_for_accept"] = False
+                event_entry["billing_requirements"] = billing_req
+                # Also clear offer_accepted since the offer needs to be regenerated
+                event_entry["offer_accepted"] = False
+                logger.info("[Step1][DETOUR_FIX] Cleared billing flow state for date change detour")
 
             # Handle room lock based on change type
             if change_type.value in ("date", "requirements") and decision.next_step in (2, 3):
@@ -1298,8 +1339,10 @@ def process(state: WorkflowState) -> GroupResult:
                         )
 
     # Fallback: legacy logic for cases not handled by change propagation
-    # Skip during billing flow or deposit payment context - these dates shouldn't trigger event date changes
-    elif new_date and new_date != event_entry.get("chosen_date") and not in_billing_flow and not is_deposit_date_context:
+    # Skip during billing flow, deposit payment context, OR site visit flow
+    # When site visit is active, date in message is for site visit selection, not event date change
+    # Also skip when this is a site visit CHANGE request (status=scheduled + explicit change intent)
+    elif new_date and new_date != event_entry.get("chosen_date") and not in_billing_flow and not is_deposit_date_context and not site_visit_active and not (site_visit_scheduled and is_sv_change_request):
         # Check if new_date is in the past (normalize first to handle DD.MM.YYYY format)
         normalized_new_date = normalize_iso_candidate(new_date)
         date_is_past = iso_date_is_past(normalized_new_date) if normalized_new_date else False
@@ -1519,8 +1562,17 @@ def _ensure_event_record(
     )
     is_deposit_payment_date = bool(message_text and _deposit_date_pattern.search(message_text))
 
+    # GUARD: Skip date change logic when site visit flow is active
+    # The date in message is for site visit selection, not event date change
+    from workflows.common.site_visit_state import is_site_visit_active
+    site_visit_active_for_new_check = is_site_visit_active(last_event)
+
     if new_date_is_actual and existing_date_is_actual and new_event_date != existing_event_date:
-        if is_date_change_request or is_deposit_payment_date:
+        if site_visit_active_for_new_check:
+            # Site visit is active - date is for site visit, not event date change
+            # Skip the "different date = new event" logic entirely
+            logger.info("[STEP1][SV_GUARD] Site visit active - skipping date change/new event logic")
+        elif is_date_change_request or is_deposit_payment_date:
             # This is a date CHANGE on existing event - don't create new event
             trace_db_write(_thread_id(state), "Step1_Intake", "date_change_detected", {
                 "reason": "date_change_request",
@@ -1528,6 +1580,10 @@ def _ensure_event_record(
                 "new_date": new_event_date,
             })
             # Don't set should_create_new = True; continue with existing event
+            # DON'T update date here - let the proper detour logic at line ~1224 handle it
+            # The detour will: Step 2 (confirm date) → Step 3 (check room) → Step 4 (new offer)
+            logger.info("[STEP1][DATE_CHANGE] Detected date change from %s to %s, will route via detour",
+                        existing_event_date, new_event_date)
         else:
             # This is a genuine NEW inquiry with a different date
             should_create_new = True

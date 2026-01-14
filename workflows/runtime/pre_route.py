@@ -225,6 +225,7 @@ def run_unified_pre_filter(
 def is_out_of_context(
     unified_result: Optional[UnifiedDetectionResult],
     current_step: Optional[int],
+    event_entry: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """Check if the detected intent is out of context for the current step.
 
@@ -238,6 +239,7 @@ def is_out_of_context(
     Args:
         unified_result: Result from unified LLM detection
         current_step: Current workflow step (1-7)
+        event_entry: Current event entry (for site visit state check)
 
     Returns:
         True if intent is out of context and should be silently ignored
@@ -250,6 +252,15 @@ def is_out_of_context(
     # Always-valid intents are never out of context
     if intent in ALWAYS_VALID_INTENTS:
         return False
+
+    # GUARD: When site visit flow is active, date-related intents are for site visit
+    # selection, not event date confirmation. Pass through to router for site visit handler.
+    if event_entry:
+        from workflows.common.site_visit_state import is_site_visit_active
+        if is_site_visit_active(event_entry):
+            if intent in {"confirm_date", "confirm_date_partial"}:
+                logger.debug("[OOC_CHECK] Site visit active - bypassing OOC for date intent")
+                return False
 
     # Room selection messages should never be treated as out-of-context
     # even if misclassified as confirm_date (common LLM confusion)
@@ -359,7 +370,7 @@ def check_out_of_context(
         logger.debug("[OOC_CHECK] Skipping check - no counter evidence")
         return None
 
-    if not is_out_of_context(unified_result, current_step):
+    if not is_out_of_context(unified_result, current_step, state.event_entry):
         return None
 
     # Log the out-of-context detection
@@ -436,6 +447,18 @@ def handle_manager_escalation(
     if state.message and (state.message.extras or {}).get("is_continuation"):
         logger.debug("[MANAGER_ESCALATION] Skipping - continuation message")
         return None
+
+    # [BILLING FLOW BYPASS] Skip manager escalation during billing capture flow
+    # When client is providing billing address, don't misclassify as manager request
+    # This follows Pattern 1: Special Flow State Detection from CLAUDE.md
+    if state.event_entry:
+        in_billing_flow = (
+            state.event_entry.get("offer_accepted")
+            and (state.event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
+        )
+        if in_billing_flow:
+            logger.debug("[MANAGER_ESCALATION] Skipping - billing flow active")
+            return None
 
     if not unified_result.is_manager_request:
         return None
@@ -736,14 +759,11 @@ def run_pre_route_pipeline(
     # - Unified LLM: Semantic signals (manager, confirmation, intent)
     pre_filter_result, unified_result = run_unified_pre_filter(state, combined_text)
 
-    # 0.5. Manager escalation check (before duplicate detection)
-    # Uses LLM-based semantic detection for phrases like "Can I speak with someone?"
-    # This avoids regex false positives on emails like "test-manager@example.com"
-    escalation_result = handle_manager_escalation(
-        state, unified_result, path, lock_path, finalize_fn
-    )
-    if escalation_result is not None:
-        return escalation_result, intake_result
+    # NOTE: Manager escalation handling REMOVED (2026-01-14)
+    # In this venue booking system, the AI assistant IS the manager's representative.
+    # Special requests go through HIL approval, not a separate "speak with manager" flow.
+    # The escalation feature was causing false positives on billing addresses.
+    # If you need this feature, see handle_manager_escalation() in this file.
 
     # 0.6. Out-of-context check - step-specific intents at wrong steps
     # Example: "I confirm the date" at step 5 (negotiation) → silently ignored
