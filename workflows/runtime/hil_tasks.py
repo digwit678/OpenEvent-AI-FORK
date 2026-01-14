@@ -72,16 +72,21 @@ def _compose_hil_decision_reply(decision: str, manager_notes: Optional[str] = No
     """Compose a client-facing reply for HIL approval/rejection decisions."""
     normalized = (decision or "").lower()
     approved = normalized == "approve"
-    decision_line = "Manager decision: Approved" if approved else "Manager decision: Declined"
     note_text = (manager_notes or "").strip()
-    next_line = (
-        "Next step: Let's continue with site visit bookings. Do you have any preferred dates or times?"
-        if approved
-        else "Next step: I'll revise the offer with this feedback and share an updated proposal."
-    )
-    sections = [decision_line]
+
+    if approved:
+        # Warm, conversational approval
+        intro = "Great news! Everything looks good on our end."
+        next_line = "Let's continue with site visit bookings. Do you have any preferred dates or times?"
+    else:
+        # Soft rejection with forward momentum
+        intro = "Thank you for your patience."
+        next_line = "I'll revise the proposal based on some feedback and share an updated version shortly."
+
+    sections = [intro]
     if note_text:
-        sections.append(f"Manager note: {note_text}")
+        # Integrate notes naturally without "Manager note:" label
+        sections.append(note_text)
     sections.append(next_line)
     return "\n\n".join(section for section in sections if section)
 
@@ -124,10 +129,10 @@ def approve_task_and_send(
         # Use edited message if provided, otherwise use original draft
         body_text = edited_message.strip() if edited_message else draft_body
 
-        # Append manager notes if provided
+        # Append manager notes naturally (no label prefix)
         note_text = (manager_notes or "").strip()
         if note_text and body_text:
-            body_text = f"{body_text.rstrip()}\n\nManager note:\n{note_text}"
+            body_text = f"{body_text.rstrip()}\n\n{note_text}"
 
         # Find the event for context (optional)
         target_event = None
@@ -510,9 +515,9 @@ def approve_task_and_send(
     assistant_draft = {"headers": headers, "body": body_text, "body_markdown": body_text}
 
     note_text = (manager_notes or "").strip()
-    # For non-Step-5 approvals, append manager notes if provided
+    # For non-Step-5 approvals, append manager notes naturally (no label prefix)
     if note_text:
-        appended = f"{body_text.rstrip()}\n\nManager note:\n{note_text}" if body_text.strip() else f"Manager note:\n{note_text}"
+        appended = f"{body_text.rstrip()}\n\n{note_text}" if body_text.strip() else note_text
         body_text = appended
         assistant_draft["body"] = appended
         assistant_draft["body_markdown"] = appended
@@ -771,7 +776,8 @@ def reject_task_and_send(
         draft["body"] = new_body
         body_text = new_body
     elif note_text:
-        appended = f"{body_text.rstrip()}\n\nManager note:\n{note_text}" if body_text.strip() else f"Manager note:\n{note_text}"
+        # Append manager notes naturally (no label prefix)
+        appended = f"{body_text.rstrip()}\n\n{note_text}" if body_text.strip() else note_text
         body_text = appended
         assistant_draft["body"] = appended
         assistant_draft["body_markdown"] = appended
