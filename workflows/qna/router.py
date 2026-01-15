@@ -628,6 +628,38 @@ def _parking_response() -> List[str]:
     return _with_preface(info, "Thanks for checking on parking — here's what we can arrange nearby:")
 
 
+def _pricing_response() -> List[str]:
+    """Return room rate card (no date/room confirmation required)."""
+    from workflows.steps.step3_room_availability.db_pers import load_rooms_config
+
+    rooms = load_rooms_config() or []
+    info_lines: List[str] = []
+
+    for room in rooms[:5]:  # Show top 5 rooms
+        name = room.get("name")
+        hourly = room.get("hourly_rate")
+        half_day = room.get("half_day_rate")
+        full_day = room.get("full_day_rate")
+
+        parts = []
+        if hourly:
+            parts.append(f"CHF {hourly}/hr")
+        if half_day:
+            parts.append(f"CHF {half_day} half-day")
+        if full_day:
+            parts.append(f"CHF {full_day}/day")
+
+        if parts:
+            info_lines.append(f"- **{name}**: {', '.join(parts)}")
+
+    if not info_lines:
+        info_lines.append("Contact us for custom pricing based on your event details.")
+
+    info_lines.append("")
+    info_lines.append("Final pricing depends on your event date, duration, and any add-ons.")
+    return _with_preface(info_lines, "Here's our room rate structure:")
+
+
 def _step_index_from_anchor(anchor: Optional[str]) -> Optional[int]:
     if not anchor:
         return None
@@ -721,6 +753,10 @@ def route_general_qna(
         elif qna_type == "parking_policy":
             info_lines = _parking_response()
             topic = "parking_policy"
+            target_step_idx = resume_step_idx
+        elif qna_type == "pricing_inquiry":
+            info_lines = _pricing_response()
+            topic = "pricing_inquiry"
             target_step_idx = resume_step_idx
         else:
             info_lines = _general_response(active_entry)
@@ -1085,6 +1121,9 @@ def generate_hybrid_qna_response(
         elif qna_type == "parking_policy":
             info_lines = _parking_response()
             header = "Parking Information"
+        elif qna_type == "pricing_inquiry":
+            info_lines = _pricing_response()
+            header = "Room Rates"
         elif qna_type == "site_visit_overview":
             info_lines = _site_visit_response()
             header = "Site Visit Information"

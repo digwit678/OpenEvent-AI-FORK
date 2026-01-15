@@ -68,6 +68,59 @@ def _resolve_lock_path(path: Path) -> Path:
     return db_io.lock_path_for(path)
 
 
+def _build_hil_context(event_entry: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Build enriched context for HIL task review.
+
+    Provides managers with decision history, client preferences, and event summary
+    so they don't need to switch tabs to understand the conversation context.
+    """
+    context: Dict[str, Any] = {}
+
+    # Previous HIL decisions (last 3)
+    hil_history = event_entry.get("hil_history") or []
+    if hil_history:
+        context["previous_decisions"] = [
+            {
+                "step": d.get("step"),
+                "decision": d.get("decision"),
+                "notes": d.get("notes"),
+                "timestamp": d.get("approved_at") or d.get("rejected_at"),
+            }
+            for d in hil_history[-3:]
+        ]
+
+    # Client preferences from captured data
+    requirements = event_entry.get("requirements") or {}
+    preferences = event_entry.get("preferences") or {}
+    captured = event_entry.get("captured") or {}
+
+    client_prefs: Dict[str, Any] = {}
+    if requirements.get("number_of_participants"):
+        client_prefs["participants"] = requirements["number_of_participants"]
+    if captured.get("catering"):
+        client_prefs["catering"] = captured["catering"]
+    if captured.get("products"):
+        client_prefs["special_requests"] = captured["products"]
+    if preferences.get("room_preference"):
+        client_prefs["preferred_room"] = preferences["room_preference"]
+
+    if client_prefs:
+        context["client_preferences"] = client_prefs
+
+    # Current event summary
+    event_data = event_entry.get("event_data") or {}
+    context["event_summary"] = {
+        "client_name": event_data.get("Name"),
+        "company": event_data.get("Company"),
+        "event_date": event_entry.get("chosen_date"),
+        "room": event_entry.get("locked_room_id"),
+        "step": event_entry.get("current_step"),
+    }
+
+    return context
+
+
 def _compose_hil_decision_reply(decision: str, manager_notes: Optional[str] = None) -> str:
     """Compose a client-facing reply for HIL approval/rejection decisions."""
     normalized = (decision or "").lower()
@@ -977,6 +1030,7 @@ def enqueue_hil_tasks(state: "WorkflowState", event_entry: Dict[str, Any]) -> No
             "requirements_hash": event_entry.get("requirements_hash"),
             "room_eval_hash": event_entry.get("room_eval_hash"),
             "thread_id": thread_id,
+            "hil_context": _build_hil_context(event_entry),  # Enriched context for managers
         }
         hil_reason = draft.get("hil_reason")
         if hil_reason:
