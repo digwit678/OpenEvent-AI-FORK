@@ -336,7 +336,35 @@ def apply_product_operations(event_entry: Dict[str, Any], user_info: Dict[str, A
         changes = True
 
     if removals:
-        event_entry["products"] = [item for item in event_entry["products"] if item["name"].lower() not in removals]
+        # Check for bulk menu removal marker
+        bulk_remove_menus = "__bulk_remove_menus__" in removals
+        if bulk_remove_menus:
+            # Remove the marker from the list for exact matching
+            removals = [r for r in removals if r != "__bulk_remove_menus__"]
+
+        # Food-related categories that bulk removal applies to
+        # This is configurable - add categories as needed for your venue
+        food_categories = {"catering", "beverages", "food", "menu"}
+
+        def should_remove(item: Dict[str, Any]) -> bool:
+            name_lower = item["name"].lower()
+            # Exact match removal
+            if name_lower in removals:
+                return True
+            # Bulk menu/food removal: remove anything in food-related categories
+            if bulk_remove_menus:
+                cat = (item.get("category") or "").lower()
+                if cat in food_categories:
+                    return True
+                # Also check if product name partially matches any removal target
+                # This catches variations like "Alpine Roots Degustation menu"
+                # when "Alpine Roots Degustation" is in the removal list
+                for removal_name in removals:
+                    if removal_name in name_lower or name_lower in removal_name:
+                        return True
+            return False
+
+        event_entry["products"] = [item for item in event_entry["products"] if not should_remove(item)]
         changes = True
 
     skip_flag = any(bool(user_info.get(key)) for key in ("products_skip", "skip_products", "products_none"))

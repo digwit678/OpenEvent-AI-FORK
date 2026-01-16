@@ -1080,7 +1080,7 @@ def generate_hybrid_qna_response(
         t for t in qna_types
         if t in {
             "catering_for", "products_for", "free_dates", "check_availability",
-            "room_features", "rooms_by_feature", "parking_policy",
+            "room_features", "rooms_by_feature", "parking_policy", "pricing_inquiry",
             "site_visit_overview", "general"
         }
     ]

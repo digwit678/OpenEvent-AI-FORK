@@ -20,6 +20,7 @@ Environment Variables:
     OE_SYSTEM_USER_ID: System user UUID for automated writes
     OE_EMAIL_ACCOUNT_ID: Email account UUID for email operations
     OE_HIL_ALL_LLM_REPLIES: Set to "true" to require HIL approval for all AI replies
+    OE_EMAIL_PLAIN_TEXT: Set to "true" to strip Markdown from outgoing emails
     OE_ALLOW_JSON_FALLBACK: "true"/"false" to control JSON fallback on Supabase errors
                             Defaults to: allowed in dev, disabled in prod (ENV=prod)
 
@@ -80,11 +81,17 @@ class IntegrationConfig:
     # Automatically disabled when ENV=prod
     allow_json_fallback: bool = False
 
+    # Email plain text mode (default OFF for rich Markdown formatting)
+    # When True: Strip Markdown from email body for plain text compatibility
+    # When False: Keep Markdown formatting (most email clients handle it)
+    email_plain_text: bool = False
+
     @classmethod
     def from_env(cls) -> "IntegrationConfig":
         """Load configuration from environment variables."""
         mode = os.getenv("OE_INTEGRATION_MODE", "json").lower()
         hil_all_replies = os.getenv("OE_HIL_ALL_LLM_REPLIES", "false").lower() in ("true", "1", "yes")
+        email_plain = os.getenv("OE_EMAIL_PLAIN_TEXT", "false").lower() in ("true", "1", "yes")
         env = os.getenv("ENV", "dev").lower()
 
         # JSON fallback: allowed in dev/testing, disabled in production
@@ -113,6 +120,8 @@ class IntegrationConfig:
             hil_all_llm_replies=hil_all_replies,
             # JSON fallback (disabled in production)
             allow_json_fallback=allow_fallback and mode == "supabase",
+            # Email plain text mode
+            email_plain_text=email_plain,
         )
 
     def is_supabase_mode(self) -> bool:
@@ -259,3 +268,56 @@ def is_hil_all_replies_enabled() -> bool:
 
     # Fall back to environment variable / config
     return INTEGRATION_CONFIG.hil_all_llm_replies
+
+
+def is_email_plain_text_enabled() -> bool:
+    """Check if email plain text mode is enabled.
+
+    When True: Strip Markdown formatting from email body for plain text compatibility.
+    When False: Keep Markdown formatting (most email clients handle it gracefully).
+
+    Controlled by OE_EMAIL_PLAIN_TEXT environment variable.
+    """
+    return INTEGRATION_CONFIG.email_plain_text
+
+
+def strip_markdown_for_email(text: str) -> str:
+    """Convert Markdown-formatted text to plain text for email compatibility.
+
+    Handles:
+    - **bold** and __bold__ -> bold
+    - *italic* and _italic_ -> italic
+    - [links](url) -> links (url)
+    - # Headers -> Headers
+    - - bullet items -> • bullet items
+
+    Preserves line breaks and spacing.
+    """
+    import re
+
+    if not text:
+        return text
+
+    result = text
+
+    # Remove bold markers: **text** or __text__
+    result = re.sub(r'\*\*([^*]+)\*\*', r'\1', result)
+    result = re.sub(r'__([^_]+)__', r'\1', result)
+
+    # Remove italic markers: *text* or _text_ (be careful with underscores in words)
+    result = re.sub(r'(?<!\w)\*([^*]+)\*(?!\w)', r'\1', result)
+    result = re.sub(r'(?<!\w)_([^_]+)_(?!\w)', r'\1', result)
+
+    # Convert markdown links [text](url) -> text (url)
+    result = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1 (\2)', result)
+
+    # Remove header markers (keep text)
+    result = re.sub(r'^#{1,6}\s*', '', result, flags=re.MULTILINE)
+
+    # Convert dash bullets to Unicode bullets
+    result = re.sub(r'^-\s+', '• ', result, flags=re.MULTILINE)
+
+    # Convert backtick code to plain text
+    result = re.sub(r'`([^`]+)`', r'\1', result)
+
+    return result

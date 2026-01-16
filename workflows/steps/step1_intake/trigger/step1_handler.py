@@ -237,6 +237,35 @@ from .dev_test_mode import maybe_show_dev_choice as _maybe_show_dev_choice
 __workflow_role__ = "trigger"
 
 
+# Generic product suffixes that shouldn't match standalone.
+# These appear as the last word in product names (e.g., "Vegetarian Menu")
+# but are too ambiguous to match without the full product name context.
+_GENERIC_PRODUCT_TOKENS = frozenset({
+    "menu", "menus",
+    "option", "options",
+    "package", "packages",
+    "service", "services",
+    "setup", "setups",
+})
+
+
+# Patterns for bulk menu/food removal requests
+_BULK_MENU_REMOVE_PATTERNS = (
+    r"\b(?:remove|drop|skip|exclude|cut)\s+(?:all\s+)?(?:the\s+)?(?:menus?|food|catering)",
+    r"\b(?:no|don'?t\s+need|don'?t\s+want)\s+(?:any\s+)?(?:menus?|food|catering)",
+    r"\bwithout\s+(?:any\s+)?(?:menus?|food|catering)",
+    r"\b(?:menus?|food|catering)\s+(?:is|are)\s+not\s+(?:needed|required)",
+)
+
+
+def _detect_bulk_menu_removal(text: str) -> bool:
+    """Detect if user wants to remove all menus/food from the offer."""
+    for pattern in _BULK_MENU_REMOVE_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True
+    return False
+
+
 # NOTE: _detect_product_update_request kept here as it has side effects (mutates user_info)
 # and DB dependencies - candidate for future refactoring to return tuple instead of mutating
 def _detect_product_update_request(
@@ -258,6 +287,24 @@ def _detect_product_update_request(
     removals: List[str] = []
     catalog = list_product_records()
 
+    # Bulk removal detection: "remove all menus", "no food", "don't need any food"
+    bulk_remove_menus = _detect_bulk_menu_removal(text)
+    if bulk_remove_menus:
+        # Add special marker that apply_product_operations will handle
+        # This will remove ALL products with "menu" in the name or Catering category
+        removals.append("__BULK_REMOVE_MENUS__")
+        # Also add specific menu names for more precise matching
+        for menu in DINNER_MENU_OPTIONS:
+            menu_name = str(menu.get("menu_name") or "").strip()
+            if menu_name:
+                removals.append(menu_name)
+        # Also remove any catalog products with "menu" in category
+        for record in catalog:
+            cat = (record.category or "").lower()
+            name = record.name or ""
+            if "menu" in cat or "catering" in cat:
+                removals.append(name)
+
     for record in catalog:
         tokens: List[str] = []
         primary = (record.name or "").strip().lower()
@@ -266,10 +313,11 @@ def _detect_product_update_request(
             if not primary.endswith("s"):
                 tokens.append(f"{primary}s")
             # Also match the last word of the product name (e.g., "mic", "microphone")
+            # Skip generic tokens like "menu", "option", "service" to avoid false positives
             primary_parts = primary.split()
             if primary_parts:
                 last_primary = primary_parts[-1]
-                if len(last_primary) >= 3:
+                if len(last_primary) >= 3 and last_primary not in _GENERIC_PRODUCT_TOKENS:
                     tokens.append(last_primary)
                     if not last_primary.endswith("s"):
                         tokens.append(f"{last_primary}s")
@@ -281,10 +329,11 @@ def _detect_product_update_request(
             if not synonym_token.endswith("s"):
                 tokens.append(f"{synonym_token}s")
             # And the last word of each synonym (e.g., "mic")
+            # Skip generic tokens like "menu", "option" to avoid false positives
             synonym_parts = synonym_token.split()
             if synonym_parts:
                 last_syn = synonym_parts[-1]
-                if len(last_syn) >= 3:
+                if len(last_syn) >= 3 and last_syn not in _GENERIC_PRODUCT_TOKENS:
                     tokens.append(last_syn)
                     if not last_syn.endswith("s"):
                         tokens.append(f"{last_syn}s")
@@ -709,15 +758,30 @@ def process(state: WorkflowState) -> GroupResult:
                 # even when there's no existing booking context
                 is_qna_intent = intent in (IntentLabel.NON_EVENT, IntentLabel.CAPABILITY_QNA) or "qna" in intent.value.lower()
                 if is_qna_intent and not linked_event:
-                    # Return a helpful response instead of manual_review
-                    qna_response = (
-                        "Thank you for your question! To help you best, could you let me know if "
-                        "you're interested in booking an event with us? If so, please share:\n"
-                        "- Your preferred date\n"
-                        "- Expected number of guests\n\n"
-                        "If you have a general question about our venue or services, "
-                        "feel free to ask and I'll do my best to help."
-                    )
+                    # Try to generate specific Q&A response (pricing, parking, etc.)
+                    qna_types = _detect_qna_types((state.message.body or "").lower())
+                    hybrid_response = None
+                    if qna_types:
+                        hybrid_response = generate_hybrid_qna_response(
+                            qna_types=qna_types,
+                            message_text=state.message.body or "",
+                            event_entry=None,
+                            db=None,
+                        )
+
+                    if hybrid_response:
+                        # Use the specific Q&A response
+                        qna_response = hybrid_response
+                    else:
+                        # Fallback: ask for event details
+                        qna_response = (
+                            "Thank you for your question! To help you best, could you let me know if "
+                            "you're interested in booking an event with us? If so, please share:\n"
+                            "- Your preferred date\n"
+                            "- Expected number of guests\n\n"
+                            "If you have a general question about our venue or services, "
+                            "feel free to ask and I'll do my best to help."
+                        )
                     qna_response = append_footer(
                         qna_response,
                         step=1,
