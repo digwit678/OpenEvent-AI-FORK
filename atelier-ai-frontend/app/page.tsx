@@ -55,6 +55,28 @@ interface DepositInfo {
   offer_accepted?: boolean | null;
 }
 
+interface HILContext {
+  previous_decisions?: Array<{
+    step?: number | null;
+    decision?: string | null;
+    notes?: string | null;
+    timestamp?: string | null;
+  }> | null;
+  client_preferences?: {
+    participants?: number | null;
+    catering?: string | null;
+    special_requests?: string[] | null;
+    preferred_room?: string | null;
+  } | null;
+  event_summary?: {
+    client_name?: string | null;
+    company?: string | null;
+    event_date?: string | null;
+    room?: string | null;
+    step?: number | null;
+  } | null;
+}
+
 interface PendingTaskPayload {
   snippet?: string | null;
   suggested_dates?: string[] | null;
@@ -62,6 +84,7 @@ interface PendingTaskPayload {
   draft_body?: string | null;
   step_id?: number | null;
   current_step?: number | null;
+  hil_context?: HILContext | null;
   event_summary?: {
     client_name?: string | null;
     company?: string | null;
@@ -1424,6 +1447,49 @@ function EmailThreadUIContent() {
                         </div>
                       )}
 
+                      {/* HIL Context: Previous decisions and client preferences */}
+                      {task.payload?.hil_context && (
+                        <details className="mb-3 text-xs">
+                          <summary className="cursor-pointer text-[#4874c0] font-medium hover:text-[#2b5ea8]">
+                            📊 View Context & History
+                          </summary>
+                          <div className="mt-2 p-2 bg-white rounded border border-gray-200 space-y-2">
+                            {/* Previous Decisions */}
+                            {task.payload.hil_context.previous_decisions && task.payload.hil_context.previous_decisions.length > 0 && (
+                              <div>
+                                <div className="font-semibold text-gray-700 mb-1">Previous Decisions:</div>
+                                {task.payload.hil_context.previous_decisions.map((d, i) => (
+                                  <div key={i} className="pl-2 text-gray-600">
+                                    Step {d.step}: <span className={d.decision === 'approved' ? 'text-green-600' : 'text-red-600'}>{d.decision}</span>
+                                    {d.notes && <span className="text-gray-500"> — {d.notes}</span>}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {/* Client Preferences */}
+                            {task.payload.hil_context.client_preferences && (
+                              <div>
+                                <div className="font-semibold text-gray-700 mb-1">Client Preferences:</div>
+                                <div className="pl-2 text-gray-600">
+                                  {task.payload.hil_context.client_preferences.participants && (
+                                    <div>Participants: {task.payload.hil_context.client_preferences.participants}</div>
+                                  )}
+                                  {task.payload.hil_context.client_preferences.catering && (
+                                    <div>Catering: {task.payload.hil_context.client_preferences.catering}</div>
+                                  )}
+                                  {task.payload.hil_context.client_preferences.preferred_room && (
+                                    <div>Preferred Room: {task.payload.hil_context.client_preferences.preferred_room}</div>
+                                  )}
+                                  {task.payload.hil_context.client_preferences.special_requests && task.payload.hil_context.client_preferences.special_requests.length > 0 && (
+                                    <div>Special Requests: {task.payload.hil_context.client_preferences.special_requests.join(', ')}</div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      )}
+
                       {/* AI Reply Approval: Editable message field */}
                       {isAiReplyApproval && draftBody && (
                         <div className="mt-2">
@@ -1540,6 +1606,49 @@ function EmailThreadUIContent() {
                             Billing: {eventSummary.billing_address || 'Please provide before confirming'}
                           </div>
                         </div>
+                      )}
+
+                      {/* HIL Context: Previous decisions and client preferences */}
+                      {task.payload?.hil_context && (
+                        <details className="mb-3 text-xs">
+                          <summary className="cursor-pointer text-[#4a63c6] font-medium hover:text-[#2b47a3]">
+                            📊 View Context & History
+                          </summary>
+                          <div className="mt-2 p-2 bg-white rounded border border-gray-200 space-y-2">
+                            {/* Previous Decisions */}
+                            {task.payload.hil_context.previous_decisions && task.payload.hil_context.previous_decisions.length > 0 && (
+                              <div>
+                                <div className="font-semibold text-gray-700 mb-1">Previous Decisions:</div>
+                                {task.payload.hil_context.previous_decisions.map((d, i) => (
+                                  <div key={i} className="pl-2 text-gray-600">
+                                    Step {d.step}: <span className={d.decision === 'approved' ? 'text-green-600' : 'text-red-600'}>{d.decision}</span>
+                                    {d.notes && <span className="text-gray-500"> — {d.notes}</span>}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {/* Client Preferences */}
+                            {task.payload.hil_context.client_preferences && (
+                              <div>
+                                <div className="font-semibold text-gray-700 mb-1">Client Preferences:</div>
+                                <div className="pl-2 text-gray-600">
+                                  {task.payload.hil_context.client_preferences.participants && (
+                                    <div>Participants: {task.payload.hil_context.client_preferences.participants}</div>
+                                  )}
+                                  {task.payload.hil_context.client_preferences.catering && (
+                                    <div>Catering: {task.payload.hil_context.client_preferences.catering}</div>
+                                  )}
+                                  {task.payload.hil_context.client_preferences.preferred_room && (
+                                    <div>Preferred Room: {task.payload.hil_context.client_preferences.preferred_room}</div>
+                                  )}
+                                  {task.payload.hil_context.client_preferences.special_requests && task.payload.hil_context.client_preferences.special_requests.length > 0 && (
+                                    <div>Special Requests: {task.payload.hil_context.client_preferences.special_requests.join(', ')}</div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </details>
                       )}
 
                       {depositInfo?.deposit_required && depositInfo.offer_accepted && (
