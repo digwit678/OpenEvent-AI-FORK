@@ -7,6 +7,8 @@ ENDPOINTS:
     POST /api/config/global-deposit   - Set global deposit config
     GET  /api/config/hil-mode         - Get HIL mode status
     POST /api/config/hil-mode         - Toggle HIL mode (all AI replies require approval)
+    GET  /api/config/email-format     - Get email format (plain text vs Markdown)
+    POST /api/config/email-format     - Info about email format setting (env var controlled)
     GET  /api/config/llm-provider     - Get LLM provider settings
     POST /api/config/llm-provider     - Set LLM provider settings
     GET  /api/config/pre-filter       - Get pre-filter mode (enhanced/legacy)
@@ -90,6 +92,26 @@ class HILModeConfig(BaseModel):
     - Compliance: Ensure human review of all client communications
     """
     enabled: bool
+
+
+class EmailFormatConfig(BaseModel):
+    """
+    Email format configuration for client communications.
+
+    When enabled (plain_text=True):
+    - Markdown formatting is stripped from emails before sending
+    - Bold, italic, headers, and bullet points are converted to plain text
+    - Improves compatibility with simple email clients
+
+    When disabled (default):
+    - Emails retain Markdown formatting
+    - Most email clients render basic Markdown nicely
+    - Provides richer visual formatting
+
+    Note: The HIL UI always shows Markdown-formatted drafts for manager review.
+    This setting only affects the final email sent to clients.
+    """
+    plain_text: bool
 
 
 class LLMProviderConfig(BaseModel):
@@ -308,6 +330,61 @@ async def set_hil_mode(config: HILModeConfig):
         }
     except Exception as exc:
         raise_safe_error(500, "save HIL mode config", exc, logger)
+
+
+# ---------------------------------------------------------------------------
+# Email Format Configuration Endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/email-format")
+async def get_email_format():
+    """
+    Get the current email format mode.
+
+    When plain_text is True:
+    - Markdown is stripped from emails before sending to clients
+    - **bold** becomes bold, *italic* becomes italic
+    - Bullet points (- item) become • item
+    - Improves compatibility with simple email clients
+
+    When plain_text is False (default):
+    - Emails retain Markdown formatting
+    - Provides richer visual formatting in email clients
+
+    Returns:
+        plain_text: bool - Whether plain text mode is enabled
+        source: str - Where the setting came from ("environment", "default")
+    """
+    try:
+        import os
+        env_value = os.getenv("OE_EMAIL_PLAIN_TEXT", "").lower()
+        if env_value in ("true", "1", "yes"):
+            return {"plain_text": True, "source": "environment"}
+        return {"plain_text": False, "source": "default"}
+    except Exception as exc:
+        raise_safe_error(500, "load email format config", exc, logger)
+
+
+@router.post("/email-format")
+async def set_email_format(config: EmailFormatConfig):
+    """
+    Toggle email format mode for client communications.
+
+    When plain_text is True:
+    - All outgoing emails have Markdown stripped
+    - Manager still sees Markdown in HIL review (for better readability)
+    - Only affects the final email sent to clients
+
+    Note: This setting is controlled by the OE_EMAIL_PLAIN_TEXT environment
+    variable and requires a server restart to take effect.
+    """
+    return {
+        "status": "info",
+        "plain_text": config.plain_text,
+        "message": "Email format is controlled by OE_EMAIL_PLAIN_TEXT environment variable. Restart server after changing.",
+        "env_var": "OE_EMAIL_PLAIN_TEXT",
+        "current_value": config.plain_text,
+    }
 
 
 # ---------------------------------------------------------------------------

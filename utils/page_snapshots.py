@@ -38,7 +38,7 @@ def _use_supabase() -> bool:
 if os.getenv("VERCEL") == "1":
     SNAPSHOTS_DIR = Path("/tmp/page_snapshots")
 else:
-    SNAPSHOTS_DIR = Path(__file__).resolve().parent.parent.parent / "tmp-cache" / "page_snapshots"
+    SNAPSHOTS_DIR = Path(__file__).resolve().parent.parent / "tmp-cache" / "page_snapshots"
 SNAPSHOTS_FILE = SNAPSHOTS_DIR / "snapshots.json"
 
 # Default TTL by snapshot type

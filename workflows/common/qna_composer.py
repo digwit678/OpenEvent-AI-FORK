@@ -49,11 +49,19 @@ class ComposedResponse:
     sections: List[ComposedSection]
     relationship: str  # "independent" | "and_combined" | "or_union" | "single"
     workflow_section: Optional[ComposedSection] = None  # For hybrid responses
+    show_info_links: bool = False  # Disabled by default for production (small catalogs)
 
     @property
     def body_markdown(self) -> str:
-        """Combine all sections into single markdown body."""
+        """Combine all sections into single markdown body.
+
+        UX improvements:
+        - Single section: no header, content flows naturally
+        - Multiple sections: headers only when needed for clarity
+        - Info links: disabled by default (enable for large catalogs)
+        """
         parts: List[str] = []
+        is_multi_section = len(self.sections) > 1 or self.workflow_section is not None
 
         # Workflow section first (for hybrid)
         if self.workflow_section:
@@ -63,11 +71,15 @@ class ComposedResponse:
 
         # Q&A sections
         for section in self.sections:
-            parts.append(f"**{section.header}:**")
+            # Only show section headers when multiple sections exist
+            if is_multi_section:
+                parts.append(f"**{section.header}:**")
             parts.append(section.body_markdown)
-            if section.info_link:
+            # Info links only when explicitly enabled (for large catalogs)
+            if self.show_info_links and section.info_link:
                 parts.append(f"\n[More details: {section.info_link}]")
-            parts.append("")  # Blank line separator
+            if is_multi_section:
+                parts.append("")  # Blank line separator
 
         return "\n".join(parts).strip()
 

@@ -268,6 +268,109 @@ def _capture_preferences(state: WorkflowState, catering: Sequence[str], features
     state.extras["captured_preferences"] = {"catering": list(catering), "features": list(features)}
 
 
+# -----------------------------------------------------------------------------
+# Inline Room Verbalization (UX: show all rooms with details, not just count)
+# -----------------------------------------------------------------------------
+
+
+def _extract_room_details_from_notes(notes: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Extract capacity and key feature from notes field.
+
+    Notes format: "Status: Available; Capacity up to 50; Projector ✓"
+    Returns: (capacity_phrase, key_feature) - either may be None
+    """
+    if not notes or notes == "-":
+        return None, None
+
+    parts = [p.strip() for p in notes.split(";")]
+    capacity_phrase = None
+    key_feature = None
+
+    for part in parts:
+        # Skip status (redundant - all shown rooms are available/option)
+        if part.lower().startswith("status:"):
+            continue
+        # Capture capacity
+        if "capacity" in part.lower():
+            capacity_phrase = re.sub(r"(?i)capacity\s*", "", part).strip()
+            if capacity_phrase and "guest" not in capacity_phrase.lower():
+                capacity_phrase += " guests"
+            continue
+        # First remaining item is key feature
+        if key_feature is None and part:
+            key_feature = part
+
+    return capacity_phrase, key_feature
+
+
+def _format_room_bullet(row: Dict[str, str]) -> str:
+    """
+    Format a single room row as an email-friendly bullet point.
+
+    Format: - **Room Name**: capacity; feature — dates
+    """
+    room_name = row.get("room", "Room")
+    dates = row.get("dates", "-")
+    notes = row.get("notes", "")
+
+    capacity_phrase, key_feature = _extract_room_details_from_notes(notes)
+
+    # Build details segment
+    details_parts = []
+    if capacity_phrase:
+        details_parts.append(capacity_phrase)
+    if key_feature:
+        details_parts.append(key_feature)
+
+    details_str = "; ".join(details_parts) if details_parts else "available"
+
+    # Build dates segment (omit if empty)
+    dates_str = f" — {dates}" if dates and dates != "-" else ""
+
+    return f"- **{room_name}**: {details_str}{dates_str}"
+
+
+def _verbalize_room_list(
+    display_rows: Sequence[Dict[str, str]],
+    max_full_display: int = 8,
+    top_n_if_truncate: int = 6,
+) -> List[str]:
+    """
+    Verbalize room availability rows into email-friendly bullet points.
+
+    Respects Miller's Law (7±2): shows all if <=8 rooms, otherwise top 6 + count.
+    For boutique venues with 5-10 rooms, this typically shows everything.
+    """
+    if not display_rows:
+        return []
+
+    lines: List[str] = []
+    room_count = len(display_rows)
+
+    # Intro line
+    if room_count == 1:
+        lines.append("I found 1 room that fits your request:")
+    elif room_count <= max_full_display:
+        lines.append(f"I found {room_count} rooms that fit your request:")
+    else:
+        lines.append(f"I found {room_count} rooms. Here are the top matches:")
+
+    lines.append("")  # Blank line before bullets
+
+    # Room bullets
+    if room_count <= max_full_display:
+        for row in display_rows:
+            lines.append(_format_room_bullet(row))
+    else:
+        for row in display_rows[:top_n_if_truncate]:
+            lines.append(_format_room_bullet(row))
+        remaining = room_count - top_n_if_truncate
+        lines.append(f"- ...and {remaining} more options available")
+
+    return lines
+
+
 def _room_feature_summary(room_id: str, features: Iterable[str]) -> str:
     matches: List[str] = []
     missing: List[str] = []
@@ -1256,13 +1359,17 @@ def enrich_general_qna_step2(state: WorkflowState, classification: Dict[str, Any
         body_lines = []
         if intro_text:
             body_lines.append(intro_text)
-        # Add a brief summary instead of raw table
+        # Add verbalized room list instead of raw count (UX: show all rooms with details)
         if display_rows:
-            room_count = len(display_rows)
-            if room_count == 1:
-                body_lines.append("I found 1 option that works for you.")
+            is_room_query = "room" in column_order or "room" in select_fields
+            if is_room_query:
+                room_lines = _verbalize_room_list(display_rows)
+                body_lines.extend(room_lines)
             else:
-                body_lines.append(f"I found {room_count} options that work for you.")
+                # Menu/product query - keep simpler format
+                item_count = len(display_rows)
+                item_word = "option" if item_count == 1 else "options"
+                body_lines.append(f"I found {item_count} {item_word} that work for you.")
         body_lines.extend(["", next_step_line])
         body_markdown = "\n".join(body_lines).strip()
 

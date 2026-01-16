@@ -1,5 +1,8 @@
 # Workflow Routing Map (current backend code)
 
+> **ARCHITECTURAL SOURCE OF TRUTH:** For behavioral rules, invariants (Confirm-Anytime, Capture-Anytime), and the "Law" of the system, refer to **`docs/architecture/MASTER_ARCHITECTURE_SHEET.md`**.
+> Use *this* file (`workflow-routing-map.md`) as a practical debugging map for "where does the code go right now".
+
 Purpose
 - Provide a practical “where does this message go?” map for debugging routing bugs.
 - Document what the code does today (not the desired architecture).

@@ -47,6 +47,7 @@ CASE_MAP: Dict[str, Dict[str, List[str]]] = {
     "product_recommendation_for_us": {"N": ["N8"], "D": ["D2"], "P": ["P7"], "R": ["R5"]},
     "repertoire_check": {"N": ["N9"], "D": ["D3"], "P": ["P4"], "R": ["R5"]},
     "non_event_info": {"N": ["N9"], "D": ["D9"], "P": [], "R": ["R5"]},
+    "pricing_inquiry": {"N": ["N9"], "D": ["D9"], "P": [], "R": ["R5"]},  # Rate card, no prerequisites
     "update_candidate": {"N": ["N9"], "D": ["D9"], "P": [], "R": ["R9"]},
 }
 

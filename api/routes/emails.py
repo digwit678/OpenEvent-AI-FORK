@@ -86,8 +86,17 @@ async def send_email_to_client(request: SendClientEmailRequest):
             send_client_email,
             get_hil_email_config,
         )
+        from workflows.io.integration.config import (
+            is_email_plain_text_enabled,
+            strip_markdown_for_email,
+        )
 
         config = get_hil_email_config()
+
+        # Apply plain text conversion if enabled
+        body_text = request.body_text
+        if is_email_plain_text_enabled():
+            body_text = strip_markdown_for_email(body_text)
 
         if not config.get("smtp_user") or not config.get("smtp_password"):
             # SMTP not configured - return success but note it's simulated
@@ -103,17 +112,17 @@ async def send_email_to_client(request: SendClientEmailRequest):
             to_email=request.to_email,
             to_name=request.to_name,
             subject=request.subject,
-            body_text=request.body_text,
+            body_text=body_text,
             body_html=request.body_html,
             event_id=request.event_id,
         )
 
         if result["success"]:
-            # Log the sent email for tracking
+            # Log the sent email for tracking (use processed body)
             _log_sent_email(
                 to_email=request.to_email,
                 subject=request.subject,
-                body=request.body_text,
+                body=body_text,
                 event_id=request.event_id,
                 task_id=request.task_id,
             )

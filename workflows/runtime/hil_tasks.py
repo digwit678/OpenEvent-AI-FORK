@@ -68,20 +68,78 @@ def _resolve_lock_path(path: Path) -> Path:
     return db_io.lock_path_for(path)
 
 
+def _build_hil_context(event_entry: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Build enriched context for HIL task review.
+
+    Provides managers with decision history, client preferences, and event summary
+    so they don't need to switch tabs to understand the conversation context.
+    """
+    context: Dict[str, Any] = {}
+
+    # Previous HIL decisions (last 3)
+    hil_history = event_entry.get("hil_history") or []
+    if hil_history:
+        context["previous_decisions"] = [
+            {
+                "step": d.get("step"),
+                "decision": d.get("decision"),
+                "notes": d.get("notes"),
+                "timestamp": d.get("approved_at") or d.get("rejected_at"),
+            }
+            for d in hil_history[-3:]
+        ]
+
+    # Client preferences from captured data
+    requirements = event_entry.get("requirements") or {}
+    preferences = event_entry.get("preferences") or {}
+    captured = event_entry.get("captured") or {}
+
+    client_prefs: Dict[str, Any] = {}
+    if requirements.get("number_of_participants"):
+        client_prefs["participants"] = requirements["number_of_participants"]
+    if captured.get("catering"):
+        client_prefs["catering"] = captured["catering"]
+    if captured.get("products"):
+        client_prefs["special_requests"] = captured["products"]
+    if preferences.get("room_preference"):
+        client_prefs["preferred_room"] = preferences["room_preference"]
+
+    if client_prefs:
+        context["client_preferences"] = client_prefs
+
+    # Current event summary
+    event_data = event_entry.get("event_data") or {}
+    context["event_summary"] = {
+        "client_name": event_data.get("Name"),
+        "company": event_data.get("Company"),
+        "event_date": event_entry.get("chosen_date"),
+        "room": event_entry.get("locked_room_id"),
+        "step": event_entry.get("current_step"),
+    }
+
+    return context
+
+
 def _compose_hil_decision_reply(decision: str, manager_notes: Optional[str] = None) -> str:
     """Compose a client-facing reply for HIL approval/rejection decisions."""
     normalized = (decision or "").lower()
     approved = normalized == "approve"
-    decision_line = "Manager decision: Approved" if approved else "Manager decision: Declined"
     note_text = (manager_notes or "").strip()
-    next_line = (
-        "Next step: Let's continue with site visit bookings. Do you have any preferred dates or times?"
-        if approved
-        else "Next step: I'll revise the offer with this feedback and share an updated proposal."
-    )
-    sections = [decision_line]
+
+    if approved:
+        # Warm, conversational approval
+        intro = "Great news! Everything looks good on our end."
+        next_line = "Let's continue with site visit bookings. Do you have any preferred dates or times?"
+    else:
+        # Soft rejection with forward momentum
+        intro = "Thank you for your patience."
+        next_line = "I'll revise the proposal based on some feedback and share an updated version shortly."
+
+    sections = [intro]
     if note_text:
-        sections.append(f"Manager note: {note_text}")
+        # Integrate notes naturally without "Manager note:" label
+        sections.append(note_text)
     sections.append(next_line)
     return "\n\n".join(section for section in sections if section)
 
@@ -124,10 +182,10 @@ def approve_task_and_send(
         # Use edited message if provided, otherwise use original draft
         body_text = edited_message.strip() if edited_message else draft_body
 
-        # Append manager notes if provided
+        # Append manager notes naturally (no label prefix)
         note_text = (manager_notes or "").strip()
         if note_text and body_text:
-            body_text = f"{body_text.rstrip()}\n\nManager note:\n{note_text}"
+            body_text = f"{body_text.rstrip()}\n\n{note_text}"
 
         # Find the event for context (optional)
         target_event = None
@@ -510,9 +568,9 @@ def approve_task_and_send(
     assistant_draft = {"headers": headers, "body": body_text, "body_markdown": body_text}
 
     note_text = (manager_notes or "").strip()
-    # For non-Step-5 approvals, append manager notes if provided
+    # For non-Step-5 approvals, append manager notes naturally (no label prefix)
     if note_text:
-        appended = f"{body_text.rstrip()}\n\nManager note:\n{note_text}" if body_text.strip() else f"Manager note:\n{note_text}"
+        appended = f"{body_text.rstrip()}\n\n{note_text}" if body_text.strip() else note_text
         body_text = appended
         assistant_draft["body"] = appended
         assistant_draft["body_markdown"] = appended
@@ -771,7 +829,8 @@ def reject_task_and_send(
         draft["body"] = new_body
         body_text = new_body
     elif note_text:
-        appended = f"{body_text.rstrip()}\n\nManager note:\n{note_text}" if body_text.strip() else f"Manager note:\n{note_text}"
+        # Append manager notes naturally (no label prefix)
+        appended = f"{body_text.rstrip()}\n\n{note_text}" if body_text.strip() else note_text
         body_text = appended
         assistant_draft["body"] = appended
         assistant_draft["body_markdown"] = appended
@@ -971,6 +1030,7 @@ def enqueue_hil_tasks(state: "WorkflowState", event_entry: Dict[str, Any]) -> No
             "requirements_hash": event_entry.get("requirements_hash"),
             "room_eval_hash": event_entry.get("room_eval_hash"),
             "thread_id": thread_id,
+            "hil_context": _build_hil_context(event_entry),  # Enriched context for managers
         }
         hil_reason = draft.get("hil_reason")
         if hil_reason:

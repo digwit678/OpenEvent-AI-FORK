@@ -270,6 +270,26 @@ _QNA_KEYWORDS: Dict[str, Sequence[str]] = {
         "that's a deal",
         "it's a deal",
     ),
+    # =========================================================================
+    # Rate Card / Pricing Inquiries (no date/room required)
+    # =========================================================================
+    "pricing_inquiry": (
+        "what are your rates",
+        "what do you charge",
+        "how much does it cost",
+        "ballpark pricing",
+        "rate card",
+        "daily rate",
+        "hourly rate",
+        "what's the price",
+        "cost per day",
+        "price per day",
+        "rental rates",
+        "room rates",
+        "pricing information",
+        "how much for",
+        "what would it cost",
+    ),
 }
 
 _QUESTION_PREFIXES = (
@@ -364,6 +384,7 @@ QNA_TYPE_TO_STEP = {
     "site_visit_overview": 7,
     "site_visit_request": 0,  # Can be initiated at ANY step (cross-step)
     "parking_policy": 0,  # General info, no specific step
+    "pricing_inquiry": 0,  # Rate card info, no date/room required
     "confirm_booking": 7,
 }
 

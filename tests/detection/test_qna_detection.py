@@ -145,7 +145,6 @@ def test_DET_QNA_003_catering_question():
     assert "catering_for" in qna_types
 
 
-@pytest.mark.xfail(reason="Detection gap: 'coffee breaks' not recognized as catering (needs keyword addition)")
 def test_DET_QNA_003_coffee_break_question():
     """Coffee break variant."""
     message = "Do you provide coffee breaks?"

@@ -1,4 +1,4 @@
-# MIGRATED: from workflows.nlu.semantic_matchers -> detection.response.matchers
+# MIGRATED: from workflows.nlu.semantic_matchers -> backend.detection.response.matchers
 from detection.response.matchers import (
     is_room_selection,
     matches_acceptance_pattern,
@@ -118,7 +118,7 @@ def test_room_selection_uses_catalog(monkeypatch):
     from types import SimpleNamespace
 
     monkeypatch.setattr(
-        "detection.response.matchers.load_room_catalog",
+        "backend.detection.response.matchers.load_room_catalog",
         lambda: [SimpleNamespace(name="Panorama Hall", room_id="PAN1")],
     )
     _room_patterns_from_catalog.cache_clear()
