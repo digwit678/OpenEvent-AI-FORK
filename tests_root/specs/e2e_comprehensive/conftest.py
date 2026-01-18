@@ -70,15 +70,65 @@ STEP_NAMES = {
     7: "Confirmation",
 }
 
+# Standard requirements for step 4+ fixtures (needed for P2 precondition check)
+def _get_standard_requirements():
+    """Generate standard requirements with matching hashes for test fixtures."""
+    from workflows.common.requirements import requirements_hash
+    requirements = {
+        "number_of_participants": 50,
+        "seating_layout": "theater",
+        "event_duration": {"start": "09:00", "end": "17:00"},
+        "special_requirements": None,
+        "preferred_room": None,
+    }
+    req_hash = requirements_hash(requirements)
+    return requirements, req_hash
+
 # What gates are typically passed by each step
-STEP_PREREQUISITES = {
-    2: {"date_confirmed": False},
-    3: {"date_confirmed": True, "locked_room_id": None},
-    4: {"date_confirmed": True, "locked_room_id": "Room A"},
-    5: {"date_confirmed": True, "locked_room_id": "Room A", "offer_sent": True},
-    6: {"date_confirmed": True, "locked_room_id": "Room A", "offer_sent": True, "offer_accepted": True},
-    7: {"date_confirmed": True, "locked_room_id": "Room A", "offer_sent": True, "offer_accepted": True, "billing_captured": True},
-}
+# Steps 4+ include requirements and matching hashes to pass the P2 precondition check
+def _get_step_prerequisites():
+    """Generate step prerequisites with proper hash values."""
+    requirements, req_hash = _get_standard_requirements()
+    return {
+        2: {"date_confirmed": False},
+        3: {"date_confirmed": True, "locked_room_id": None},
+        4: {
+            "date_confirmed": True,
+            "locked_room_id": "Room A",
+            "requirements": requirements,
+            "requirements_hash": req_hash,
+            "room_eval_hash": req_hash,
+        },
+        5: {
+            "date_confirmed": True,
+            "locked_room_id": "Room A",
+            "offer_sent": True,
+            "requirements": requirements,
+            "requirements_hash": req_hash,
+            "room_eval_hash": req_hash,
+        },
+        6: {
+            "date_confirmed": True,
+            "locked_room_id": "Room A",
+            "offer_sent": True,
+            "offer_accepted": True,
+            "requirements": requirements,
+            "requirements_hash": req_hash,
+            "room_eval_hash": req_hash,
+        },
+        7: {
+            "date_confirmed": True,
+            "locked_room_id": "Room A",
+            "offer_sent": True,
+            "offer_accepted": True,
+            "billing_captured": True,
+            "requirements": requirements,
+            "requirements_hash": req_hash,
+            "room_eval_hash": req_hash,
+        },
+    }
+
+STEP_PREREQUISITES = _get_step_prerequisites()
 
 
 # =============================================================================
@@ -402,15 +452,21 @@ def build_event_entry():
             deposit_paid: Whether deposit is paid
             **extra_fields: Additional fields to include
         """
+        # Use standard requirements that match REQUIREMENT_KEYS structure
+        from workflows.common.requirements import requirements_hash as compute_req_hash
+
         if requirements is None:
             requirements = {
                 "number_of_participants": 30,
                 "seating_layout": "dinner",
                 "event_duration": {"start": "18:00", "end": "23:00"},
+                "special_requirements": None,
+                "preferred_room": None,
             }
 
+        # Use the proper requirements_hash function to ensure hash matches workflow logic
         if requirements_hash is None:
-            requirements_hash = hashlib.sha256(str(requirements).encode()).hexdigest()[:16]
+            requirements_hash = compute_req_hash(requirements)
 
         # Set room_eval_hash to match requirements_hash by default (no re-eval needed)
         if room_eval_hash is None and current_step >= 3:
@@ -463,12 +519,15 @@ def build_event_entry():
         # Apply step-appropriate defaults
         if current_step >= 4:
             entry["locked_room_id"] = locked_room_id or "Room A"
+            entry["offer_status"] = "sent"  # Guards check offer_status string, not offer_sent bool
         if current_step >= 5:
             entry["offer_sent"] = True
         if current_step >= 6:
             entry["offer_accepted"] = True
+            entry["offer_status"] = "accepted"  # Step 6+ means offer was accepted
         if current_step >= 7:
             entry["billing_captured"] = True
+            entry["offer_status"] = "accepted_final"  # Step 7 = fully confirmed
 
         entry.update(extra_fields)
         return entry

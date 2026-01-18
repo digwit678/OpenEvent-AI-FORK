@@ -664,6 +664,15 @@ def evaluate_pre_route_guards(state: WorkflowState) -> None:
         current = state.event_entry.get("current_step")
         logger.debug("[WF][GUARDS] Forcing step from %s to %s", current, guard_snapshot.forced_step)
         state.event_entry["current_step"] = guard_snapshot.forced_step
+
+        # Set caller_step for detours: when forcing to a lower step (2 or 3) from a higher step,
+        # record the current step so we can return there after the detour completes.
+        # This ensures proper return after date/room changes.
+        existing_caller = state.event_entry.get("caller_step")
+        if existing_caller is None and current and current > guard_snapshot.forced_step:
+            state.event_entry["caller_step"] = current
+            logger.debug("[WF][GUARDS] Setting caller_step=%s for detour return", current)
+
         state.extras["persist"] = True
 
     # Store candidate dates for step 2

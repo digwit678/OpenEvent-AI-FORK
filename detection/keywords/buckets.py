@@ -393,7 +393,7 @@ TARGET_PATTERNS = {
             r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\b",
             r"\b\d{1,2}[./\-]\d{1,2}([./\-]\d{2,4})?\b",  # 12.03, 12/03, 12-03-2026
             r"\b\d{4}[./\-]\d{1,2}[./\-]\d{1,2}\b",       # 2026-03-12
-            r"\b(that\s+day|this\s+day|the\s+booking|that\s+date)\b",  # anaphoric
+            r"\b(that\s+day|this\s+day|that\s+date)\b",  # anaphoric (NOTE: "the booking" removed - too generic, matches product/room contexts)
             r"\b(earlier|later)\s+(date|day|time)\b",
             r"\b(next|previous|following)\s+(week|month|day)\b",
         ],

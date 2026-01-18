@@ -446,7 +446,6 @@ def _detect_product_update_request(
 @trace_step("Step1_Intake")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Entry point for Group A — intake and data capture."""
-
     message_payload = state.message.to_payload()
     thread_id = _thread_id(state)
 
@@ -897,6 +896,20 @@ def process(state: WorkflowState) -> GroupResult:
 
     requirements_snapshot = event_entry.get("requirements") or {}
 
+    # [PRODUCTS-ONLY CHECK] Save original user_info products fields before fallback
+    # to detect if this is a products-only message (not a requirements change)
+    original_products_add = user_info.get("products_add")
+    original_products_remove = user_info.get("products_remove")
+    original_notes = user_info.get("notes")
+    # Check if the ORIGINAL user_info (before fallback) has requirements fields
+    original_has_requirements = any([
+        user_info.get("participants"),
+        user_info.get("layout") or user_info.get("type"),
+        user_info.get("start_time") or user_info.get("end_time"),
+        user_info.get("date") or user_info.get("event_date"),
+        user_info.get("room") or user_info.get("preferred_room"),
+    ])
+
     def _needs_fallback(value: Any) -> bool:
         if value is None:
             return True
@@ -931,8 +944,33 @@ def process(state: WorkflowState) -> GroupResult:
     if snapshot_room and _needs_fallback(user_info.get("room")):
         user_info["room"] = snapshot_room
 
-    requirements = build_requirements(user_info)
-    new_req_hash = requirements_hash(requirements)
+    # [PRODUCTS-ONLY FIX] When the message is a products-only change (e.g., "add a projector"),
+    # don't rebuild requirements from user_info. The LLM might extract product names into
+    # special_requirements, which would invalidate the requirements_hash and cause unnecessary
+    # re-routing to step 3.
+    # Use ORIGINAL user_info values (saved before fallback) to check if this is products-only
+    notes_looks_like_product = any(p in (original_notes or "").lower() for p in [
+        "projector", "screen", "microphone", "flipchart", "beamer", "av",
+        "catering", "coffee", "tea", "lunch", "dinner",
+    ]) if isinstance(original_notes, str) else False
+
+    has_products_signal = original_products_add or original_products_remove or notes_looks_like_product
+    is_products_only_change = has_products_signal and not original_has_requirements
+
+    logger.debug("[Step1] Products check: original_notes=%s, notes_looks_like_product=%s, "
+                 "has_products_signal=%s, original_has_requirements=%s, is_products_only=%s",
+                 original_notes, notes_looks_like_product, has_products_signal,
+                 original_has_requirements, is_products_only_change)
+
+    if is_products_only_change and requirements_snapshot:
+        # Keep existing requirements, don't rebuild from user_info
+        logger.debug("[Step1] Products-only change detected, preserving existing requirements")
+        requirements = requirements_snapshot
+        new_req_hash = event_entry.get("requirements_hash")
+    else:
+        requirements = build_requirements(user_info)
+        new_req_hash = requirements_hash(requirements)
+
     prev_req_hash = event_entry.get("requirements_hash")
     update_event_metadata(
         event_entry,
@@ -1689,16 +1727,23 @@ def _ensure_event_record(
         msg_event_id = state.message.extras.get("event_id")
         event_id_matches = msg_event_id and msg_event_id == last_event.get("event_id")
 
-        # Only create new event if this is truly a NEW inquiry, not a billing/deposit follow-up
-        if awaiting_billing or awaiting_deposit or looks_like_billing or deposit_just_paid or event_id_matches:
+        # Check if this is a revision/change request (date, room, participants change)
+        # Messages like "Can we switch to Room B?" or "Change the date to March 20"
+        # should continue with the existing event, not create a new one
+        message_text = (state.message.body or "") + " " + (state.message.subject or "")
+        is_revision_message = has_revision_signal(message_text)
+
+        # Only create new event if this is truly a NEW inquiry, not a billing/deposit/revision follow-up
+        if awaiting_billing or awaiting_deposit or looks_like_billing or deposit_just_paid or event_id_matches or is_revision_message:
             # Continue with existing event - don't create new
             trace_db_write(_thread_id(state), "Step1_Intake", "offer_accepted_continue", {
-                "reason": "billing_or_deposit_followup",
+                "reason": "billing_or_deposit_or_revision_followup",
                 "awaiting_billing": awaiting_billing,
                 "awaiting_deposit": awaiting_deposit,
                 "looks_like_billing": looks_like_billing,
                 "deposit_just_paid": deposit_just_paid,
                 "event_id_matches": event_id_matches,
+                "is_revision_message": is_revision_message,
             })
         else:
             # New inquiry from same client after offer was accepted - create fresh event

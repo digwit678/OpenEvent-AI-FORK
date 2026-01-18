@@ -175,6 +175,16 @@ def process(state: WorkflowState) -> GroupResult:
     # status from database (in case it was paid via frontend API)
     # -------------------------------------------------------------------------
     event_id = event_entry.get("event_id")
+
+    # DETOUR FIX: If we came from a detour (caller_step is set), we need to regenerate
+    # the offer even if the previous one was accepted. The date/room/requirements may have
+    # changed, invalidating the old offer.
+    caller_step = event_entry.get("caller_step")
+    if caller_step is not None and event_entry.get("offer_accepted"):
+        logger.info("[Step4] Detour in progress (caller=%s) - clearing offer_accepted to regenerate offer", caller_step)
+        event_entry["offer_accepted"] = False
+        state.extras["persist"] = True
+
     if event_id and event_entry.get("offer_accepted"):
         from workflows.common.confirmation_gate import check_confirmation_gate, reload_and_check_gate
 
@@ -614,10 +624,10 @@ def process(state: WorkflowState) -> GroupResult:
             return _route_to_owner_step(state, event_entry, target, code, thread_id)
         return _handle_products_pending(state, event_entry, code)
 
-    write_stage(event_entry, current_step=WorkflowStep.STEP_4, caller_step=None)
-    update_event_metadata(event_entry, caller_step=None)
+    # NOTE: Don't clear caller_step here - we need it later to decide whether to stay at step 4
+    # or advance to step 5 after offer generation. caller_step is cleared at the end of this handler.
+    write_stage(event_entry, current_step=WorkflowStep.STEP_4)
     state.extras["persist"] = True
-    state.caller_step = None
 
     pricing_inputs = _rebuild_pricing_inputs(event_entry, state.user_info)
 
@@ -724,16 +734,24 @@ def process(state: WorkflowState) -> GroupResult:
         negotiation_state["counter_count"] = 0
         negotiation_state["manual_review_task_id"] = None
 
+    # After a detour (caller_step set), stay at step 4 awaiting client response to the new offer.
+    # Only advance to step 5 in normal flow (first offer generation, no detour).
+    if caller is not None:
+        # Detour flow: client must respond to regenerated offer, stay at step 4
+        next_step = 4
+        append_audit_entry(event_entry, 4, caller, "return_to_caller")
+    else:
+        # Normal flow: advance to step 5
+        next_step = 5
+
     update_event_metadata(
         event_entry,
-        current_step=5,
+        current_step=next_step,
         thread_state="Awaiting Client",
         transition_ready=False,
         caller_step=None,
     )
-    if caller is not None:
-        append_audit_entry(event_entry, 4, caller, "return_to_caller")
-    state.current_step = 5
+    state.current_step = next_step
     state.caller_step = None
     state.set_thread_state("Awaiting Client")
     set_hil_open(thread_id, False)

@@ -345,16 +345,9 @@ def _persist_if_needed(state: WorkflowState, path: Path, lock_path: Path) -> Non
 def _flush_pending_save(state: WorkflowState, path: Path, lock_path: Path) -> None:
     """[OpenEvent Database] Flush debounced writes at the end of the turn."""
     if state.extras.pop("_pending_save", False):
-        # Log site visit state before save for debugging
-        if state.event_entry:
-            sv_state = state.event_entry.get("site_visit_state", {})
-            print(f"[WF][PERSIST] Saving: sv_status={sv_state.get('status')}, "
-                  f"sv_selected_date={sv_state.get('selected_date')}, "
-                  f"sv_proposed_slots={sv_state.get('proposed_slots', [])}")
         logger.info("[WF][PERSIST] Flushing DB to %s for thread=%s", path, state.thread_id)
         db_io.save_db(state.db, path, lock_path=lock_path)
         logger.info("[WF][PERSIST] DB saved successfully")
-        print(f"[WF][PERSIST] DB saved to {path}")
     else:
         logger.debug("[WF][PERSIST] No pending save for thread=%s", state.thread_id)
 
@@ -409,12 +402,6 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     classification = _ensure_general_qna_classification(state, combined_text)
     _debug_state("init", state, extra={"entity": "client"})
     last_result = intake.process(state)
-    # Log loaded site visit state for debugging
-    if state.event_entry:
-        sv_state = state.event_entry.get("site_visit_state", {})
-        print(f"[WF][LOAD] After intake: sv_status={sv_state.get('status')}, "
-              f"sv_selected_date={sv_state.get('selected_date')}, "
-              f"event_id={state.event_entry.get('event_id')}")
     _debug_state("post_intake", state, extra={"intent": state.intent.value if state.intent else None})
 
     # Run pre-routing pipeline (P1 extraction)
