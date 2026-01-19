@@ -4,6 +4,46 @@ Ideas collected during development sessions for future implementation.
 
 ---
 
+## Package Layout Normalization + Production Entrypoint Split (Jan 19, 2026)
+
+**Context:** Code lives under top-level `workflows/` and `api/`, but docs use `backend.*` imports; `main.py` includes dev-only side effects at import.
+
+**Proposed Solution:** Create `app.py` as a production-safe FastAPI entrypoint, move dev-only startup to `scripts/dev/` or `main_dev.py`, and pick one canonical package layout (update imports + docs).
+
+**Files to modify:** `main.py`, `app.py` (new), `scripts/dev/*`, `docs/*` (import references).
+
+**Priority:** High.
+
+## Catalog and Data Path Consolidation (Jan 19, 2026)
+
+**Context:** Rooms/products live in multiple JSON files with overlapping schemas and ad-hoc path resolution.
+
+**Proposed Solution:** Create a single canonical data directory and a centralized loader; migrate all readers to the unified schema.
+
+**Files to modify:** `workflows/common/catalog.py`, `services/rooms.py`, `workflows/io/database.py`, `workflows/steps/*`.
+
+**Priority:** High.
+
+## Routing Pipeline Consolidation (Jan 19, 2026)
+
+**Context:** Guards, detours, shortcuts, and billing overrides are applied in multiple places with different ordering.
+
+**Proposed Solution:** Make a single pre-route decision pipeline (pure -> apply) and add invariants tests for billing, site visit, and deposit flows.
+
+**Files to modify:** `workflows/runtime/pre_route.py`, `workflow_email.py`, `tests/specs/*`.
+
+**Priority:** High.
+
+## LLM Gateway + Fallback Consolidation (Jan 19, 2026)
+
+**Context:** LLM calls and fallback diagnostics are spread across multiple modules.
+
+**Proposed Solution:** Route all LLM usage through one gateway and consolidate fallback diagnostics with production-safe defaults.
+
+**Files to modify:** `workflows/llm/adapter.py`, `ux/universal_verbalizer.py`, `core/fallback.py`, `workflows/common/fallback_reason.py`.
+
+**Priority:** Medium-High.
+
 ## ✅ IMPLEMENTED: Event-Relative Deposit Due Date (Jan 14, 2026)
 
 **Status:** Implemented on 2026-01-14. See DEV_CHANGELOG.md for details.

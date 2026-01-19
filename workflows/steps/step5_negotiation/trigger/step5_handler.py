@@ -746,6 +746,29 @@ def _detect_structural_change(
     unified_detection: Optional[Any] = None,
 ) -> Optional[tuple[int, str]]:
     # -------------------------------------------------------------------------
+    # Q&A GUARD: Use LLM-based detection to prevent Q&A from triggering detours
+    # If unified detection says it's a question (and NOT a change request),
+    # skip all change detection to allow Q&A handling downstream.
+    # -------------------------------------------------------------------------
+    if unified_detection is not None:
+        is_qna_detected = (
+            unified_detection.is_question
+            or bool(unified_detection.qna_types)
+        )
+        is_change_by_llm = unified_detection.is_change_request
+
+        if is_qna_detected and not is_change_by_llm:
+            logger.debug(
+                "[Step5][STRUCTURAL_CHANGE][QNA_GUARD] Skipping change detection: "
+                "is_question=%s, qna_types=%s, is_change_request=%s",
+                unified_detection.is_question,
+                unified_detection.qna_types,
+                unified_detection.is_change_request,
+            )
+            return None
+    # -------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------
     # ACCEPTANCE GUARD: Skip change detection for acceptance messages
     # LLM extraction may produce false positive "room" values from acceptance
     # messages like "I accept" which should NOT trigger room change detection.

@@ -114,6 +114,40 @@ def process(state: WorkflowState) -> GroupResult:
     # -------------------------------------------------------------------------
 
     # -------------------------------------------------------------------------
+    # BILLING GATE CONTINUATION: If we were waiting for billing and it's now provided,
+    # automatically proceed to send Final Contract (no need to say "I accept" again)
+    # -------------------------------------------------------------------------
+    billing_reqs = event_entry.get("billing_requirements") or {}
+    if billing_reqs.get("awaiting_billing_for_confirmation"):
+        from workflows.common.billing import missing_billing_fields
+        from workflows.common.billing_capture import capture_billing_anytime
+        from detection.pre_filter import run_pre_filter
+
+        # Try to capture billing from this message
+        pf_result = run_pre_filter(message_text, event_entry=event_entry)
+        if pf_result.has_billing_signal:
+            capture_billing_anytime(
+                state=state,
+                unified_result=None,  # unified_detection not yet available
+                pre_filter_signals={"billing": True},
+                message_text=message_text,
+            )
+            state.extras["persist"] = True
+
+        # Check if billing is now complete
+        missing = missing_billing_fields(event_entry)
+        if not missing:
+            # Billing complete! Clear the flag and proceed to Final Contract
+            billing_reqs["awaiting_billing_for_confirmation"] = False
+            logger.info("[Step7][BILLING_GATE] Billing now complete - sending Final Contract")
+            return _send_final_contract(state, event_entry)
+        else:
+            # Still incomplete - remind them what's missing
+            logger.info("[Step7][BILLING_GATE] Billing still incomplete, missing: %s", missing)
+            # Let it fall through to normal classification which will re-trigger gate if needed
+    # -------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------
     # EVENT DATE CHANGE GUARD: Detect event date changes during site visit flow
     # If client is requesting an EVENT date change (not site visit date),
     # reset the site visit state so structural change detection works correctly.
@@ -135,7 +169,9 @@ def process(state: WorkflowState) -> GroupResult:
             logger.info("[Step7][DATE_GUARD] After reset: status=%s", visit_state_after.get("status"))
     # -------------------------------------------------------------------------
 
-    structural = _detect_structural_change(state.user_info, event_entry, message_text)
+    # Get unified detection for Q&A guard in structural change detection
+    unified_detection = get_unified_detection(state)
+    structural = _detect_structural_change(state.user_info, event_entry, message_text, unified_detection)
     if structural:
         # Handle structural change detour BEFORE Q&A
         target_step, reason = structural
@@ -226,6 +262,15 @@ def process(state: WorkflowState) -> GroupResult:
         return result
 
     if classification == "confirm":
+        # -------------------------------------------------------------------------
+        # BILLING GATE (Option B - Amazon Model):
+        # Before final confirmation, ensure billing address is complete.
+        # This is the "checkout" moment - natural place to request billing details.
+        # -------------------------------------------------------------------------
+        billing_gate_result = _check_billing_gate(state, event_entry)
+        if billing_gate_result:
+            return billing_gate_result
+        # -------------------------------------------------------------------------
         result = _prepare_confirmation(state, event_entry)
     elif classification == "deposit_paid":
         result = _handle_deposit_paid(state, event_entry)
@@ -246,10 +291,36 @@ def process(state: WorkflowState) -> GroupResult:
 
 
 def _detect_structural_change(
-    user_info: Dict[str, Any], event_entry: Dict[str, Any], message_text: str = ""
+    user_info: Dict[str, Any],
+    event_entry: Dict[str, Any],
+    message_text: str = "",
+    unified_detection: Optional[Any] = None,
 ) -> Optional[tuple]:
     """Detect structural changes (date/room/participants/products) that require detour."""
     import re
+
+    # -------------------------------------------------------------------------
+    # Q&A GUARD: Use LLM-based detection to prevent Q&A from triggering detours
+    # If unified detection says it's a question (and NOT a change request),
+    # skip all change detection to allow Q&A handling downstream.
+    # -------------------------------------------------------------------------
+    if unified_detection is not None:
+        is_qna_detected = (
+            unified_detection.is_question
+            or bool(unified_detection.qna_types)
+        )
+        is_change_by_llm = unified_detection.is_change_request
+
+        if is_qna_detected and not is_change_by_llm:
+            logger.debug(
+                "[Step7][STRUCTURAL_CHANGE][QNA_GUARD] Skipping change detection: "
+                "is_question=%s, qna_types=%s, is_change_request=%s",
+                unified_detection.is_question,
+                unified_detection.qna_types,
+                unified_detection.is_change_request,
+            )
+            return None
+    # -------------------------------------------------------------------------
 
     # Skip date change detection when in site visit mode
     # Dates mentioned are for the site visit, not event date changes
@@ -543,6 +614,201 @@ def _handle_decline(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
     state.extras["persist"] = True
     payload = base_payload(state, event_entry)
     return GroupResult(action="confirmation_decline", payload=payload, halt=True)
+
+
+def _send_final_contract(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:
+    """
+    Generate the Final Contract/Invoice after billing is complete.
+
+    This is sent ONLY when billing was provided AFTER the initial proposal/offer.
+    It's visually distinct from the proposal with clear "FINAL CONTRACT" formatting.
+    """
+    from workflows.steps.step5_negotiation import _offer_summary_lines
+
+    room_name = event_entry.get("locked_room_id") or event_entry.get("room_pending_decision", {}).get("selected_room")
+    event_date = event_entry.get("chosen_date") or event_entry.get("event_data", {}).get("Event Date")
+
+    # Get complete billing details
+    billing_details = event_entry.get("billing_details") or {}
+    billing_parts = []
+    if billing_details.get("name_or_company"):
+        billing_parts.append(billing_details["name_or_company"])
+    if billing_details.get("street"):
+        billing_parts.append(billing_details["street"])
+    postal_city = " ".join(filter(None, [
+        billing_details.get("postal_code"),
+        billing_details.get("city"),
+    ]))
+    if postal_city:
+        billing_parts.append(postal_city)
+    if billing_details.get("country"):
+        billing_parts.append(billing_details["country"])
+    billing_str = ", ".join(billing_parts) if billing_parts else "N/A"
+
+    # Get offer total
+    total_amount = 0.0
+    offers = event_entry.get("offers") or []
+    current_offer_id = event_entry.get("current_offer_id")
+    for offer in offers:
+        if offer.get("offer_id") == current_offer_id:
+            total_amount = offer.get("total_amount", 0.0)
+            break
+
+    # Get participants
+    requirements = event_entry.get("requirements") or {}
+    participants = requirements.get("number_of_participants") or event_entry.get("participants")
+
+    # Get deposit info
+    deposit_info = event_entry.get("deposit_info") or {}
+    deposit_state = event_entry.get("deposit_state") or {}
+    deposit_amount = deposit_info.get("deposit_amount") or deposit_state.get("due_amount", 0.0)
+    deposit_paid = deposit_info.get("deposit_paid", False) or deposit_state.get("status") == "paid"
+
+    # =========================================================================
+    # BUILD FINAL CONTRACT MESSAGE (visually distinct from proposal)
+    # =========================================================================
+    room_fragment = f"**{room_name}**" if room_name else "your selected venue"
+    date_fragment = f"**{event_date}**" if event_date else "your requested date"
+
+    # Client-facing message (clean, professional)
+    client_message = (
+        f"Thank you for providing your billing details.\n\n"
+        f"Here is your **Final Booking Confirmation** for {room_fragment} on {date_fragment}:\n\n"
+        f"───────────────────────────────\n"
+        f"**BOOKING CONFIRMATION**\n"
+        f"───────────────────────────────\n\n"
+        f"**Event Date:** {event_date or 'TBD'}\n"
+        f"**Venue:** {room_name or 'TBD'}\n"
+        f"**Guests:** {participants or 'TBD'}\n\n"
+        f"**Billing Address:**\n{billing_str}\n\n"
+        f"**Total:** CHF {total_amount:,.2f}\n"
+    )
+
+    if deposit_paid and deposit_amount:
+        client_message += f"**Deposit:** CHF {deposit_amount:,.2f} ✓ Received\n"
+    elif deposit_amount:
+        client_message += f"**Deposit Due:** CHF {deposit_amount:,.2f}\n"
+
+    client_message += (
+        f"\n───────────────────────────────\n\n"
+        f"Your booking is now confirmed. We look forward to hosting your event!"
+    )
+
+    # Manager view (detailed offer summary)
+    summary_lines = _offer_summary_lines(event_entry, include_cta=False)
+    offer_body_markdown = "\n".join(summary_lines)
+
+    draft = {
+        "body": append_footer(
+            client_message,
+            step=7,
+            next_step="Booking confirmed",
+            thread_state="Confirmed",
+        ),
+        "body_markdown": offer_body_markdown,  # Manager sees full details
+        "step": 7,
+        "topic": "final_contract_sent",
+        "requires_approval": True,  # HIL reviews the final contract
+        "table_blocks": [
+            {
+                "type": "table",
+                "header": ["Field", "Value"],
+                "rows": [
+                    ["📄 Document", "**FINAL CONTRACT**"],
+                    ["Event Date", event_date or "TBD"],
+                    ["Room", room_name or "TBD"],
+                    ["Participants", str(participants) if participants else "TBD"],
+                    ["Billing", billing_str],
+                    ["Total", f"CHF {total_amount:,.2f}"],
+                    ["Deposit", f"CHF {deposit_amount:,.2f} {'✓ Paid' if deposit_paid else 'Pending'}"],
+                ],
+            }
+        ],
+    }
+    state.add_draft_message(draft)
+
+    conf_state = event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})
+    conf_state["pending"] = {"kind": "final_confirmation"}
+    update_event_metadata(event_entry, thread_state="Awaiting HIL Approval")
+    state.set_thread_state("Awaiting HIL Approval")
+    state.extras["persist"] = True
+
+    payload = base_payload(state, event_entry)
+    payload["final_contract"] = True
+    payload["billing_complete"] = True
+    return GroupResult(action="final_contract_ready", payload=payload, halt=True)
+
+
+def _check_billing_gate(state: WorkflowState, event_entry: Dict[str, Any]) -> Optional[GroupResult]:
+    """
+    Gate confirmation on complete billing address (Option B - Amazon Model).
+
+    UX Philosophy: Like Amazon, we show the cart/offer first without asking for
+    billing details. But at checkout (confirmation), we require complete billing
+    to generate the final contract/invoice.
+
+    Returns:
+        - None if billing is complete (proceed with confirmation)
+        - GroupResult with billing request if incomplete (gate blocks confirmation)
+    """
+    from workflows.common.billing import missing_billing_fields, billing_prompt_for_missing_fields
+
+    missing = missing_billing_fields(event_entry)
+    if not missing:
+        # Billing complete - proceed with confirmation
+        return None
+
+    # Billing incomplete - gate the confirmation
+    prompt = billing_prompt_for_missing_fields(missing)
+    if not prompt:
+        # Fallback generic prompt
+        prompt = "To finalize your booking, could you please provide your complete billing address?"
+
+    # Build friendly gating message
+    billing_details = event_entry.get("billing_details") or {}
+    existing_parts = []
+    if billing_details.get("name_or_company"):
+        existing_parts.append(billing_details["name_or_company"])
+    if billing_details.get("city"):
+        existing_parts.append(billing_details["city"])
+
+    if existing_parts:
+        existing_str = ", ".join(existing_parts)
+        message = (
+            f"Great — I'm ready to finalize your booking! "
+            f"I have your billing as **{existing_str}**, but {prompt.lower()}"
+        )
+    else:
+        message = (
+            f"Great — I'm ready to finalize your booking! "
+            f"To generate your contract, {prompt.lower()}"
+        )
+
+    draft = {
+        "body": append_footer(
+            message,
+            step=7,
+            next_step="Complete billing",
+            thread_state="Awaiting Client",
+        ),
+        "step": 7,
+        "topic": "billing_gate_at_confirmation",
+        "requires_approval": False,  # No HIL needed for billing request
+    }
+    state.add_draft_message(draft)
+
+    # Track that we're waiting for billing
+    event_entry.setdefault("billing_requirements", {})["awaiting_billing_for_confirmation"] = True
+    update_event_metadata(event_entry, thread_state="Awaiting Client")
+    state.set_thread_state("Awaiting Client")
+    state.extras["persist"] = True
+
+    logger.info("[Step7][BILLING_GATE] Blocking confirmation - missing billing fields: %s", missing)
+
+    payload = base_payload(state, event_entry)
+    payload["billing_gate_active"] = True
+    payload["missing_billing_fields"] = missing
+    return GroupResult(action="confirmation_billing_gate", payload=payload, halt=True)
 
 
 def _handle_question(state: WorkflowState) -> GroupResult:

@@ -290,6 +290,45 @@ _QNA_KEYWORDS: Dict[str, Sequence[str]] = {
         "how much for",
         "what would it cost",
     ),
+    # =========================================================================
+    # Accessibility Inquiries
+    # =========================================================================
+    "accessibility_inquiry": (
+        "wheelchair",
+        "wheelchair accessible",
+        "wheelchair access",
+        "accessible",
+        "accessibility",
+        "disabled access",
+        "disability access",
+        "mobility",
+        "elevator",
+        "lift access",
+        "step-free",
+        "ramp",
+        "accessible bathroom",
+        "accessible toilet",
+        "barrier-free",
+    ),
+    # =========================================================================
+    # Rate Inclusions / What's Included
+    # =========================================================================
+    "rate_inclusions": (
+        "what's included",
+        "what is included",
+        "included in the rate",
+        "included in the price",
+        "included in the cost",
+        "what does the rate include",
+        "what does the price include",
+        "included with the room",
+        "comes with",
+        "part of the package",
+        "in the rental",
+        "included services",
+        "complimentary",
+        "included amenities",
+    ),
 }
 
 _QUESTION_PREFIXES = (

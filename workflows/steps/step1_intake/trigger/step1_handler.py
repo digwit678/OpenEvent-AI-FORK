@@ -1304,7 +1304,10 @@ def process(state: WorkflowState) -> GroupResult:
         # But if it looks like a date change, let detection run for proper detour
         change_type = None
     else:
-        enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
+        # Pass unified_detection so Q&A messages don't trigger false change detours
+        enhanced_result = detect_change_type_enhanced(
+            event_entry, user_info, message_text=message_text, unified_detection=unified_detection
+        )
         change_type = enhanced_result.change_type if enhanced_result.is_change else None
         # If site visit is active OR it's a site visit change request, suppress date change detection
         # Date in message is for site visit selection/change, not event date change
@@ -1331,6 +1334,19 @@ def process(state: WorkflowState) -> GroupResult:
     has_qna_question = state.extras.get("general_qna_detected", False)
     date_already_confirmed = event_entry.get("date_confirmed", False)
     skip_vague_date_reset = has_qna_question and date_already_confirmed
+
+    # [COMPREHENSIVE Q&A GUARD] Pre-compute Q&A status for ALL fallback guards
+    # Q&A messages should NEVER trigger step changes, regardless of extracted entities
+    # "Are you open on March 15?" should NOT trigger date change
+    # "Does Room A have a projector?" should NOT trigger room change
+    # "Can you serve 100 people?" should NOT trigger requirements change
+    message_text_for_qna = state.message.body or ""
+    has_question_mark = "?" in message_text_for_qna
+    is_qna_no_change = has_qna_question or has_question_mark
+    logger.debug(
+        "[Step1][QNA_COMPREHENSIVE_GUARD] has_qna=%s, has_question_mark=%s, is_qna_no_change=%s",
+        has_qna_question, has_question_mark, is_qna_no_change
+    )
 
     if needs_vague_date_confirmation and not in_billing_flow and not skip_vague_date_reset:
         event_entry["range_query_detected"] = True
@@ -1439,12 +1455,15 @@ def process(state: WorkflowState) -> GroupResult:
                             room_eval_hash=None,
                             locked_room_id=None,
                         )
+                    # Set change_detour flag so Step 3 bypasses Q&A path and goes to room evaluation
+                    state.extras["change_detour"] = True
 
     # Fallback: legacy logic for cases not handled by change propagation
     # Skip during billing flow, deposit payment context, OR site visit flow
     # When site visit is active, date in message is for site visit selection, not event date change
     # Also skip when this is a site visit CHANGE request (status=scheduled + explicit change intent)
-    elif new_date and new_date != event_entry.get("chosen_date") and not in_billing_flow and not is_deposit_date_context and not site_visit_active and not (site_visit_scheduled and is_sv_change_request):
+    # [Q&A GUARD] Also skip for Q&A messages - "Are you open on March 15?" is NOT a date change request
+    elif new_date and new_date != event_entry.get("chosen_date") and not in_billing_flow and not is_deposit_date_context and not site_visit_active and not (site_visit_scheduled and is_sv_change_request) and not is_qna_no_change:
         # Check if new_date is in the past (normalize first to handle DD.MM.YYYY format)
         normalized_new_date = normalize_iso_candidate(new_date)
         date_is_past = iso_date_is_past(normalized_new_date) if normalized_new_date else False
@@ -1534,23 +1553,46 @@ def process(state: WorkflowState) -> GroupResult:
         detoured_to_step2 = True
 
     # Fallback: requirements change detection (legacy)
-    if prev_req_hash is not None and prev_req_hash != new_req_hash and not detoured_to_step2 and change_type is None:
-        target_step = 3
-        if previous_step != target_step and event_entry.get("caller_step") is None:
-            update_event_metadata(event_entry, caller_step=previous_step)
-            update_event_metadata(event_entry, current_step=target_step)
-            append_audit_entry(event_entry, previous_step, target_step, "requirements_updated")
-            # Clear stale negotiation state - old offer no longer valid after requirements change
-            event_entry.pop("negotiation_pending_decision", None)
+    # FIX: Skip hash mismatch routing for Q&A questions - extracted products shouldn't trigger step 3
+    # "Does Room A have a projector?" extracts "projector" but this is NOT a change request
+    hash_check = prev_req_hash is not None and prev_req_hash != new_req_hash and not detoured_to_step2 and change_type is None
+    if hash_check:
+        if is_qna_no_change:
+            logger.debug(
+                "[Step1][HASH_QNA_GUARD] Skipping requirements hash routing - Q&A question detected: "
+                "qna=%s, has_question_mark=%s, prev_hash=%s, new_hash=%s",
+                has_qna_question, has_question_mark, prev_req_hash[:8] if prev_req_hash else None,
+                new_req_hash[:8] if new_req_hash else None
+            )
+        else:
+            target_step = 3
+            if previous_step != target_step and event_entry.get("caller_step") is None:
+                update_event_metadata(event_entry, caller_step=previous_step)
+                update_event_metadata(event_entry, current_step=target_step)
+                append_audit_entry(event_entry, previous_step, target_step, "requirements_updated")
+                # Clear stale negotiation state - old offer no longer valid after requirements change
+                event_entry.pop("negotiation_pending_decision", None)
 
     # Fallback: room change detection (legacy)
     # Skip room change detection if in billing flow - billing addresses shouldn't trigger room changes
-    in_billing_flow = (
+    in_billing_flow_for_room = (
         event_entry.get("offer_accepted")
         and (event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
     )
-    if new_preferred_room and new_preferred_room != event_entry.get("locked_room_id") and change_type is None:
-        if not detoured_to_step2 and not in_billing_flow:
+    logger.debug(
+        "[Step1][ROOM_ROUTE_CHECK] new_preferred_room=%s, locked_room_id=%s, change_type=%s, is_qna_no_change=%s, current_step=%s",
+        new_preferred_room, event_entry.get("locked_room_id"), change_type, is_qna_no_change, event_entry.get("current_step")
+    )
+    room_check = new_preferred_room and new_preferred_room != event_entry.get("locked_room_id") and change_type is None
+    if room_check:
+        # Don't route to Step 3 for Q&A questions - room mentions in questions are NOT change requests
+        if is_qna_no_change:
+            logger.debug(
+                "[Step1][ROOM_QNA_GUARD] Skipping room routing - Q&A question detected: "
+                "qna=%s, has_question_mark=%s, room=%s",
+                has_qna_question, has_question_mark, new_preferred_room
+            )
+        elif not detoured_to_step2 and not in_billing_flow_for_room:
             prev_step_for_room = event_entry.get("current_step") or previous_step
             if prev_step_for_room != 3 and event_entry.get("caller_step") is None:
                 update_event_metadata(event_entry, caller_step=prev_step_for_room)

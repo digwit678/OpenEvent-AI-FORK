@@ -192,14 +192,29 @@ GERMAN_UNIQUE_WORDS = [
     "bitte", "danke", "grüße", "freundliche", "herzliche",
 ]
 
-# Billing address patterns (regex)
+# Billing address patterns (regex) - multilingual (EN/DE/FR)
 BILLING_PATTERNS = [
-    r'\b\d{4,5}\s+[A-Za-zÀ-ÿ]+',           # Postal code + city (4-5 digits)
+    # English phrases
+    r'\bbilling\s*(?:address|:)',           # "billing address" or "billing:"
+    r'\binvoice\s*(?:address|to)\b',        # "invoice address" or "invoice to"
+    r'\bsend\s*invoice\s*to\b',             # "send invoice to"
+    # German phrases
+    r'\brechnungs?\s*adresse\b',            # "Rechnungsadresse" or "Rechnung Adresse"
+    r'\brechnung\s*an\b',                   # "Rechnung an"
+    # French phrases
+    r'\badresse\s*de\s*facturation\b',      # "adresse de facturation"
+    r'\bfacturer\s*[àa]\b',                 # "facturer à"
+    # Structural patterns - postal codes
+    r'\b\d{4,5}\s+[A-Za-zÀ-ÿ]+',           # EU postal code + city (4-5 digits)
+    r'\bCH[-\s]?\d{4}\b',                   # Swiss postal code (CH-8000)
+    r'\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b',  # UK postal code (SW1A 1AA)
+    r'\b\d{5}(?:-\d{4})?\b',                # US ZIP code (10001 or 10001-1234)
+    # Structural patterns - streets
     r'\b[A-Za-zÀ-ÿ]+(?:strasse|straße|str\.?)\s*\d+',  # German street
-    r'\b[A-Za-zÀ-ÿ]+\s*(?:street|road|avenue|lane)\s*\d+',  # English street
-    r'\bCH[-\s]?\d{4}\b',                   # Swiss postal code
-    r'\b\d{5}\s+[A-Za-zÀ-ÿ]+',             # German postal (5 digits)
-    r'\b(?:switzerland|schweiz|suisse|ch)\b',  # Country mentions
+    r'\b\d+\s+[A-Za-zÀ-ÿ]+\s*(?:street|st|road|rd|avenue|ave|lane|ln|boulevard|blvd)\b',  # US street (123 Main St)
+    r'\b[A-Za-zÀ-ÿ]+\s*(?:street|road|avenue|lane)\s*\d+',  # UK street (High Street 10)
+    # Country mentions
+    r'\b(?:switzerland|schweiz|suisse|germany|deutschland|france|usa|uk|united\s*(?:states|kingdom))\b',
 ]
 
 

@@ -119,6 +119,50 @@ def list_room_features(room_id: str) -> List[str]:
     return []
 
 
+def list_common_room_features(max_features: int = 4) -> List[str]:
+    """Return features that are common across all rooms (or most rooms).
+
+    Prioritizes features that appear in ALL rooms, then falls back to
+    features in the majority of rooms.
+
+    Args:
+        max_features: Maximum number of features to return (default 4)
+
+    Returns:
+        List of common feature names, ordered by popularity
+    """
+    entries = list(_room_entries())
+    if not entries:
+        return []
+
+    # Count feature occurrences across all rooms
+    feature_counts: Dict[str, int] = {}
+    for entry in entries:
+        features = list(entry.get("features") or [])
+        equipment = list(entry.get("equipment") or [])
+        combined = set(features + equipment)
+        for feat in combined:
+            key = feat.strip()
+            if key:
+                feature_counts[key] = feature_counts.get(key, 0) + 1
+
+    if not feature_counts:
+        return []
+
+    total_rooms = len(entries)
+    # Sort by count (descending), then alphabetically
+    sorted_features = sorted(
+        feature_counts.items(),
+        key=lambda x: (-x[1], x[0].lower())
+    )
+
+    # Return features that appear in at least half the rooms
+    min_count = max(1, total_rooms // 2)
+    common = [feat for feat, count in sorted_features if count >= min_count]
+
+    return common[:max_features]
+
+
 # Database-backed product catalog accessor - see config_store.py for defaults
 from workflows.io.config_store import get_product_room_map
 
@@ -307,6 +351,7 @@ def list_free_dates(
 __all__ = [
     "list_rooms_by_feature",
     "list_room_features",
+    "list_common_room_features",
     "list_products",
     "list_catering",
     "list_free_dates",

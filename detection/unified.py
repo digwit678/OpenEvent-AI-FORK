@@ -356,10 +356,13 @@ def run_unified_detection(
             except Exception as fallback_err:
                 logger.warning("[UNIFIED_DETECTION] Fallback %s also failed: %s", fallback, fallback_err)
                 continue
-        # All providers failed - return minimal result
+        # All providers failed - return minimal result with heuristic question detection
+        # to ensure Q&A guard can still trigger based on question marks
+        is_question_heuristic = "?" in message
         return UnifiedDetectionResult(
             intent="general_qna",
             intent_confidence=0.3,
+            is_question=is_question_heuristic,
         )
     except Exception as e:
         logger.warning("[UNIFIED_DETECTION] Error with %s: %s", intent_provider, e)
@@ -406,9 +409,12 @@ def run_unified_detection(
                 )
             except Exception:
                 continue
+        # All providers failed - return minimal result with heuristic question detection
+        is_question_heuristic = "?" in message
         return UnifiedDetectionResult(
             intent="general_qna",
             intent_confidence=0.3,
+            is_question=is_question_heuristic,
         )
 
 

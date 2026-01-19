@@ -205,6 +205,10 @@ PURE_QA_SIGNALS_EN = [
     r"\bwhat\s+(do|does|can)\b",
     r"\bcan\s+you\s+tell\s+me\b",
     r"\bi\s+(was\s+)?wondering\b",
+    # FIX: Add patterns for "does X have" questions about room features
+    r"^does\s+\w+.*\s+have\b",  # "Does Room A have..."
+    r"\bdoes\s+(the\s+)?(room|venue|space)\s+have\b",  # "does the room have..."
+    r"\bis\s+(the\s+)?(room|venue|space)\s+\w+\b.*\?",  # "is the room equipped...?"
 ]
 
 # Confirmation signals

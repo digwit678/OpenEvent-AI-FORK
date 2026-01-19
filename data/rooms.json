@@ -51,7 +51,22 @@
       "size_sqm": 45,
       "hourly_rate": 80,
       "half_day_rate": 300,
-      "full_day_rate": 500
+      "full_day_rate": 500,
+      "accessibility": {
+        "wheelchair_accessible": true,
+        "elevator_access": true,
+        "accessible_bathroom": true,
+        "step_free_entry": true,
+        "notes": "Ground floor access with wide doorways. Accessible bathroom on the same floor."
+      },
+      "rate_inclusions": [
+        "WiFi",
+        "Basic AV equipment (projector, screen)",
+        "Whiteboard and markers",
+        "Water station",
+        "Climate control",
+        "Standard furniture setup"
+      ]
     },
     {
       "id": "atelier-room-b",
@@ -109,7 +124,24 @@
       "size_sqm": 75,
       "hourly_rate": 120,
       "half_day_rate": 450,
-      "full_day_rate": 750
+      "full_day_rate": 750,
+      "accessibility": {
+        "wheelchair_accessible": true,
+        "elevator_access": true,
+        "accessible_bathroom": true,
+        "step_free_entry": true,
+        "notes": "Fully accessible with wide corridors. Dedicated accessible parking nearby. Hearing loop available on request."
+      },
+      "rate_inclusions": [
+        "WiFi",
+        "Professional AV setup (large screen, projector, sound system)",
+        "2 wireless microphones",
+        "Video conferencing equipment",
+        "Multiple whiteboards and flip charts",
+        "Coffee service",
+        "Climate control",
+        "Flexible furniture arrangements"
+      ]
     },
     {
       "id": "atelier-room-c",
@@ -172,7 +204,25 @@
       "size_sqm": 120,
       "hourly_rate": 180,
       "half_day_rate": 650,
-      "full_day_rate": 1100
+      "full_day_rate": 1100,
+      "accessibility": {
+        "wheelchair_accessible": true,
+        "elevator_access": true,
+        "accessible_bathroom": true,
+        "step_free_entry": true,
+        "notes": "Premium accessible venue with dedicated wheelchair spaces. Accessible stage ramp available. Sign language interpreter space designated."
+      },
+      "rate_inclusions": [
+        "WiFi",
+        "Premium AV package (85-inch screen, professional sound)",
+        "4 wireless microphones",
+        "Recording capability",
+        "Advanced video conferencing",
+        "Water station",
+        "Breakout area access",
+        "Climate control",
+        "Premium furniture and staging"
+      ]
     },
     {
       "id": "atelier-room-d",
@@ -196,7 +246,20 @@
       ],
       "equipment": [],
       "setup_options": [],
-      "best_for": []
+      "best_for": [],
+      "accessibility": {
+        "wheelchair_accessible": true,
+        "elevator_access": true,
+        "accessible_bathroom": true,
+        "step_free_entry": true,
+        "notes": "Compact meeting room with full accessibility. Located near accessible facilities."
+      },
+      "rate_inclusions": [
+        "WiFi",
+        "Basic AV (projector, screen)",
+        "Coffee service",
+        "Standard furniture"
+      ]
     },
     {
       "id": "atelier-room-e",
@@ -223,7 +286,22 @@
       ],
       "equipment": [],
       "setup_options": [],
-      "best_for": []
+      "best_for": [],
+      "accessibility": {
+        "wheelchair_accessible": true,
+        "elevator_access": true,
+        "accessible_bathroom": true,
+        "step_free_entry": true,
+        "notes": "Large event space with wheelchair-accessible stage. Designated accessible seating areas available."
+      },
+      "rate_inclusions": [
+        "WiFi",
+        "Professional sound system",
+        "Stage access",
+        "Background music system",
+        "Coffee service",
+        "Dedicated parking"
+      ]
     },
     {
       "id": "atelier-room-f",
@@ -249,7 +327,21 @@
       ],
       "equipment": [],
       "setup_options": [],
-      "best_for": []
+      "best_for": [],
+      "accessibility": {
+        "wheelchair_accessible": true,
+        "elevator_access": true,
+        "accessible_bathroom": true,
+        "step_free_entry": true,
+        "notes": "Mid-size room with full accessibility. Ground floor location with direct accessible entrance."
+      },
+      "rate_inclusions": [
+        "WiFi",
+        "Basic AV (projector, screen)",
+        "Coffee service",
+        "Parking access",
+        "Standard furniture"
+      ]
     }
   ]
 }

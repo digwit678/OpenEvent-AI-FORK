@@ -412,6 +412,9 @@ def build_message():
     return _build
 
 
+_STEP_DEFAULT = object()  # Sentinel to detect unset parameters
+
+
 @pytest.fixture
 def build_event_entry():
     """Factory for creating event entries at specific workflow steps."""
@@ -421,8 +424,8 @@ def build_event_entry():
         *,
         event_id: str = "EVT-TEST-001",
         chosen_date: Optional[str] = "15.03.2026",
-        date_confirmed: bool = True,
-        locked_room_id: Optional[str] = "Room A",
+        date_confirmed=_STEP_DEFAULT,  # Use sentinel to apply step-appropriate default
+        locked_room_id=_STEP_DEFAULT,  # Use sentinel to apply step-appropriate default
         requirements: Optional[Dict[str, Any]] = None,
         requirements_hash: Optional[str] = None,
         room_eval_hash: Optional[str] = None,
@@ -452,6 +455,14 @@ def build_event_entry():
             deposit_paid: Whether deposit is paid
             **extra_fields: Additional fields to include
         """
+        # Apply step-appropriate defaults from STEP_PREREQUISITES
+        prereqs = STEP_PREREQUISITES.get(current_step, {})
+        if date_confirmed is _STEP_DEFAULT:
+            date_confirmed = prereqs.get("date_confirmed", True)
+        if locked_room_id is _STEP_DEFAULT:
+            # Default to "Room A" for step 4+, None otherwise (per prerequisites)
+            locked_room_id = prereqs.get("locked_room_id", "Room A" if current_step >= 4 else None)
+
         # Use standard requirements that match REQUIREMENT_KEYS structure
         from workflows.common.requirements import requirements_hash as compute_req_hash
 

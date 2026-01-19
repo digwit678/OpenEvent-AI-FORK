@@ -17,8 +17,8 @@ USED BY:
     - backend/workflows/groups/*/trigger/*.py    # Step-specific fallbacks
 
 ENVIRONMENT:
-    OE_FALLBACK_DIAGNOSTICS=false  # Hide diagnostics (default, production-safe)
-    OE_FALLBACK_DIAGNOSTICS=true   # Show full diagnostics (dev/staging only)
+    OE_FALLBACK_DIAGNOSTICS=false  # Hide diagnostics (default in prod)
+    OE_FALLBACK_DIAGNOSTICS=true   # Show full diagnostics (default in dev when ENV=dev)
 
 OUTPUT FORMAT (when diagnostics enabled):
 
@@ -38,12 +38,18 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-# Default to hiding diagnostics (production-safe). Set OE_FALLBACK_DIAGNOSTICS=true for dev.
-SHOW_FALLBACK_DIAGNOSTICS = os.environ.get("OE_FALLBACK_DIAGNOSTICS", "false").lower() in (
-    "true",
-    "1",
-    "yes",
-)
+# Default to hiding diagnostics in prod; show by default in dev unless explicitly disabled.
+_diagnostics_override = os.environ.get("OE_FALLBACK_DIAGNOSTICS")
+if _diagnostics_override is None:
+    _env_value = os.environ.get("ENV", "prod").lower()
+    _is_dev_env = _env_value in ("dev", "development", "local")
+    SHOW_FALLBACK_DIAGNOSTICS = _is_dev_env
+else:
+    SHOW_FALLBACK_DIAGNOSTICS = _diagnostics_override.lower() in (
+        "true",
+        "1",
+        "yes",
+    )
 
 
 @dataclass

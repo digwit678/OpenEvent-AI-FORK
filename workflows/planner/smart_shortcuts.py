@@ -225,7 +225,7 @@ def maybe_run_smart_shortcuts(state: WorkflowState) -> Optional[GroupResult]:
         return None
 
     # Replace draft messages with the planner-composed reply.
-    state.draft_messages.clear()
+    state.clear_regular_drafts()
     state.draft_messages.append(
         {
             "body": result["message"],

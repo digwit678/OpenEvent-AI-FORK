@@ -48,6 +48,7 @@ from workflows.io.integration.config import is_hil_all_replies_enabled
 from workflows.common.types import GroupResult, WorkflowState
 # MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
 from detection.intent.confidence import check_nonsense_gate
+from workflows.common.detection_utils import get_unified_detection
 from workflows.common.prompts import append_footer
 from workflows.common.general_qna import (
     append_general_qna_to_primary,
@@ -59,6 +60,10 @@ from workflows.change_propagation import (
     detect_change_type,
     detect_change_type_enhanced,
     route_change_on_updated_variable,
+)
+from workflows.common.detour_acknowledgment import (
+    generate_detour_acknowledgment,
+    add_detour_acknowledgment_draft,
 )
 from workflows.qna.engine import build_structured_qna_result
 from workflows.qna.extraction import ensure_qna_extraction
@@ -321,7 +326,11 @@ def process(state: WorkflowState) -> GroupResult:
 
     # [CHANGE DETECTION] Run BEFORE Q&A dispatch
     # Use enhanced detection with dual-condition logic (revision signal + bound target)
-    enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
+    # Pass unified_detection so Q&A messages don't trigger false change detours
+    unified_detection = get_unified_detection(state)
+    enhanced_result = detect_change_type_enhanced(
+        event_entry, user_info, message_text=message_text, unified_detection=unified_detection
+    )
     change_type = enhanced_result.change_type if enhanced_result.is_change else None
     if state.extras.get("detour_change_applied") == "date" and change_type == ChangeType.DATE:
         change_type = None
@@ -408,6 +417,16 @@ def process(state: WorkflowState) -> GroupResult:
 
             append_audit_entry(event_entry, 4, decision.next_step, f"{change_type.value}_change_detected")
 
+            # IMMEDIATE ACKNOWLEDGMENT: Add detour acknowledgment draft
+            ack_result = generate_detour_acknowledgment(
+                change_type=change_type,
+                decision=decision,
+                event_entry=event_entry,
+                user_info=user_info,
+            )
+            if ack_result.generated:
+                add_detour_acknowledgment_draft(state, ack_result)
+
             # Skip Q&A: return detour signal
             # CRITICAL: Update event_entry BEFORE state.current_step so routing loop sees the change
             update_event_metadata(event_entry, current_step=decision.next_step)
@@ -415,6 +434,8 @@ def process(state: WorkflowState) -> GroupResult:
             state.set_thread_state("In Progress")
             state.extras["persist"] = True
             state.extras["change_detour"] = True
+            # Clear stale hybrid Q&A from previous turns (prevents old Q&A being appended to detour response)
+            state.extras.pop("hybrid_qna_response", None)
 
             payload = {
                 "client_id": state.client_id,
@@ -572,14 +593,25 @@ def process(state: WorkflowState) -> GroupResult:
         should_generate_offer = room_locked and date_confirmed
 
         if should_generate_offer:
-            # Send Q&A first as a separate message (no HIL approval needed)
-            qa_result = _present_general_room_qna(state, event_entry, classification, thread_id)
-            if qa_result and state.draft_messages:
-                # Mark Q&A message as not requiring approval (send immediately)
-                for draft in state.draft_messages:
-                    draft["requires_approval"] = False
-                logger.debug("[Step4] Q&A sent separately before offer generation")
-            # Continue to generate offer below (don't return early)
+            # Check if this is PURE Q&A (no acceptance signal)
+            has_acceptance = _looks_like_offer_acceptance(normalized_message_text)
+            has_question_mark = "?" in message_text
+
+            if has_question_mark and not has_acceptance:
+                # PURE Q&A: Return early - don't generate offer or progress steps
+                # E.g., "Does Room A have a projector?" at Step 4 should stay at Step 4
+                logger.info("[Step4][QNA_GUARD] Pure Q&A detected - returning without offer generation")
+                result = _present_general_room_qna(state, event_entry, classification, thread_id)
+                return result
+            else:
+                # HYBRID: Send Q&A first, then continue to offer
+                # E.g., "Yes I accept. What's your parking policy?" - answer Q&A then process acceptance
+                qa_result = _present_general_room_qna(state, event_entry, classification, thread_id)
+                if qa_result and state.draft_messages:
+                    for draft in state.draft_messages:
+                        draft["requires_approval"] = False
+                    logger.debug("[Step4] Q&A sent separately before offer generation (hybrid message)")
+                # Continue to generate offer below
         else:
             # Not ready for offer - just return Q&A (legacy behavior)
             result = _present_general_room_qna(state, event_entry, classification, thread_id)

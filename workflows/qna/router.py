@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from workflows.common.capacity import alternative_rooms, fits_capacity, layout_capacity
 from workflows.common.catalog import (
     list_catering,
+    list_common_room_features,
     list_free_dates,
     list_products,
     list_room_features,
@@ -41,16 +42,48 @@ def _get_cached_extraction(event_entry: Optional[Dict[str, Any]]) -> Optional[Di
 
 
 _ROOM_NAMES = ("Room A", "Room B", "Room C", "Punkt.Null")
-_FEATURE_KEYWORDS = {
-    "hdmi": "HDMI",
-    "projector": "Projector",
-    "screen": "Screen",
-    "video": "Video conferencing",
-    "record": "Recording capability",
-    "whiteboard": "Whiteboard",
-    "daylight": "Natural daylight",
-    "sound": "sound system",
-}
+# Auto-build feature keywords from room data at import time
+def _build_feature_keywords() -> Dict[str, str]:
+    """
+    Auto-generate feature keywords from actual room data.
+    This ensures we don't need to manually maintain a keyword list.
+    """
+    from workflows.common.catalog import list_room_features
+    keywords: Dict[str, str] = {}
+
+    # Collect all features from all rooms
+    all_features: set[str] = set()
+    for room in _ROOM_NAMES:
+        features = list_room_features(room) or []
+        all_features.update(features)
+
+    # Build keyword mappings from actual features
+    for feature in all_features:
+        # Add the full feature as-is
+        keywords[feature.lower()] = feature
+        # Add individual words as keywords (for partial matching)
+        for word in feature.lower().split():
+            if len(word) > 2 and word not in {"and", "the", "for", "with"}:
+                if word not in keywords:
+                    keywords[word] = feature
+
+    # Add common aliases
+    aliases = {
+        "wi-fi": "WiFi", "internet": "WiFi",
+        "av": "projector", "beamer": "Projector",
+        "mic": "Microphone", "microphone": "Microphone",
+    }
+    for alias, canonical in aliases.items():
+        if alias not in keywords:
+            # Find actual feature containing canonical
+            for feat in all_features:
+                if canonical.lower() in feat.lower():
+                    keywords[alias] = feat
+                    break
+
+    return keywords
+
+_FEATURE_KEYWORDS = _build_feature_keywords()
 _LAYOUT_KEYWORDS = {
     "u-shape": "U-shape",
     "ushape": "U-shape",
@@ -179,25 +212,72 @@ def _extract_feature_tokens(
     extraction: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
     """
-    Extract feature tokens. Priority:
-    1. LLM-extracted qna_requirements.features (merged with regex)
-    2. Keyword match in text
+    Extract feature tokens ONLY from the message text.
+    We're strict here - only extract features that the user explicitly asks about.
+    Uses word boundary matching to avoid false positives.
     """
+    import re
     features: List[str] = []
+    lowered = text.lower()
+    # Extract words from the message for exact matching
+    message_words = set(re.findall(r'\b\w+\b', lowered))
 
-    # Get LLM-extracted features
+    # Get LLM-extracted features but only keep ones that appear in text
     qna_req = get_qna_requirements(extraction)
     llm_features = qna_req.get("features") or []
     if isinstance(llm_features, list):
-        features.extend(str(f) for f in llm_features)
+        for f in llm_features:
+            f_str = str(f).lower()
+            # Only include if a key word from the feature appears as a word in text
+            feature_words = set(re.findall(r'\b\w+\b', f_str))
+            if feature_words & message_words:  # Any common word
+                features.append(str(f))
 
-    # Also do keyword matching for features LLM might have missed
-    lowered = text.lower()
+    # Also do keyword matching for features in the actual message
     for token, canonical in _FEATURE_KEYWORDS.items():
-        if token in lowered and canonical not in features:
+        # Use word boundary matching - token must appear as whole word
+        if token in message_words and canonical not in features:
             features.append(canonical)
 
     return features
+
+
+def _feature_matches_room(asked: str, room_features: List[str]) -> bool:
+    """
+    Check if an asked feature matches any room feature.
+    Uses word-level matching to handle variations like:
+    - "wifi" matches "WiFi included"
+    - "projector" matches "Beamer/Projector"
+    """
+    asked_words = set(asked.lower().split())
+    asked_lower = asked.lower()
+
+    for rf in room_features:
+        rf_lower = rf.lower()
+        # Direct substring match
+        if asked_lower in rf_lower or rf_lower in asked_lower:
+            return True
+        # Word-level match
+        rf_words = set(rf_lower.replace("/", " ").replace("-", " ").split())
+        if asked_words & rf_words:  # Any common word
+            return True
+
+    return False
+
+
+def _find_matching_feature(asked: str, room_features: List[str]) -> Optional[str]:
+    """Find the actual room feature that matches the asked feature."""
+    asked_words = set(asked.lower().split())
+    asked_lower = asked.lower()
+
+    for rf in room_features:
+        rf_lower = rf.lower()
+        if asked_lower in rf_lower or rf_lower in asked_lower:
+            return rf
+        rf_words = set(rf_lower.replace("/", " ").replace("-", " ").split())
+        if asked_words & rf_words:
+            return rf
+    return None
 
 
 def _extract_requested_room(text: str) -> Optional[str]:
@@ -339,6 +419,27 @@ def _rooms_by_feature_response(
     requested_room = _extract_requested_room(text)
     feature_tokens = _extract_feature_tokens(text, extraction)
     features_to_check = feature_tokens or ["Natural daylight"]
+
+    # If asking about a SPECIFIC room's features (e.g., "Does Room A have a projector?"),
+    # just answer directly - don't list alternatives. Let _room_features_response handle it.
+    if requested_room and feature_tokens:
+        room_features = [f.lower() for f in (list_room_features(requested_room) or [])]
+        has_all = all(
+            any(asked.lower() in rf for rf in room_features)
+            for asked in feature_tokens
+        )
+        feature_list = ", ".join(feature_tokens)
+        if has_all:
+            return [f"Yes, {requested_room} has {feature_list}."]
+        else:
+            # Check which ones are available
+            available = [f for f in feature_tokens if any(f.lower() in rf for rf in room_features)]
+            missing = [f for f in feature_tokens if f not in available]
+            if available and missing:
+                return [f"{requested_room} has {', '.join(available)}, but {', '.join(missing)} is not included."]
+            elif missing:
+                return [f"{requested_room} doesn't have {', '.join(missing)} as standard equipment."]
+
     info_lines: List[str] = []
 
     if requested_room and attendees is not None and not fits_capacity(requested_room, attendees, layout):
@@ -359,22 +460,24 @@ def _rooms_by_feature_response(
             info_lines.append("Let me know if you'd like me to suggest another room.")
         return _with_preface(info_lines, f"I checked {requested_room} for you:")
 
-    for feature in features_to_check:
-        rooms = list_rooms_by_feature(feature, min_capacity=attendees, layout=layout)
-        if rooms:
-            for room in rooms[:3]:
-                layout_cap = room.get("layout_capacity")
-                capacity_bits: List[str] = []
-                if layout_cap:
-                    capacity_bits.append(f"{layout or 'layout'} up to {layout_cap}")
-                elif room.get("max_capacity"):
-                    capacity_bits.append(f"up to {room['max_capacity']} guests")
-                feature_bits = room.get("features") or []
-                highlight = ", ".join(feature_bits[:2]) if feature_bits else feature
-                cap_text = f" ({'; '.join(capacity_bits)})" if capacity_bits else ""
-                suffix = f"; {highlight}" if highlight else ""
-                info_lines.append(f"{room['name']}{cap_text}{suffix}.")
-            break
+    # Only list alternative rooms if NOT asking about a specific room
+    if not requested_room:
+        for feature in features_to_check:
+            rooms = list_rooms_by_feature(feature, min_capacity=attendees, layout=layout)
+            if rooms:
+                for room in rooms[:3]:
+                    layout_cap = room.get("layout_capacity")
+                    capacity_bits: List[str] = []
+                    if layout_cap:
+                        capacity_bits.append(f"{layout or 'layout'} up to {layout_cap}")
+                    elif room.get("max_capacity"):
+                        capacity_bits.append(f"up to {room['max_capacity']} guests")
+                    feature_bits = room.get("features") or []
+                    highlight = ", ".join(feature_bits[:2]) if feature_bits else feature
+                    cap_text = f" ({'; '.join(capacity_bits)})" if capacity_bits else ""
+                    suffix = f"; {highlight}" if highlight else ""
+                    info_lines.append(f"{room['name']}{cap_text}{suffix}.")
+                break
 
     if requested_room and not info_lines:
         feature_list = list_room_features(requested_room)
@@ -384,14 +487,14 @@ def _rooms_by_feature_response(
 
     if not info_lines:
         info_lines.append("All rooms include Wi-Fi, daylight, and flexible seating.")
-    if feature_tokens:
+
+    # Only use preface for general queries, not specific room questions
+    if feature_tokens and not requested_room:
         joined = ", ".join(feature_tokens)
-        preface = f"Since you asked about {joined}, here are rooms that already cover that:"
-    elif requested_room:
-        preface = f"Here's what we can offer in {requested_room}:"
-    else:
-        preface = "Here are a few rooms that should fit what you're looking for:"
-    return _with_preface(info_lines, preface)
+        preface = f"Rooms with {joined}:"
+        return _with_preface(info_lines, preface)
+
+    return info_lines
 
 
 def _room_features_response(text: str, event_entry: Optional[Dict[str, Any]]) -> List[str]:
@@ -437,6 +540,8 @@ def _room_features_response(text: str, event_entry: Optional[Dict[str, Any]]) ->
                 info.append(notes)
         else:
             info.append(f"{requested_room} offers standard accessibility. Contact us for specific requirements.")
+        # Direct answer - no preface needed
+        return info
 
     if asks_rate_inclusions:
         rate_inclusions = room_static.get("rate_inclusions") or []
@@ -445,18 +550,38 @@ def _room_features_response(text: str, event_entry: Optional[Dict[str, Any]]) ->
             info.append(f"The room rate includes: {inclusions_text}.")
         else:
             info.append(f"The room rate includes standard amenities. Contact us for details.")
+        # Direct answer - no preface needed
+        return info
 
-    # If neither specific topic asked, show general features
-    if not asks_accessibility and not asks_rate_inclusions:
-        features = list_room_features(requested_room)
-        if not features:
-            info = [f"{requested_room} offers Wi-Fi, daylight, and flexible seating as standard."]
+    # Check if asking about specific features (projector, screen, wifi, etc.)
+    asked_features = _extract_feature_tokens(text)
+    if asked_features:
+        room_features = [f.lower() for f in (list_room_features(requested_room) or [])]
+        has_all = all(
+            any(asked.lower() in rf for rf in room_features)
+            for asked in asked_features
+        )
+        feature_list = ", ".join(asked_features)
+        if has_all:
+            info.append(f"Yes, {requested_room} has {feature_list}.")
         else:
-            highlights = ", ".join(features[:6])
-            info = [f"{requested_room} includes {highlights}."]
+            # Check which ones are available
+            available = [f for f in asked_features if any(f.lower() in rf for rf in room_features)]
+            missing = [f for f in asked_features if f not in available]
+            if available and missing:
+                info.append(f"{requested_room} has {', '.join(available)}, but {', '.join(missing)} is not included.")
+            elif missing:
+                info.append(f"{requested_room} doesn't have {', '.join(missing)} as standard equipment.")
+        # Direct answer - no preface needed
+        return info
 
-    preface = f"Here's the information about {requested_room}:" if (asks_accessibility or asks_rate_inclusions) else f"You were curious about {requested_room}, so here's a quick rundown:"
-    return _with_preface(info, preface)
+    # Generic room features question - keep it brief
+    features = list_room_features(requested_room)
+    if not features:
+        return [f"{requested_room} offers Wi-Fi, daylight, and flexible seating as standard."]
+
+    highlights = ", ".join(features[:5])
+    return [f"{requested_room} includes {highlights}."]
 
 
 def _accessibility_response(text: str, event_entry: Optional[Dict[str, Any]]) -> List[str]:
@@ -710,17 +835,26 @@ def _site_visit_response() -> List[str]:
 
 
 def _general_response(event_entry: Optional[Dict[str, Any]]) -> List[str]:
+    """Generate dynamic general response based on actual room features from database."""
     step = _current_step(event_entry)
+
+    # Get common features from database
+    common_features = list_common_room_features(max_features=4)
+
     if step == 2:
         # Informational only - CTA is always at the end of Step 2 handler's message
-        return [
-            "Our rooms feature Wi-Fi, projector-ready HDMI, and natural daylight.",
-        ]
+        if common_features:
+            feature_text = ", ".join(common_features)
+            return [f"Our rooms feature {feature_text}."]
+        return ["Our rooms are fully equipped for meetings and events."]
+
     if step == 3:
         # Only room info here - CTA is always at the end of Step 3 handler's message
-        return [
-            "Rooms A–C include projectors and configurable seating.",
-        ]
+        if common_features:
+            feature_text = ", ".join(common_features[:3])
+            return [f"All rooms include {feature_text}."]
+        return ["All rooms include standard meeting equipment."]
+
     # Informational only - CTAs are handled by step handlers
     return [
         "Feel free to ask about rooms, catering, equipment, or site visits.",
@@ -860,6 +994,10 @@ def route_general_qna(
         elif qna_type == "parking_policy":
             info_lines = _parking_response()
             topic = "parking_policy"
+            target_step_idx = resume_step_idx
+        elif qna_type == "accessibility_inquiry":
+            info_lines = _accessibility_response(text, active_entry)
+            topic = "accessibility_inquiry"
             target_step_idx = resume_step_idx
         elif qna_type == "pricing_inquiry":
             info_lines = _pricing_response()
@@ -1192,10 +1330,6 @@ def generate_hybrid_qna_response(
         }
     ]
 
-    # DEBUG
-    import logging
-    logging.getLogger(__name__).debug("[HYBRID_QNA] qna_types=%s, pure=%s", qna_types, pure_qna_types)
-
     if not pure_qna_types:
         return None
 
@@ -1205,6 +1339,40 @@ def generate_hybrid_qna_response(
     attendees = _extract_attendees(message_text, fallback_attendees, extraction)
     layout = _extract_layout(message_text, requirements.get("seating_layout"), extraction)
 
+    # DEDUPLICATION: If asking about a specific room's features, only use ONE handler
+    # "rooms_by_feature" and "room_features" both answer "Does Room A have X?"
+    requested_room = _extract_requested_room(message_text)
+    feature_tokens = _extract_feature_tokens(message_text, extraction)
+    is_specific_room_feature_question = requested_room and feature_tokens
+
+    if is_specific_room_feature_question and requested_room:
+        # For "Does Room A have a projector?" - just answer directly, no multiple sections
+        room_features = list_room_features(requested_room) or []
+
+        # Use smarter matching that handles variations
+        matched_features: List[str] = []
+        missing_features: List[str] = []
+
+        for asked in feature_tokens:
+            actual = _find_matching_feature(asked, room_features)
+            if actual:
+                matched_features.append(actual)
+            else:
+                missing_features.append(asked)
+
+        if matched_features and not missing_features:
+            # All asked features found - format nicely
+            feature_display = ", ".join(matched_features)
+            return f"Yes, **{requested_room}** has {feature_display}."
+        elif matched_features and missing_features:
+            return f"**{requested_room}** has {', '.join(matched_features)}, but {', '.join(missing_features)} is not included."
+        elif missing_features:
+            return f"**{requested_room}** doesn't have {', '.join(missing_features)} as standard equipment."
+        else:
+            # Fallback - list what the room has
+            return f"**{requested_room}** includes: {', '.join(room_features[:5])}."
+
+    # For other Q&A types, generate responses without verbose headers
     response_parts: List[str] = []
 
     for qna_type in pure_qna_types:
@@ -1212,52 +1380,39 @@ def generate_hybrid_qna_response(
 
         if qna_type == "catering_for":
             info_lines = _catering_response(message_text, event_entry)
-            header = "Menu Options"
         elif qna_type == "products_for":
             info_lines = _products_response(event_entry)
-            header = "Available Products"
         elif qna_type in ("free_dates", "check_availability"):
             info_lines = _dates_response(message_text, event_entry, db)
-            header = "Available Dates"
         elif qna_type == "room_features":
             info_lines = _room_features_response(message_text, event_entry)
-            header = "Room Features"
         elif qna_type == "rooms_by_feature":
             info_lines = _rooms_by_feature_response(message_text, event_entry, attendees, layout, extraction)
-            header = "Rooms with Requested Features"
         elif qna_type == "parking_policy":
             info_lines = _parking_response()
-            header = "Parking Information"
         elif qna_type == "pricing_inquiry":
             info_lines = _pricing_response()
-            header = "Room Rates"
         elif qna_type == "site_visit_overview":
             info_lines = _site_visit_response()
-            header = "Site Visit Information"
         elif qna_type == "general":
             info_lines = _general_response(event_entry)
-            header = "Additional Information"
         elif qna_type == "accessibility_inquiry":
             info_lines = _accessibility_response(message_text, event_entry)
-            header = "Accessibility Information"
         elif qna_type == "rate_inclusions":
             info_lines = _rate_inclusions_response(message_text, event_entry)
-            header = "What's Included"
         else:
             continue
 
         if info_lines:
-            # Format Q&A response: NO bullets (user request - saves space)
-            # Structure: header, then lines separated by double newlines
-            # Feature lists are already joined inline in source functions (e.g., room_features)
-            section = f"**{header}:**\n\n" + "\n\n".join(info_lines)
-            response_parts.append(section)
+            # Direct response - no section headers for simple Q&A
+            # Join lines with spacing for readability
+            response_parts.append("\n\n".join(info_lines))
 
     if not response_parts:
         return None
 
-    # Join sections with spacing
-    return "\n\n---\n\n".join(response_parts)
+    # For multiple Q&A topics, separate with blank line (not ---)
+    return "\n\n".join(response_parts)
 
 
 __all__ = ["route_general_qna", "route_multi_variable_qna", "generate_hybrid_qna_response"]

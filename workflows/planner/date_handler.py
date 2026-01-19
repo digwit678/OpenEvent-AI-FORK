@@ -415,7 +415,7 @@ def apply_date_confirmation(planner: "_ShortcutPlanner", window_payload: Dict[st
     result = finalize(planner.state, planner.event, window_obj)
 
     # Remove legacy draft message; planner will compose new reply.
-    planner.state.draft_messages.clear()
+    planner.state.clear_regular_drafts()
     planner.state.extras["persist"] = True
     planner.telemetry.executed_intents.append("date_confirmation")
 

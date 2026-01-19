@@ -1005,11 +1005,24 @@ def _confirm_site_visit(
         f"We look forward to welcoming you and showing you our venue!"
     )
 
-    # Add booking prompt if client hasn't started booking yet
+    # Add dynamic workflow reminder based on which step client left from
     if not in_booking_flow:
+        sv_state = get_site_visit_state(event_entry)
+        initiated_step = sv_state.get("initiated_at_step") or current_step
+
+        # Map step number to client-friendly continuation prompt
+        step_prompts = {
+            2: "confirming your event date",
+            3: "selecting a room",
+            4: "reviewing your offer",
+            5: "finalizing the negotiation",
+            6: "completing the transition",
+        }
+        step_prompt = step_prompts.get(initiated_step, "booking your event")
+
         body += (
-            "\n\nWhenever you're ready to proceed with booking your event, "
-            "just let me know and I'll guide you through the next steps!"
+            f"\n\nWhenever you're ready to continue with {step_prompt}, "
+            "just let me know!"
         )
 
     return _send_draft_response(

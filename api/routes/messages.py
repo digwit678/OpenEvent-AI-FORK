@@ -14,6 +14,7 @@ MIGRATION: Extracted from main.py in Phase C refactoring (2025-12-18).
 """
 
 import logging
+import os
 import re
 import uuid
 
@@ -31,7 +32,7 @@ from legacy.session_store import (
     render_step3_reply,
     pop_step3_payload,
 )
-from core.fallback import wrap_fallback, create_fallback_context
+from core.fallback import wrap_fallback, create_fallback_context, SHOW_FALLBACK_DIAGNOSTICS
 from adapters.calendar_adapter import get_calendar_adapter
 from adapters.client_gui_adapter import ClientGUIAdapter
 from workflows.common.payloads import PayloadValidationError, validate_confirm_date_payload
@@ -174,10 +175,15 @@ def _extract_workflow_reply(wf_res: Dict[str, Any]) -> tuple[str, List[Dict[str,
 
     # Append hybrid Q&A response if present (handles booking + Q&A in same message)
     # e.g., "Book room for April 5 + what menu options do you have?"
+    # SKIP for pure_info_qna - the Q&A content is already in the draft message
+    # SKIP for detour flows - Q&A should not be appended to date/room change responses
+    is_pure_qna = wf_res.get("pure_info_qna", False)
+    wf_action = wf_res.get("action", "")
+    is_detour = wf_action in ("change_detour", "structural_change_detour")
     hybrid_qna = wf_res.get("hybrid_qna_response")
-    if hybrid_qna and text:
+    if hybrid_qna and text and not is_pure_qna and not is_detour:
         text = text.strip() + "\n\n---\n\n" + hybrid_qna
-    elif hybrid_qna:
+    elif hybrid_qna and not is_pure_qna and not is_detour:
         text = hybrid_qna
 
     return text.strip(), actions
@@ -681,19 +687,65 @@ async def send_message(request: SendMessageRequest):
     except Exception as exc:
         logger.exception("send_message workflow failed: %s", exc)
 
-        # Create diagnostic fallback context for workflow exception
-        fallback_ctx = create_fallback_context(
-            source="api.routes.messages.send_message",
-            trigger="workflow_exception",
-            thread_id=request.session_id,
-            event_id=conversation_state.event_id,
-            error=exc,
-            message_preview=request.message[:50] if request.message else None,
-        )
-        assistant_reply = wrap_fallback(
-            "Thanks for the update. I'll follow up shortly with the latest availability.",
-            fallback_ctx
-        )
+        # Detect critical API/infrastructure errors that should ALWAYS be visible
+        # These are not workflow logic fallbacks - they're system failures
+        error_str = str(exc).lower()
+        error_type = type(exc).__name__
+
+        is_critical_api_error = any([
+            "billing" in error_str,
+            "account is not active" in error_str,
+            "authentication" in error_str,
+            "api_key" in error_str,
+            "invalid_api_key" in error_str,
+            "quota" in error_str and "exceeded" in error_str,
+            error_type in ("AuthenticationError", "RateLimitError", "APIConnectionError"),
+        ])
+
+        if is_critical_api_error:
+            # CRITICAL: Surface API errors explicitly in dev; keep prod safe.
+            fallback_ctx = create_fallback_context(
+                source="api.routes.messages.send_message",
+                trigger="workflow_exception",
+                thread_id=request.session_id,
+                event_id=conversation_state.event_id,
+                error=exc,
+                message_preview=request.message[:50] if request.message else None,
+                error_category="critical_api_error",
+            )
+            env_value = os.getenv("ENV", "prod").lower()
+            is_dev_env = env_value in ("dev", "development", "local")
+            if SHOW_FALLBACK_DIAGNOSTICS:
+                base_message = (
+                    "System error: LLM provider request failed. "
+                    "See diagnostics for details."
+                )
+            elif is_dev_env:
+                base_message = (
+                    "System error: LLM provider request failed.\n\n"
+                    f"{error_type}: {exc}"
+                )
+            else:
+                base_message = (
+                    "System error: The system cannot process your message right now. "
+                    "Please contact support."
+                )
+            assistant_reply = wrap_fallback(base_message, fallback_ctx)
+            logger.critical("CRITICAL API ERROR (surfaced): %s: %s", error_type, exc)
+        else:
+            # Regular workflow exception - use standard fallback with diagnostics
+            fallback_ctx = create_fallback_context(
+                source="api.routes.messages.send_message",
+                trigger="workflow_exception",
+                thread_id=request.session_id,
+                event_id=conversation_state.event_id,
+                error=exc,
+                message_preview=request.message[:50] if request.message else None,
+            )
+            assistant_reply = wrap_fallback(
+                "Thanks for the update. I'll follow up shortly with the latest availability.",
+                fallback_ctx
+            )
         conversation_state.conversation_history.append({"role": "assistant", "content": assistant_reply})
         return {
             "session_id": request.session_id,

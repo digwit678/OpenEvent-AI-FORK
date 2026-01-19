@@ -26,6 +26,7 @@ from detection.unified import run_unified_detection, UnifiedDetectionResult, is_
 from domain import TaskType
 from workflows.io.tasks import enqueue_task
 from workflows.io.config_store import get_manager_names
+from workflows.common.billing_capture import capture_billing_anytime, add_billing_validation_draft
 
 
 # =============================================================================
@@ -767,6 +768,64 @@ def run_pre_route_pipeline(
     # - Pre-filter: $0 regex for duplicates, billing patterns
     # - Unified LLM: Semantic signals (manager, confirmation, intent)
     pre_filter_result, unified_result = run_unified_pre_filter(state, combined_text)
+
+    # 0.1. PARTICIPANTS CAPTURE-ANYTIME: Capture participant count at ANY workflow step
+    # This ensures guest count changes (e.g., "Actually 60 guests instead of 30") are persisted
+    # so Step 3 can properly evaluate room capacity
+    if unified_result and unified_result.participants:
+        event_entry = state.event_entry or {}
+        current_participants = event_entry.get("participants")
+        new_participants = unified_result.participants
+
+        # Only update if changed (or not set)
+        if new_participants != current_participants:
+            event_entry["participants"] = new_participants
+            # Also update requirements dict for consistency with intake extraction
+            requirements = event_entry.setdefault("requirements", {})
+            requirements["participants"] = new_participants
+            requirements["number_of_participants"] = new_participants
+            logger.info(
+                "[PRE_ROUTE] Participants captured: %s -> %s (from unified detection)",
+                current_participants, new_participants
+            )
+
+    # 0.3. BILLING CAPTURE-ANYTIME: Capture billing at ANY workflow step
+    # This runs BEFORE OOC check so billing is always captured regardless of intent
+    # Uses pre-filter signals ($0) first, then LLM structured data if available
+    pre_filter_signals = {
+        "billing": pre_filter_result.has_billing_signal,
+        "confirmation": pre_filter_result.has_confirmation_signal,
+        "acceptance": pre_filter_result.has_acceptance_signal,
+        "rejection": pre_filter_result.has_rejection_signal,
+    }
+    billing_capture_result = capture_billing_anytime(
+        state=state,
+        unified_result=unified_result,
+        pre_filter_signals=pre_filter_signals,
+        message_text=combined_text,
+    )
+    if billing_capture_result.captured:
+        logger.info(
+            "[PRE_ROUTE] Billing captured (complete=%s, missing=%s)",
+            billing_capture_result.complete,
+            billing_capture_result.missing_fields,
+        )
+        # Store result for downstream handlers to potentially prompt for missing fields
+        state.extras["billing_capture_result"] = {
+            "captured": billing_capture_result.captured,
+            "complete": billing_capture_result.complete,
+            "missing_fields": billing_capture_result.missing_fields,
+            "source": billing_capture_result.source,
+        }
+
+        # IMMEDIATE VALIDATION: If billing incomplete, add prompt for missing fields
+        # This provides instant feedback rather than waiting for a later step
+        if not billing_capture_result.complete:
+            add_billing_validation_draft(state, billing_capture_result)
+            logger.debug(
+                "[PRE_ROUTE] Added billing validation prompt (missing: %s)",
+                billing_capture_result.missing_fields,
+            )
 
     # NOTE: Manager escalation handling REMOVED (2026-01-14)
     # In this venue booking system, the AI assistant IS the manager's representative.
