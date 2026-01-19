@@ -1,5 +1,185 @@
 # Development Changelog
 
+## 2026-01-19
+
+### Fix: Date Change Detour - Explicit Room Unavailability Message
+
+**Problem:** When a client changed their event date and their previously selected room was unavailable on the new date, the system would silently recommend a different room without explicitly stating that the original room was no longer available. This was confusing for clients.
+
+**Solution:** Added tracking when a room lock is cleared due to unavailability (`state.extras["_cleared_room_name"]`) and a clear intro message stating the original room is unavailable.
+
+**Before:** "For your event on 20.05.2026, I recommend Room C..."
+**After:** "Room A is no longer available on 20.05.2026. For your event with 30 guests, I recommend Room C..."
+
+**Files Modified:**
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py` - Added `_cleared_room_name` tracking and intro message
+
+**E2E Test:** Verified via Playwright - see `docs/reports/E2E_SCENARIO_DATE_CHANGE_DETOUR_QNA_BILLING_2026_01_19.md`
+
+---
+
+### Fix: Remove FALLBACK Diagnostic Block from UI
+
+**Problem:** When the verbalizer's fact verification failed (e.g., LLM response missing some room names), the system was prepending a diagnostic block to the response visible to users:
+```
+[FALLBACK: ux.verbalizer]
+Trigger: fact_verification_failed
+Error: Exception - Missing: room:Room F, room:Room B...
+```
+
+**Solution:** Removed `wrap_fallback()` call for `fact_verification_failed` trigger. The warning is still logged for debugging, but the diagnostic block no longer appears in the UI.
+
+**Files Modified:**
+- `ux/universal_verbalizer.py` - Return fallback text directly without wrapping in diagnostics
+
+---
+
+### Fix: Surface LLM API Failures in Fallbacks (Dev)
+
+**Problem:** Q&A/detour messages returned a generic fallback when OpenAI billing/auth failed, with no visible cause.
+
+**Solution:** Default fallback diagnostics to ON in dev (ENV=dev) and surface critical API failures with explicit system error messaging in `send_message`.
+
+**Files Modified:**
+- `core/fallback.py`
+- `api/routes/messages.py`
+
+**Tests:** Added `tests_root/specs/determinism/test_fallback_diagnostics_defaults.py` (not run).
+
+---
+
+### Fix: Q&A Response Duplication (Double Response with --- Separator)
+
+**Problem:** Q&A responses were appearing twice in the chat - once as the main response and again after a `---` separator. This was especially noticeable for pure Q&A messages like "Where can guests park?"
+
+**Root Cause:** Both `draft_messages` AND `hybrid_qna_response` were being set with Q&A content. The `api/routes/messages.py` was appending `hybrid_qna_response` even when the draft already contained the Q&A answer.
+
+**Solution:** Added `pure_info_qna` flag check in `api/routes/messages.py` to skip appending `hybrid_qna_response` when the response is a pure Q&A (not a hybrid booking+Q&A message).
+
+**Files Modified:**
+- `api/routes/messages.py` - Added `pure_info_qna` check before appending hybrid Q&A
+
+---
+
+### Fix: Q&A Responses Using Bullet Points Instead of Paragraphs
+
+**Problem:** Q&A responses were formatted with bullet points (`- `) which looked unprofessional in chat/email.
+
+**Solution:** Updated `build_info_block()` in `workflows/qna/templates.py` to format responses as flowing paragraphs with blank lines between, instead of bullet points.
+
+**Files Modified:**
+- `workflows/qna/templates.py` - Changed bullet formatting to paragraph formatting
+
+---
+
+### Fix: Wrong Month Showing in Date Suggestions (January Instead of March)
+
+**Problem:** When a user requested a past date (e.g., "March 2025"), the system would suggest dates in the next month after the past date as future alternatives (e.g., "Mondays available in January 2026"), but the date line said "Mondays available in January 2026" when it should have said March 2026.
+
+**Root Cause:** `suggest_dates()` was only collecting dates 45 days ahead, which didn't reach the target month (March 2026 when starting from January 2026). Also, `prioritized_dates` wasn't being cleared when switching to target month dates.
+
+**Solution:** Added supplemental date collection from the `future_suggestion` month using `next_five_venue_dates()`, and properly clear `prioritized_dates` when using target month dates.
+
+**Files Modified:**
+- `workflows/steps/step2_date_confirmation/trigger/step2_handler.py` - Added supplemental date collection for future_suggestion month
+
+---
+
+### Fix: Detour Messages Showing Stale Q&A Content
+
+**Problem:** After a detour (date change, room change), the response would include old Q&A content from earlier in the conversation, appended with a `---` separator. Example: availability message followed by "Our rooms feature Wi-Fi, projector-ready HDMI..."
+
+**Root Cause:** `hybrid_qna_response` set during Step 1 (initial inquiry) was persisting in `state.extras` across the entire conversation and getting appended to later responses.
+
+**Solution:** Added `state.extras.pop("hybrid_qna_response", None)` when a detour is detected to clear stale Q&A responses.
+
+**Files Modified:**
+- `workflows/steps/step2_date_confirmation/trigger/step2_handler.py`
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py`
+- `workflows/steps/step4_offer/trigger/step4_handler.py`
+
+---
+
+### Fix: Hardcoded Room Features and Catering Options
+
+**Problem:** Room features in `_general_response()` and catering options in `get_catering_teaser_products()` were hardcoded, risking incorrect information being shown to clients if the database had different values.
+
+**Solution:**
+1. Added `list_common_room_features()` to `catalog.py` that reads features from `rooms.json` and returns features common across all rooms
+2. Updated `_general_response()` in `router.py` to use dynamic features
+3. Removed all hardcoded catering fallbacks from `get_catering_teaser_products()` - now returns empty if no catering products exist
+
+**Files Modified:**
+- `workflows/common/catalog.py` - Added `list_common_room_features()` function
+- `workflows/qna/router.py` - Updated `_general_response()` to use dynamic features
+- `workflows/io/config_store.py` - Removed hardcoded catering fallbacks
+
+**Design Principle:** Fail-safe data display - rather than showing potentially incorrect hardcoded information, the system now gracefully shows nothing if the data source is unavailable.
+
+---
+
+### Feature: Billing Address Capture-Anytime with Amazon-Style Checkout Gate
+
+**UX Design Decision: Option B (Amazon Model)**
+
+After consulting with UX experts, we chose Option B over Option A for billing address handling:
+
+| Option | Approach | Verdict |
+|--------|----------|---------|
+| **A** | Gate billing BEFORE offer | ❌ Rejected - creates friction before "price reveal", reduces conversions |
+| **B** | Gate billing AT CONFIRMATION | ✅ Chosen - like Amazon, show cart first, request billing at checkout |
+
+**Why Option B is Superior:**
+1. **Conversion is King**: Blocking the offer behind an administrative task (entering a zip code) gives clients a reason to drop off
+2. **Proposal vs Contract**: An Offer (Step 4) is a proposal - billing can be "TBD". Confirmation (Step 7) is a contract - requires accurate billing
+3. **The Amazon Model**: You don't ask for shipping address before showing the cart total - you ask at checkout
+4. **Natural Flow**: Clients expect to provide details when they say "Yes" to a deal, not while browsing
+
+**Implementation:**
+
+```
+Steps 1-3 (Info Gathering)     Steps 4-6 (Offer/Negotiation)     Step 7 (Confirmation)
+─────────────────────────      ───────────────────────────────   ─────────────────────────
+Billing captured silently      Billing captured silently          BILLING GATE
+IF incomplete → prompt         NO prompts (don't nag!)            ↓
+                                                                  If incomplete → block
+                                                                  "Please provide billing..."
+                                                                  ↓
+                                                                  If complete → proceed
+```
+
+**Key Features:**
+1. **Capture-Anytime**: Billing captured at ANY step (pre-filter regex + LLM extraction)
+2. **No Nagging During Offer**: Steps 4-6 skip billing validation prompts
+3. **Gate at Checkout**: Step 7 "I accept" triggers billing completeness check
+4. **Auto-Continue**: When client provides billing after gate, automatically sends Final Contract
+5. **Visual Distinction**: Final Contract has clear `BOOKING CONFIRMATION` header, formatted differently from proposal
+
+**Files Modified:**
+- `workflows/common/billing_capture.py` - Added step-based prompt skipping, improved text extraction
+- `workflows/steps/step7_confirmation/trigger/step7_handler.py` - Added `_check_billing_gate()` and `_send_final_contract()`
+- `workflows/common/types.py` - Added `clear_regular_drafts()` to preserve special drafts
+
+**Final Contract Example:**
+```
+Thank you for sharing your billing details.
+
+---
+**BOOKING CONFIRMATION**
+---
+
+**Event Date:** 15.03.2025
+**Venue:** Grand Ballroom
+**Billing Address:** Acme Corp, Bahnhofstrasse 42, 8001 Zurich
+**Total:** CHF 12,500.00
+
+---
+
+Your booking is now confirmed!
+```
+
+---
+
 ## 2026-01-14
 
 ### Fix: Final Message Acknowledges Scheduled Site Visit Instead of Prompting

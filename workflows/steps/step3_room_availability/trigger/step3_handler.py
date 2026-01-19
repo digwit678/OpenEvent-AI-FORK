@@ -38,6 +38,10 @@ from workflows.change_propagation import (
     detect_change_type_enhanced,
     route_change_on_updated_variable,
 )
+from workflows.common.detour_acknowledgment import (
+    generate_detour_acknowledgment,
+    add_detour_acknowledgment_draft,
+)
 from workflows.qna.engine import build_structured_qna_result
 from workflows.qna.extraction import ensure_qna_extraction
 from workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
@@ -386,7 +390,10 @@ def process(state: WorkflowState) -> GroupResult:
 
     # [CHANGE DETECTION] Run BEFORE Q&A dispatch
     # Use enhanced detection with dual-condition logic (revision signal + bound target)
-    enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
+    # Pass unified_detection so Q&A messages don't trigger false change detours
+    enhanced_result = detect_change_type_enhanced(
+        event_entry, user_info, message_text=message_text, unified_detection=unified_detection
+    )
     change_type = enhanced_result.change_type if enhanced_result.is_change else None
 
     # [SKIP DUPLICATE DETOUR] If a date change is detected but the date in the message
@@ -468,6 +475,16 @@ def process(state: WorkflowState) -> GroupResult:
 
             append_audit_entry(event_entry, 3, decision.next_step, f"{change_type.value}_change_detected")
 
+            # IMMEDIATE ACKNOWLEDGMENT: Add detour acknowledgment draft
+            ack_result = generate_detour_acknowledgment(
+                change_type=change_type,
+                decision=decision,
+                event_entry=event_entry,
+                user_info=user_info,
+            )
+            if ack_result.generated:
+                add_detour_acknowledgment_draft(state, ack_result)
+
             # Skip Q&A: return detour signal
             # CRITICAL: Update event_entry BEFORE state.current_step so routing loop sees the change
             update_event_metadata(event_entry, current_step=decision.next_step)
@@ -475,6 +492,8 @@ def process(state: WorkflowState) -> GroupResult:
             state.set_thread_state("In Progress")
             state.extras["persist"] = True
             state.extras["change_detour"] = True
+            # Clear stale hybrid Q&A from previous turns (prevents old Q&A being appended to detour response)
+            state.extras.pop("hybrid_qna_response", None)
 
             payload = {
                 "client_id": state.client_id,
@@ -489,6 +508,32 @@ def process(state: WorkflowState) -> GroupResult:
                 "persisted": True,
             }
             return GroupResult(action="change_detour", payload=payload, halt=False)
+
+        else:
+            # -------------------------------------------------------------------------
+            # REQUIREMENTS CHANGE STAYING AT STEP 3 (Jan 2026)
+            # When requirements change (e.g., guest count 30 -> 60) while already at Step 3,
+            # we stay at Step 3 to re-evaluate rooms. We need to:
+            # 1. Clear the room lock (room may no longer fit new requirements)
+            # 2. Set change_detour flag so Q&A path is bypassed
+            # 3. Continue to room evaluation (don't return, let flow continue)
+            # -------------------------------------------------------------------------
+            if change_type == ChangeType.REQUIREMENTS and decision.needs_reeval:
+                update_event_metadata(
+                    event_entry,
+                    room_eval_hash=None,
+                    locked_room_id=None,
+                )
+                state.extras["change_detour"] = True
+                if thread_id:
+                    trace_marker(
+                        thread_id,
+                        "REQUIREMENTS_REEVAL_AT_STEP3",
+                        detail="Requirements changed, staying at Step 3 to re-evaluate rooms",
+                        data={"change_type": change_type.value, "needs_reeval": decision.needs_reeval},
+                        owner_step="Step3_Room",
+                    )
+                # Don't return - continue to room evaluation below
 
     # No change detected: check if Q&A should be handled
     # NOTE: Room can be detected via _room_choice_detected OR via ChangeType.ROOM detection
@@ -565,23 +610,39 @@ def process(state: WorkflowState) -> GroupResult:
         )
 
     # -------------------------------------------------------------------------
-    # PURE Q&A DETECTION (Dec 29, 2025)
-    # Allow pure Q&A QUESTIONS about catering, menu, etc. even on first Step 3 entry.
-    # These are informational queries, not workflow requests.
-    # IMPORTANT: Only detect QUESTIONS, not mentions of catering in booking requests.
+    # PURE Q&A DETECTION (Dec 29, 2025, updated Jan 2026)
+    # Allow pure Q&A QUESTIONS about catering, parking, accessibility, etc. even on
+    # first Step 3 entry. These are informational queries, not workflow requests.
+    # IMPORTANT: Only detect QUESTIONS, not mentions in booking requests.
     # "coffee break needed" is NOT a question; "what catering options?" IS a question.
     # -------------------------------------------------------------------------
     message_lower = message_text.lower() if message_text else ""
-    # Check for question patterns about catering/food
-    catering_question_patterns = [
+    # Check for question patterns about Q&A topics (not workflow actions)
+    pure_qna_patterns = [
+        # Catering/food patterns
         r"what.*(catering|menu|food|drink|coffee|lunch|dinner|breakfast)",
         r"(catering|menu|food|drink).*\?",
         r"(do you|can you|could you).*(catering|menu|food|offer)",
         r"(tell me|info|information).*(catering|menu|food)",
         r"what.*available.*(catering|menu|food)",
         r"(which|what).*(options|choices).*(catering|menu|food|drink)",
+        # Parking patterns
+        r"(is there|do you have|where).*(parking|car park|parkplatz)",
+        r"parking.*\?",
+        r"(where|can i|could i).*(park)",
+        # Accessibility patterns
+        r"(is|are).*(wheelchair|accessible|handicap|disability|disabled)",
+        r"accessibility.*\?",
+        r"(do you have|is there).*(ramp|elevator|lift|accessible)",
+        # Room features/equipment patterns
+        r"(does|do).*(room|venue).*(have|has).*(projector|screen|av|wifi|audio|microphone)",
+        r"(what|which).*(equipment|facilities|amenities).*\?",
+        r"(is there|do you have).*(projector|screen|whiteboard|flipchart)",
+        # Pricing/rate patterns
+        r"(what|how much).*(cost|price|rate|charge)",
+        r"(pricing|rates?).*\?",
     ]
-    is_pure_qna = any(re.search(pat, message_lower) for pat in catering_question_patterns)
+    is_pure_qna = any(re.search(pat, message_lower) for pat in pure_qna_patterns)
 
     # Don't take Q&A path for initial inquiries (first entry to Step 3)
     # The Q&A path is for follow-up questions after rooms have been presented
@@ -777,6 +838,10 @@ def process(state: WorkflowState) -> GroupResult:
             )
             append_audit_entry(event_entry, 3, 3, "room_unavailable_after_date_change")
 
+            # STORE cleared room info so we can tell the user their room is no longer available
+            state.extras["_cleared_room_name"] = locked_room_id
+            state.extras["_cleared_room_reason"] = "unavailable_on_new_date"
+
             trace_marker(
                 thread_id,
                 "room_lock_cleared",
@@ -942,6 +1007,19 @@ def process(state: WorkflowState) -> GroupResult:
     client_prefs = event_entry.get("preferences") or {}
     wish_products_list = client_prefs.get("wish_products") or []
 
+    # CHECK: Was a previously selected room cleared because it became unavailable?
+    # This happens when the user changes the date and their locked room is blocked on the new date
+    cleared_room_name = state.extras.get("_cleared_room_name")
+    if cleared_room_name:
+        # Tell the user explicitly that their previously selected room is no longer available
+        # This is just a PREFIX - the normal room recommendation logic will add the alternatives
+        intro_lines.append(
+            f"{cleared_room_name} is no longer available on {display_chosen_date or 'your new date'}."
+        )
+        # Clear the flag so it's not repeated
+        state.extras.pop("_cleared_room_name", None)
+        state.extras.pop("_cleared_room_reason", None)
+        # Fall through to the recommendation logic below (don't use elif)
 
     if user_requested_room and user_requested_room != selected_room:
         intro_lines.append(
@@ -2440,15 +2518,27 @@ def _to_iso(display_date: Optional[str]) -> Optional[str]:
 
 
 def _select_room(ranked: List[RankedRoom]) -> Optional[RankedRoom]:
-    """Return the top-ranked room that's available or on option.
+    """Return the top-ranked room that's available or on option AND fits capacity.
 
     The ranking already incorporates status weight (Available=60, Option=35)
-    plus preferred_room bonus (30 points). We trust the ranking order and
-    return the first available/option room.
+    plus preferred_room bonus (30 points). We prioritize rooms that fit the
+    requested capacity (capacity_ok=True) over rooms that don't fit.
+
+    Selection priority:
+    1. First Available/Option room that FITS capacity
+    2. First Available/Option room (even if over-capacity) - fallback
+    3. First room in the list - last resort
     """
+    # First pass: find a room that fits AND is available
+    for entry in ranked:
+        if entry.status in (ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION) and entry.capacity_ok:
+            return entry
+
+    # Second pass: any available room (even if doesn't fit - user may adjust)
     for entry in ranked:
         if entry.status in (ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION):
             return entry
+
     return ranked[0] if ranked else None
 
 
@@ -2645,7 +2735,7 @@ def _handle_conflict_choose_alternative(
         thread_state="Awaiting Client",
     )
 
-    state.draft_messages.clear()
+    state.clear_regular_drafts()
     state.add_draft_message({
         "body": body_with_footer,
         "body_markdown": body,
@@ -2710,7 +2800,7 @@ def _handle_conflict_insist_with_reason(
         thread_state="Waiting on HIL",
     )
 
-    state.draft_messages.clear()
+    state.clear_regular_drafts()
     state.add_draft_message({
         "body": body_with_footer,
         "body_markdown": body,
@@ -2768,7 +2858,7 @@ def _handle_conflict_ask_for_reason(
         thread_state="Awaiting Client",
     )
 
-    state.draft_messages.clear()
+    state.clear_regular_drafts()
     state.add_draft_message({
         "body": body_with_footer,
         "body_markdown": body,
