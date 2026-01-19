@@ -517,6 +517,28 @@ Result: One combined message with "Great choice! Room F is confirmed... Here is 
 **Files**: `workflows/runtime/hil_tasks.py`
 **E2E Verified**: Full flow including date change detour - both initial offer confirmation and post-detour offer show correct messages, not site visit text.
 
+### BUG-028: Q&A Not Answering Accessibility & Rate Inclusion Questions
+**Status**: Fixed (2026-01-19)
+**Severity**: Medium
+**Symptom**: When asking "Is Room A wheelchair accessible? What's included in the room rate?", the Q&A system returned generic room features (parking, projector, etc.) instead of answering the specific accessibility and rate inclusion questions.
+**Root Cause**: Three issues:
+1. The `accessibility_inquiry` and `rate_inclusions` qna_types (already defined in `detection/intent/classifier.py`) were NOT in the `pure_qna_types` set in `workflows/qna/router.py`, so they were filtered out
+2. No handler functions existed for these qna_types
+3. `load_room_static()` in `services/qna_readonly.py` looked up room info by `room_id` ("room_a") but the data was keyed by room name ("room a")
+**Fix**:
+1. Added `accessibility_inquiry` and `rate_inclusions` to `pure_qna_types` set
+2. Added `_accessibility_response()` handler - returns wheelchair access, elevator, step-free entry, accessible bathroom info
+3. Added `_rate_inclusions_response()` handler - returns what's included in room rate (WiFi, AV, whiteboard, etc.)
+4. Fixed `load_room_static()` to look up by both `room_id.lower()` AND `room_name.lower()`
+**Files**:
+- `workflows/qna/router.py` - Added handlers and qna_types
+- `services/qna_readonly.py` - Fixed room info lookup
+- `workflows/qna/extraction.py` - Updated prompt with topic guidance
+- `workflows/qna/verbalizer.py` - Updated prompt with field descriptions
+**Data Source**: Room accessibility and rate_inclusions data is stored in `data/rooms.json`
+**Tests**: 94 regression tests pass, 30 Q&A tests pass
+**E2E Verified**: `e2e-scenarios/2026-01-19_accessibility-rate-inclusions-qna.md`
+
 ---
 
 ## Q&A Rules During Detours

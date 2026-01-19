@@ -12,6 +12,7 @@ from workflows.common.catalog import (
     list_room_features,
     list_rooms_by_feature,
 )
+from services.qna_readonly import load_room_static
 from workflows.qna.templates import build_info_block, build_next_step_line
 from debug.hooks import trace_qa_enter, trace_qa_exit
 
@@ -399,13 +400,119 @@ def _room_features_response(text: str, event_entry: Optional[Dict[str, Any]]) ->
         return [
             "Happy to outline the equipment — just let me know which room you have in mind.",
         ]
-    features = list_room_features(requested_room)
-    if not features:
-        info = [f"{requested_room} offers Wi-Fi, daylight, and flexible seating as standard."]
-    else:
-        highlights = ", ".join(features[:6])
-        info = [f"{requested_room} includes {highlights}."]
-    return _with_preface(info, f"You were curious about {requested_room}, so here's a quick rundown:")
+
+    text_lower = text.lower()
+    info: List[str] = []
+
+    # Check for specific topic questions: accessibility or rate inclusions
+    asks_accessibility = any(kw in text_lower for kw in [
+        "wheelchair", "accessible", "accessibility", "disabled", "disability",
+        "step-free", "elevator", "lift", "mobility"
+    ])
+    asks_rate_inclusions = any(kw in text_lower for kw in [
+        "included in the rate", "included in the price", "what's included",
+        "whats included", "comes with", "rate include", "price include",
+        "included with"
+    ])
+
+    # Get full room data including accessibility and rate_inclusions
+    room_static = load_room_static(requested_room)
+
+    if asks_accessibility:
+        accessibility = room_static.get("accessibility") or {}
+        if accessibility:
+            acc_info = []
+            if accessibility.get("wheelchair_accessible"):
+                acc_info.append("wheelchair accessible")
+            if accessibility.get("elevator_access"):
+                acc_info.append("elevator access")
+            if accessibility.get("step_free_entry"):
+                acc_info.append("step-free entry")
+            if accessibility.get("accessible_bathroom"):
+                acc_info.append("accessible bathroom on-site")
+            notes = accessibility.get("notes")
+            if acc_info:
+                info.append(f"Yes, {requested_room} is fully accessible: {', '.join(acc_info)}.")
+            if notes:
+                info.append(notes)
+        else:
+            info.append(f"{requested_room} offers standard accessibility. Contact us for specific requirements.")
+
+    if asks_rate_inclusions:
+        rate_inclusions = room_static.get("rate_inclusions") or []
+        if rate_inclusions:
+            inclusions_text = ", ".join(rate_inclusions)
+            info.append(f"The room rate includes: {inclusions_text}.")
+        else:
+            info.append(f"The room rate includes standard amenities. Contact us for details.")
+
+    # If neither specific topic asked, show general features
+    if not asks_accessibility and not asks_rate_inclusions:
+        features = list_room_features(requested_room)
+        if not features:
+            info = [f"{requested_room} offers Wi-Fi, daylight, and flexible seating as standard."]
+        else:
+            highlights = ", ".join(features[:6])
+            info = [f"{requested_room} includes {highlights}."]
+
+    preface = f"Here's the information about {requested_room}:" if (asks_accessibility or asks_rate_inclusions) else f"You were curious about {requested_room}, so here's a quick rundown:"
+    return _with_preface(info, preface)
+
+
+def _accessibility_response(text: str, event_entry: Optional[Dict[str, Any]]) -> List[str]:
+    """Generate response for accessibility inquiries."""
+    requested_room = _extract_requested_room(text) or _event_room(event_entry)
+    if not requested_room:
+        return [
+            "Our venue is fully accessible with step-free entry, elevators, and accessible bathrooms. Which room would you like details about?",
+        ]
+
+    room_static = load_room_static(requested_room)
+    accessibility = room_static.get("accessibility") or {}
+
+    if not accessibility:
+        return [f"{requested_room} offers standard accessibility. Contact us for specific requirements."]
+
+    info: List[str] = []
+    acc_features = []
+    if accessibility.get("wheelchair_accessible"):
+        acc_features.append("wheelchair accessible")
+    if accessibility.get("elevator_access"):
+        acc_features.append("elevator access")
+    if accessibility.get("step_free_entry"):
+        acc_features.append("step-free entry")
+    if accessibility.get("accessible_bathroom"):
+        acc_features.append("accessible bathroom on-site")
+
+    if acc_features:
+        info.append(f"Yes, {requested_room} is fully accessible: {', '.join(acc_features)}.")
+
+    notes = accessibility.get("notes")
+    if notes:
+        info.append(notes)
+
+    if not info:
+        info.append(f"{requested_room} offers standard accessibility features.")
+
+    return info
+
+
+def _rate_inclusions_response(text: str, event_entry: Optional[Dict[str, Any]]) -> List[str]:
+    """Generate response for rate inclusions inquiries."""
+    requested_room = _extract_requested_room(text) or _event_room(event_entry)
+    if not requested_room:
+        return [
+            "Room rates typically include WiFi, basic AV equipment, and standard furniture. Which room would you like details about?",
+        ]
+
+    room_static = load_room_static(requested_room)
+    rate_inclusions = room_static.get("rate_inclusions") or []
+
+    if not rate_inclusions:
+        return [f"The room rate for {requested_room} includes standard amenities. Contact us for details."]
+
+    inclusions_text = ", ".join(rate_inclusions)
+    return [f"The {requested_room} rate includes: {inclusions_text}."]
 
 
 def _catering_response(
@@ -1081,7 +1188,7 @@ def generate_hybrid_qna_response(
         if t in {
             "catering_for", "products_for", "free_dates", "check_availability",
             "room_features", "rooms_by_feature", "parking_policy", "pricing_inquiry",
-            "site_visit_overview", "general"
+            "site_visit_overview", "general", "accessibility_inquiry", "rate_inclusions"
         }
     ]
 
@@ -1130,6 +1237,12 @@ def generate_hybrid_qna_response(
         elif qna_type == "general":
             info_lines = _general_response(event_entry)
             header = "Additional Information"
+        elif qna_type == "accessibility_inquiry":
+            info_lines = _accessibility_response(message_text, event_entry)
+            header = "Accessibility Information"
+        elif qna_type == "rate_inclusions":
+            info_lines = _rate_inclusions_response(message_text, event_entry)
+            header = "What's Included"
         else:
             continue
 
