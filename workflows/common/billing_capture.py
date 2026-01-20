@@ -204,6 +204,10 @@ def capture_billing_anytime(
         billing_data = unified_result.billing_address
         logger.debug("[BILLING_CAPTURE] Using LLM-extracted billing: %s", billing_data)
 
+        # Normalize field aliases: LLM might return "company" instead of "name_or_company"
+        if "company" in billing_data and "name_or_company" not in billing_data:
+            billing_data["name_or_company"] = billing_data.pop("company")
+
         # Store structured data into event_data for update_billing_details() to process
         event_data = event_entry.setdefault("event_data", {})
 

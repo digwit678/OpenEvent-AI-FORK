@@ -183,7 +183,7 @@ Return a JSON object with this exact structure:
     "end_time": "HH:MM" (24h format) or null - extract if client mentions end time. If only start given, infer end as start + 4 hours,
     "room_preference": room name or null,
     "products": ["catering", "projector", ...] or [],
-    "billing_address": {{"company": "", "street": "", "postal_code": "", "city": "", "country": ""}} or null,
+    "billing_address": {{"name_or_company": "", "street": "", "postal_code": "", "city": "", "country": ""}} or null,
     "site_visit_room": room mentioned for site visit or null (if different from main event room),
     "site_visit_date": date mentioned for site visit or null (YYYY-MM-DD format)
   }},
