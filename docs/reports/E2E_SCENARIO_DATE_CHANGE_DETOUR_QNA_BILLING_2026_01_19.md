@@ -1,7 +1,7 @@
 # E2E Scenario Report: Date Change Detour with Q&A and Billing
 
 **Date:** 2026-01-19
-**Status:** PASSED
+**Status:** ⚠️ PARTIAL PASS (Billing display bug found and fixed)
 **Test Type:** Full workflow E2E via Playwright
 
 ## Scenario Summary
@@ -56,9 +56,12 @@ Complete E2E flow testing Q&A integration, date change detour (room unavailabili
 **Client Message:** "The billing address is: Acme Corp, Bahnhofstrasse 42, 8001 Zurich, Switzerland"
 
 **Expected:** Billing captured and shown in offer
-**Actual:** PASSED
-- Client name captured: "Acme Corp"
-- Billing address: "Zurich, Bahnhofstrasse 42, 8001 Zurich, Switzerland"
+**Actual:** ⚠️ BUG DETECTED (marked PASSED incorrectly)
+- Company name captured: "Acme Corp" ✓
+- Billing address displayed: "Zurich, Bahnhofstrasse 42, 8001 Zurich, Switzerland" ✗
+  - **BUG:** City "Zurich" appeared twice - once at start (wrong) and once after postal code (correct)
+  - **Root cause:** LLM schema used `"company"` field but code expected `"name_or_company"`
+  - **Fix committed:** `21ddf3f` - Updated schema + added field normalization
 
 ### Step 6: Offer Confirmation & Deposit Payment
 **Client Message:** "The offer looks good. We approve it and will pay the deposit."
