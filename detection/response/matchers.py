@@ -73,7 +73,7 @@ from detection.keywords.buckets import (
 # Explicit agreement patterns and informal approvals
 ACCEPTANCE_PATTERNS = [
     r"\b(accept|agree|approved?|confirm)\w*\b",
-    r"\b(looks?|sounds?|all|good\s+to)\s+(good|great|fine|okay|ok)\b",
+    r"\b(looks?|sounds?|all|good\s+to)\s+(good|great|fine|okay|ok|perfect)\b",
     r"\b(yes|ok|okay|sure|yep|ja|oui)[\s,]*(please|send|go|proceed|do\s+it)?\b",
     r"\b(?:that'?s?|i'?m?|all)?\s*fine\b",  # "fine", "that's fine", "all fine"
     r"\ball\s+good\b",  # "all good" standalone
@@ -206,15 +206,35 @@ def matches_acceptance_pattern(text: str) -> Tuple[bool, float, str]:
     """
     Check if text matches acceptance patterns.
 
+    Handles hybrid messages (statement + question) by checking the statement portion.
+    E.g., "Room B looks perfect. Do you offer catering?" -> checks "Room B looks perfect."
+
     Returns:
         (is_match, confidence, matched_pattern)
     """
-    if _is_question(text) or is_room_selection(text):
+    # Room selection is NOT acceptance (it's a selection, not confirmation)
+    if is_room_selection(text):
         return False, 0.0, ""
+
+    # For hybrid messages with questions, extract statement portion and check that
+    # E.g., "Room B looks perfect. Do you offer catering?" -> "Room B looks perfect."
+    check_text = text
+    if "?" in (text or ""):
+        # Split on "?" and take the statement portion (everything before first "?")
+        statement_part = text.split("?")[0].strip()
+        if statement_part:
+            # Check if statement portion (without question) is pure question
+            if not _is_question(statement_part):
+                check_text = statement_part
+
+    # Pure questions are not acceptance
+    if _is_question(check_text):
+        return False, 0.0, ""
+
     # Reject if text contains negation words (e.g., "not good", "doesn't look good")
-    if NEGATION_PATTERN.search(text or ""):
+    if NEGATION_PATTERN.search(check_text or ""):
         return False, 0.0, ""
-    return _match_patterns(text, ACCEPTANCE_PATTERNS)
+    return _match_patterns(check_text, ACCEPTANCE_PATTERNS)
 
 
 def matches_decline_pattern(text: str) -> Tuple[bool, float, str]:
