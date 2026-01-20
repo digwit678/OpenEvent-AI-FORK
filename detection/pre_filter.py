@@ -26,7 +26,8 @@ from typing import Optional, List, Dict, Any
 
 def get_pre_filter_mode() -> str:
     """Get current pre-filter mode from environment or database config."""
-    return os.getenv("PRE_FILTER_MODE", "legacy").lower()
+    # Default is "enhanced" - legacy mode is only for explicit fallback
+    return os.getenv("PRE_FILTER_MODE", "enhanced").lower()
 
 
 def is_enhanced_mode() -> bool:
@@ -280,12 +281,36 @@ def run_pre_filter(
 
     # -------------------------------------------------------------------------
     # 3. Question Signals
+    # FIX: Single-word signals like "what", "which" are too broad - they appear
+    # in non-questions like "what's available" (booking request). Require either:
+    # - Question mark "?" OR
+    # - Multi-word pattern ("can you", "is there") OR
+    # - Single-word at START of message (interrogative position)
     # -------------------------------------------------------------------------
+    SINGLE_WORD_INTERROGATIVES = {
+        "what", "which", "when", "where", "who", "how", "why",
+        "was", "welche", "wann", "wo", "wer", "wie", "warum",  # German
+    }
+    has_question_mark = "?" in text_lower
+    first_word = text_lower.split()[0] if text_lower.split() else ""
+
     for signal in QUESTION_SIGNALS:
         if signal in text_lower:
-            result.has_question_signal = True
-            result.matched_patterns.append(f"question:{signal}")
-            break
+            # Always trust multi-word patterns and question marks
+            if " " in signal or signal == "?":
+                result.has_question_signal = True
+                result.matched_patterns.append(f"question:{signal}")
+                break
+            # Single-word signals only count if there's a ? or they're at the start
+            elif signal in SINGLE_WORD_INTERROGATIVES:
+                if has_question_mark or first_word == signal:
+                    result.has_question_signal = True
+                    result.matched_patterns.append(f"question:{signal}")
+                    break
+            else:
+                result.has_question_signal = True
+                result.matched_patterns.append(f"question:{signal}")
+                break
 
     # -------------------------------------------------------------------------
     # 4. Confirmation Signals
@@ -476,7 +501,7 @@ def run_pre_filter_legacy(
     event_entry: Optional[Dict[str, Any]] = None,
 ) -> PreFilterResult:
     """
-    Legacy pre-filter that does duplicate detection only.
+    Legacy pre-filter that does duplicate detection + critical signal detection.
 
     Manager escalation detection is now handled via unified LLM detection,
     which provides semantic understanding of phrases like "Can I speak with someone?"
@@ -485,7 +510,18 @@ def run_pre_filter_legacy(
     result = PreFilterResult()
     text_lower = message.lower().strip()
 
-    # Only do duplicate detection
+    # -------------------------------------------------------------------------
+    # ACCEPTANCE SIGNALS: Critical for routing - must detect even in legacy mode
+    # Without this, acceptance messages can trigger false room change detections.
+    # -------------------------------------------------------------------------
+    acceptance_list = ACCEPTANCE_SIGNALS_EN + ACCEPTANCE_SIGNALS_DE
+    for signal in acceptance_list:
+        if signal in text_lower:
+            result.has_acceptance_signal = True
+            result.matched_patterns.append(f"acceptance:{signal}")
+            break
+
+    # Duplicate detection
     if last_message:
         last_lower = last_message.lower().strip()
         if text_lower == last_lower:
