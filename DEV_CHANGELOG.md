@@ -1,5 +1,103 @@
 # Development Changelog
 
+## 2026-01-20
+
+### Fix: Pattern-only Q&A Detection Requiring LLM Confirmation
+
+**Problem:** Words like "available" in the `_PATTERNS` regex list triggered `is_general=True` even for pure booking requests like "Please let me know what's available". This caused hybrid Q&A formatting (with separator and Q&A sections) to appear on pure workflow messages.
+
+**Root Cause:** The `detect_general_room_query()` function in `general_qna.py` set `is_general=True` whenever any pattern matched, regardless of whether the message was actually a question or just a booking request using question-like words.
+
+**Solution:** Added `pattern_only_match` logic that requires LLM confirmation when:
+1. The only match is from `_PATTERNS` (not from question words/interrogatives)
+2. There's no question mark "?" in the text
+3. There's no interrogative word (what, which, when, etc.)
+
+In these cases, the function now defers to the LLM's classification result instead of assuming it's a general Q&A.
+
+**Files Modified:**
+- `detection/qna/general_qna.py` - Added pattern-only detection logic requiring LLM confirmation
+
+**Commit:** 1b2bbeb
+
+**Impact:** Pure booking requests like "Hello, I'm looking to book a room. Please let me know what's available." now get a clean workflow response WITHOUT the separator and Q&A sections about room features.
+
+---
+
+### Fix: Pre-filter Question Detection Too Broad for Interrogatives
+
+**Problem:** Single-word interrogatives like "what", "which", "when" triggered `has_question_signal=True` even in non-question contexts like "what's available" in booking requests. The pre-filter signal bypassed the LLM veto at `unified.py:296` via OR logic, causing false positive Q&A detection.
+
+**Root Cause:** The `_has_question_signal()` function in `pre_filter.py` matched ANY occurrence of single interrogative words without checking if they were actually being used as questions.
+
+**Solution:** Single-word interrogatives now only trigger question detection if:
+1. There's a question mark "?" in the text, OR
+2. The word appears at the START of the message (interrogative position, e.g., "What rooms are available?")
+
+Multi-word patterns like "can you", "is there", "could you" remain unchanged as they're stronger question signals.
+
+**Files Modified:**
+- `detection/pre_filter.py` - Added question mark and position checks for single-word interrogatives
+
+**Commit:** d52baf3
+
+**Impact:** Phrases like "what's available" in the middle of booking requests no longer trigger false positive question signals, allowing the LLM's semantic classification to prevail.
+
+---
+
+### Fix: Hybrid Q&A Path Not Triggering in Step 3
+
+**Problem:** When a client sent a hybrid message containing both booking intent and a Q&A question (e.g., "I want to book a room... Also, what about parking?"), Step 3 incorrectly took the pure Q&A path instead of the room availability path. This caused only the Q&A answer to be shown while the workflow response (room options) was missing.
+
+**Root Cause:** The `is_pure_qna` check was matching parking patterns even in hybrid messages, causing `general_qna_applicable` to remain True and short-circuit to the Q&A-only response path.
+
+**Solution:** Added booking intent detection from unified detection. If `unified_detection.intent` is `event_request`, `change_request`, or `negotiation`, the message is treated as hybrid (not pure Q&A), ensuring the workflow response is generated first with Q&A appended as a separate section.
+
+**Files Modified:**
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py` (lines 705-730)
+
+**E2E Verified:** Hybrid Q&A format now works correctly - workflow response appears FIRST, Q&A answer appears SECOND with --- separator.
+
+---
+
+### Fix: Semantic Q&A Detection - Keywords Overriding LLM Intent
+
+**Problem:** Keyword-based Q&A detection was overriding the LLM's semantic understanding. Messages like "thanks for the parking info" were triggering parking Q&A because they contained the word "parking", even though the LLM correctly identified them as NOT questions.
+
+**Root Cause:** The merge logic in `unified.py` was adding keyword-based Q&A types regardless of the LLM's `is_question` signal, causing acknowledgments to be treated as new questions.
+
+**Solution:** Modified the Q&A type merging to respect the LLM's `is_question` signal. Keyword-based Q&A types are only added if:
+1. The LLM thinks it's a question (`is_question=True`), OR
+2. The LLM found Q&A types itself
+
+This prevents keyword matches from overriding semantic intent classification.
+
+**Files Modified:**
+- `detection/unified.py` (lines 266-286)
+
+**E2E Verified:** Q&A is NOT repeated when client acknowledges it (e.g., "thanks for the parking info").
+
+---
+
+### Fix: Acknowledgment Phrases Triggering Q&A Detection
+
+**Problem:** As an additional safeguard, acknowledgment phrases like "thanks for the parking info" and confirmation requests were being detected as Q&A questions by keyword patterns.
+
+**Root Cause:** Keyword-based Q&A detection didn't filter out common acknowledgment and confirmation patterns before applying Q&A type detection.
+
+**Solution:** Added `_is_acknowledgment()` and `_is_confirmation_request()` helper functions in `classifier.py` that filter out:
+- Acknowledgment patterns: "thanks for", "thank you for", "got it", "understood", etc.
+- Confirmation requests: "sounds good", "works for me", "that's fine", etc.
+
+These filters run BEFORE Q&A type detection to prevent false positives.
+
+**Files Modified:**
+- `detection/intent/classifier.py` (lines 391-450)
+
+**Design Principle:** Always filter out acknowledgment/confirmation patterns before keyword-based detection to prevent false positives.
+
+---
+
 ## 2026-01-19
 
 ### Fix: Date Change Detour - Explicit Room Unavailability Message

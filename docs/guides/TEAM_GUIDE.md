@@ -90,7 +90,7 @@ We chose **Option B (Gate at Confirmation)** over Option A (Gate before Offer) f
 
 ## HIGH-RISK: Regex-Based Detection Areas (Bug Magnets)
 
-**CRITICAL WARNING:** The following 4 detection areas still use regex/keyword matching instead of LLM semantic understanding. These are the most common source of bugs due to:
+**CRITICAL WARNING:** The following detection areas use regex/keyword matching alongside LLM semantic understanding. These require careful coordination to avoid bugs:
 - False positives (keywords in wrong context)
 - False negatives (paraphrased intent missed)
 - Interference with other flows (one detection consuming input meant for another)
@@ -98,17 +98,27 @@ We chose **Option B (Gate at Confirmation)** over Option A (Gate before Offer) f
 | # | Detection Area | Location | Common Issues | Status |
 |---|----------------|----------|---------------|--------|
 | 1 | **Billing Address Capture** | `billing_capture.py` | ~~Consumes messages meant for date/room changes~~ | ✅ FIXED (2026-01-19) - Now uses `_extract_billing_text()` to isolate billing payload from hybrid messages |
-| 2 | **Site Visit Keywords** | `router.py` | False positives from emails/URLs containing "tour" (BUG-021) | ⚠️ Open |
-| 3 | **Date Change Detection** | `change_propagation.py` | Format mismatches causing loops (BUG-020) | ⚠️ Open |
-| 4 | **Room Selection Shortcuts** | `step1_handler.py`, `room_detection.py` | Auto-locks room before arrangement requests processed | ⚠️ Open |
+| 2 | **Site Visit Keywords** | `router.py` | ~~False positives from emails/URLs containing "tour" (BUG-021)~~ | ✅ FIXED (2026-01-13) - Now strips emails/URLs and uses word-boundary regex |
+| 3 | **Date Change Detection** | `change_propagation.py` | ~~Format mismatches causing loops (BUG-020)~~ | ✅ FIXED (2026-01-13) - Now normalizes dates to ISO before comparison |
+| 4 | **Room Selection Shortcuts** | `step1_handler.py`, `room_detection.py` | ~~Auto-locks room before arrangement requests processed~~ | ✅ FIXED (2026-01-07) - Added missing_products bypass check |
+| 5 | **Q&A Detection** | `classifier.py`, `unified.py`, `general_qna.py`, `pre_filter.py` | ~~Keywords overriding LLM intent (BUG-036, BUG-037, BUG-038, BUG-039)~~ | ✅ IMPROVED (2026-01-20) - Multiple layers of defense against false positives |
+
+**Recent Q&A Detection Improvements (2026-01-20):**
+- Keyword-based Q&A types now gated by LLM's `is_question` signal (BUG-036)
+- Added acknowledgment and confirmation phrase filters before keyword detection (BUG-037)
+- Pattern-only matches now require LLM confirmation when ambiguous (BUG-038)
+- Pre-filter interrogative detection now requires question mark or sentence-initial position (BUG-039)
+- Hybrid message detection now checks unified_detection.intent for booking signals (BUG-035)
+- **Remaining vigilance needed:** These are defense-in-depth improvements. Always verify hybrid messages work correctly in E2E tests.
 
 **Prevention Pattern:** When adding code in these areas:
 1. Always add **early-exit guards** for higher-priority intents (e.g., date change before billing capture)
 2. Use **word-boundary regex** (`\btour\b`) not substring matching (`"tour" in text`)
 3. **Normalize values** before comparison (ISO dates, lowercase room names)
-4. Add **regression tests** for each new pattern
+4. **Consult LLM signals FIRST**, use regex as fallback only (see BUG-036 for example)
+5. Add **regression tests** for each new pattern
 
-**Long-term:** Migrate these to LLM-based semantic detection when cost/latency allows.
+**Long-term:** Continue migrating to LLM-based semantic detection when cost/latency allows.
 
 ---
 
@@ -624,6 +634,64 @@ Result: One combined message with "Great choice! Room F is confirmed... Here is 
 2. Surface critical API failures with explicit system error messaging in send_message (dev-safe, prod-safe).
 **Files**: `core/fallback.py`, `api/routes/messages.py`
 **Tests**: `tests_root/specs/determinism/test_fallback_diagnostics_defaults.py`
+
+### BUG-035: Hybrid Q&A Path Not Triggering in Step 3
+**Status**: Fixed (2026-01-20)
+**Severity**: High
+**Symptom**: When a client sent a hybrid message (booking intent + Q&A question like "I want to book a room... Also, what about parking?"), Step 3 showed only the Q&A answer and missed the workflow response (room options).
+**Root Cause**: The `is_pure_qna` check matched parking patterns even in hybrid messages, causing `general_qna_applicable` to remain True and short-circuit to the Q&A-only response path.
+**Fix**: Added booking intent detection from unified detection. If `unified_detection.intent` is `event_request`, `change_request`, or `negotiation`, the message is treated as hybrid (not pure Q&A), ensuring the workflow response is generated first with Q&A appended.
+**Files**: `workflows/steps/step3_room_availability/trigger/step3_handler.py` (lines 705-730)
+**Key Learning**: Q&A detection must check for booking intent signals from unified detection to distinguish pure Q&A from hybrid messages. Keyword patterns alone are insufficient.
+
+### BUG-036: Semantic Q&A Detection - Keywords Overriding LLM Intent
+**Status**: Fixed (2026-01-20)
+**Severity**: High (False Positives)
+**Symptom**: Messages like "thanks for the parking info" triggered parking Q&A because they contained the word "parking", even though the LLM correctly identified them as NOT questions.
+**Root Cause**: The merge logic in `unified.py` was adding keyword-based Q&A types regardless of the LLM's `is_question` signal, causing acknowledgments to be treated as new questions.
+**Fix**: Modified Q&A type merging to respect the LLM's `is_question` signal. Keyword-based Q&A types are only added if the LLM thinks it's a question OR the LLM found Q&A types itself.
+**Files**: `detection/unified.py` (lines 266-286)
+**Key Learning**: NEVER let keyword-based detection override semantic LLM signals. The LLM's `is_question` classification should be the primary gate for Q&A detection. This is a recurring pattern across the codebase (see BUG-018).
+
+### BUG-037: Acknowledgment Phrases Triggering Q&A Detection
+**Status**: Fixed (2026-01-20)
+**Severity**: Medium
+**Symptom**: Acknowledgment phrases like "thanks for the parking info" were detected as Q&A questions by keyword patterns, even after BUG-036 fix.
+**Root Cause**: Keyword-based Q&A detection didn't filter out common acknowledgment and confirmation patterns before applying Q&A type detection.
+**Fix**: Added `_is_acknowledgment()` and `_is_confirmation_request()` helper functions in `classifier.py` that filter out acknowledgment patterns ("thanks for", "got it", "understood") and confirmation requests ("sounds good", "works for me") BEFORE Q&A type detection.
+**Files**: `detection/intent/classifier.py` (lines 391-450)
+**Key Learning**: Always apply acknowledgment/confirmation filters BEFORE keyword-based detection. This is a defense-in-depth approach - even if the LLM signal check fails, the acknowledgment filter catches obvious false positives.
+
+### BUG-038: Pattern-only Q&A Detection False Positives
+**Status**: Fixed (2026-01-20)
+**Severity**: High (UX)
+**Symptom**: Pure booking requests like "Please let me know what's available" triggered hybrid Q&A format with separator and Q&A sections about room features, even though the client just wanted to book a room.
+**Root Cause**: Words like "available" in `_PATTERNS` regex triggered `is_general=True` in `detect_general_room_query()` regardless of whether the message was actually a question or just a booking request using question-like words.
+**Fix**: Added `pattern_only_match` logic in `general_qna.py` that requires LLM confirmation when:
+1. The only match is from `_PATTERNS` (not from question words/interrogatives)
+2. There's no question mark "?" in the text
+3. There's no interrogative word (what, which, when, etc.)
+
+In these cases, the function defers to the LLM's classification instead of assuming it's a general Q&A.
+**Files**: `detection/qna/general_qna.py`
+**Commit**: 1b2bbeb
+**Tests**: Pure booking requests now produce clean workflow responses without hybrid Q&A formatting
+**Key Learning**: Pattern matching alone is insufficient for Q&A detection. Always require LLM confirmation when pattern matches are ambiguous (could be question or booking request).
+
+### BUG-039: Pre-filter Question Signal Too Broad
+**Status**: Fixed (2026-01-20)
+**Severity**: High
+**Symptom**: Single-word interrogatives like "what", "which", "when" in phrases like "what's available" triggered `has_question_signal=True`, bypassing LLM veto at `unified.py:296` via OR logic and causing false positive Q&A detection on booking requests.
+**Root Cause**: The `_has_question_signal()` function in `pre_filter.py` matched ANY occurrence of single interrogative words without checking if they were actually being used as questions.
+**Fix**: Single-word interrogatives now only trigger question detection if:
+1. There's a question mark "?" in the text, OR
+2. The word appears at the START of the message (interrogative position, e.g., "What rooms are available?")
+
+Multi-word patterns like "can you", "is there", "could you" remain unchanged as they're stronger question signals.
+**Files**: `detection/pre_filter.py`
+**Commit**: d52baf3
+**Impact**: Phrases like "what's available" in the middle of booking requests no longer trigger false positive question signals, allowing the LLM's semantic classification to prevail.
+**Key Learning**: Pre-filter signals should be conservative to avoid bypassing LLM semantic understanding. Single-word interrogatives are weak signals and need additional context (question mark or sentence-initial position) to be reliable.
 
 ---
 
