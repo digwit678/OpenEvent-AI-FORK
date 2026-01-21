@@ -593,19 +593,31 @@ def process(state: WorkflowState) -> GroupResult:
         should_generate_offer = room_locked and date_confirmed
 
         if should_generate_offer:
-            # Check if this is PURE Q&A (no acceptance signal)
+            # Check if this is PURE Q&A (no acceptance signal, no room confirmation this turn)
             has_acceptance = _looks_like_offer_acceptance(normalized_message_text)
             has_question_mark = "?" in message_text
+            # Room confirmation prefix indicates room was just confirmed by Step 3 in this turn
+            # When present, we should generate the offer (not treat as pure Q&A)
+            room_just_confirmed = bool(event_entry.get("room_confirmation_prefix"))
 
-            if has_question_mark and not has_acceptance:
+            # Check if we came from a detour (date/room change) - if so, always generate offer
+            is_detour_call = event_entry.get("caller_step") is not None
+
+            if has_question_mark and not has_acceptance and not room_just_confirmed and not is_detour_call:
                 # PURE Q&A: Return early - don't generate offer or progress steps
                 # E.g., "Does Room A have a projector?" at Step 4 should stay at Step 4
+                # But NOT for detour calls - those must regenerate the offer
                 logger.info("[Step4][QNA_GUARD] Pure Q&A detected - returning without offer generation")
                 result = _present_general_room_qna(state, event_entry, classification, thread_id)
                 return result
+            elif is_detour_call:
+                logger.info("[Step4][DETOUR_BYPASS] Bypassing QNA_GUARD - came from detour (caller=%s)", event_entry.get("caller_step"))
             else:
-                # HYBRID: Send Q&A first, then continue to offer
+                # HYBRID: Room confirmation + Q&A, or acceptance + Q&A
+                # E.g., "Room B looks perfect. Do you offer catering?" - confirm room, answer Q&A, then offer
                 # E.g., "Yes I accept. What's your parking policy?" - answer Q&A then process acceptance
+                if room_just_confirmed:
+                    logger.info("[Step4][HYBRID] Room just confirmed - generating offer with Q&A")
                 qa_result = _present_general_room_qna(state, event_entry, classification, thread_id)
                 if qa_result and state.draft_messages:
                     for draft in state.draft_messages:
