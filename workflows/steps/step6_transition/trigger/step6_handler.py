@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 from workflows.common.prompts import append_footer
 from workflows.common.types import GroupResult, WorkflowState
 from workflows.io.database import append_audit_entry, update_event_metadata
+from workflows.nlu import detect_general_room_query
 from utils.profiler import profile_step
 
 __all__ = ["process"]
@@ -27,6 +28,21 @@ def process(state: WorkflowState) -> GroupResult:
         return GroupResult(action="transition_missing_event", payload=payload, halt=True)
 
     state.current_step = 6
+
+    # [Q&A DETECTION] Run Q&A classification before blockers
+    # Q&A messages like "Does Room A have a projector?" should be answered, not blocked
+    message_text = f"{state.message.subject or ''} {state.message.body or ''}".strip() if state.message else ""
+    if message_text:
+        classification = detect_general_room_query(message_text, state)
+        state.extras["_general_qna_classification"] = classification
+        state.extras["general_qna_detected"] = bool(classification.get("is_general"))
+
+        if classification.get("is_general"):
+            from workflows.common.general_qna import present_general_room_qna
+            thread_id = str(state.thread_id or state.client_id or "unknown")
+            result = present_general_room_qna(state, event_entry, classification, thread_id, step_number=6, step_name="Transition")
+            return result
+
     blockers = _collect_blockers(event_entry)
     if blockers:
         blocker_text = "; ".join(blockers)

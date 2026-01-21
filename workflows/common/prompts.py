@@ -67,6 +67,7 @@ def append_footer(
     topic: Optional[str] = None,
     verbalize: bool = True,
     verbalize_context: Optional[Dict[str, Any]] = None,
+    show_separator: bool = True,
 ) -> str:
     """
     Append the standardized UX footer to a draft body.
@@ -82,6 +83,8 @@ def append_footer(
         topic: Message topic for verbalization context
         verbalize: Whether to apply verbalization (default True)
         verbalize_context: Additional context for verbalization (dates, rooms, etc.)
+        show_separator: Whether to show the --- separator before footer (default True).
+                       Set to False for pure Q&A responses that shouldn't have visual separation.
 
     Returns:
         Body with footer appended (and optionally verbalized)
@@ -93,7 +96,8 @@ def append_footer(
         sanitized_body = _verbalize_body(sanitized_body, step, topic, verbalize_context)
 
     footer = compose_footer(step, next_step, thread_state)
-    return f"{sanitized_body}{FOOTER_SEPARATOR}{footer}"
+    separator = FOOTER_SEPARATOR if show_separator else "\n\n"
+    return f"{sanitized_body}{separator}{footer}"
 
 
 def _verbalize_body(

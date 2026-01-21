@@ -426,17 +426,15 @@ def get_catering_teaser_products() -> List[Dict[str, Any]]:
 
     Returns:
         List of product dicts with: name, unit_price, unit
+        Returns empty list if no catering products exist (no fallbacks).
     """
     from pathlib import Path
     import json
 
     products_path = Path(__file__).parent.parent.parent / "data" / "products.json"
     if not products_path.exists():
-        # Fallback defaults if products.json missing
-        return [
-            {"name": "Classic Apéro", "unit_price": 18.0, "unit": "per_person"},
-            {"name": "Coffee & Tea Bar", "unit_price": 7.50, "unit": "per_person"},
-        ]
+        # No products.json means no catering available - return empty
+        return []
 
     try:
         with open(products_path, "r", encoding="utf-8") as f:
@@ -455,15 +453,11 @@ def get_catering_teaser_products() -> List[Dict[str, Any]]:
                     "unit_price": p.get("unit_price", 0),
                     "unit": p.get("unit", "per_person"),
                 })
-        return result if result else [
-            {"name": "Classic Apéro", "unit_price": 18.0, "unit": "per_person"},
-            {"name": "Coffee & Tea Bar", "unit_price": 7.50, "unit": "per_person"},
-        ]
+        # Return only what's actually in the database - no hardcoded fallbacks
+        return result
     except Exception:
-        return [
-            {"name": "Classic Apéro", "unit_price": 18.0, "unit": "per_person"},
-            {"name": "Coffee & Tea Bar", "unit_price": 7.50, "unit": "per_person"},
-        ]
+        # On error, return empty rather than hardcoded fallbacks
+        return []
 
 
 # =============================================================================

@@ -251,6 +251,15 @@ def present_general_room_qna(
             thread_state="Awaiting Client",
         )
 
+        # Check for secondary Q&A types (catering_for, products_for, etc.)
+        secondary_types = list(classification.get("secondary") or [])
+        # Pure informational Q&A types that don't need "Availability overview" header
+        pure_info_qna_types = {
+            "room_features", "parking_policy", "accessibility_inquiry",
+            "catering_for", "products_for", "pricing_inquiry", "site_visit_overview"
+        }
+        is_pure_info_qna = bool(set(secondary_types) & pure_info_qna_types)
+
         draft_message = {
             "body": footer_body,
             "body_markdown": body_markdown,
@@ -261,8 +270,10 @@ def present_general_room_qna(
             "candidate_dates": candidate_dates,
             "actions": actions,
             "subloop": subloop_label,
-            "headers": ["Availability overview"],
         }
+        # Only add "Availability overview" header when response contains availability data
+        if not is_pure_info_qna:
+            draft_message["headers"] = ["Availability overview"]
         if not candidate_dates and range_candidate_dates:
             candidate_dates = range_candidate_dates
             actions = range_actions
@@ -271,7 +282,7 @@ def present_general_room_qna(
         if range_results:
             draft_message["range_results"] = range_results
 
-        # Check for secondary Q&A types (catering_for, products_for, etc.) and append router content
+        # Check for router-handled Q&A types
         secondary_types = list(classification.get("secondary") or [])
         router_types = {"catering_for", "products_for", "rooms_by_feature", "room_features", "free_dates", "parking_policy", "site_visit_overview"}
         router_applicable = bool(set(secondary_types) & router_types)
@@ -403,6 +414,13 @@ def present_general_room_qna(
                 thread_state="Awaiting Client",
             )
 
+            # Pure informational Q&A types that don't need "Availability overview" header
+            pure_info_qna_types = {
+                "room_features", "parking_policy", "accessibility_inquiry",
+                "catering_for", "products_for", "pricing_inquiry", "site_visit_overview"
+            }
+            is_pure_info_qna = bool(set(secondary_types) & pure_info_qna_types)
+
             draft_message = {
                 "body": footer_body,
                 "body_markdown": router_body,
@@ -413,8 +431,10 @@ def present_general_room_qna(
                 "candidate_dates": range_candidate_dates,
                 "actions": range_actions,
                 "subloop": subloop_label,
-                "headers": ["Availability overview"],
             }
+            # Only add "Availability overview" header when response contains availability data
+            if not is_pure_info_qna:
+                draft_message["headers"] = ["Availability overview"]
             if range_results:
                 draft_message["range_results"] = range_results
 

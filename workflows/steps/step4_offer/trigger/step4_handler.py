@@ -48,6 +48,7 @@ from workflows.io.integration.config import is_hil_all_replies_enabled
 from workflows.common.types import GroupResult, WorkflowState
 # MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
 from detection.intent.confidence import check_nonsense_gate
+from workflows.common.detection_utils import get_unified_detection
 from workflows.common.prompts import append_footer
 from workflows.common.general_qna import (
     append_general_qna_to_primary,
@@ -59,6 +60,10 @@ from workflows.change_propagation import (
     detect_change_type,
     detect_change_type_enhanced,
     route_change_on_updated_variable,
+)
+from workflows.common.detour_acknowledgment import (
+    generate_detour_acknowledgment,
+    add_detour_acknowledgment_draft,
 )
 from workflows.qna.engine import build_structured_qna_result
 from workflows.qna.extraction import ensure_qna_extraction
@@ -175,6 +180,16 @@ def process(state: WorkflowState) -> GroupResult:
     # status from database (in case it was paid via frontend API)
     # -------------------------------------------------------------------------
     event_id = event_entry.get("event_id")
+
+    # DETOUR FIX: If we came from a detour (caller_step is set), we need to regenerate
+    # the offer even if the previous one was accepted. The date/room/requirements may have
+    # changed, invalidating the old offer.
+    caller_step = event_entry.get("caller_step")
+    if caller_step is not None and event_entry.get("offer_accepted"):
+        logger.info("[Step4] Detour in progress (caller=%s) - clearing offer_accepted to regenerate offer", caller_step)
+        event_entry["offer_accepted"] = False
+        state.extras["persist"] = True
+
     if event_id and event_entry.get("offer_accepted"):
         from workflows.common.confirmation_gate import check_confirmation_gate, reload_and_check_gate
 
@@ -311,7 +326,11 @@ def process(state: WorkflowState) -> GroupResult:
 
     # [CHANGE DETECTION] Run BEFORE Q&A dispatch
     # Use enhanced detection with dual-condition logic (revision signal + bound target)
-    enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
+    # Pass unified_detection so Q&A messages don't trigger false change detours
+    unified_detection = get_unified_detection(state)
+    enhanced_result = detect_change_type_enhanced(
+        event_entry, user_info, message_text=message_text, unified_detection=unified_detection
+    )
     change_type = enhanced_result.change_type if enhanced_result.is_change else None
     if state.extras.get("detour_change_applied") == "date" and change_type == ChangeType.DATE:
         change_type = None
@@ -398,6 +417,16 @@ def process(state: WorkflowState) -> GroupResult:
 
             append_audit_entry(event_entry, 4, decision.next_step, f"{change_type.value}_change_detected")
 
+            # IMMEDIATE ACKNOWLEDGMENT: Add detour acknowledgment draft
+            ack_result = generate_detour_acknowledgment(
+                change_type=change_type,
+                decision=decision,
+                event_entry=event_entry,
+                user_info=user_info,
+            )
+            if ack_result.generated:
+                add_detour_acknowledgment_draft(state, ack_result)
+
             # Skip Q&A: return detour signal
             # CRITICAL: Update event_entry BEFORE state.current_step so routing loop sees the change
             update_event_metadata(event_entry, current_step=decision.next_step)
@@ -405,6 +434,8 @@ def process(state: WorkflowState) -> GroupResult:
             state.set_thread_state("In Progress")
             state.extras["persist"] = True
             state.extras["change_detour"] = True
+            # Clear stale hybrid Q&A from previous turns (prevents old Q&A being appended to detour response)
+            state.extras.pop("hybrid_qna_response", None)
 
             payload = {
                 "client_id": state.client_id,
@@ -562,14 +593,37 @@ def process(state: WorkflowState) -> GroupResult:
         should_generate_offer = room_locked and date_confirmed
 
         if should_generate_offer:
-            # Send Q&A first as a separate message (no HIL approval needed)
-            qa_result = _present_general_room_qna(state, event_entry, classification, thread_id)
-            if qa_result and state.draft_messages:
-                # Mark Q&A message as not requiring approval (send immediately)
-                for draft in state.draft_messages:
-                    draft["requires_approval"] = False
-                logger.debug("[Step4] Q&A sent separately before offer generation")
-            # Continue to generate offer below (don't return early)
+            # Check if this is PURE Q&A (no acceptance signal, no room confirmation this turn)
+            has_acceptance = _looks_like_offer_acceptance(normalized_message_text)
+            has_question_mark = "?" in message_text
+            # Room confirmation prefix indicates room was just confirmed by Step 3 in this turn
+            # When present, we should generate the offer (not treat as pure Q&A)
+            room_just_confirmed = bool(event_entry.get("room_confirmation_prefix"))
+
+            # Check if we came from a detour (date/room change) - if so, always generate offer
+            is_detour_call = event_entry.get("caller_step") is not None
+
+            if has_question_mark and not has_acceptance and not room_just_confirmed and not is_detour_call:
+                # PURE Q&A: Return early - don't generate offer or progress steps
+                # E.g., "Does Room A have a projector?" at Step 4 should stay at Step 4
+                # But NOT for detour calls - those must regenerate the offer
+                logger.info("[Step4][QNA_GUARD] Pure Q&A detected - returning without offer generation")
+                result = _present_general_room_qna(state, event_entry, classification, thread_id)
+                return result
+            elif is_detour_call:
+                logger.info("[Step4][DETOUR_BYPASS] Bypassing QNA_GUARD - came from detour (caller=%s)", event_entry.get("caller_step"))
+            else:
+                # HYBRID: Room confirmation + Q&A, or acceptance + Q&A
+                # E.g., "Room B looks perfect. Do you offer catering?" - confirm room, answer Q&A, then offer
+                # E.g., "Yes I accept. What's your parking policy?" - answer Q&A then process acceptance
+                if room_just_confirmed:
+                    logger.info("[Step4][HYBRID] Room just confirmed - generating offer with Q&A")
+                qa_result = _present_general_room_qna(state, event_entry, classification, thread_id)
+                if qa_result and state.draft_messages:
+                    for draft in state.draft_messages:
+                        draft["requires_approval"] = False
+                    logger.debug("[Step4] Q&A sent separately before offer generation (hybrid message)")
+                # Continue to generate offer below
         else:
             # Not ready for offer - just return Q&A (legacy behavior)
             result = _present_general_room_qna(state, event_entry, classification, thread_id)
@@ -614,10 +668,10 @@ def process(state: WorkflowState) -> GroupResult:
             return _route_to_owner_step(state, event_entry, target, code, thread_id)
         return _handle_products_pending(state, event_entry, code)
 
-    write_stage(event_entry, current_step=WorkflowStep.STEP_4, caller_step=None)
-    update_event_metadata(event_entry, caller_step=None)
+    # NOTE: Don't clear caller_step here - we need it later to decide whether to stay at step 4
+    # or advance to step 5 after offer generation. caller_step is cleared at the end of this handler.
+    write_stage(event_entry, current_step=WorkflowStep.STEP_4)
     state.extras["persist"] = True
-    state.caller_step = None
 
     pricing_inputs = _rebuild_pricing_inputs(event_entry, state.user_info)
 
@@ -724,16 +778,24 @@ def process(state: WorkflowState) -> GroupResult:
         negotiation_state["counter_count"] = 0
         negotiation_state["manual_review_task_id"] = None
 
+    # After a detour (caller_step set), stay at step 4 awaiting client response to the new offer.
+    # Only advance to step 5 in normal flow (first offer generation, no detour).
+    if caller is not None:
+        # Detour flow: client must respond to regenerated offer, stay at step 4
+        next_step = 4
+        append_audit_entry(event_entry, 4, caller, "return_to_caller")
+    else:
+        # Normal flow: advance to step 5
+        next_step = 5
+
     update_event_metadata(
         event_entry,
-        current_step=5,
+        current_step=next_step,
         thread_state="Awaiting Client",
         transition_ready=False,
         caller_step=None,
     )
-    if caller is not None:
-        append_audit_entry(event_entry, 4, caller, "return_to_caller")
-    state.current_step = 5
+    state.current_step = next_step
     state.caller_step = None
     state.set_thread_state("Awaiting Client")
     set_hil_open(thread_id, False)

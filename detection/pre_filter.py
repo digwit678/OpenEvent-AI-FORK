@@ -26,7 +26,8 @@ from typing import Optional, List, Dict, Any
 
 def get_pre_filter_mode() -> str:
     """Get current pre-filter mode from environment or database config."""
-    return os.getenv("PRE_FILTER_MODE", "legacy").lower()
+    # Default is "enhanced" - legacy mode is only for explicit fallback
+    return os.getenv("PRE_FILTER_MODE", "enhanced").lower()
 
 
 def is_enhanced_mode() -> bool:
@@ -192,14 +193,29 @@ GERMAN_UNIQUE_WORDS = [
     "bitte", "danke", "grüße", "freundliche", "herzliche",
 ]
 
-# Billing address patterns (regex)
+# Billing address patterns (regex) - multilingual (EN/DE/FR)
 BILLING_PATTERNS = [
-    r'\b\d{4,5}\s+[A-Za-zÀ-ÿ]+',           # Postal code + city (4-5 digits)
+    # English phrases
+    r'\bbilling\s*(?:address|:)',           # "billing address" or "billing:"
+    r'\binvoice\s*(?:address|to)\b',        # "invoice address" or "invoice to"
+    r'\bsend\s*invoice\s*to\b',             # "send invoice to"
+    # German phrases
+    r'\brechnungs?\s*adresse\b',            # "Rechnungsadresse" or "Rechnung Adresse"
+    r'\brechnung\s*an\b',                   # "Rechnung an"
+    # French phrases
+    r'\badresse\s*de\s*facturation\b',      # "adresse de facturation"
+    r'\bfacturer\s*[àa]\b',                 # "facturer à"
+    # Structural patterns - postal codes
+    r'\b\d{4,5}\s+[A-Za-zÀ-ÿ]+',           # EU postal code + city (4-5 digits)
+    r'\bCH[-\s]?\d{4}\b',                   # Swiss postal code (CH-8000)
+    r'\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b',  # UK postal code (SW1A 1AA)
+    r'\b\d{5}(?:-\d{4})?\b',                # US ZIP code (10001 or 10001-1234)
+    # Structural patterns - streets
     r'\b[A-Za-zÀ-ÿ]+(?:strasse|straße|str\.?)\s*\d+',  # German street
-    r'\b[A-Za-zÀ-ÿ]+\s*(?:street|road|avenue|lane)\s*\d+',  # English street
-    r'\bCH[-\s]?\d{4}\b',                   # Swiss postal code
-    r'\b\d{5}\s+[A-Za-zÀ-ÿ]+',             # German postal (5 digits)
-    r'\b(?:switzerland|schweiz|suisse|ch)\b',  # Country mentions
+    r'\b\d+\s+[A-Za-zÀ-ÿ]+\s*(?:street|st|road|rd|avenue|ave|lane|ln|boulevard|blvd)\b',  # US street (123 Main St)
+    r'\b[A-Za-zÀ-ÿ]+\s*(?:street|road|avenue|lane)\s*\d+',  # UK street (High Street 10)
+    # Country mentions
+    r'\b(?:switzerland|schweiz|suisse|germany|deutschland|france|usa|uk|united\s*(?:states|kingdom))\b',
 ]
 
 
@@ -265,12 +281,36 @@ def run_pre_filter(
 
     # -------------------------------------------------------------------------
     # 3. Question Signals
+    # FIX: Single-word signals like "what", "which" are too broad - they appear
+    # in non-questions like "what's available" (booking request). Require either:
+    # - Question mark "?" OR
+    # - Multi-word pattern ("can you", "is there") OR
+    # - Single-word at START of message (interrogative position)
     # -------------------------------------------------------------------------
+    SINGLE_WORD_INTERROGATIVES = {
+        "what", "which", "when", "where", "who", "how", "why",
+        "was", "welche", "wann", "wo", "wer", "wie", "warum",  # German
+    }
+    has_question_mark = "?" in text_lower
+    first_word = text_lower.split()[0] if text_lower.split() else ""
+
     for signal in QUESTION_SIGNALS:
         if signal in text_lower:
-            result.has_question_signal = True
-            result.matched_patterns.append(f"question:{signal}")
-            break
+            # Always trust multi-word patterns and question marks
+            if " " in signal or signal == "?":
+                result.has_question_signal = True
+                result.matched_patterns.append(f"question:{signal}")
+                break
+            # Single-word signals only count if there's a ? or they're at the start
+            elif signal in SINGLE_WORD_INTERROGATIVES:
+                if has_question_mark or first_word == signal:
+                    result.has_question_signal = True
+                    result.matched_patterns.append(f"question:{signal}")
+                    break
+            else:
+                result.has_question_signal = True
+                result.matched_patterns.append(f"question:{signal}")
+                break
 
     # -------------------------------------------------------------------------
     # 4. Confirmation Signals
@@ -461,7 +501,7 @@ def run_pre_filter_legacy(
     event_entry: Optional[Dict[str, Any]] = None,
 ) -> PreFilterResult:
     """
-    Legacy pre-filter that does duplicate detection only.
+    Legacy pre-filter that does duplicate detection + critical signal detection.
 
     Manager escalation detection is now handled via unified LLM detection,
     which provides semantic understanding of phrases like "Can I speak with someone?"
@@ -470,7 +510,18 @@ def run_pre_filter_legacy(
     result = PreFilterResult()
     text_lower = message.lower().strip()
 
-    # Only do duplicate detection
+    # -------------------------------------------------------------------------
+    # ACCEPTANCE SIGNALS: Critical for routing - must detect even in legacy mode
+    # Without this, acceptance messages can trigger false room change detections.
+    # -------------------------------------------------------------------------
+    acceptance_list = ACCEPTANCE_SIGNALS_EN + ACCEPTANCE_SIGNALS_DE
+    for signal in acceptance_list:
+        if signal in text_lower:
+            result.has_acceptance_signal = True
+            result.matched_patterns.append(f"acceptance:{signal}")
+            break
+
+    # Duplicate detection
     if last_message:
         last_lower = last_message.lower().strip()
         if text_lower == last_lower:

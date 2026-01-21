@@ -26,6 +26,7 @@ from detection.unified import run_unified_detection, UnifiedDetectionResult, is_
 from domain import TaskType
 from workflows.io.tasks import enqueue_task
 from workflows.io.config_store import get_manager_names
+from workflows.common.billing_capture import capture_billing_anytime, add_billing_validation_draft
 
 
 # =============================================================================
@@ -211,6 +212,12 @@ def run_unified_pre_filter(
             "[UNIFIED_DETECTION] intent=%s, manager=%s, conf=%s, qna_types=%s",
             unified_result.intent, unified_result.is_manager_request,
             unified_result.is_confirmation, unified_result.qna_types
+        )
+        print(f"[UNIFIED_DETECTION] is_acceptance={unified_result.is_acceptance}, is_question={unified_result.is_question}, is_change={unified_result.is_change_request}")
+        logger.debug(
+            "[UNIFIED_DETECTION] is_acceptance=%s, is_question=%s, is_change=%s",
+            unified_result.is_acceptance, unified_result.is_question,
+            unified_result.is_change_request
         )
 
     # Log in enhanced mode
@@ -664,6 +671,15 @@ def evaluate_pre_route_guards(state: WorkflowState) -> None:
         current = state.event_entry.get("current_step")
         logger.debug("[WF][GUARDS] Forcing step from %s to %s", current, guard_snapshot.forced_step)
         state.event_entry["current_step"] = guard_snapshot.forced_step
+
+        # Set caller_step for detours: when forcing to a lower step (2 or 3) from a higher step,
+        # record the current step so we can return there after the detour completes.
+        # This ensures proper return after date/room changes.
+        existing_caller = state.event_entry.get("caller_step")
+        if existing_caller is None and current and current > guard_snapshot.forced_step:
+            state.event_entry["caller_step"] = current
+            logger.debug("[WF][GUARDS] Setting caller_step=%s for detour return", current)
+
         state.extras["persist"] = True
 
     # Store candidate dates for step 2
@@ -758,6 +774,64 @@ def run_pre_route_pipeline(
     # - Pre-filter: $0 regex for duplicates, billing patterns
     # - Unified LLM: Semantic signals (manager, confirmation, intent)
     pre_filter_result, unified_result = run_unified_pre_filter(state, combined_text)
+
+    # 0.1. PARTICIPANTS CAPTURE-ANYTIME: Capture participant count at ANY workflow step
+    # This ensures guest count changes (e.g., "Actually 60 guests instead of 30") are persisted
+    # so Step 3 can properly evaluate room capacity
+    if unified_result and unified_result.participants:
+        event_entry = state.event_entry or {}
+        current_participants = event_entry.get("participants")
+        new_participants = unified_result.participants
+
+        # Only update if changed (or not set)
+        if new_participants != current_participants:
+            event_entry["participants"] = new_participants
+            # Also update requirements dict for consistency with intake extraction
+            requirements = event_entry.setdefault("requirements", {})
+            requirements["participants"] = new_participants
+            requirements["number_of_participants"] = new_participants
+            logger.info(
+                "[PRE_ROUTE] Participants captured: %s -> %s (from unified detection)",
+                current_participants, new_participants
+            )
+
+    # 0.3. BILLING CAPTURE-ANYTIME: Capture billing at ANY workflow step
+    # This runs BEFORE OOC check so billing is always captured regardless of intent
+    # Uses pre-filter signals ($0) first, then LLM structured data if available
+    pre_filter_signals = {
+        "billing": pre_filter_result.has_billing_signal,
+        "confirmation": pre_filter_result.has_confirmation_signal,
+        "acceptance": pre_filter_result.has_acceptance_signal,
+        "rejection": pre_filter_result.has_rejection_signal,
+    }
+    billing_capture_result = capture_billing_anytime(
+        state=state,
+        unified_result=unified_result,
+        pre_filter_signals=pre_filter_signals,
+        message_text=combined_text,
+    )
+    if billing_capture_result.captured:
+        logger.info(
+            "[PRE_ROUTE] Billing captured (complete=%s, missing=%s)",
+            billing_capture_result.complete,
+            billing_capture_result.missing_fields,
+        )
+        # Store result for downstream handlers to potentially prompt for missing fields
+        state.extras["billing_capture_result"] = {
+            "captured": billing_capture_result.captured,
+            "complete": billing_capture_result.complete,
+            "missing_fields": billing_capture_result.missing_fields,
+            "source": billing_capture_result.source,
+        }
+
+        # IMMEDIATE VALIDATION: If billing incomplete, add prompt for missing fields
+        # This provides instant feedback rather than waiting for a later step
+        if not billing_capture_result.complete:
+            add_billing_validation_draft(state, billing_capture_result)
+            logger.debug(
+                "[PRE_ROUTE] Added billing validation prompt (missing: %s)",
+                billing_capture_result.missing_fields,
+            )
 
     # NOTE: Manager escalation handling REMOVED (2026-01-14)
     # In this venue booking system, the AI assistant IS the manager's representative.

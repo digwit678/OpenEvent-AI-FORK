@@ -67,6 +67,7 @@ class UnifiedDetectionResult:
     is_acceptance: bool = False        # Accepting an offer
     is_rejection: bool = False         # Declining/canceling
     is_change_request: bool = False    # Wants to modify something
+    is_site_visit_change: bool = False # Wants to change site visit
     is_manager_request: bool = False   # Wants human escalation
     is_question: bool = False          # Asking for information
     has_urgency: bool = False          # Time-sensitive request
@@ -104,6 +105,7 @@ class UnifiedDetectionResult:
                 "acceptance": self.is_acceptance,
                 "rejection": self.is_rejection,
                 "change_request": self.is_change_request,
+                "site_visit_change": self.is_site_visit_change,
                 "manager_request": self.is_manager_request,
                 "question": self.is_question,
                 "urgency": self.has_urgency,
@@ -169,7 +171,8 @@ Return a JSON object with this exact structure:
     "is_confirmation": true ONLY for simple unconditional affirmations like "yes", "ok", "sounds good". FALSE if followed by "but", conditions, or hesitation (e.g., "yes but I need to check..." = false),
     "is_acceptance": true if accepting an offer/proposal FOR THE BOOKING,
     "is_rejection": true ONLY if client explicitly wants to CANCEL/ABORT THE ENTIRE BOOKING or decline the venue offer. False for: unrelated uses of "decline" (like "decline to comment"), removing single items (use is_change_request), or general negativity,
-    "is_change_request": true if wants to modify date/room/requirements/products (including removing items like "no catering"),
+    "is_change_request": true if wants to modify date/room/requirements/products (including removing items like "no catering"). FALSE if referring to a SITE VISIT (use is_site_visit_change instead),
+    "is_site_visit_change": true if client wants to reschedule, move, or change an existing SITE VISIT/TOUR. Example: "Can we move the tour?", "Reschedule visit",
     "is_manager_request": true ONLY if client is REQUESTING to speak with a human/manager/supervisor. Must be a REQUEST, not a statement. FALSE for job titles like "I'm the Event Manager" or "Manager John here". TRUE examples: "Can I speak to someone?", "I want to talk to a real person", "Please escalate this",
     "is_question": true ONLY if asking for INFORMATION (e.g., "Do you have parking?", "What's the capacity?"). NOT for action requests like "Could you send me..." or "Please confirm...",
     "has_urgency": true if time-sensitive (urgent, asap, deadline)
@@ -183,7 +186,7 @@ Return a JSON object with this exact structure:
     "end_time": "HH:MM" (24h format) or null - extract if client mentions end time. If only start given, infer end as start + 4 hours,
     "room_preference": room name or null,
     "products": ["catering", "projector", ...] or [],
-    "billing_address": {{"company": "", "street": "", "postal_code": "", "city": "", "country": ""}} or null,
+    "billing_address": {{"name_or_company": "", "street": "", "postal_code": "", "city": "", "country": ""}} or null,
     "site_visit_room": room mentioned for site visit or null (if different from main event room),
     "site_visit_date": date mentioned for site visit or null (YYYY-MM-DD format)
   }},
@@ -202,6 +205,47 @@ IMPORTANT:
 # =============================================================================
 # DETECTION FUNCTION
 # =============================================================================
+
+def _merge_signal_flags(
+    signals: Dict[str, Any],
+    pre_filter_result: "PreFilterResult",
+    *,
+    intent: Optional[str] = None,
+) -> Dict[str, bool]:
+    """Merge LLM signals with pre-filter fallbacks while favoring LLM intent."""
+    llm_is_confirmation = bool(signals.get("is_confirmation", False))
+    llm_is_acceptance = bool(signals.get("is_acceptance", False))
+    llm_is_rejection = bool(signals.get("is_rejection", False))
+    llm_is_change_request = bool(signals.get("is_change_request", False))
+    llm_is_manager_request = bool(signals.get("is_manager_request", False))
+    llm_is_question = bool(signals.get("is_question", False))
+
+    llm_is_site_visit_change = bool(signals.get("is_site_visit_change", False))
+
+    is_acceptance = llm_is_acceptance or pre_filter_result.has_acceptance_signal
+
+    is_change_request = llm_is_change_request
+    # Only fallback to pre-filter change signal if it's NOT a site visit change
+    if not is_change_request and pre_filter_result.has_change_signal and not llm_is_site_visit_change:
+        if not (is_acceptance or llm_is_confirmation or llm_is_rejection):
+            is_change_request = True
+
+    is_question = llm_is_question
+    if not is_question:
+        is_general_intent = intent in ("general_qna", "non_event")
+        if is_general_intent and not (is_acceptance or llm_is_confirmation or is_change_request or llm_is_manager_request):
+            is_question = True
+        elif pre_filter_result.has_question_signal and not (
+            is_acceptance or llm_is_confirmation or is_change_request or llm_is_manager_request
+        ):
+            is_question = True
+
+    return {
+        "is_acceptance": is_acceptance,
+        "is_change_request": is_change_request,
+        "is_question": is_question,
+    }
+
 
 def run_unified_detection(
     message: str,
@@ -226,6 +270,11 @@ def run_unified_detection(
     """
     from adapters.agent_adapter import get_adapter_for_provider
     from llm.provider_config import get_intent_provider
+    from detection.pre_filter import pre_filter
+
+    # Run pre-filter first to get keyword-based signals
+    # These signals (especially acceptance) are critical and must not be lost
+    pre_filter_result = pre_filter(message)
 
     # Build the prompt
     prompt = UNIFIED_DETECTION_PROMPT.format(
@@ -264,11 +313,20 @@ def run_unified_detection(
         entities = data.get("entities", {})
 
         # Merge qna_types from LLM with keyword-based detection
-        # This ensures site_visit_request and other types are detected even if LLM misses them
+        # BUT: Respect LLM's semantic understanding - if LLM says it's NOT a question,
+        # don't add keyword-based Q&A types (avoids false positives like "thanks for the parking info")
         from detection.intent.classifier import _detect_qna_types
 
         llm_qna_types = data.get("qna_types", [])
-        keyword_qna_types = _detect_qna_types(message.lower())
+        is_question_by_llm = signals.get("is_question", False)
+
+        # Only add keyword-based Q&A types if LLM thinks it's a question OR LLM found Q&A types
+        # This respects the LLM's semantic understanding while still catching edge cases
+        if is_question_by_llm or llm_qna_types:
+            keyword_qna_types = _detect_qna_types(message.lower())
+        else:
+            # LLM says not a question and found no Q&A types - trust the LLM's semantic judgment
+            keyword_qna_types = []
 
         # Merge both lists, removing duplicates while preserving order
         merged_qna_types = list(llm_qna_types)
@@ -276,16 +334,19 @@ def run_unified_detection(
             if qna_type not in merged_qna_types:
                 merged_qna_types.append(qna_type)
 
+        merged_flags = _merge_signal_flags(signals, pre_filter_result, intent=data.get("intent"))
+
         result = UnifiedDetectionResult(
             language=data.get("language", "en"),
             intent=data.get("intent", "general_qna"),
             intent_confidence=data.get("intent_confidence", 0.5),
             is_confirmation=signals.get("is_confirmation", False),
-            is_acceptance=signals.get("is_acceptance", False),
+            is_acceptance=merged_flags["is_acceptance"],
             is_rejection=signals.get("is_rejection", False),
-            is_change_request=signals.get("is_change_request", False),
+            is_change_request=merged_flags["is_change_request"],
+            is_site_visit_change=signals.get("is_site_visit_change", False),
             is_manager_request=signals.get("is_manager_request", False),
-            is_question=signals.get("is_question", False),
+            is_question=merged_flags["is_question"],
             has_urgency=signals.get("has_urgency", False),
             date=entities.get("date"),
             date_text=entities.get("date_text"),
@@ -327,16 +388,18 @@ def run_unified_detection(
                 # Success with fallback - return result
                 signals = data.get("signals", {})
                 entities = data.get("entities", {})
+                merged_flags = _merge_signal_flags(signals, pre_filter_result, intent=data.get("intent"))
                 return UnifiedDetectionResult(
                     language=data.get("language", "en"),
                     intent=data.get("intent", "general_qna"),
                     intent_confidence=data.get("intent_confidence", 0.5),
                     is_confirmation=signals.get("is_confirmation", False),
-                    is_acceptance=signals.get("is_acceptance", False),
+                    is_acceptance=merged_flags["is_acceptance"],
                     is_rejection=signals.get("is_rejection", False),
-                    is_change_request=signals.get("is_change_request", False),
+                    is_change_request=merged_flags["is_change_request"],
+                    is_site_visit_change=signals.get("is_site_visit_change", False),
                     is_manager_request=signals.get("is_manager_request", False),
-                    is_question=signals.get("is_question", False),
+                    is_question=merged_flags["is_question"],
                     has_urgency=signals.get("has_urgency", False),
                     date=entities.get("date"),
                     date_text=entities.get("date_text"),
@@ -356,10 +419,14 @@ def run_unified_detection(
             except Exception as fallback_err:
                 logger.warning("[UNIFIED_DETECTION] Fallback %s also failed: %s", fallback, fallback_err)
                 continue
-        # All providers failed - return minimal result
+        # All providers failed - return minimal result with heuristic detection
+        is_question_heuristic = pre_filter_result.has_question_signal
+        is_acceptance_heuristic = pre_filter_result.has_acceptance_signal
         return UnifiedDetectionResult(
             intent="general_qna",
             intent_confidence=0.3,
+            is_question=is_question_heuristic,
+            is_acceptance=is_acceptance_heuristic,
         )
     except Exception as e:
         logger.warning("[UNIFIED_DETECTION] Error with %s: %s", intent_provider, e)
@@ -378,16 +445,18 @@ def run_unified_detection(
                 data = json.loads(response_text.strip())
                 signals = data.get("signals", {})
                 entities = data.get("entities", {})
+                merged_flags = _merge_signal_flags(signals, pre_filter_result, intent=data.get("intent"))
                 return UnifiedDetectionResult(
                     language=data.get("language", "en"),
                     intent=data.get("intent", "general_qna"),
                     intent_confidence=data.get("intent_confidence", 0.5),
                     is_confirmation=signals.get("is_confirmation", False),
-                    is_acceptance=signals.get("is_acceptance", False),
+                    is_acceptance=merged_flags["is_acceptance"],
                     is_rejection=signals.get("is_rejection", False),
-                    is_change_request=signals.get("is_change_request", False),
+                    is_change_request=merged_flags["is_change_request"],
+                    is_site_visit_change=signals.get("is_site_visit_change", False),
                     is_manager_request=signals.get("is_manager_request", False),
-                    is_question=signals.get("is_question", False),
+                    is_question=merged_flags["is_question"],
                     has_urgency=signals.get("has_urgency", False),
                     date=entities.get("date"),
                     date_text=entities.get("date_text"),
@@ -406,9 +475,15 @@ def run_unified_detection(
                 )
             except Exception:
                 continue
+        # All providers failed - return minimal result with heuristic detection
+        # IMPORTANT: Merge pre-filter signals to preserve acceptance/question detection
+        is_question_heuristic = "?" in message or pre_filter_result.has_question_signal
+        is_acceptance_heuristic = pre_filter_result.has_acceptance_signal
         return UnifiedDetectionResult(
             intent="general_qna",
             intent_confidence=0.3,
+            is_question=is_question_heuristic,
+            is_acceptance=is_acceptance_heuristic,
         )
 
 
@@ -560,6 +635,7 @@ def _run_legacy_detection(
         is_acceptance=pre_filter_result.has_acceptance_signal,
         is_rejection=pre_filter_result.has_rejection_signal,
         is_change_request=pre_filter_result.has_change_signal,
+        is_site_visit_change=False,  # Legacy mode doesn't support this specific signal
         is_manager_request=pre_filter_result.has_manager_signal,
         is_question=pre_filter_result.has_question_signal,
         has_urgency=pre_filter_result.has_urgency_signal,

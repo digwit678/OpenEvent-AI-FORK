@@ -17,8 +17,9 @@ This file tracks active implementation goals and planned roadmap items. **Check 
 | 2025-12-24 | **System Resilience** | Handle diverse client inputs (languages, edge cases) | **Urgent** |
 | 2025-12-24 | **Production Stability** | Verified via zero-failure regression runs | **Urgent** |
 | 2025-12-24 | **Circular Bug Elimination** | Audit routing loops and special flow guards | **Urgent** |
+| 2026-01-13 | **LLM Site Visit Detection** | Replace regex/keyword detection in `router.py` with LLM-based NLU | **Medium** |
 | 2025-12-24 | **Integration Completion** | Supabase/Hostinger production readiness | **High** |
-| 2025-12-24 | **Billing Flow Robustness** | Frontend/Backend session sync stability | **High** |
+| ~~2025-12-24~~ | ~~**Billing Flow Robustness**~~ | ✅ **IMPROVED 2026-01-13** - Fixed 4-part BUG-015 (deposit → Step 7): halt flag, out-of-context bypass, deposit_just_paid check in step7_handler, frontend canAction list. See `DEV_CHANGELOG.md`. | ~~**High**~~ |
 | ~~2025-12-28~~ | ~~**Documentation Hygiene**~~ | ✅ **DONE 2025-12-28** - Refreshed `tests/TEST_INVENTORY.md`, closed stale checklist items, and updated this roadmap. | ~~**Medium**~~ |
 | ~~2025-12-28~~ | ~~**DCON1 – Detection Import Cleanup**~~ | ✅ **DONE 2025-12-28** - Updated tests to import from stable detection/workflow surfaces; verified pytest collect-only and targeted suites. | ~~**High**~~ |
 | ~~2025-12-27~~ | ~~**Product Change Mid-Flow (WF0.1)**~~ | ✅ **FIXED 2025-12-28** - Added empty reply safety net in `workflow_email.py` after routing loop. When routing completes with no drafts, a context-aware fallback message is added. | ~~**Medium**~~ |

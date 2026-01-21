@@ -32,7 +32,10 @@ import re
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from detection.unified import UnifiedDetectionResult
 
 logger = logging.getLogger(__name__)
 
@@ -917,6 +920,7 @@ def detect_change_type_enhanced(
     user_info: Dict[str, Any],
     *,
     message_text: Optional[str] = None,
+    unified_detection: Optional["UnifiedDetectionResult"] = None,
 ) -> EnhancedChangeResult:
     """
     Enhanced change detection using dual-condition logic.
@@ -927,10 +931,20 @@ def detect_change_type_enhanced(
 
     This prevents false positives on pure Q&A questions.
 
+    NEW (2026-01-19): Q&A Guard using LLM detection
+    If unified_detection is provided, we check:
+    - If LLM says is_question=True or qna_types is non-empty (Q&A detected)
+    - AND LLM says is_change_request=False (no explicit change intent)
+    => Skip change detection entirely, return is_change=False
+
+    This prevents room-mentioning Q&A like "Does Room A have a projector?"
+    from being misrouted as room change requests.
+
     Args:
         event_state: Current event entry
         user_info: Extracted user information from message
         message_text: Client message text
+        unified_detection: LLM-based detection result (if available)
 
     Returns:
         EnhancedChangeResult with full detection details
@@ -944,7 +958,100 @@ def detect_change_type_enhanced(
         - "What rooms are free in December?" -> GENERAL_QA
         - "Do you have parking?" -> GENERAL_QA
         - "What's the price?" -> GENERAL_QA
+        - "Does Room A have a projector?" -> GENERAL_QA (Q&A guard)
     """
+    # -------------------------------------------------------------------------
+    # Q&A GUARD: Use LLM-based detection to prevent Q&A from triggering detours
+    # -------------------------------------------------------------------------
+    if unified_detection is not None:
+        is_qna_detected = (
+            unified_detection.is_question
+            or bool(unified_detection.qna_types)
+        )
+        is_change_by_llm = unified_detection.is_change_request
+
+        if is_qna_detected and not is_change_by_llm:
+            logger.debug(
+                "[CHANGE_PROP][QNA_GUARD] Skipping change detection: "
+                "is_question=%s, qna_types=%s, is_change_request=%s",
+                unified_detection.is_question,
+                unified_detection.qna_types,
+                unified_detection.is_change_request,
+            )
+            return EnhancedChangeResult(
+                is_change=False,
+                change_type=None,
+                mode=None,
+                confidence=0.0,
+                alternative_intent=MessageIntent.GENERAL_QA,
+                revision_signals=[],
+                target_matches=[],
+                language=unified_detection.language or "en",
+            )
+
+    # -------------------------------------------------------------------------
+    # ACCEPTANCE GUARD: Skip change detection for offer acceptance messages
+    # "I accept this offer for Room A" should NOT trigger room change detection.
+    # The room mentioned in an acceptance is a CONFIRMATION, not a change request.
+    # -------------------------------------------------------------------------
+    _is_accept = getattr(unified_detection, "is_acceptance", False) if unified_detection else False
+
+    # BACKUP: Also check pre-filter directly for acceptance signals
+    # This ensures acceptance is detected even if unified detection merging fails
+    from detection.pre_filter import pre_filter, ACCEPTANCE_SIGNALS_EN, ACCEPTANCE_SIGNALS_DE
+    _text_lower = (message_text or "").lower()
+    _prefilter_accept = any(signal in _text_lower for signal in ACCEPTANCE_SIGNALS_EN + ACCEPTANCE_SIGNALS_DE)
+
+    print(f"[CHANGE_PROP][ACCEPTANCE_DEBUG] unified_accept={_is_accept}, prefilter_accept={_prefilter_accept}, msg={message_text[:50] if message_text else 'N/A'}...")
+
+    if _is_accept or _prefilter_accept:
+        logger.debug(
+            "[CHANGE_PROP][ACCEPTANCE_GUARD] Skipping change detection: "
+            "is_acceptance=True, message is confirming existing selection"
+        )
+        return EnhancedChangeResult(
+            is_change=False,
+            change_type=None,
+            mode=None,
+            confidence=0.0,
+            alternative_intent=MessageIntent.CONFIRMATION,
+            revision_signals=[],
+            target_matches=[],
+            language=getattr(unified_detection, "language", "en") or "en",
+        )
+
+    # -------------------------------------------------------------------------
+    # Q&A FALLBACK GUARD: When unified_detection is not available (e.g., during
+    # intake before pre-route runs), use simple heuristic: messages with "?"
+    # are likely Q&A and should NOT trigger detours unless they have explicit
+    # change keywords like "change", "instead", "cancel", etc.
+    # -------------------------------------------------------------------------
+    if unified_detection is None and message_text and "?" in message_text:
+        # Check if message has explicit change/revision keywords
+        text_lower = message_text.lower()
+        explicit_change_keywords = [
+            "change", "modify", "update", "instead", "cancel", "different",
+            "rather", "switch", "move", "reschedule", "prefer", "ändern",
+            "verschieben", "statt", "lieber", "wechseln",
+        ]
+        has_explicit_change = any(kw in text_lower for kw in explicit_change_keywords)
+        if not has_explicit_change:
+            logger.debug(
+                "[CHANGE_PROP][QNA_FALLBACK_GUARD] Question mark detected without "
+                "change keywords - treating as Q&A: msg=%s...",
+                message_text[:50] if message_text else None,
+            )
+            return EnhancedChangeResult(
+                is_change=False,
+                change_type=None,
+                mode=None,
+                confidence=0.0,
+                alternative_intent=MessageIntent.GENERAL_QA,
+                revision_signals=[],
+                target_matches=[],
+                language="en",
+            )
+
     if not message_text:
         return EnhancedChangeResult(
             is_change=False,

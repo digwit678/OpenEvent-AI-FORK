@@ -206,13 +206,18 @@ def load_room_static(room_id: str) -> Dict[str, Any]:
     if rate is not None:
         summary["daily_rate"] = rate
         summary["daily_rate_formatted"] = f"CHF {rate:,.2f}"
-    info = _room_info_lookup().get(room_id.lower())
+    # Try lookup by room_id first, then by room_name
+    info = _room_info_lookup().get(room_id.lower()) or _room_info_lookup().get(room_name.lower())
     if info:
         summary.update(
             {
                 "size_sqm": info.get("size_sqm"),
                 "best_for": info.get("best_for"),
                 "capacity_span": info.get("capacity"),
+                "accessibility": info.get("accessibility"),
+                "rate_inclusions": info.get("rate_inclusions"),
+                "services": info.get("services"),
+                "equipment": info.get("equipment"),
             }
         )
     return summary

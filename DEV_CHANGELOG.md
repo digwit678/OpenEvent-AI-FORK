@@ -1,5 +1,378 @@
 # Development Changelog
 
+## 2026-01-21
+
+### Fix: Date Change Detour Not Generating New Offer (QNA_GUARD Blocking)
+
+**Problem:** When a date change request came through the detour path (Step 1 → Step 2 → Step 3 → Step 4), messages like "Can we change to May 20, 2026?" were being treated as "Pure Q&A" in Step 4, preventing new offer generation. The system would return a Q&A-style response without showing the updated offer.
+
+**Root Cause:** Step 4's QNA_GUARD logic detected that the message had a question mark (`has_question_mark = True`) but no acceptance signal (`has_acceptance = False`). This triggered the `[Step4][QNA_GUARD] Pure Q&A detected - returning without offer generation` path, which returned a Q&A response instead of generating the new offer.
+
+**Log Evidence:** `[Step4][QNA_GUARD] Pure Q&A detected - returning without offer generation`
+
+**Solution:** Modified Step 4's QNA_GUARD to check if `caller_step` is set (indicating the call came from a detour). When `caller_step` is present (detour mode), the QNA_GUARD is bypassed and the offer generation proceeds automatically.
+
+**Files Modified:**
+- `workflows/steps/step4_offer/trigger/step4_handler.py` - Added `is_detour_call` check to bypass QNA_GUARD when called from detour
+
+**Result:** Date change detours now correctly auto-generate new offers without asking for re-confirmation. The detour flow (Step 1 → Step 2 → Step 3 → Step 4) completes with the updated offer being shown to the client.
+
+**Design Principle:** Detours are initiated by change detection (not Q&A), so when we reach Step 4 via detour, we should always generate the offer. The QNA_GUARD is meant to prevent premature offer generation from pure questions, but it should not block offer generation when we're already in a validated detour flow.
+
+---
+
+### Fix: Hybrid Messages (Acceptance + Q&A) Not Working Correctly
+
+**Problem:** Messages like "Room B looks perfect. Do you offer catering services?" were being treated entirely as questions instead of recognizing the acceptance portion. The system would stay at the current step instead of advancing to the next workflow step (billing check) while also answering the Q&A question.
+
+**Root Cause:** The `matches_acceptance_pattern()` function in `detection/response/matchers.py` rejected any text containing a "?" character, even if the question was in a separate sentence. This meant hybrid messages with both acceptance statements and questions would never be recognized as acceptances.
+
+**Solution:** Modified `matches_acceptance_pattern()` to handle hybrid messages:
+1. Extract the statement portion before "?" when present (e.g., "Room B looks perfect" from "Room B looks perfect. Do you offer catering?")
+2. Check acceptance patterns on just the statement part
+3. Added "perfect" to the list of acceptance keywords
+
+**Files Modified:**
+- `detection/response/matchers.py` - Modified `matches_acceptance_pattern()` to extract and check statement portion before question mark
+
+**Result:** Hybrid messages now correctly:
+1. Detect acceptance from the statement portion
+2. Advance to next workflow step (billing check)
+3. Answer the Q&A question in the same response
+
+**Design Principle:** Acceptance detection should be sentence-aware. The presence of a question in a later sentence doesn't negate an acceptance statement in an earlier sentence.
+
+---
+
+### Fix: LLM Signals Overridden by Question-Mark Heuristics (Detours + Confirmation)
+
+**Problem:** Action requests phrased as questions (e.g., date changes or "can you please confirm this?") were being treated as Q&A because pre-filter question signals ("?") overrode the LLM's intent signals. This especially broke date-change detours after hybrid acceptance during billing flow.
+
+**Root Cause:** `run_unified_detection()` merged `is_question` with pre-filter heuristics unconditionally, and Step 1's Q&A guards used raw question marks to block detours. In billing flow, change detection could be skipped unless keyword heuristics fired.
+
+**Solution:** Favor LLM intent/signals and only use pre-filter as a safe fallback:
+1. Merge `is_question` and `is_change_request` with LLM-first logic (pre-filter fills gaps only when no action signals are present).
+2. Replace question-mark Q&A guards in Step 1 and Step 2 with `unified_detection.is_question` / LLM intent.
+3. In billing flow, allow change detection when the LLM marks a change request (fallback to heuristic only if LLM is unavailable).
+
+**Files Modified:**
+- `detection/unified.py` - Added `_merge_signal_flags()` for LLM-first signal merging
+- `workflows/steps/step1_intake/trigger/step1_handler.py` - LLM-driven Q&A guard + billing-flow change gating
+- `workflows/steps/step2_date_confirmation/trigger/step2_handler.py` - LLM-driven Q&A guard
+- `tests/detection/test_unified_signal_merging.py` - New tests for signal merging behavior
+
+**Result:** Date-change detours triggered by question-form messages now route correctly during billing flow, and confirmation requests are no longer misclassified as Q&A.
+
+---
+
+### Fix: Detour Date Confirmation Could Skip Room Availability Recheck
+
+**Problem:** After a date-change detour, confirming the new date could fall into Step 3’s pure Q&A short-circuit, skipping the room availability recheck and the “room confirmation → room check” flow.
+
+**Root Cause:** Step 3’s detour re-entry guard only used `state.extras["change_detour"]`, which isn’t set when Step 2 autoruns Step 3, even though `caller_step` is present.
+
+**Solution:** Treat `caller_step` as a detour indicator in Step 3 and force the room availability path when it’s set.
+
+**Files Modified:**
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py`
+
+**Tests:** Playwright E2E (hybrid) `e2e-scenarios/2026-01-21_hybrid-detour-second-offer-site-visit.md`; regression `tests_root/specs/dag/test_change_scenarios_e2e.py::TestScenario6_DetourSmartShortcutDateRoomConfirmation`.
+
+---
+
+### Fix: Detour Smart Shortcut for Date + Room Confirmation
+
+**Problem:** After a date-change detour, a single confirmation message that includes both the new date and the room still triggered the full Step 3 availability overview and asked for room selection again.
+
+**Root Cause:** Step 3’s room confirmation detection relied on room-choice detection that was blocked by acceptance guards, so explicit room confirmations during detours were missed.
+
+**Solution:** In detour context (`caller_step` set), allow explicit room mentions to count as room confirmations when the message is not a pure question (using LLM is_question/is_acceptance signals). This enables the smart shortcut to proceed directly to Step 4 when the room is available.
+
+**Files Modified:**
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py`
+
+**Tests:** Not run (recommend adding coverage in `tests/specs/dag/test_change_scenarios_e2e.py`).
+
+---
+
+## 2026-01-20
+
+### Fix: Pattern-only Q&A Detection Requiring LLM Confirmation
+
+**Problem:** Words like "available" in the `_PATTERNS` regex list triggered `is_general=True` even for pure booking requests like "Please let me know what's available". This caused hybrid Q&A formatting (with separator and Q&A sections) to appear on pure workflow messages.
+
+**Root Cause:** The `detect_general_room_query()` function in `general_qna.py` set `is_general=True` whenever any pattern matched, regardless of whether the message was actually a question or just a booking request using question-like words.
+
+**Solution:** Added `pattern_only_match` logic that requires LLM confirmation when:
+1. The only match is from `_PATTERNS` (not from question words/interrogatives)
+2. There's no question mark "?" in the text
+3. There's no interrogative word (what, which, when, etc.)
+
+In these cases, the function now defers to the LLM's classification result instead of assuming it's a general Q&A.
+
+**Files Modified:**
+- `detection/qna/general_qna.py` - Added pattern-only detection logic requiring LLM confirmation
+
+**Commit:** 1b2bbeb
+
+**Impact:** Pure booking requests like "Hello, I'm looking to book a room. Please let me know what's available." now get a clean workflow response WITHOUT the separator and Q&A sections about room features.
+
+---
+
+### Fix: Pre-filter Question Detection Too Broad for Interrogatives
+
+**Problem:** Single-word interrogatives like "what", "which", "when" triggered `has_question_signal=True` even in non-question contexts like "what's available" in booking requests. The pre-filter signal bypassed the LLM veto at `unified.py:296` via OR logic, causing false positive Q&A detection.
+
+**Root Cause:** The `_has_question_signal()` function in `pre_filter.py` matched ANY occurrence of single interrogative words without checking if they were actually being used as questions.
+
+**Solution:** Single-word interrogatives now only trigger question detection if:
+1. There's a question mark "?" in the text, OR
+2. The word appears at the START of the message (interrogative position, e.g., "What rooms are available?")
+
+Multi-word patterns like "can you", "is there", "could you" remain unchanged as they're stronger question signals.
+
+**Files Modified:**
+- `detection/pre_filter.py` - Added question mark and position checks for single-word interrogatives
+
+**Commit:** d52baf3
+
+**Impact:** Phrases like "what's available" in the middle of booking requests no longer trigger false positive question signals, allowing the LLM's semantic classification to prevail.
+
+---
+
+### Fix: Hybrid Q&A Path Not Triggering in Step 3
+
+**Problem:** When a client sent a hybrid message containing both booking intent and a Q&A question (e.g., "I want to book a room... Also, what about parking?"), Step 3 incorrectly took the pure Q&A path instead of the room availability path. This caused only the Q&A answer to be shown while the workflow response (room options) was missing.
+
+**Root Cause:** The `is_pure_qna` check was matching parking patterns even in hybrid messages, causing `general_qna_applicable` to remain True and short-circuit to the Q&A-only response path.
+
+**Solution:** Added booking intent detection from unified detection. If `unified_detection.intent` is `event_request`, `change_request`, or `negotiation`, the message is treated as hybrid (not pure Q&A), ensuring the workflow response is generated first with Q&A appended as a separate section.
+
+**Files Modified:**
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py` (lines 705-730)
+
+**E2E Verified:** Hybrid Q&A format now works correctly - workflow response appears FIRST, Q&A answer appears SECOND with --- separator.
+
+---
+
+### Fix: Semantic Q&A Detection - Keywords Overriding LLM Intent
+
+**Problem:** Keyword-based Q&A detection was overriding the LLM's semantic understanding. Messages like "thanks for the parking info" were triggering parking Q&A because they contained the word "parking", even though the LLM correctly identified them as NOT questions.
+
+**Root Cause:** The merge logic in `unified.py` was adding keyword-based Q&A types regardless of the LLM's `is_question` signal, causing acknowledgments to be treated as new questions.
+
+**Solution:** Modified the Q&A type merging to respect the LLM's `is_question` signal. Keyword-based Q&A types are only added if:
+1. The LLM thinks it's a question (`is_question=True`), OR
+2. The LLM found Q&A types itself
+
+This prevents keyword matches from overriding semantic intent classification.
+
+**Files Modified:**
+- `detection/unified.py` (lines 266-286)
+
+**E2E Verified:** Q&A is NOT repeated when client acknowledges it (e.g., "thanks for the parking info").
+
+---
+
+### Fix: Acknowledgment Phrases Triggering Q&A Detection
+
+**Problem:** As an additional safeguard, acknowledgment phrases like "thanks for the parking info" and confirmation requests were being detected as Q&A questions by keyword patterns.
+
+**Root Cause:** Keyword-based Q&A detection didn't filter out common acknowledgment and confirmation patterns before applying Q&A type detection.
+
+**Solution:** Added `_is_acknowledgment()` and `_is_confirmation_request()` helper functions in `classifier.py` that filter out:
+- Acknowledgment patterns: "thanks for", "thank you for", "got it", "understood", etc.
+- Confirmation requests: "sounds good", "works for me", "that's fine", etc.
+
+These filters run BEFORE Q&A type detection to prevent false positives.
+
+**Files Modified:**
+- `detection/intent/classifier.py` (lines 391-450)
+
+**Design Principle:** Always filter out acknowledgment/confirmation patterns before keyword-based detection to prevent false positives.
+
+---
+
+## 2026-01-19
+
+### Fix: Date Change Detour - Explicit Room Unavailability Message
+
+**Problem:** When a client changed their event date and their previously selected room was unavailable on the new date, the system would silently recommend a different room without explicitly stating that the original room was no longer available. This was confusing for clients.
+
+**Solution:** Added tracking when a room lock is cleared due to unavailability (`state.extras["_cleared_room_name"]`) and a clear intro message stating the original room is unavailable.
+
+**Before:** "For your event on 20.05.2026, I recommend Room C..."
+**After:** "Room A is no longer available on 20.05.2026. For your event with 30 guests, I recommend Room C..."
+
+**Files Modified:**
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py` - Added `_cleared_room_name` tracking and intro message
+
+**E2E Test:** Verified via Playwright - see `docs/reports/E2E_SCENARIO_DATE_CHANGE_DETOUR_QNA_BILLING_2026_01_19.md`
+
+---
+
+### Fix: Remove FALLBACK Diagnostic Block from UI
+
+**Problem:** When the verbalizer's fact verification failed (e.g., LLM response missing some room names), the system was prepending a diagnostic block to the response visible to users:
+```
+[FALLBACK: ux.verbalizer]
+Trigger: fact_verification_failed
+Error: Exception - Missing: room:Room F, room:Room B...
+```
+
+**Solution:** Removed `wrap_fallback()` call for `fact_verification_failed` trigger. The warning is still logged for debugging, but the diagnostic block no longer appears in the UI.
+
+**Files Modified:**
+- `ux/universal_verbalizer.py` - Return fallback text directly without wrapping in diagnostics
+
+---
+
+### Fix: Surface LLM API Failures in Fallbacks (Dev)
+
+**Problem:** Q&A/detour messages returned a generic fallback when OpenAI billing/auth failed, with no visible cause.
+
+**Solution:** Default fallback diagnostics to ON in dev (ENV=dev) and surface critical API failures with explicit system error messaging in `send_message`.
+
+**Files Modified:**
+- `core/fallback.py`
+- `api/routes/messages.py`
+
+**Tests:** Added `tests_root/specs/determinism/test_fallback_diagnostics_defaults.py` (not run).
+
+---
+
+### Fix: Q&A Response Duplication (Double Response with --- Separator)
+
+**Problem:** Q&A responses were appearing twice in the chat - once as the main response and again after a `---` separator. This was especially noticeable for pure Q&A messages like "Where can guests park?"
+
+**Root Cause:** Both `draft_messages` AND `hybrid_qna_response` were being set with Q&A content. The `api/routes/messages.py` was appending `hybrid_qna_response` even when the draft already contained the Q&A answer.
+
+**Solution:** Added `pure_info_qna` flag check in `api/routes/messages.py` to skip appending `hybrid_qna_response` when the response is a pure Q&A (not a hybrid booking+Q&A message).
+
+**Files Modified:**
+- `api/routes/messages.py` - Added `pure_info_qna` check before appending hybrid Q&A
+
+---
+
+### Fix: Q&A Responses Using Bullet Points Instead of Paragraphs
+
+**Problem:** Q&A responses were formatted with bullet points (`- `) which looked unprofessional in chat/email.
+
+**Solution:** Updated `build_info_block()` in `workflows/qna/templates.py` to format responses as flowing paragraphs with blank lines between, instead of bullet points.
+
+**Files Modified:**
+- `workflows/qna/templates.py` - Changed bullet formatting to paragraph formatting
+
+---
+
+### Fix: Wrong Month Showing in Date Suggestions (January Instead of March)
+
+**Problem:** When a user requested a past date (e.g., "March 2025"), the system would suggest dates in the next month after the past date as future alternatives (e.g., "Mondays available in January 2026"), but the date line said "Mondays available in January 2026" when it should have said March 2026.
+
+**Root Cause:** `suggest_dates()` was only collecting dates 45 days ahead, which didn't reach the target month (March 2026 when starting from January 2026). Also, `prioritized_dates` wasn't being cleared when switching to target month dates.
+
+**Solution:** Added supplemental date collection from the `future_suggestion` month using `next_five_venue_dates()`, and properly clear `prioritized_dates` when using target month dates.
+
+**Files Modified:**
+- `workflows/steps/step2_date_confirmation/trigger/step2_handler.py` - Added supplemental date collection for future_suggestion month
+
+---
+
+### Fix: Detour Messages Showing Stale Q&A Content
+
+**Problem:** After a detour (date change, room change), the response would include old Q&A content from earlier in the conversation, appended with a `---` separator. Example: availability message followed by "Our rooms feature Wi-Fi, projector-ready HDMI..."
+
+**Root Cause:** `hybrid_qna_response` set during Step 1 (initial inquiry) was persisting in `state.extras` across the entire conversation and getting appended to later responses.
+
+**Solution:** Added `state.extras.pop("hybrid_qna_response", None)` when a detour is detected to clear stale Q&A responses.
+
+**Files Modified:**
+- `workflows/steps/step2_date_confirmation/trigger/step2_handler.py`
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py`
+- `workflows/steps/step4_offer/trigger/step4_handler.py`
+
+---
+
+### Fix: Hardcoded Room Features and Catering Options
+
+**Problem:** Room features in `_general_response()` and catering options in `get_catering_teaser_products()` were hardcoded, risking incorrect information being shown to clients if the database had different values.
+
+**Solution:**
+1. Added `list_common_room_features()` to `catalog.py` that reads features from `rooms.json` and returns features common across all rooms
+2. Updated `_general_response()` in `router.py` to use dynamic features
+3. Removed all hardcoded catering fallbacks from `get_catering_teaser_products()` - now returns empty if no catering products exist
+
+**Files Modified:**
+- `workflows/common/catalog.py` - Added `list_common_room_features()` function
+- `workflows/qna/router.py` - Updated `_general_response()` to use dynamic features
+- `workflows/io/config_store.py` - Removed hardcoded catering fallbacks
+
+**Design Principle:** Fail-safe data display - rather than showing potentially incorrect hardcoded information, the system now gracefully shows nothing if the data source is unavailable.
+
+---
+
+### Feature: Billing Address Capture-Anytime with Amazon-Style Checkout Gate
+
+**UX Design Decision: Option B (Amazon Model)**
+
+After consulting with UX experts, we chose Option B over Option A for billing address handling:
+
+| Option | Approach | Verdict |
+|--------|----------|---------|
+| **A** | Gate billing BEFORE offer | ❌ Rejected - creates friction before "price reveal", reduces conversions |
+| **B** | Gate billing AT CONFIRMATION | ✅ Chosen - like Amazon, show cart first, request billing at checkout |
+
+**Why Option B is Superior:**
+1. **Conversion is King**: Blocking the offer behind an administrative task (entering a zip code) gives clients a reason to drop off
+2. **Proposal vs Contract**: An Offer (Step 4) is a proposal - billing can be "TBD". Confirmation (Step 7) is a contract - requires accurate billing
+3. **The Amazon Model**: You don't ask for shipping address before showing the cart total - you ask at checkout
+4. **Natural Flow**: Clients expect to provide details when they say "Yes" to a deal, not while browsing
+
+**Implementation:**
+
+```
+Steps 1-3 (Info Gathering)     Steps 4-6 (Offer/Negotiation)     Step 7 (Confirmation)
+─────────────────────────      ───────────────────────────────   ─────────────────────────
+Billing captured silently      Billing captured silently          BILLING GATE
+IF incomplete → prompt         NO prompts (don't nag!)            ↓
+                                                                  If incomplete → block
+                                                                  "Please provide billing..."
+                                                                  ↓
+                                                                  If complete → proceed
+```
+
+**Key Features:**
+1. **Capture-Anytime**: Billing captured at ANY step (pre-filter regex + LLM extraction)
+2. **No Nagging During Offer**: Steps 4-6 skip billing validation prompts
+3. **Gate at Checkout**: Step 7 "I accept" triggers billing completeness check
+4. **Auto-Continue**: When client provides billing after gate, automatically sends Final Contract
+5. **Visual Distinction**: Final Contract has clear `BOOKING CONFIRMATION` header, formatted differently from proposal
+
+**Files Modified:**
+- `workflows/common/billing_capture.py` - Added step-based prompt skipping, improved text extraction
+- `workflows/steps/step7_confirmation/trigger/step7_handler.py` - Added `_check_billing_gate()` and `_send_final_contract()`
+- `workflows/common/types.py` - Added `clear_regular_drafts()` to preserve special drafts
+
+**Final Contract Example:**
+```
+Thank you for sharing your billing details.
+
+---
+**BOOKING CONFIRMATION**
+---
+
+**Event Date:** 15.03.2025
+**Venue:** Grand Ballroom
+**Billing Address:** Acme Corp, Bahnhofstrasse 42, 8001 Zurich
+**Total:** CHF 12,500.00
+
+---
+
+Your booking is now confirmed!
+```
+
+---
+
 ## 2026-01-14
 
 ### Fix: Final Message Acknowledges Scheduled Site Visit Instead of Prompting

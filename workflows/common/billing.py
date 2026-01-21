@@ -66,6 +66,23 @@ def missing_billing_fields(event_entry: Dict[str, Any]) -> List[str]:
     return missing
 
 
+def has_complete_billing(event_entry: Dict[str, Any]) -> bool:
+    """
+    Check if billing details are complete (all required fields present).
+
+    Required fields: name_or_company, street, postal_code, city, country
+
+    Args:
+        event_entry: The event entry to check
+
+    Returns:
+        True if all required billing fields are present and non-empty
+    """
+    if not event_entry:
+        return False
+    return len(missing_billing_fields(event_entry)) == 0
+
+
 def billing_prompt_for_missing_fields(fields: Iterable[str]) -> str:
     field_labels = {
         "name_or_company": "company or billing name",

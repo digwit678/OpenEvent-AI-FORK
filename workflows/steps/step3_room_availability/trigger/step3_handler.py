@@ -32,11 +32,16 @@ from workflows.common.general_qna import (
     _fallback_structured_body,
 )
 from workflows.common.detection_utils import get_unified_detection
+from workflows.qna.router import generate_hybrid_qna_response
 from workflows.change_propagation import (
     ChangeType,
     detect_change_type,
     detect_change_type_enhanced,
     route_change_on_updated_variable,
+)
+from workflows.common.detour_acknowledgment import (
+    generate_detour_acknowledgment,
+    add_detour_acknowledgment_draft,
 )
 from workflows.qna.engine import build_structured_qna_result
 from workflows.qna.extraction import ensure_qna_extraction
@@ -101,6 +106,10 @@ QNA_SUMMARY_CHAR_THRESHOLD = MENU_CONTENT_CHAR_THRESHOLD
 @profile_step("workflow.step3.room_availability")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Execute Group C — room availability assessment with entry guards and caching."""
+
+    # DEBUG: Log entry point
+    logger.info("[Step3][ENTRY] called with state.user_info=%s",
+                {k: v for k, v in (state.user_info or {}).items() if k in ("room", "_room_choice_detected")})
 
     event_entry = state.event_entry
     if not event_entry:
@@ -320,6 +329,36 @@ def process(state: WorkflowState) -> GroupResult:
                     detail=f"User selected room: {detected_room}",
                     owner_step="Step3_Room",
                 )
+        elif event_entry.get("caller_step") is not None:
+            # Detour smart shortcut: allow room confirmation in detour context even if
+            # acceptance guard blocked room detection, but only when the room is
+            # explicitly mentioned in the message and it's not a pure question.
+            lowered_message = message_text.lower()
+            candidate_room = None
+            extracted_room = user_info.get("room")
+            if extracted_room and str(extracted_room).lower() in lowered_message:
+                candidate_room = extracted_room
+            else:
+                locked_room = event_entry.get("locked_room_id")
+                if locked_room and str(locked_room).lower() in lowered_message:
+                    candidate_room = locked_room
+            is_pure_room_question = bool(
+                unified_detection
+                and getattr(unified_detection, "is_question", False)
+                and not getattr(unified_detection, "is_acceptance", False)
+            )
+            if candidate_room and not is_pure_room_question:
+                user_info["room"] = candidate_room
+                user_info["_room_choice_detected"] = True
+                state.user_info = user_info
+                if thread_id:
+                    trace_marker(
+                        thread_id,
+                        "room_selection_detected_detour",
+                        detail=f"Detour room confirmed: {candidate_room}",
+                        data={"caller_step": event_entry.get("caller_step")},
+                        owner_step="Step3_Room",
+                    )
 
     # -------------------------------------------------------------------------
     # NONSENSE GATE: Check for off-topic/nonsense using existing confidence
@@ -363,7 +402,30 @@ def process(state: WorkflowState) -> GroupResult:
     else:
         classification = detect_general_room_query(message_text, state)
         state.extras["_general_qna_classification"] = classification
-    state.extras["general_qna_detected"] = bool(classification.get("is_general"))
+    # HYBRID FIX: Also check qna_types from unified detection for hybrid messages
+    # IMPORTANT: Only use qna_types if LLM detected is_question=True
+    unified_detection = get_unified_detection(state)
+    has_qna_types = bool(getattr(unified_detection, "qna_types", None) if unified_detection else False)
+    is_question = bool(getattr(unified_detection, "is_question", False) if unified_detection else False)
+    has_valid_qna = has_qna_types and is_question  # Only valid if LLM says it's a question
+    state.extras["general_qna_detected"] = bool(classification.get("is_general")) or has_valid_qna
+    state.extras["_has_qna_types"] = has_valid_qna
+
+    # HYBRID FIX: Pre-generate hybrid Q&A response for hybrid messages
+    # This will be appended to the workflow response by api/routes/messages.py
+    if has_valid_qna and not classification.get("is_general"):
+        qna_types = getattr(unified_detection, "qna_types", []) or []
+        if qna_types:
+            hybrid_qna_response = generate_hybrid_qna_response(
+                qna_types=qna_types,
+                message_text=state.message.body or "",
+                event_entry=event_entry,
+                db=state.db,
+            )
+            if hybrid_qna_response:
+                state.extras["hybrid_qna_response"] = hybrid_qna_response
+                logger.debug("[STEP3][HYBRID_QNA] Generated hybrid Q&A response for types: %s", qna_types)
+
     classification.setdefault("primary", "general_qna")
     if not classification.get("secondary"):
         classification["secondary"] = ["general"]
@@ -386,7 +448,10 @@ def process(state: WorkflowState) -> GroupResult:
 
     # [CHANGE DETECTION] Run BEFORE Q&A dispatch
     # Use enhanced detection with dual-condition logic (revision signal + bound target)
-    enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
+    # Pass unified_detection so Q&A messages don't trigger false change detours
+    enhanced_result = detect_change_type_enhanced(
+        event_entry, user_info, message_text=message_text, unified_detection=unified_detection
+    )
     change_type = enhanced_result.change_type if enhanced_result.is_change else None
 
     # [SKIP DUPLICATE DETOUR] If a date change is detected but the date in the message
@@ -468,6 +533,16 @@ def process(state: WorkflowState) -> GroupResult:
 
             append_audit_entry(event_entry, 3, decision.next_step, f"{change_type.value}_change_detected")
 
+            # IMMEDIATE ACKNOWLEDGMENT: Add detour acknowledgment draft
+            ack_result = generate_detour_acknowledgment(
+                change_type=change_type,
+                decision=decision,
+                event_entry=event_entry,
+                user_info=user_info,
+            )
+            if ack_result.generated:
+                add_detour_acknowledgment_draft(state, ack_result)
+
             # Skip Q&A: return detour signal
             # CRITICAL: Update event_entry BEFORE state.current_step so routing loop sees the change
             update_event_metadata(event_entry, current_step=decision.next_step)
@@ -475,6 +550,8 @@ def process(state: WorkflowState) -> GroupResult:
             state.set_thread_state("In Progress")
             state.extras["persist"] = True
             state.extras["change_detour"] = True
+            # Clear stale hybrid Q&A from previous turns (prevents old Q&A being appended to detour response)
+            state.extras.pop("hybrid_qna_response", None)
 
             payload = {
                 "client_id": state.client_id,
@@ -490,11 +567,45 @@ def process(state: WorkflowState) -> GroupResult:
             }
             return GroupResult(action="change_detour", payload=payload, halt=False)
 
+        else:
+            # -------------------------------------------------------------------------
+            # REQUIREMENTS CHANGE STAYING AT STEP 3 (Jan 2026)
+            # When requirements change (e.g., guest count 30 -> 60) while already at Step 3,
+            # we stay at Step 3 to re-evaluate rooms. We need to:
+            # 1. Clear the room lock (room may no longer fit new requirements)
+            # 2. Set change_detour flag so Q&A path is bypassed
+            # 3. Continue to room evaluation (don't return, let flow continue)
+            # -------------------------------------------------------------------------
+            if change_type == ChangeType.REQUIREMENTS and decision.needs_reeval:
+                update_event_metadata(
+                    event_entry,
+                    room_eval_hash=None,
+                    locked_room_id=None,
+                )
+                state.extras["change_detour"] = True
+                if thread_id:
+                    trace_marker(
+                        thread_id,
+                        "REQUIREMENTS_REEVAL_AT_STEP3",
+                        detail="Requirements changed, staying at Step 3 to re-evaluate rooms",
+                        data={"change_type": change_type.value, "needs_reeval": decision.needs_reeval},
+                        owner_step="Step3_Room",
+                    )
+                # Don't return - continue to room evaluation below
+
     # No change detected: check if Q&A should be handled
     # NOTE: Room can be detected via _room_choice_detected OR via ChangeType.ROOM detection
     # The change_type variable is set earlier (line ~233) if a room change was detected
     room_change_detected_flag = state.user_info.get("_room_choice_detected") or (change_type == ChangeType.ROOM)
     user_requested_room = state.user_info.get("room") if room_change_detected_flag else None
+
+    # DEBUG: Trace user_info state from Step 1 → Step 3
+    logger.info(
+        "[Step3][USER_INFO_TRACE] state.user_info=%s, room_change_detected_flag=%s, user_requested_room=%s",
+        {k: v for k, v in (state.user_info or {}).items() if k in ("room", "_room_choice_detected")},
+        room_change_detected_flag,
+        user_requested_room,
+    )
     locked_room_id = event_entry.get("locked_room_id")
 
     # DEBUG: Trace room confirmation logic
@@ -554,34 +665,52 @@ def process(state: WorkflowState) -> GroupResult:
     # After a change_detour (e.g., participant change), force normal room availability
     # path instead of Q&A fallback. The change_detour flag is set by the routing loop.
     # -------------------------------------------------------------------------
-    is_detour_reentry = state.extras.get("change_detour", False)
+    caller_step = event_entry.get("caller_step")
+    is_detour_reentry = state.extras.get("change_detour", False) or caller_step is not None
     if is_detour_reentry:
         general_qna_applicable = False
         trace_marker(
             thread_id,
             "detour_reentry",
-            detail="Forcing room availability path after change_detour",
+            detail="Forcing room availability path after detour",
+            data={"caller_step": caller_step, "change_detour": state.extras.get("change_detour", False)},
             owner_step="Step3_Room",
         )
 
     # -------------------------------------------------------------------------
-    # PURE Q&A DETECTION (Dec 29, 2025)
-    # Allow pure Q&A QUESTIONS about catering, menu, etc. even on first Step 3 entry.
-    # These are informational queries, not workflow requests.
-    # IMPORTANT: Only detect QUESTIONS, not mentions of catering in booking requests.
+    # PURE Q&A DETECTION (Dec 29, 2025, updated Jan 2026)
+    # Allow pure Q&A QUESTIONS about catering, parking, accessibility, etc. even on
+    # first Step 3 entry. These are informational queries, not workflow requests.
+    # IMPORTANT: Only detect QUESTIONS, not mentions in booking requests.
     # "coffee break needed" is NOT a question; "what catering options?" IS a question.
     # -------------------------------------------------------------------------
     message_lower = message_text.lower() if message_text else ""
-    # Check for question patterns about catering/food
-    catering_question_patterns = [
+    # Check for question patterns about Q&A topics (not workflow actions)
+    pure_qna_patterns = [
+        # Catering/food patterns
         r"what.*(catering|menu|food|drink|coffee|lunch|dinner|breakfast)",
         r"(catering|menu|food|drink).*\?",
         r"(do you|can you|could you).*(catering|menu|food|offer)",
         r"(tell me|info|information).*(catering|menu|food)",
         r"what.*available.*(catering|menu|food)",
         r"(which|what).*(options|choices).*(catering|menu|food|drink)",
+        # Parking patterns
+        r"(is there|do you have|where).*(parking|car park|parkplatz)",
+        r"parking.*\?",
+        r"(where|can i|could i).*(park)",
+        # Accessibility patterns
+        r"(is|are).*(wheelchair|accessible|handicap|disability|disabled)",
+        r"accessibility.*\?",
+        r"(do you have|is there).*(ramp|elevator|lift|accessible)",
+        # Room features/equipment patterns
+        r"(does|do).*(room|venue).*(have|has).*(projector|screen|av|wifi|audio|microphone)",
+        r"(what|which).*(equipment|facilities|amenities).*\?",
+        r"(is there|do you have).*(projector|screen|whiteboard|flipchart)",
+        # Pricing/rate patterns
+        r"(what|how much).*(cost|price|rate|charge)",
+        r"(pricing|rates?).*\?",
     ]
-    is_pure_qna = any(re.search(pat, message_lower) for pat in catering_question_patterns)
+    is_pure_qna = any(re.search(pat, message_lower) for pat in pure_qna_patterns)
 
     # Don't take Q&A path for initial inquiries (first entry to Step 3)
     # The Q&A path is for follow-up questions after rooms have been presented
@@ -622,8 +751,23 @@ def process(state: WorkflowState) -> GroupResult:
 
     if general_qna_applicable and not has_step3_history:
         # First entry to Step 3 - only block workflow questions, not pure Q&A
-        if not is_pure_qna:
+        # HYBRID FIX: Check unified detection intent - if it's a booking intent (event_request),
+        # this is a hybrid message (booking + Q&A) and should NOT take the pure Q&A path.
+        # The Q&A will be appended to the workflow response via hybrid_qna_response.
+        is_booking_intent = False
+        if unified_detection:
+            intent = getattr(unified_detection, "intent", None) or ""
+            is_booking_intent = intent in ("event_request", "change_request", "negotiation")
+
+        if not is_pure_qna or is_booking_intent:
             general_qna_applicable = False
+            if is_booking_intent:
+                trace_marker(
+                    thread_id,
+                    "hybrid_booking_detected",
+                    detail=f"Booking intent '{intent}' with Q&A - using hybrid path",
+                    owner_step="Step3_Room",
+                )
         else:
             trace_marker(
                 thread_id,
@@ -777,6 +921,10 @@ def process(state: WorkflowState) -> GroupResult:
             )
             append_audit_entry(event_entry, 3, 3, "room_unavailable_after_date_change")
 
+            # STORE cleared room info so we can tell the user their room is no longer available
+            state.extras["_cleared_room_name"] = locked_room_id
+            state.extras["_cleared_room_reason"] = "unavailable_on_new_date"
+
             trace_marker(
                 thread_id,
                 "room_lock_cleared",
@@ -829,7 +977,30 @@ def process(state: WorkflowState) -> GroupResult:
             chosen_date=chosen_date,
         )
 
-    selected_entry = _select_room(ranked_rooms)
+    # -------------------------------------------------------------------------
+    # FIX: When user explicitly requests a room (e.g., "Room B looks perfect"),
+    # use THEIR choice if it's available, not the ranking algorithm's choice.
+    # This ensures room confirmation works correctly for hybrid messages.
+    # -------------------------------------------------------------------------
+    if user_requested_room:
+        # Find the user's room in the ranked list
+        user_room_entry = next(
+            (r for r in ranked_rooms if r.room.lower() == user_requested_room.lower()),
+            None
+        )
+        if user_room_entry and user_room_entry.status in (ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION):
+            # User's requested room is available - use it
+            selected_entry = user_room_entry
+            logger.info("[Step3] Using user's explicit room choice: %s (status=%s)",
+                       user_room_entry.room, user_room_entry.status)
+        else:
+            # User's room not available - fall back to ranking
+            selected_entry = _select_room(ranked_rooms)
+            logger.debug("[Step3] User requested %s but not available, using ranked: %s",
+                        user_requested_room, selected_entry.room if selected_entry else None)
+    else:
+        selected_entry = _select_room(ranked_rooms)
+
     selected_room = selected_entry.room if selected_entry else None
     selected_status = selected_entry.status if selected_entry else None
 
@@ -900,6 +1071,8 @@ def process(state: WorkflowState) -> GroupResult:
         and user_requested_room.lower() == selected_room.lower()
         and outcome in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}
     )
+    # DEBUG: Trace room confirmation logic
+    print(f"[STEP3][ROOM_CONFIRM_CHECK] user_requested_room={user_requested_room!r}, selected_room={selected_room!r}, outcome={outcome!r}, is_room_confirmation={is_room_confirmation}")
     if is_room_confirmation:
         headers = ["Room Confirmed"]
         outcome_topic = "room_confirmed"  # Override topic for verbalizer
@@ -942,6 +1115,19 @@ def process(state: WorkflowState) -> GroupResult:
     client_prefs = event_entry.get("preferences") or {}
     wish_products_list = client_prefs.get("wish_products") or []
 
+    # CHECK: Was a previously selected room cleared because it became unavailable?
+    # This happens when the user changes the date and their locked room is blocked on the new date
+    cleared_room_name = state.extras.get("_cleared_room_name")
+    if cleared_room_name:
+        # Tell the user explicitly that their previously selected room is no longer available
+        # This is just a PREFIX - the normal room recommendation logic will add the alternatives
+        intro_lines.append(
+            f"{cleared_room_name} is no longer available on {display_chosen_date or 'your new date'}."
+        )
+        # Clear the flag so it's not repeated
+        state.extras.pop("_cleared_room_name", None)
+        state.extras.pop("_cleared_room_reason", None)
+        # Fall through to the recommendation logic below (don't use elif)
 
     if user_requested_room and user_requested_room != selected_room:
         intro_lines.append(
@@ -2440,15 +2626,27 @@ def _to_iso(display_date: Optional[str]) -> Optional[str]:
 
 
 def _select_room(ranked: List[RankedRoom]) -> Optional[RankedRoom]:
-    """Return the top-ranked room that's available or on option.
+    """Return the top-ranked room that's available or on option AND fits capacity.
 
     The ranking already incorporates status weight (Available=60, Option=35)
-    plus preferred_room bonus (30 points). We trust the ranking order and
-    return the first available/option room.
+    plus preferred_room bonus (30 points). We prioritize rooms that fit the
+    requested capacity (capacity_ok=True) over rooms that don't fit.
+
+    Selection priority:
+    1. First Available/Option room that FITS capacity
+    2. First Available/Option room (even if over-capacity) - fallback
+    3. First room in the list - last resort
     """
+    # First pass: find a room that fits AND is available
+    for entry in ranked:
+        if entry.status in (ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION) and entry.capacity_ok:
+            return entry
+
+    # Second pass: any available room (even if doesn't fit - user may adjust)
     for entry in ranked:
         if entry.status in (ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION):
             return entry
+
     return ranked[0] if ranked else None
 
 
@@ -2645,7 +2843,7 @@ def _handle_conflict_choose_alternative(
         thread_state="Awaiting Client",
     )
 
-    state.draft_messages.clear()
+    state.clear_regular_drafts()
     state.add_draft_message({
         "body": body_with_footer,
         "body_markdown": body,
@@ -2710,7 +2908,7 @@ def _handle_conflict_insist_with_reason(
         thread_state="Waiting on HIL",
     )
 
-    state.draft_messages.clear()
+    state.clear_regular_drafts()
     state.add_draft_message({
         "body": body_with_footer,
         "body_markdown": body,
@@ -2768,7 +2966,7 @@ def _handle_conflict_ask_for_reason(
         thread_state="Awaiting Client",
     )
 
-    state.draft_messages.clear()
+    state.clear_regular_drafts()
     state.add_draft_message({
         "body": body_with_footer,
         "body_markdown": body,

@@ -27,7 +27,10 @@ This module can be called from:
 """
 from __future__ import annotations
 
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
@@ -160,22 +163,19 @@ def handle_site_visit_request(
     status = sv_state.get("status", "idle")
     selected_date = sv_state.get("selected_date")
     proposed_slots = sv_state.get("proposed_slots", [])
-    print(f"[SV_HANDLER] Entry: status={status}, selected_date={selected_date}, "
-          f"proposed_slots_count={len(proposed_slots)}")
+    logger.debug("[SV_HANDLER] Entry: status=%s, selected_date=%s, slots=%d",
+                 status, selected_date, len(proposed_slots))
 
     if status == "idle":
         # New site visit request
-        print("[SV_HANDLER] Routing to _start_site_visit (idle state)")
         return _start_site_visit(state, event_entry, detection)
 
     elif status == "date_pending":
         # Waiting for date selection
-        print("[SV_HANDLER] Routing to _handle_date_selection (date_pending state)")
         return _handle_date_selection(state, event_entry, detection)
 
     elif status == "time_pending":
         # Date selected, waiting for time slot selection
-        print(f"[SV_HANDLER] Routing to _handle_time_selection (time_pending state, date={selected_date})")
         return _handle_time_selection(state, event_entry, detection)
 
     elif status == "confirm_pending":
@@ -492,11 +492,10 @@ def _handle_date_selection(
     proposed_slots = sv_state.get("proposed_slots", [])  # Full "date at time" slots
     message_text = (state.message.body or "").strip()
 
-    print(f"[SV_DATE_SEL] Entry: message='{message_text[:50]}...', proposed_dates={proposed_dates}")
+    logger.debug("[SV_DATE_SEL] Entry: proposed_dates=%s", proposed_dates)
 
     # GUARD: Check if this is actually an EVENT date change request
     is_event_change = _is_event_date_change_request(message_text)
-    print(f"[SV_DATE_SEL] is_event_date_change_request={is_event_change}")
     if is_event_change:
         from workflows.common.site_visit_state import reset_site_visit_state
         reset_site_visit_state(event_entry)
@@ -505,34 +504,28 @@ def _handle_date_selection(
 
     # Try to parse date AND time together (new combined flow)
     selected_date, selected_time = _parse_date_time_selection(message_text, proposed_dates, proposed_slots)
-    print(f"[SV_DATE_SEL] _parse_date_time_selection: date={selected_date}, time={selected_time}")
 
     # If no date found, try legacy date-only parsing
     if not selected_date:
         selected_date = _parse_date_selection(message_text, proposed_dates)
-        print(f"[SV_DATE_SEL] _parse_date_selection result: {selected_date}")
 
     if not selected_date:
         # Try from detection
         if detection and detection.site_visit_date:
             selected_date, selected_time = parse_slot_string(detection.site_visit_date)
-            print(f"[SV_DATE_SEL] From detection.site_visit_date: date={selected_date}, time={selected_time}")
         elif detection and detection.date:
             selected_date, _ = parse_slot_string(detection.date)
-            print(f"[SV_DATE_SEL] From detection.date: {selected_date}")
 
     if not selected_date:
         # Try extracting from message
         extracted = _extract_date_from_message(message_text)
-        print(f"[SV_DATE_SEL] _extract_date_from_message: {extracted}")
         if extracted:
             selected_date, extracted_time = parse_slot_string(extracted)
             if extracted_time and not selected_time:
                 selected_time = extracted_time
 
-    print(f"[SV_DATE_SEL] Final: date={selected_date}, time={selected_time}")
+    logger.debug("[SV_DATE_SEL] Final: date=%s, time=%s", selected_date, selected_time)
     if not selected_date:
-        print("[SV_DATE_SEL] No date found - returning clarification request")
         return _ask_for_date_clarification(state, event_entry)
 
     # Check for conflicts
@@ -549,7 +542,6 @@ def _handle_date_selection(
 
     # If we have both date AND time, go directly to confirmation
     if selected_time and selected_time in time_slots:
-        print(f"[SV_DATE_SEL] Date+time selected - going to confirmation")
         try:
             year, month, day = map(int, selected_date.split("-"))
             formatted_date = f"{day:02d}.{month:02d}.{year}"
@@ -562,11 +554,7 @@ def _handle_date_selection(
         return _confirm_site_visit(state, event_entry, selected_slot)
 
     # Only date selected - transition to time_pending and offer time slots
-    print(f"[SV_HANDLER] Date only - transitioning to time_pending: date={selected_date}, slots={time_slots}")
     set_time_pending(event_entry, selected_date, time_slots)
-    sv_after = event_entry.get("site_visit_state", {})
-    print(f"[SV_HANDLER] After set_time_pending: status={sv_after.get('status')}, "
-          f"selected_date={sv_after.get('selected_date')}")
     return _offer_time_slots(state, event_entry, selected_date, time_slots)
 
 
@@ -792,7 +780,8 @@ def _handle_time_selection(
     proposed_times = sv_state.get("proposed_slots", [])
     message_text = (state.message.body or "").strip()
 
-    print(f"[SV_TIME_SEL] Entry: message='{message_text}', selected_date={selected_date}, proposed_times={proposed_times}")
+    logger.debug("[SV_TIME_SEL] Entry: selected_date=%s, proposed_times=%s",
+                 selected_date, proposed_times)
 
     if not selected_date:
         # Lost state - restart flow
@@ -1016,11 +1005,24 @@ def _confirm_site_visit(
         f"We look forward to welcoming you and showing you our venue!"
     )
 
-    # Add booking prompt if client hasn't started booking yet
+    # Add dynamic workflow reminder based on which step client left from
     if not in_booking_flow:
+        sv_state = get_site_visit_state(event_entry)
+        initiated_step = sv_state.get("initiated_at_step") or current_step
+
+        # Map step number to client-friendly continuation prompt
+        step_prompts = {
+            2: "confirming your event date",
+            3: "selecting a room",
+            4: "reviewing your offer",
+            5: "finalizing the negotiation",
+            6: "completing the transition",
+        }
+        step_prompt = step_prompts.get(initiated_step, "booking your event")
+
         body += (
-            "\n\nWhenever you're ready to proceed with booking your event, "
-            "just let me know and I'll guide you through the next steps!"
+            f"\n\nWhenever you're ready to continue with {step_prompt}, "
+            "just let me know!"
         )
 
     return _send_draft_response(

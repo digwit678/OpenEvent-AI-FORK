@@ -290,6 +290,45 @@ _QNA_KEYWORDS: Dict[str, Sequence[str]] = {
         "how much for",
         "what would it cost",
     ),
+    # =========================================================================
+    # Accessibility Inquiries
+    # =========================================================================
+    "accessibility_inquiry": (
+        "wheelchair",
+        "wheelchair accessible",
+        "wheelchair access",
+        "accessible",
+        "accessibility",
+        "disabled access",
+        "disability access",
+        "mobility",
+        "elevator",
+        "lift access",
+        "step-free",
+        "ramp",
+        "accessible bathroom",
+        "accessible toilet",
+        "barrier-free",
+    ),
+    # =========================================================================
+    # Rate Inclusions / What's Included
+    # =========================================================================
+    "rate_inclusions": (
+        "what's included",
+        "what is included",
+        "included in the rate",
+        "included in the price",
+        "included in the cost",
+        "what does the rate include",
+        "what does the price include",
+        "included with the room",
+        "comes with",
+        "part of the package",
+        "in the rental",
+        "included services",
+        "complimentary",
+        "included amenities",
+    ),
 }
 
 _QUESTION_PREFIXES = (
@@ -349,9 +388,50 @@ _QNA_REGEX_PATTERNS: Dict[str, List[str]] = {
 }
 
 
+def _is_acknowledgment(text: str) -> bool:
+    """Check if text is acknowledging previous Q&A, not asking a new question.
+
+    Messages like "thanks for the parking info" should not trigger parking Q&A again.
+    """
+    acknowledgment_patterns = (
+        r"\bthanks?\s+(for|about)\s+(the\s+)?",  # "thanks for the parking info"
+        r"\bthank\s+you\s+(for|about)\s+(the\s+)?",  # "thank you for the parking info"
+        r"\bgot\s+it\s+(about|on|regarding)\s+",  # "got it about parking"
+        r"\bgreat\s+(info|information)\s+(on|about)\s+",  # "great info on parking"
+        r"\bgood\s+to\s+know\s+(about|regarding)\s+",  # "good to know about parking"
+        r"\bnoted\s+(on|about|regarding)\s+",  # "noted on parking"
+    )
+    return any(re.search(pattern, text, re.IGNORECASE) for pattern in acknowledgment_patterns)
+
+
+def _is_confirmation_request(text: str) -> bool:
+    """Check if text is a confirmation request, not a Q&A question.
+
+    "Can you please confirm Room A?" is an action request, not a question.
+    """
+    confirmation_patterns = (
+        r"\b(?:please\s+)?confirm\b",  # "please confirm", "confirm"
+        r"\bcan\s+(?:you\s+)?(?:please\s+)?confirm\b",  # "can you confirm"
+        r"\bcould\s+(?:you\s+)?(?:please\s+)?confirm\b",  # "could you confirm"
+        r"\b(?:please\s+)?book\b",  # "please book"
+        r"\blet'?s?\s+(?:go\s+(?:with|for|ahead)|proceed|book)\b",  # "let's go with", "let's proceed"
+        r"\bi(?:'d|\s+would)\s+like\s+to\s+(?:book|confirm|proceed)\b",  # "I'd like to book"
+    )
+    return any(re.search(pattern, text, re.IGNORECASE) for pattern in confirmation_patterns)
+
+
 def _detect_qna_types(text: str) -> List[str]:
     if is_action_request(text):
         return []
+
+    # Filter out acknowledgments - "thanks for the parking info" is not a question
+    if _is_acknowledgment(text):
+        return []
+
+    # Filter out confirmation requests - "Can you confirm Room A?" is not Q&A
+    if _is_confirmation_request(text):
+        return []
+
     matches: List[str] = []
 
     # First check regex patterns (more flexible, handles variations)

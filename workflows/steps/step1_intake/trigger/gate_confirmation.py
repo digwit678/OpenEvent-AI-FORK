@@ -67,6 +67,14 @@ def looks_like_billing_fragment(text: str) -> bool:
     # "room X" is not billing info
     if lowered.startswith("room "):
         return False
+    # Explicit billing phrases are strong signals
+    billing_phrases = (
+        "billing address", "invoice address", "invoice to",
+        "send invoice", "rechnungsadresse", "faktura",
+    )
+    if any(phrase in lowered for phrase in billing_phrases):
+        return True
+    # Address-related keywords
     keywords = (
         "postal", "postcode", "zip", "street", "avenue",
         "road", "switzerland", " ch", "city", "country"

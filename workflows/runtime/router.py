@@ -101,10 +101,6 @@ def run_routing_loop(
 
         step = event_entry.get("current_step")
         logger.debug("[WF][ROUTE][%d] current_step=%s", iteration, step)
-        sv_state = event_entry.get('site_visit_state', {})
-        sv_status = sv_state.get('status', 'idle')
-        sv_selected_date = sv_state.get('selected_date')
-        print(f"[ROUTE][{iteration}] step={step}, sv_status={sv_status}, sv_selected_date={sv_selected_date}")
 
         # =================================================================
         # SITE VISIT INTERCEPT: Handle site visit requests at ANY step
@@ -113,12 +109,6 @@ def run_routing_loop(
         site_visit_result = _check_site_visit_intercept(state, event_entry)
         if site_visit_result:
             last_result = site_visit_result
-            # Log state AFTER site visit handler
-            sv_state_after = event_entry.get('site_visit_state', {})
-            print(f"[ROUTE][SV_INTERCEPT] action={last_result.action}, "
-                  f"sv_status_after={sv_state_after.get('status')}, "
-                  f"sv_selected_date={sv_state_after.get('selected_date')}, "
-                  f"halt={last_result.halt}")
             debug_fn(f"site_visit_intercept_step{step}", state)
             persist_fn(state, path, lock_path)
             if last_result.halt:
@@ -202,8 +192,8 @@ def _check_site_visit_intercept(
 
     # Check for site visit CHANGE request (when already scheduled)
     # This handles "change the site visit to X" when sv_status=scheduled
-    message_text = (state.message.body or "").strip()
-    if is_site_visit_scheduled(event_entry) and is_site_visit_change_request(message_text):
+    # Now uses LLM-based detection via is_site_visit_change signal
+    if is_site_visit_scheduled(event_entry) and detection and detection.is_site_visit_change:
         logger.info("[WF][SITE_VISIT] Site visit change request detected (status=scheduled)")
         return handle_site_visit_request(state, event_entry, detection)
 
@@ -234,6 +224,7 @@ def _get_detection_result(state: WorkflowState) -> Optional[UnifiedDetectionResu
             is_acceptance=detection_data.get("signals", {}).get("acceptance", False),
             is_rejection=detection_data.get("signals", {}).get("rejection", False),
             is_change_request=detection_data.get("signals", {}).get("change_request", False),
+            is_site_visit_change=detection_data.get("signals", {}).get("site_visit_change", False),
             is_manager_request=detection_data.get("signals", {}).get("manager_request", False),
             is_question=detection_data.get("signals", {}).get("question", False),
             has_urgency=detection_data.get("signals", {}).get("urgency", False),

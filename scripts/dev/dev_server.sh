@@ -102,8 +102,8 @@ start_backend() {
     export AGENT_MODE="${AGENT_MODE:-gemini}"
     # Detection mode: unified uses both Gemini (intent) and OpenAI (verbalization)
     export DETECTION_MODE="${DETECTION_MODE:-unified}"
-    # Fallback diagnostics: off by default (set to 1 for debugging)
-    export OE_FALLBACK_DIAGNOSTICS="${OE_FALLBACK_DIAGNOSTICS:-0}"
+    # Fallback diagnostics: ON by default in dev (shows error causes instead of silent fallbacks)
+    export OE_FALLBACK_DIAGNOSTICS="${OE_FALLBACK_DIAGNOSTICS:-1}"
     # SECURITY: Explicitly set dev mode (main.py now defaults to prod)
     export ENV="${ENV:-dev}"
     # Enable dangerous endpoints for dev/testing (reset client, clear tasks, etc.)

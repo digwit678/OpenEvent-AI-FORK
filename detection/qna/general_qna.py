@@ -426,9 +426,19 @@ def detect_general_room_query(msg_text: str, state: WorkflowState) -> Dict[str, 
     # Previously: is_general = heuristics OR llm (LLM could only add, never veto)
     # Now: borderline matches require LLM confirmation; clear heuristics are trusted
     # -------------------------------------------------------------------------
+    # FIX: Pattern-only matches (e.g., just "available" without ?) are ambiguous
+    # "What's available?" is Q&A, but "Let me know what's available" is a booking request
+    # Only trust heuristics if we have explicit question signals (? or interrogative)
+    pattern_only_match = (
+        bool(heuristics.get("matched_patterns"))
+        and not heuristics.get("has_qmark")
+        and not heuristics.get("starts_interrogative")
+        and not heuristics.get("imperative_hint")
+    )
     is_clear_heuristic = (
         heuristics.get("heuristic_general")
         and not heuristics.get("borderline")  # Has strong signals, not borderline
+        and not pattern_only_match  # Pattern-only needs LLM confirmation
     )
     is_general_from_llm = llm_result.get("label") == "general_room_query"
 

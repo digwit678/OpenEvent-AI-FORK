@@ -78,24 +78,26 @@ def _missing_prompt(step: int | str | None, missing: Sequence[str]) -> str:
 
 
 def build_info_block(lines: List[str]) -> str:
-    """Construct an info block with bullet lines (more conversational)."""
+    """Construct an info block as flowing paragraphs (more conversational)."""
 
-    block: List[str] = []
     if not lines:
-        block.append("I don't have additional details on that right now.")
-        return "\n".join(block)
+        return "I don't have additional details on that right now."
 
+    paragraphs: List[str] = []
     for line in lines:
         clean = (line or "").strip()
         if not clean:
             continue
+        # Remove existing bullet prefix if present
         if clean.startswith("- "):
-            block.append(clean)
-        else:
-            block.append(f"- {clean}")
-    if not block:
-        block.append("I don't have additional details on that right now.")
-    return "\n".join(block)
+            clean = clean[2:].strip()
+        paragraphs.append(clean)
+
+    if not paragraphs:
+        return "I don't have additional details on that right now."
+
+    # Join as separate paragraphs with blank line between
+    return "\n\n".join(paragraphs)
 
 
 def build_next_step_line(step: int | str | None, missing_fields: Sequence[str]) -> str:

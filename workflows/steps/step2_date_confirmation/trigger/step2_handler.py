@@ -53,10 +53,15 @@ from workflows.change_propagation import (
     detect_change_type_enhanced,
     route_change_on_updated_variable,
 )
-from workflows.qna.router import route_general_qna
+from workflows.common.detour_acknowledgment import (
+    generate_detour_acknowledgment,
+    add_detour_acknowledgment_draft,
+)
+from workflows.qna.router import route_general_qna, generate_hybrid_qna_response
 from workflows.common.types import GroupResult, WorkflowState
 # MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
 from detection.intent.confidence import check_nonsense_gate
+from workflows.common.detection_utils import get_unified_detection
 from workflows.steps.step1_intake.condition.checks import suggest_dates
 from workflows.io.database import (
     append_audit_entry,
@@ -236,7 +241,10 @@ def _maybe_append_general_qna(
     requested_client_dates: Sequence[str],
     deferred_general_qna: bool,
 ) -> GroupResult:
-    if not deferred_general_qna or not requested_client_dates or not classification.get("is_general"):
+    # HYBRID FIX: Also allow Q&A appending when qna_types exist (workflow + Q&A in same message)
+    has_qna_types = state.extras.get("_has_qna_types", False)
+    has_qna_signal = classification.get("is_general") or has_qna_types
+    if not deferred_general_qna or not requested_client_dates or not has_qna_signal:
         return result
 
     pre_count = len(state.draft_messages)
@@ -395,7 +403,31 @@ def process(state: WorkflowState) -> GroupResult:
 
     classification = detect_general_room_query(message_text, state)
     state.extras["_general_qna_classification"] = classification
-    state.extras["general_qna_detected"] = bool(classification.get("is_general"))
+    # HYBRID FIX: Also check qna_types from unified detection for hybrid messages
+    # (workflow action + Q&A in same message, e.g., "Book May 15 for 30. Parking available?")
+    # IMPORTANT: Only use qna_types if LLM detected is_question=True
+    unified_detection = get_unified_detection(state)
+    has_qna_types = bool(getattr(unified_detection, "qna_types", None) if unified_detection else False)
+    is_question = bool(getattr(unified_detection, "is_question", False) if unified_detection else False)
+    has_valid_qna = has_qna_types and is_question  # Only valid if LLM says it's a question
+    state.extras["general_qna_detected"] = bool(classification.get("is_general")) or has_valid_qna
+    state.extras["_has_qna_types"] = has_valid_qna  # Track for deferred Q&A logic
+
+    # HYBRID FIX: Pre-generate hybrid Q&A response for hybrid messages
+    # This will be appended to the workflow response by api/routes/messages.py
+    if has_valid_qna and not classification.get("is_general"):
+        qna_types = getattr(unified_detection, "qna_types", []) or []
+        if qna_types:
+            hybrid_qna_response = generate_hybrid_qna_response(
+                qna_types=qna_types,
+                message_text=state.message.body or "",
+                event_entry=event_entry,
+                db=state.db,
+            )
+            if hybrid_qna_response:
+                state.extras["hybrid_qna_response"] = hybrid_qna_response
+                logger.debug("[STEP2][HYBRID_QNA] Generated hybrid Q&A response for types: %s", qna_types)
+
     classification.setdefault("primary", "general_qna")
     if not classification.get("secondary"):
         classification["secondary"] = ["general"]
@@ -427,7 +459,11 @@ def process(state: WorkflowState) -> GroupResult:
     site_visit_active = is_site_visit_active(event_entry)
 
     user_info = state.user_info or {}
-    enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
+    # Pass unified_detection so Q&A messages don't trigger false change detours
+    unified_detection = get_unified_detection(state)
+    enhanced_result = detect_change_type_enhanced(
+        event_entry, user_info, message_text=message_text, unified_detection=unified_detection
+    )
     change_type = enhanced_result.change_type if enhanced_result.is_change else None
 
     # If site visit is active, suppress date change detection
@@ -511,6 +547,17 @@ def process(state: WorkflowState) -> GroupResult:
             if change_type.value == "date":
                 event_entry["_pending_date_change_ack"] = True
 
+            # IMMEDIATE ACKNOWLEDGMENT: Add detour acknowledgment draft
+            # This provides immediate feedback to the user about the change
+            ack_result = generate_detour_acknowledgment(
+                change_type=change_type,
+                decision=decision,
+                event_entry=event_entry,
+                user_info=user_info,
+            )
+            if ack_result.generated:
+                add_detour_acknowledgment_draft(state, ack_result)
+
             # Skip Q&A: return detour signal
             # CRITICAL: Update event_entry BEFORE state.current_step so routing loop sees the change
             update_event_metadata(event_entry, current_step=decision.next_step)
@@ -518,6 +565,8 @@ def process(state: WorkflowState) -> GroupResult:
             state.set_thread_state("In Progress")
             state.extras["persist"] = True
             state.extras["change_detour"] = True
+            # Clear stale hybrid Q&A from previous turns (prevents old Q&A being appended to detour response)
+            state.extras.pop("hybrid_qna_response", None)
 
             payload = {
                 "client_id": state.client_id,
@@ -569,10 +618,32 @@ def process(state: WorkflowState) -> GroupResult:
     requested_client_dates = _client_requested_dates(state)
     deferred_general_qna = False
     general_qna_applicable = classification.get("is_general") and not bool(event_entry.get("date_confirmed"))
+    # HYBRID FIX: Also defer Q&A when qna_types exist (workflow + Q&A in same message)
+    has_qna_types = state.extras.get("_has_qna_types", False)
     if general_qna_applicable and requested_client_dates:
         deferred_general_qna = True
         general_qna_applicable = False
+    elif has_qna_types and requested_client_dates and not general_qna_applicable:
+        # Hybrid message: workflow action (date) + Q&A question - defer Q&A to append after workflow response
+        deferred_general_qna = True
     if general_qna_applicable:
+        result = _present_general_room_qna(state, event_entry, classification, thread_id, qa_payload)
+        enrich_general_qna_step2(state, classification)
+        return result
+
+    # FIX: Handle Q&A even when date is already confirmed
+    # "Does Room A have a projector?" should be answered inline, not trigger Step 3 auto-run
+    llm_is_question = bool(getattr(unified_detection, "is_question", False) if unified_detection else False)
+    llm_general_qna = bool(
+        getattr(unified_detection, "intent", "") in ("general_qna", "non_event") if unified_detection else False
+    )
+    is_likely_qna = classification.get("is_general") or llm_is_question or llm_general_qna
+
+    if is_likely_qna and bool(event_entry.get("date_confirmed")):
+        # Pure Q&A when date already confirmed - answer inline and halt
+        # Don't progress to Step 3 for room selection
+        logger.info("[STEP2][QNA_GUARD] Q&A detected with date_confirmed=True - handling inline (is_general=%s, llm_is_question=%s)",
+                    classification.get("is_general"), llm_is_question)
         result = _present_general_room_qna(state, event_entry, classification, thread_id, qa_payload)
         enrich_general_qna_step2(state, classification)
         return result
@@ -1105,6 +1176,26 @@ def _present_candidate_dates(
         filtered_dates = [iso for iso in formatted_dates if iso.startswith(target_month)]
         if filtered_dates:
             formatted_dates = filtered_dates[:4]
+            prioritized_dates = []  # Clear - we're using target month dates now
+        else:
+            # No dates found in the target month - collect dates starting from future_suggestion
+            # This happens when past date is requested and initial collection didn't reach target month
+            future_anchor = datetime.combine(future_suggestion, time(hour=12))
+            skip_parsed = {_safe_parse_iso_date(iso) for iso in seen_iso if iso}
+            supplemental_for_month = next_five_venue_dates(
+                future_anchor,
+                skip_dates={dt for dt in skip_parsed if dt is not None},
+                count=5,
+            )
+            month_dates = []
+            for iso_candidate in supplemental_for_month:
+                if iso_candidate.startswith(target_month):
+                    if not _candidate_is_calendar_free(preferred_room, iso_candidate, start_time_obj, end_time_obj):
+                        continue
+                    month_dates.append(iso_candidate)
+            if month_dates:
+                formatted_dates = month_dates[:4]
+                prioritized_dates = []  # Clear - we're using target month dates now
 
     sample_dates = prioritized_dates[:4] if prioritized_dates else formatted_dates[:4]
     if week_scope:

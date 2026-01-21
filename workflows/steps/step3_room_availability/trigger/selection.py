@@ -187,7 +187,7 @@ def handle_select_room_action(
         thread_state="Awaiting Client",
     )
 
-    state.draft_messages.clear()
+    state.clear_regular_drafts()
     follow_up = {
         "body": body_with_footer,
         "step": 4,

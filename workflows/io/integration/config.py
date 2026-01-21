@@ -247,6 +247,7 @@ def is_hil_all_replies_enabled() -> bool:
     """Check if HIL approval is required for all AI replies.
 
     Priority order:
+    0. ENV=dev → always False (no HIL in development)
     1. Database setting (if set) - allows runtime toggle via API
     2. Environment variable OE_HIL_ALL_LLM_REPLIES - server default
     3. False - backwards compatible default
@@ -255,6 +256,11 @@ def is_hil_all_replies_enabled() -> bool:
     When False: Current behavior (only specific actions require HIL approval)
     """
     global _hil_setting_cache
+
+    # DEV MODE: Disable HIL approval entirely for faster testing
+    # Only enable HIL on production (main branch deployment)
+    if os.getenv("ENV", "prod") == "dev":
+        return False
 
     # Check cache first (set by refresh_hil_setting after API calls)
     if _hil_setting_cache is not None:

@@ -1,8 +1,11 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
@@ -1716,16 +1719,26 @@ def present_general_room_qna(
     message_text = f"{subject}\n{body}".strip() or body or subject
 
     # -------------------------------------------------------------------------
-    # CATERING/PRODUCT Q&A ROUTING FIX
-    # Check if this is a catering or product question based on classification
-    # secondary types. Route to route_general_qna for proper handling.
+    # PURE INFO Q&A ROUTING (Jan 2026)
+    # Check if this is a pure informational Q&A (not room availability query).
+    # These types should use route_general_qna for clean Q&A responses without
+    # prepending room availability info.
     # -------------------------------------------------------------------------
     secondary_types = classification.get("secondary") or []
-    catering_types = {"catering_for", "products_for"}
-    is_catering_question = bool(set(secondary_types) & catering_types)
+    # Q&A types that should get direct answers without room availability prepended
+    pure_info_qna_types = {
+        "catering_for",
+        "products_for",
+        "parking_policy",
+        "accessibility_inquiry",
+        "room_features",
+        "pricing_inquiry",
+        "site_visit_overview",
+    }
+    is_pure_info_question = bool(set(secondary_types) & pure_info_qna_types)
 
-    if is_catering_question:
-        # Use route_general_qna for catering/product questions - it has proper handling
+    if is_pure_info_question:
+        # Use route_general_qna for pure info Q&A - returns clean answers without room availability
         msg_payload = {
             "subject": subject,
             "body": body,
@@ -1745,24 +1758,38 @@ def present_general_room_qna(
         all_blocks = pre_blocks + post_blocks
 
         if all_blocks:
-            first_block = all_blocks[0]
-            body_markdown = first_block.get("body", "")
-            topic = first_block.get("topic", "catering_for")
-            footer_body = append_footer(
-                body_markdown,
-                step=step_number,
-                next_step=step_number,
-                thread_state="Awaiting Client",
-            )
+            # -------------------------------------------------------------------------
+            # FIX: Combine ALL Q&A blocks (Jan 2026)
+            # Previously only used first_block, ignoring other Q&A types.
+            # Now we combine all info parts and omit "To continue with..." for pure Q&A.
+            # -------------------------------------------------------------------------
+            combined_info_parts = []
+            topics = []
+            for block in all_blocks:
+                block_body = block.get("body", "")
+                # Strip "To continue with..." suffix from each block
+                # Format is: info_block + "\n\n" + "To continue with..."
+                if "\n\nTo continue with" in block_body:
+                    info_part = block_body.split("\n\nTo continue with")[0].strip()
+                else:
+                    info_part = block_body.strip()
+                if info_part:
+                    combined_info_parts.append(info_part)
+                    topics.append(block.get("topic", "general"))
+
+            body_markdown = "\n\n".join(combined_info_parts)
+            topic = topics[0] if topics else "catering_for"
+
+            # Pure Q&A: No "To continue..." line - just answer the question
+            # Footer is added by add_draft_message automatically
             draft_message = {
-                "body": footer_body,
                 "body_markdown": body_markdown,
                 "step": step_number,
                 "next_step": step_number,
                 "thread_state": "Awaiting Client",
-                "topic": topic,
+                "topic": topic if len(topics) == 1 else "multi_qna",
                 "subloop": subloop_label,
-                "headers": ["Availability overview"],
+                "headers": [],  # No header for Q&A - just answer the question naturally
                 "router_qna_appended": True,
             }
             state.add_draft_message(draft_message)
@@ -1775,6 +1802,8 @@ def present_general_room_qna(
             state.record_subloop(subloop_label)
             state.extras["persist"] = True
 
+            # Determine which Q&A types were matched for logging
+            matched_types = set(secondary_types) & pure_info_qna_types
             payload = {
                 "client_id": state.client_id,
                 "event_id": event_entry.get("event_id"),
@@ -1785,7 +1814,8 @@ def present_general_room_qna(
                 "context": state.context_snapshot,
                 "persisted": True,
                 "general_qna": True,
-                "catering_qna": True,
+                "pure_info_qna": True,
+                "qna_types": list(matched_types),
                 "qna_router_result": qna_result,
             }
             return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
@@ -1835,6 +1865,7 @@ def present_general_room_qna(
             step=step_number,
             next_step=step_number,
             thread_state="Awaiting Client",
+            show_separator=False,  # Pure Q&A - no separator needed
         )
 
         draft_message = {
@@ -1847,7 +1878,7 @@ def present_general_room_qna(
             "candidate_dates": candidate_dates,
             "actions": actions,
             "subloop": subloop_label,
-            "headers": ["Availability overview"],
+            "headers": [],  # No header for Q&A - just answer the question naturally
         }
 
         state.add_draft_message(draft_message)
@@ -1892,7 +1923,7 @@ def present_general_room_qna(
         return GroupResult(action="general_rooms_qna", payload=payload, halt=True)
 
     # Fallback if structured Q&A failed
-    fallback_prompt = "[STRUCTURED_QNA_FALLBACK]\nI couldn't load the structured Q&A context for this request. Please review extraction logs."
+    fallback_prompt = "I couldn't find specific information for that question. Could you rephrase or provide more details?"
     draft_message = {
         "step": step_number,
         "topic": "general_room_qna",
@@ -1900,7 +1931,7 @@ def present_general_room_qna(
         "body_markdown": fallback_prompt,
         "next_step": step_number,
         "thread_state": "Awaiting Client",
-        "headers": ["Availability overview"],
+        "headers": [],  # No header for Q&A - just answer the question naturally
         "requires_approval": False,
         "subloop": subloop_label,
         "actions": [],

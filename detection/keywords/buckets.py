@@ -205,6 +205,10 @@ PURE_QA_SIGNALS_EN = [
     r"\bwhat\s+(do|does|can)\b",
     r"\bcan\s+you\s+tell\s+me\b",
     r"\bi\s+(was\s+)?wondering\b",
+    # FIX: Add patterns for "does X have" questions about room features
+    r"^does\s+\w+.*\s+have\b",  # "Does Room A have..."
+    r"\bdoes\s+(the\s+)?(room|venue|space)\s+have\b",  # "does the room have..."
+    r"\bis\s+(the\s+)?(room|venue|space)\s+\w+\b.*\?",  # "is the room equipped...?"
 ]
 
 # Confirmation signals
@@ -393,7 +397,7 @@ TARGET_PATTERNS = {
             r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\b",
             r"\b\d{1,2}[./\-]\d{1,2}([./\-]\d{2,4})?\b",  # 12.03, 12/03, 12-03-2026
             r"\b\d{4}[./\-]\d{1,2}[./\-]\d{1,2}\b",       # 2026-03-12
-            r"\b(that\s+day|this\s+day|the\s+booking|that\s+date)\b",  # anaphoric
+            r"\b(that\s+day|this\s+day|that\s+date)\b",  # anaphoric (NOTE: "the booking" removed - too generic, matches product/room contexts)
             r"\b(earlier|later)\s+(date|day|time)\b",
             r"\b(next|previous|following)\s+(week|month|day)\b",
         ],

@@ -310,7 +310,20 @@ class WorkflowState:
             }
         )
 
+    def clear_regular_drafts(self) -> None:
+        """
+        Clear regular draft messages while preserving special drafts.
 
+        This preserves drafts with append_mode=True or prepend_mode=True,
+        which are used for billing validation prompts and detour acknowledgments.
+        These should persist across step handlers and be included in the final response.
+        """
+        preserved = [
+            d for d in self.draft_messages
+            if d.get("append_mode", False) or d.get("prepend_mode", False)
+        ]
+        self.draft_messages.clear()
+        self.draft_messages.extend(preserved)
 
 
 

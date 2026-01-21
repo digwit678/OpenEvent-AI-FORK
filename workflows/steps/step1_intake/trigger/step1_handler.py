@@ -446,7 +446,6 @@ def _detect_product_update_request(
 @trace_step("Step1_Intake")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Entry point for Group A — intake and data capture."""
-
     message_payload = state.message.to_payload()
     thread_id = _thread_id(state)
 
@@ -609,11 +608,24 @@ def process(state: WorkflowState) -> GroupResult:
     # Early room-choice detection so we don't rely on classifier confidence
     # Pass unified detection to enable question guard ("Is Room A available?" should not lock)
     unified_detection = get_unified_detection(state)
+
+    # HYBRID FIX: Set general_qna_detected based on unified detection
+    # This is needed for hybrid messages (workflow action + Q&A in same message)
+    # IMPORTANT: Only set if LLM detected is_question=True, otherwise it's just a workflow action
+    has_qna_types = bool(getattr(unified_detection, "qna_types", None) if unified_detection else False)
+    is_question = bool(getattr(unified_detection, "is_question", False) if unified_detection else False)
+    if has_qna_types and is_question:
+        state.extras["general_qna_detected"] = True
+        state.extras["_has_qna_types"] = True
+
     early_room_choice = _detect_room_choice(body_text, linked_event, unified_detection)
+    logger.info("[Step1] early_room_choice=%s (linked_event.current_step=%s)",
+                early_room_choice, linked_event.get("current_step") if linked_event else None)
     if early_room_choice:
         user_info["room"] = early_room_choice
         user_info["_room_choice_detected"] = True
         state.extras["room_choice_selected"] = early_room_choice
+        logger.info("[Step1] Set _room_choice_detected=True for room=%s", early_room_choice)
         # Bump confidence to prevent Step 3 nonsense gate from triggering HIL
         confidence = 1.0
         intent = IntentLabel.EVENT_REQUEST
@@ -897,6 +909,20 @@ def process(state: WorkflowState) -> GroupResult:
 
     requirements_snapshot = event_entry.get("requirements") or {}
 
+    # [PRODUCTS-ONLY CHECK] Save original user_info products fields before fallback
+    # to detect if this is a products-only message (not a requirements change)
+    original_products_add = user_info.get("products_add")
+    original_products_remove = user_info.get("products_remove")
+    original_notes = user_info.get("notes")
+    # Check if the ORIGINAL user_info (before fallback) has requirements fields
+    original_has_requirements = any([
+        user_info.get("participants"),
+        user_info.get("layout") or user_info.get("type"),
+        user_info.get("start_time") or user_info.get("end_time"),
+        user_info.get("date") or user_info.get("event_date"),
+        user_info.get("room") or user_info.get("preferred_room"),
+    ])
+
     def _needs_fallback(value: Any) -> bool:
         if value is None:
             return True
@@ -931,8 +957,33 @@ def process(state: WorkflowState) -> GroupResult:
     if snapshot_room and _needs_fallback(user_info.get("room")):
         user_info["room"] = snapshot_room
 
-    requirements = build_requirements(user_info)
-    new_req_hash = requirements_hash(requirements)
+    # [PRODUCTS-ONLY FIX] When the message is a products-only change (e.g., "add a projector"),
+    # don't rebuild requirements from user_info. The LLM might extract product names into
+    # special_requirements, which would invalidate the requirements_hash and cause unnecessary
+    # re-routing to step 3.
+    # Use ORIGINAL user_info values (saved before fallback) to check if this is products-only
+    notes_looks_like_product = any(p in (original_notes or "").lower() for p in [
+        "projector", "screen", "microphone", "flipchart", "beamer", "av",
+        "catering", "coffee", "tea", "lunch", "dinner",
+    ]) if isinstance(original_notes, str) else False
+
+    has_products_signal = original_products_add or original_products_remove or notes_looks_like_product
+    is_products_only_change = has_products_signal and not original_has_requirements
+
+    logger.debug("[Step1] Products check: original_notes=%s, notes_looks_like_product=%s, "
+                 "has_products_signal=%s, original_has_requirements=%s, is_products_only=%s",
+                 original_notes, notes_looks_like_product, has_products_signal,
+                 original_has_requirements, is_products_only_change)
+
+    if is_products_only_change and requirements_snapshot:
+        # Keep existing requirements, don't rebuild from user_info
+        logger.debug("[Step1] Products-only change detected, preserving existing requirements")
+        requirements = requirements_snapshot
+        new_req_hash = event_entry.get("requirements_hash")
+    else:
+        requirements = build_requirements(user_info)
+        new_req_hash = requirements_hash(requirements)
+
     prev_req_hash = event_entry.get("requirements_hash")
     update_event_metadata(
         event_entry,
@@ -1029,6 +1080,19 @@ def process(state: WorkflowState) -> GroupResult:
                     "selected_status": target_eval.status,
                     "missing_products": [p.get("name") for p in target_eval.missing_products] if target_eval.missing_products else [],
                 }
+
+                # Store room confirmation prefix for Step 4 (same as Step 3 does)
+                # This ensures Step 4 knows room was just confirmed and generates the offer
+                participants_count = user_info.get("participants")
+                confirmation_intro = (
+                    f"Great choice! {target_eval.record.name} on {event_date_from_msg or 'your date'} is confirmed"
+                )
+                if participants_count:
+                    confirmation_intro += f" for your event with {participants_count} guests."
+                else:
+                    confirmation_intro += "."
+                event_entry["room_confirmation_prefix"] = confirmation_intro + "\n\n"
+                logger.info("[Step1][SMART_SHORTCUT] Set room_confirmation_prefix for Step 4")
 
                 # Generate Q&A response if detected
                 if state.extras.get("general_qna_detected"):
@@ -1144,6 +1208,18 @@ def process(state: WorkflowState) -> GroupResult:
                 state.set_thread_state("Awaiting Client")
                 state.extras["persist"] = True
 
+                # Store room confirmation prefix for Step 4 (same as Step 3 does)
+                # This ensures Step 4 knows room was just confirmed and generates the offer
+                participants_count = user_info.get("participants")
+                chosen_date_display = event_entry.get("chosen_date") or event_entry.get("event_data", {}).get("Event Date") or "your date"
+                confirmation_intro = f"Great choice! {room_choice_selected} on {chosen_date_display} is confirmed"
+                if participants_count:
+                    confirmation_intro += f" for your event with {participants_count} guests."
+                else:
+                    confirmation_intro += "."
+                event_entry["room_confirmation_prefix"] = confirmation_intro + "\n\n"
+                logger.info("[Step1] Set room_confirmation_prefix for Step 4")
+
                 # [HYBRID Q&A] Generate Q&A response if general Q&A was detected
                 # This handles hybrid messages like "Room B looks great + which rooms in February?"
                 # Store on state.extras so it survives across steps (routing loop continues to Step 4)
@@ -1242,8 +1318,13 @@ def process(state: WorkflowState) -> GroupResult:
     )
     is_deposit_date_context = bool(message_text and _deposit_date_pattern.search(message_text))
     # Check if this looks like a date change request (even during billing flow)
+    # Prefer LLM signal; only fallback to heuristic if unified detection is unavailable.
     from workflows.steps.step5_negotiation.trigger.step5_handler import _looks_like_date_change
-    message_looks_like_date_change = _looks_like_date_change(message_text)
+    llm_change_request = bool(getattr(unified_detection, "is_change_request", False) if unified_detection else False)
+    message_looks_like_date_change = False
+    if unified_detection is None:
+        message_looks_like_date_change = _looks_like_date_change(message_text)
+    change_request_signal = llm_change_request or message_looks_like_date_change
 
     # GUARD: Skip date change detection when site visit flow is active
     # When client selects a date for site visit, it should NOT update the event date
@@ -1261,12 +1342,15 @@ def process(state: WorkflowState) -> GroupResult:
         # Deposit payment context - don't detect date changes
         # "We paid the deposit on 02.01.2026" - the date is payment date, not event date
         change_type = None
-    elif in_billing_flow and not message_looks_like_date_change:
+    elif in_billing_flow and not change_request_signal:
         # In billing flow with normal billing input - skip change detection
         # But if it looks like a date change, let detection run for proper detour
         change_type = None
     else:
-        enhanced_result = detect_change_type_enhanced(event_entry, user_info, message_text=message_text)
+        # Pass unified_detection so Q&A messages don't trigger false change detours
+        enhanced_result = detect_change_type_enhanced(
+            event_entry, user_info, message_text=message_text, unified_detection=unified_detection
+        )
         change_type = enhanced_result.change_type if enhanced_result.is_change else None
         # If site visit is active OR it's a site visit change request, suppress date change detection
         # Date in message is for site visit selection/change, not event date change
@@ -1293,6 +1377,22 @@ def process(state: WorkflowState) -> GroupResult:
     has_qna_question = state.extras.get("general_qna_detected", False)
     date_already_confirmed = event_entry.get("date_confirmed", False)
     skip_vague_date_reset = has_qna_question and date_already_confirmed
+
+    # [COMPREHENSIVE Q&A GUARD] Pre-compute Q&A status for ALL fallback guards
+    # Q&A messages should NEVER trigger step changes, regardless of extracted entities
+    # "Are you open on March 15?" should NOT trigger date change
+    # "Does Room A have a projector?" should NOT trigger room change
+    # "Can you serve 100 people?" should NOT trigger requirements change
+    message_text_for_qna = state.message.body or ""
+    llm_is_question = bool(getattr(unified_detection, "is_question", False) if unified_detection else False)
+    llm_general_qna = bool(
+        getattr(unified_detection, "intent", "") in ("general_qna", "non_event") if unified_detection else False
+    )
+    is_qna_no_change = has_qna_question or llm_is_question or llm_general_qna
+    logger.debug(
+        "[Step1][QNA_COMPREHENSIVE_GUARD] has_qna=%s, llm_is_question=%s, llm_general_qna=%s, is_qna_no_change=%s",
+        has_qna_question, llm_is_question, llm_general_qna, is_qna_no_change
+    )
 
     if needs_vague_date_confirmation and not in_billing_flow and not skip_vague_date_reset:
         event_entry["range_query_detected"] = True
@@ -1401,12 +1501,15 @@ def process(state: WorkflowState) -> GroupResult:
                             room_eval_hash=None,
                             locked_room_id=None,
                         )
+                    # Set change_detour flag so Step 3 bypasses Q&A path and goes to room evaluation
+                    state.extras["change_detour"] = True
 
     # Fallback: legacy logic for cases not handled by change propagation
     # Skip during billing flow, deposit payment context, OR site visit flow
     # When site visit is active, date in message is for site visit selection, not event date change
     # Also skip when this is a site visit CHANGE request (status=scheduled + explicit change intent)
-    elif new_date and new_date != event_entry.get("chosen_date") and not in_billing_flow and not is_deposit_date_context and not site_visit_active and not (site_visit_scheduled and is_sv_change_request):
+    # [Q&A GUARD] Also skip for Q&A messages - "Are you open on March 15?" is NOT a date change request
+    elif new_date and new_date != event_entry.get("chosen_date") and not in_billing_flow and not is_deposit_date_context and not site_visit_active and not (site_visit_scheduled and is_sv_change_request) and not is_qna_no_change:
         # Check if new_date is in the past (normalize first to handle DD.MM.YYYY format)
         normalized_new_date = normalize_iso_candidate(new_date)
         date_is_past = iso_date_is_past(normalized_new_date) if normalized_new_date else False
@@ -1496,23 +1599,46 @@ def process(state: WorkflowState) -> GroupResult:
         detoured_to_step2 = True
 
     # Fallback: requirements change detection (legacy)
-    if prev_req_hash is not None and prev_req_hash != new_req_hash and not detoured_to_step2 and change_type is None:
-        target_step = 3
-        if previous_step != target_step and event_entry.get("caller_step") is None:
-            update_event_metadata(event_entry, caller_step=previous_step)
-            update_event_metadata(event_entry, current_step=target_step)
-            append_audit_entry(event_entry, previous_step, target_step, "requirements_updated")
-            # Clear stale negotiation state - old offer no longer valid after requirements change
-            event_entry.pop("negotiation_pending_decision", None)
+    # FIX: Skip hash mismatch routing for Q&A questions - extracted products shouldn't trigger step 3
+    # "Does Room A have a projector?" extracts "projector" but this is NOT a change request
+    hash_check = prev_req_hash is not None and prev_req_hash != new_req_hash and not detoured_to_step2 and change_type is None
+    if hash_check:
+        if is_qna_no_change:
+            logger.debug(
+                "[Step1][HASH_QNA_GUARD] Skipping requirements hash routing - Q&A question detected: "
+                "qna=%s, llm_is_question=%s, prev_hash=%s, new_hash=%s",
+                has_qna_question, llm_is_question, prev_req_hash[:8] if prev_req_hash else None,
+                new_req_hash[:8] if new_req_hash else None
+            )
+        else:
+            target_step = 3
+            if previous_step != target_step and event_entry.get("caller_step") is None:
+                update_event_metadata(event_entry, caller_step=previous_step)
+                update_event_metadata(event_entry, current_step=target_step)
+                append_audit_entry(event_entry, previous_step, target_step, "requirements_updated")
+                # Clear stale negotiation state - old offer no longer valid after requirements change
+                event_entry.pop("negotiation_pending_decision", None)
 
     # Fallback: room change detection (legacy)
     # Skip room change detection if in billing flow - billing addresses shouldn't trigger room changes
-    in_billing_flow = (
+    in_billing_flow_for_room = (
         event_entry.get("offer_accepted")
         and (event_entry.get("billing_requirements") or {}).get("awaiting_billing_for_accept")
     )
-    if new_preferred_room and new_preferred_room != event_entry.get("locked_room_id") and change_type is None:
-        if not detoured_to_step2 and not in_billing_flow:
+    logger.debug(
+        "[Step1][ROOM_ROUTE_CHECK] new_preferred_room=%s, locked_room_id=%s, change_type=%s, is_qna_no_change=%s, current_step=%s",
+        new_preferred_room, event_entry.get("locked_room_id"), change_type, is_qna_no_change, event_entry.get("current_step")
+    )
+    room_check = new_preferred_room and new_preferred_room != event_entry.get("locked_room_id") and change_type is None
+    if room_check:
+        # Don't route to Step 3 for Q&A questions - room mentions in questions are NOT change requests
+        if is_qna_no_change:
+            logger.debug(
+                "[Step1][ROOM_QNA_GUARD] Skipping room routing - Q&A question detected: "
+                "qna=%s, llm_is_question=%s, room=%s",
+                has_qna_question, llm_is_question, new_preferred_room
+            )
+        elif not detoured_to_step2 and not in_billing_flow_for_room:
             prev_step_for_room = event_entry.get("current_step") or previous_step
             if prev_step_for_room != 3 and event_entry.get("caller_step") is None:
                 update_event_metadata(event_entry, caller_step=prev_step_for_room)
@@ -1689,16 +1815,23 @@ def _ensure_event_record(
         msg_event_id = state.message.extras.get("event_id")
         event_id_matches = msg_event_id and msg_event_id == last_event.get("event_id")
 
-        # Only create new event if this is truly a NEW inquiry, not a billing/deposit follow-up
-        if awaiting_billing or awaiting_deposit or looks_like_billing or deposit_just_paid or event_id_matches:
+        # Check if this is a revision/change request (date, room, participants change)
+        # Messages like "Can we switch to Room B?" or "Change the date to March 20"
+        # should continue with the existing event, not create a new one
+        message_text = (state.message.body or "") + " " + (state.message.subject or "")
+        is_revision_message = has_revision_signal(message_text)
+
+        # Only create new event if this is truly a NEW inquiry, not a billing/deposit/revision follow-up
+        if awaiting_billing or awaiting_deposit or looks_like_billing or deposit_just_paid or event_id_matches or is_revision_message:
             # Continue with existing event - don't create new
             trace_db_write(_thread_id(state), "Step1_Intake", "offer_accepted_continue", {
-                "reason": "billing_or_deposit_followup",
+                "reason": "billing_or_deposit_or_revision_followup",
                 "awaiting_billing": awaiting_billing,
                 "awaiting_deposit": awaiting_deposit,
                 "looks_like_billing": looks_like_billing,
                 "deposit_just_paid": deposit_just_paid,
                 "event_id_matches": event_id_matches,
+                "is_revision_message": is_revision_message,
             })
         else:
             # New inquiry from same client after offer was accepted - create fresh event
