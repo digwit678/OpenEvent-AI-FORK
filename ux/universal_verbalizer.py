@@ -534,20 +534,14 @@ def verbalize_message(
             return patched_text
         else:
             # Patching didn't fully fix it - fall back to original text
-            missing_str = ", ".join(verification[1]) if verification[1] else "none"
-            invented_str = ", ".join(verification[2]) if verification[2] else "none"
-            ctx = create_fallback_context(
-                source="ux.verbalizer",
-                trigger="fact_verification_failed",
-                step=context.step,
-                topic=context.topic,
-                error=Exception(f"Missing: {missing_str}, Invented: {invented_str}"),
-            )
+            # Log the issue for debugging but don't show diagnostic block in UI
             logger.warning(
                 f"universal_verbalizer: patching failed for step={context.step}, topic={context.topic}, using fallback. "
                 f"Missing: {verification[1]}, Invented: {verification[2]}",
             )
-            return wrap_fallback(fallback_text, ctx)
+            # Return fallback directly - don't wrap with diagnostic block
+            # The warning above provides debugging info in logs
+            return fallback_text
 
     logger.debug(f"universal_verbalizer: success for step={context.step}, topic={context.topic}")
     return llm_text

@@ -345,16 +345,9 @@ def _persist_if_needed(state: WorkflowState, path: Path, lock_path: Path) -> Non
 def _flush_pending_save(state: WorkflowState, path: Path, lock_path: Path) -> None:
     """[OpenEvent Database] Flush debounced writes at the end of the turn."""
     if state.extras.pop("_pending_save", False):
-        # Log site visit state before save for debugging
-        if state.event_entry:
-            sv_state = state.event_entry.get("site_visit_state", {})
-            print(f"[WF][PERSIST] Saving: sv_status={sv_state.get('status')}, "
-                  f"sv_selected_date={sv_state.get('selected_date')}, "
-                  f"sv_proposed_slots={sv_state.get('proposed_slots', [])}")
         logger.info("[WF][PERSIST] Flushing DB to %s for thread=%s", path, state.thread_id)
         db_io.save_db(state.db, path, lock_path=lock_path)
         logger.info("[WF][PERSIST] DB saved successfully")
-        print(f"[WF][PERSIST] DB saved to {path}")
     else:
         logger.debug("[WF][PERSIST] No pending save for thread=%s", state.thread_id)
 
@@ -409,12 +402,6 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     classification = _ensure_general_qna_classification(state, combined_text)
     _debug_state("init", state, extra={"entity": "client"})
     last_result = intake.process(state)
-    # Log loaded site visit state for debugging
-    if state.event_entry:
-        sv_state = state.event_entry.get("site_visit_state", {})
-        print(f"[WF][LOAD] After intake: sv_status={sv_state.get('status')}, "
-              f"sv_selected_date={sv_state.get('selected_date')}, "
-              f"event_id={state.event_entry.get('event_id')}")
     _debug_state("post_intake", state, extra={"intent": state.intent.value if state.intent else None})
 
     # Run pre-routing pipeline (P1 extraction)
@@ -652,7 +639,9 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
         # ONLY create when all-replies toggle is OFF
         # When OE_HIL_ALL_LLM_REPLIES=true, ALL messages go through single HIL queue
         # so step-specific HIL is redundant (avoids double-approval)
-        if event_entry and not hil_all_replies_on:
+        # DEV MODE: Skip step-specific HIL for faster testing
+        is_dev_mode_early = os.getenv("ENV", "prod") == "dev"
+        if event_entry and not hil_all_replies_on and not is_dev_mode_early:
             enqueue_hil_tasks(state, event_entry)
         requires_approval_flags = [draft.get("requires_approval", True) for draft in state.draft_messages]
     else:
@@ -661,8 +650,15 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
     if state.draft_messages:
         # [FIX JAN-12-2026] Handle multiple drafts: send non-approval drafts immediately,
         # hold approval drafts for HIL. This supports Q&A + Offer separation.
-        immediate_drafts = [d for d in state.draft_messages if not d.get("requires_approval", True)]
-        approval_drafts = [d for d in state.draft_messages if d.get("requires_approval", True)]
+        # DEV MODE: Skip all HIL approval for faster testing (Jan 2026)
+        is_dev_mode = os.getenv("ENV", "prod") == "dev"
+        if is_dev_mode:
+            # In dev mode, treat ALL drafts as immediate (no approval needed)
+            immediate_drafts = state.draft_messages
+            approval_drafts = []
+        else:
+            immediate_drafts = [d for d in state.draft_messages if not d.get("requires_approval", True)]
+            approval_drafts = [d for d in state.draft_messages if d.get("requires_approval", True)]
 
         if hil_all_replies_on:
             # When HIL toggle ON: ALL drafts go to approval queue
@@ -671,8 +667,16 @@ def _finalize_output(result: GroupResult, state: WorkflowState) -> Dict[str, Any
             res_meta["pending_hil_approval"] = True
         elif immediate_drafts:
             # Send non-approval drafts immediately (e.g., Q&A responses)
+            # Sort order: prepend_mode first (detour acks), normal middle, append_mode last (billing validation)
+            def draft_sort_key(d):
+                if d.get("prepend_mode", False):
+                    return 0  # First
+                if d.get("append_mode", False):
+                    return 2  # Last
+                return 1  # Middle (default)
+            sorted_drafts = sorted(immediate_drafts, key=draft_sort_key)
             combined_body = "\n\n".join(
-                (d.get("body_markdown") or d.get("body") or "") for d in immediate_drafts
+                (d.get("body_markdown") or d.get("body") or "") for d in sorted_drafts
             )
             combined_headers = []
             for d in immediate_drafts:

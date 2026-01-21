@@ -83,3 +83,4 @@ events_team-*.json
 # Binary docs (use markdown instead)
 docs/frontend/*.docx
 docs/frontend/*.html
+.playwright-mcp/

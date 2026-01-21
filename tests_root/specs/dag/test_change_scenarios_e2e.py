@@ -13,17 +13,22 @@ Test Scenarios (from task description):
 
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 from typing import Any, Dict
 
 import pytest
 
+from workflows.common.requirements import requirements_hash
 from workflows.common.types import IncomingMessage, WorkflowState
 from workflows.change_propagation import (
     ChangeType,
     route_change_on_updated_variable,
     detect_change_type,
 )
+
+room_module = importlib.import_module("workflows.steps.step3_room_availability.trigger.step3_handler")
+from workflows.steps.step3_room_availability.trigger.step3_handler import process as room_process
 
 
 def _create_event_with_room_locked() -> Dict[str, Any]:
@@ -187,6 +192,75 @@ class TestScenario2_DateChangeRoomUnavailable:
         # For this test, verify that Step 3 would be triggered
         # (The actual availability check happens in Step 3's process function)
         assert event_state["caller_step"] == 4  # Must return here after Step 3
+
+
+@pytest.mark.v4
+class TestScenario6_DetourSmartShortcutDateRoomConfirmation:
+    """
+    Scenario 6: Detour confirmation includes both date + room in one message.
+
+    Expected:
+        - Step 3 treats explicit room mention as confirmation in detour context
+        - No availability overview draft is produced
+        - Step advances to Step 4 with room_confirmation_prefix
+    """
+
+    def test_detour_date_and_room_confirmation_skips_overview(self, tmp_path, monkeypatch):
+        msg = IncomingMessage(
+            msg_id="msg-detour-room-confirm",
+            from_name="Client",
+            from_email="client@example.com",
+            subject="Re: Date confirmation",
+            body="Yes, 21.01.2026 from 10:00 to 12:00 works. Please proceed with Room B.",
+            ts=None,
+        )
+        state = WorkflowState(message=msg, db_path=tmp_path / "detour-shortcut.json", db={"events": []})
+        state.event_id = "EVT-DET-SHORTCUT"
+        state.current_step = 3
+        state.set_thread_state("Awaiting Client")
+        state.user_info = {"room": "Room B"}
+        state.confidence = 0.99
+        state.extras = {
+            "unified_detection": {
+                "intent": "event_request",
+                "signals": {"question": False, "acceptance": True},
+                "entities": {},
+            }
+        }
+
+        requirements = {"number_of_participants": 50, "seating_layout": "theatre"}
+        req_hash = requirements_hash(requirements)
+        state.event_entry = {
+            "event_id": state.event_id,
+            "current_step": 3,
+            "caller_step": 4,
+            "thread_state": "Awaiting Client",
+            "date_confirmed": True,
+            "chosen_date": "21.01.2026",
+            "locked_room_id": None,
+            "requirements": requirements,
+            "requirements_hash": req_hash,
+            "room_eval_hash": None,
+            "event_data": {
+                "Event Date": "21.01.2026",
+                "Start Time": "10:00",
+                "End Time": "12:00",
+            },
+        }
+
+        monkeypatch.setattr(room_module, "evaluate_room_statuses", lambda *_: [{"Room B": "Available"}])
+        monkeypatch.setattr(room_module, "_needs_better_room_alternatives", lambda *_: False)
+        monkeypatch.setattr(room_module, "verbalize_draft_body", lambda body, **_: body)
+
+        result = room_process(state)
+
+        assert state.user_info.get("_room_choice_detected") is True
+        assert result.action == "room_avail_result"
+        assert result.halt is False
+        assert state.current_step == 4
+        assert state.event_entry.get("locked_room_id") == "Room B"
+        assert state.event_entry.get("room_confirmation_prefix")
+        assert not state.draft_messages
 
 
 @pytest.mark.v4
