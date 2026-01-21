@@ -44,6 +44,57 @@
 
 ---
 
+### Fix: LLM Signals Overridden by Question-Mark Heuristics (Detours + Confirmation)
+
+**Problem:** Action requests phrased as questions (e.g., date changes or "can you please confirm this?") were being treated as Q&A because pre-filter question signals ("?") overrode the LLM's intent signals. This especially broke date-change detours after hybrid acceptance during billing flow.
+
+**Root Cause:** `run_unified_detection()` merged `is_question` with pre-filter heuristics unconditionally, and Step 1's Q&A guards used raw question marks to block detours. In billing flow, change detection could be skipped unless keyword heuristics fired.
+
+**Solution:** Favor LLM intent/signals and only use pre-filter as a safe fallback:
+1. Merge `is_question` and `is_change_request` with LLM-first logic (pre-filter fills gaps only when no action signals are present).
+2. Replace question-mark Q&A guards in Step 1 and Step 2 with `unified_detection.is_question` / LLM intent.
+3. In billing flow, allow change detection when the LLM marks a change request (fallback to heuristic only if LLM is unavailable).
+
+**Files Modified:**
+- `detection/unified.py` - Added `_merge_signal_flags()` for LLM-first signal merging
+- `workflows/steps/step1_intake/trigger/step1_handler.py` - LLM-driven Q&A guard + billing-flow change gating
+- `workflows/steps/step2_date_confirmation/trigger/step2_handler.py` - LLM-driven Q&A guard
+- `tests/detection/test_unified_signal_merging.py` - New tests for signal merging behavior
+
+**Result:** Date-change detours triggered by question-form messages now route correctly during billing flow, and confirmation requests are no longer misclassified as Q&A.
+
+---
+
+### Fix: Detour Date Confirmation Could Skip Room Availability Recheck
+
+**Problem:** After a date-change detour, confirming the new date could fall into Step 3’s pure Q&A short-circuit, skipping the room availability recheck and the “room confirmation → room check” flow.
+
+**Root Cause:** Step 3’s detour re-entry guard only used `state.extras["change_detour"]`, which isn’t set when Step 2 autoruns Step 3, even though `caller_step` is present.
+
+**Solution:** Treat `caller_step` as a detour indicator in Step 3 and force the room availability path when it’s set.
+
+**Files Modified:**
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py`
+
+**Tests:** Playwright E2E (hybrid) `e2e-scenarios/2026-01-21_hybrid-detour-second-offer-site-visit.md`; regression `tests_root/specs/dag/test_change_scenarios_e2e.py::TestScenario6_DetourSmartShortcutDateRoomConfirmation`.
+
+---
+
+### Fix: Detour Smart Shortcut for Date + Room Confirmation
+
+**Problem:** After a date-change detour, a single confirmation message that includes both the new date and the room still triggered the full Step 3 availability overview and asked for room selection again.
+
+**Root Cause:** Step 3’s room confirmation detection relied on room-choice detection that was blocked by acceptance guards, so explicit room confirmations during detours were missed.
+
+**Solution:** In detour context (`caller_step` set), allow explicit room mentions to count as room confirmations when the message is not a pure question (using LLM is_question/is_acceptance signals). This enables the smart shortcut to proceed directly to Step 4 when the room is available.
+
+**Files Modified:**
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py`
+
+**Tests:** Not run (recommend adding coverage in `tests/specs/dag/test_change_scenarios_e2e.py`).
+
+---
+
 ## 2026-01-20
 
 ### Fix: Pattern-only Q&A Detection Requiring LLM Confirmation

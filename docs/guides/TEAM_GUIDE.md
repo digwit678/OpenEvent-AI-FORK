@@ -717,6 +717,41 @@ Result: Hybrid messages now correctly detect acceptance from the statement porti
 **Tests**: Verified with date change detour flow (Step 1 → Step 2 → Step 3 → Step 4)
 **Key Learning**: Detours are initiated by validated change detection, not Q&A. When Step 4 is reached via detour, we should always generate the offer. The QNA_GUARD is meant to prevent premature offer generation from pure questions during normal flow, but it should not block offer generation when we're already in a validated detour flow.
 
+### BUG-042: LLM Signals Overridden by Question-Mark Heuristics
+**Status**: Fixed (2026-01-21)
+**Severity**: High
+**Symptom**: Date-change detours triggered after hybrid acceptance (billing flow) were skipped when phrased as questions. Confirmation requests like "Can you please confirm this?" were misclassified as Q&A.
+**Root Cause**: `run_unified_detection()` OR'd `is_question` with pre-filter question signals, overriding LLM intent. Step 1 Q&A guards used raw `?` to suppress detours, and billing flow skipped change detection unless keyword heuristics fired.
+**Fix**:
+1. Added LLM-first merge logic for `is_question` and `is_change_request` (pre-filter only fills gaps).
+2. Step 1 and Step 2 Q&A guards now rely on LLM `is_question` / intent instead of `?`.
+3. Billing flow change gating uses LLM `is_change_request` (heuristic only when LLM unavailable).
+**Files**: `detection/unified.py`, `workflows/steps/step1_intake/trigger/step1_handler.py`, `workflows/steps/step2_date_confirmation/trigger/step2_handler.py`
+**Tests**: `tests/detection/test_unified_signal_merging.py`
+**Key Learning**: Never let a question mark override LLM action intent. Prefer LLM intent for Q&A gating and detour decisions.
+
+### BUG-043: Detour Date Confirmation Could Skip Room Availability Recheck
+**Status**: Fixed (2026-01-21)
+**Severity**: High
+**Symptom**: After a date-change detour, confirming the new date could short-circuit into the Step 3 Q&A path, skipping the required room availability recheck. This surfaced as missing “room check” behavior after confirming the new date.
+**Root Cause**: Step 3’s detour re-entry guard only checked `state.extras["change_detour"]`. During Step 2’s autorun into Step 3, that flag wasn’t set even though `caller_step` was present, so Step 3 could still allow pure Q&A handling.
+**Fix**: Treat `caller_step` as a detour indicator in Step 3. If `caller_step` is set, force the room availability path and skip Q&A short-circuiting.
+**Files**: `workflows/steps/step3_room_availability/trigger/step3_handler.py`
+**Tests**: Add regression coverage in `tests/specs/dag/test_change_scenarios_e2e.py` (detour date change → confirm date → Step 3 room availability).
+**Key Learning**: Detour context should be derived from workflow state (`caller_step`) and not rely solely on transient flags.
+
+### BUG-044: Detour Smart Shortcut Skips Not Applied for Date + Room Confirmation
+**Status**: Fixed (2026-01-21)
+**Severity**: High
+**Symptom**: After a date-change detour, a single confirmation message that includes both the new date and room (e.g., “Yes, 21.01.2026 from 10:00 to 12:00 works. Please proceed with Room B.”) still triggered a full Step 3 availability overview and re-prompted for room selection instead of going straight to the updated offer.
+**Root Cause**: Step 3’s room confirmation detection relied on the room-choice detector, which was blocked by acceptance guards. In detour context, this prevented room confirmation from being recognized even when the room was explicitly mentioned.
+**Fix**: In detour context (`caller_step` set), treat explicit room mentions as confirmations when the message is not a pure question, using LLM signals for question/acceptance gating. This enables the smart shortcut to proceed directly to Step 4 when the room is available.
+**Files**: `workflows/steps/step3_room_availability/trigger/step3_handler.py`
+**Repro**: `e2e-scenarios/2026-01-21_hybrid-detour-second-offer-site-visit.md`
+**E2E Verified**: `e2e-scenarios/2026-01-21_hybrid-detour-second-offer-site-visit.md` (hybrid I:ope / E:gem / V:ope)
+**Tests**: `tests_root/specs/dag/test_change_scenarios_e2e.py::TestScenario6_DetourSmartShortcutDateRoomConfirmation`
+**Key Learning**: Detour confirmations should not be blocked by acceptance heuristics when the room is explicitly mentioned and LLM signals indicate it is not a pure question.
+
 ---
 
 ## Q&A Rules During Detours
