@@ -52,7 +52,12 @@ from detection.response.matchers import (
 from debug.hooks import trace_marker, trace_general_qa_status, set_subloop
 from debug.trace import set_hil_open
 from utils.profiler import profile_step
-from workflows.common.menu_options import DINNER_MENU_OPTIONS
+
+# N4 refactoring (Jan 2026): Product utils consolidated to workflows/common
+from workflows.common.product_utils import (
+    menu_name_set as _menu_name_set,
+    normalise_product_fields as _normalise_product_fields,
+)
 
 # N2 refactoring: Constants and classification extracted to dedicated modules
 from .constants import (
@@ -112,38 +117,8 @@ def _looks_like_date_change(text: str) -> bool:
     return has_change_intent and (has_date_reference or date_pattern)
 
 
-def _menu_name_set() -> set[str]:
-    return {
-        str(entry.get("menu_name") or "").strip().lower()
-        for entry in DINNER_MENU_OPTIONS
-        if entry.get("menu_name")
-    }
-
-
-def _normalise_product_fields(product: Dict[str, Any], *, menu_names: Optional[set[str]] = None) -> Dict[str, Any]:
-    menu_names = menu_names or _menu_name_set()
-    normalised = dict(product)
-    name = str(normalised.get("name") or "").strip()
-    unit = normalised.get("unit")
-    if not unit and name.lower() in menu_names:
-        unit = "per_event"
-    try:
-        quantity = float(normalised.get("quantity") or 1)
-    except (TypeError, ValueError):
-        quantity = 1
-    try:
-        unit_price = float(normalised.get("unit_price") or 0.0)
-    except (TypeError, ValueError):
-        unit_price = 0.0
-
-    if unit == "per_event":
-        quantity = 1
-
-    normalised["name"] = name or "Unnamed item"
-    normalised["unit"] = unit
-    normalised["quantity"] = quantity
-    normalised["unit_price"] = unit_price
-    return normalised
+# N4 refactoring (Jan 2026): _menu_name_set and _normalise_product_fields
+# consolidated to workflows.steps.step4_offer.trigger.product_ops
 
 
 @profile_step("workflow.step5.negotiation")

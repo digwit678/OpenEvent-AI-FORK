@@ -1042,9 +1042,9 @@ def process(state: WorkflowState) -> GroupResult:
         }
         event_entry["chosen_date"] = event_date_from_msg
 
-        # Evaluate room availability
+        # Evaluate room availability (pass db to check Option/Confirmed bookings)
         try:
-            evaluations = evaluate_rooms(event_entry)
+            evaluations = evaluate_rooms(event_entry, db=state.db)
             target_eval = next(
                 (e for e in evaluations if e.record.name.lower() == str(preferred_room_from_msg).lower()),
                 None
