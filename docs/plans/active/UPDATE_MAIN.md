@@ -1,159 +1,195 @@
 # Plan: Sync Backend Changes from Development to Main
 
-**Objective:** Update the `backend/` (and root-level) code on the `main` branch (Vercel production) with the latest changes from `development-branch`.
-**Context:** The project structure has moved to a flat root layout (e.g., `main.py` is at root, not `backend/main.py`).
+> **Read this file completely before syncing.** Follow steps exactly.
 
-## Prerequisites
-- You are on `development-branch` with all changes committed
-- All tests pass on development-branch
-- Workspace is clean (`git status` shows no uncommitted changes)
+**Objective:** Sync all **backend and docs** from `development-branch` to `main`, **excluding frontend** (`atelier-ai-frontend/`).
+
+## Rules
+
+1. **development-branch MUST NOT CHANGE** - only read from it
+2. **main receives backend/docs ONLY** - no frontend files
+3. **One-way sync**: development → main (never merge main into development)
 
 ## What Gets Synced
 
-Everything that constitutes the "Backend" logic, now located at root:
-
 | Root Files | Root Folders |
 |------------|--------------|
-| `main.py` | `adapters/`, `agents/`, `api/` |
-| `workflow_email.py` | `config/`, `configs/`, `core/` |
-| `config.py` | `data/`, `debug/`, `detection/` |
-| `requirements.txt` | `domain/`, `llm/`, `services/` |
-| `vercel.json` | `tests/`, `utils/`, `ux/` |
-| | `workflow/`, `workflows/` |
-| | `legacy/` (if needed) |
+| `main.py`, `workflow_email.py` | `adapters/`, `agents/`, `api/` |
+| `config.py`, `requirements.txt` | `backend/`, `config/`, `configs/`, `core/` |
+| `vercel.json`, `pytest.ini` | `data/`, `debug/`, `detection/`, `docs/` |
+| `CLAUDE.md`, `DEV_CHANGELOG.md` | `domain/`, `e2e-scenarios/`, `llm/` |
+| `TO_DO_NEXT_SESS.md`, `new_features.md` | `scripts/`, `services/`, `tests/` |
+| `.gitignore` | `tests_integration/`, `tests_root/` |
+| | `utils/`, `ux/`, `workflow/`, `workflows/` |
+| | `.claude/`, `.codex/`, `.playwright-mcp/` |
 
-**Excluded:**
+**Excluded (NEVER sync):**
 - `atelier-ai-frontend/` (Frontend is separate)
 - `.dev/`, `.git/`, `.idea/`, `.venv/`
-- Local database files (`events_*.json`)
+- `events_team-*.json` (Runtime data, in .gitignore)
 
-## Execution Steps
-
-### Step 0: Pre-Flight Check (CRITICAL)
-
-**NEVER proceed to sync without completing this pre-flight check.**
+## Pre-Sync Checklist
 
 ```bash
-# 1. Check for uncommitted changes
-git status
+# 1. Ensure you're on development-branch with clean state
+git checkout development-branch
+git status  # Should be clean (stash if needed)
 
-# 2. Check essential root paths are tracked:
-ls -la main.py workflow_email.py
-ls -la workflows/ api/ domain/
+# 2. Check for conflicts (should show nothing - 0 commits behind)
+git fetch origin main
+git log --oneline development-branch..main  # Should be EMPTY
 ```
 
-**If any files are uncommitted:**
-```bash
-git add -A
-git commit -m "chore: commit all pending changes before main sync"
-git push origin development-branch
-```
+**If development-branch..main shows commits:** STOP. Main has changes not in development. Investigate before proceeding.
 
 ---
 
+## Sync Procedure
 
-### Step 1: Verify Current Branch
-
-```bash
-git status
-git branch --show-current  # Should show: development-branch
-```
-
-### Step 2: Switch to Main and Sync
+### Step 1: Stash and Switch
 
 ```bash
-# Switch to main
+git stash push -m "temp: before main sync"
 git checkout main
-git pull origin main
-
-# Sync ROOT FILES
-git checkout development-branch -- main.py workflow_email.py config.py requirements.txt vercel.json
-
-# Sync CORE FOLDERS (The new flat structure)
-git checkout development-branch -- adapters/ agents/ api/ config/ configs/ core/ data/ debug/ detection/ domain/ llm/ services/ tests/ utils/ ux/ workflow/ workflows/ legacy/
-
-# Sync legacy backend folder (if still needed for transition, otherwise empty)
-git checkout development-branch -- backend/
 ```
 
-### Step 3: Verify .env Preserved
+### Step 2: Selective Checkout (ALL backend directories)
 
 ```bash
-# CRITICAL: Ensure production .env wasn't deleted (check both root and backend/ just in case)
-ls -la .env
-# If .env is missing, check if it was in backend/.env previously and move it if needed? 
-# OR just restore it:
-# git checkout HEAD -- .env
+git checkout development-branch -- \
+  .claude/ \
+  .codex/ \
+  .playwright-mcp/ \
+  adapters/ \
+  agents/ \
+  api/ \
+  backend/ \
+  config/ \
+  configs/ \
+  core/ \
+  data/ \
+  debug/ \
+  detection/ \
+  docs/ \
+  domain/ \
+  e2e-scenarios/ \
+  llm/ \
+  scripts/ \
+  services/ \
+  tests/ \
+  tests_integration/ \
+  tests_root/ \
+  utils/ \
+  ux/ \
+  workflow/ \
+  workflows/ \
+  main.py \
+  workflow_email.py \
+  config.py \
+  requirements.txt \
+  vercel.json \
+  pytest.ini \
+  CLAUDE.md \
+  DEV_CHANGELOG.md \
+  TO_DO_NEXT_SESS.md \
+  new_features.md \
+  .gitignore
+```
+
+**Note:** Some directories may not exist. The checkout will error on non-existent paths - remove them from the command and continue.
+
+### Step 3: Handle Deleted Files
+
+If files were deleted in development-branch (e.g., `AGENT.md`), remove them from main:
+
+```bash
+# Check for files on main that don't exist in development
+git diff --name-status main development-branch | grep "^D" | grep -v atelier
+
+# Remove any that should be deleted
+git rm <filename>  # for each deleted file
+```
+
+### Step 4: Verify No Frontend Files Staged
+
+```bash
+git diff --cached --name-only | grep -i atelier
+# Should output NOTHING - if it shows files, unstage them:
+# git reset HEAD atelier-ai-frontend/
 ```
 
 ---
 
+## Verification Before Push (CRITICAL)
 
-## CRITICAL: Verification Before Push
+**NEVER push to main without these checks.**
 
-**NEVER push to main without completing ALL verification steps.**
-
-### V1: Syntax Verification (No Import Errors)
+### V1: Syntax Check
 
 ```bash
-# Run from ROOT
-PYTHONDONTWRITEBYTECODE=1 python3 -c "from main import app; print('✅ Syntax OK: No import errors')"
+PYTHONDONTWRITEBYTECODE=1 python3 -c "from main import app; print('✅ Syntax OK')"
 ```
 
-**Expected output:** `✅ Syntax OK: No import errors`
-
-### V2: Run Core Tests
+### V2: Core Tests
 
 ```bash
-# Run detection and regression tests
 pytest tests/detection/ tests/regression/ -v --tb=short -q
 ```
 
-### V2.5: Critical E2E Verification (The "Progressive Stability" Gate)
-
-**Objective:** Ensure major functionality works in the browser.
+### V3: Final Diff Check
 
 ```bash
-# Run critical subset
-npx playwright test \
-  tests_root/playwright/e2e/03_critical_happy_path/test_full_flow_to_site_visit.spec.ts \
-  tests_root/playwright/e2e/05_core_detours/test_date_change_from_step5.spec.ts \
-  tests_root/playwright/e2e/06_core_shortcuts/test_date_plus_room_shortcut.spec.ts \
-  tests_root/playwright/e2e/11_input_qna/test_static_qna.spec.ts
-```
-
-**Expected:** All selected specs pass.
-
-### V3: API Endpoint Verification
-
-```bash
-# Start backend in background (from ROOT)
-PYTHONDONTWRITEBYTECODE=1 uvicorn main:app --port 8765 &
-BACKEND_PID=$!
-sleep 3
-
-# Test health
-curl -s http://localhost:8765/api/workflow/health | jq .
-
-# Kill test backend
-kill $BACKEND_PID 2>/dev/null
+# Should only show frontend files as different
+git diff --name-only main development-branch -- . ':!atelier-ai-frontend'
+# Expected: empty or only runtime files (.dev/)
 ```
 
 ---
-
 
 ## Commit and Push
 
 ```bash
-# Stage ALL changes
-git add .
+git commit -m "sync: backend and docs from development-branch (<source-commit-hash>)
 
-# Commit
-git commit -m "feat(backend): sync root-level backend structure from development-branch"
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
 
-# Push
 git push origin main
+```
 
-# Return
+### Return to Development Branch
+
+```bash
 git checkout development-branch
+git stash pop  # Restore working files
+```
+
+---
+
+## Troubleshooting
+
+### "Your local changes would be overwritten"
+```bash
+git stash push -m "temp: working files"
+# Then continue with checkout
+```
+
+### Path doesn't exist error during checkout
+Remove the non-existent path from the checkout command and continue. Not all directories exist in every project state.
+
+### Files still different after sync
+Check if they're runtime/temp files that should be in `.gitignore`:
+```bash
+git diff --name-only main development-branch | grep -v atelier
+```
+
+If files are tracked that shouldn't be:
+```bash
+git rm --cached <file>
+git commit -m "chore: untrack runtime file (in .gitignore)"
+```
+
+### Frontend files accidentally staged
+```bash
+git reset HEAD atelier-ai-frontend/
+# Then re-run verification step V4
 ```
