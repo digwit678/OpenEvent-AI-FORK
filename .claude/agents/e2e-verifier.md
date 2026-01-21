@@ -1,3 +1,8 @@
+---
+name: e2e-verifier
+description: Final gatekeeper for verifying user journeys via Playwright.
+---
+
 # E2E Verifier Agent
 
 ## Role

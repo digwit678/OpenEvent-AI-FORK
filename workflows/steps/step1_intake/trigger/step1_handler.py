@@ -1318,8 +1318,13 @@ def process(state: WorkflowState) -> GroupResult:
     )
     is_deposit_date_context = bool(message_text and _deposit_date_pattern.search(message_text))
     # Check if this looks like a date change request (even during billing flow)
+    # Prefer LLM signal; only fallback to heuristic if unified detection is unavailable.
     from workflows.steps.step5_negotiation.trigger.step5_handler import _looks_like_date_change
-    message_looks_like_date_change = _looks_like_date_change(message_text)
+    llm_change_request = bool(getattr(unified_detection, "is_change_request", False) if unified_detection else False)
+    message_looks_like_date_change = False
+    if unified_detection is None:
+        message_looks_like_date_change = _looks_like_date_change(message_text)
+    change_request_signal = llm_change_request or message_looks_like_date_change
 
     # GUARD: Skip date change detection when site visit flow is active
     # When client selects a date for site visit, it should NOT update the event date
@@ -1337,7 +1342,7 @@ def process(state: WorkflowState) -> GroupResult:
         # Deposit payment context - don't detect date changes
         # "We paid the deposit on 02.01.2026" - the date is payment date, not event date
         change_type = None
-    elif in_billing_flow and not message_looks_like_date_change:
+    elif in_billing_flow and not change_request_signal:
         # In billing flow with normal billing input - skip change detection
         # But if it looks like a date change, let detection run for proper detour
         change_type = None
@@ -1379,11 +1384,14 @@ def process(state: WorkflowState) -> GroupResult:
     # "Does Room A have a projector?" should NOT trigger room change
     # "Can you serve 100 people?" should NOT trigger requirements change
     message_text_for_qna = state.message.body or ""
-    has_question_mark = "?" in message_text_for_qna
-    is_qna_no_change = has_qna_question or has_question_mark
+    llm_is_question = bool(getattr(unified_detection, "is_question", False) if unified_detection else False)
+    llm_general_qna = bool(
+        getattr(unified_detection, "intent", "") in ("general_qna", "non_event") if unified_detection else False
+    )
+    is_qna_no_change = has_qna_question or llm_is_question or llm_general_qna
     logger.debug(
-        "[Step1][QNA_COMPREHENSIVE_GUARD] has_qna=%s, has_question_mark=%s, is_qna_no_change=%s",
-        has_qna_question, has_question_mark, is_qna_no_change
+        "[Step1][QNA_COMPREHENSIVE_GUARD] has_qna=%s, llm_is_question=%s, llm_general_qna=%s, is_qna_no_change=%s",
+        has_qna_question, llm_is_question, llm_general_qna, is_qna_no_change
     )
 
     if needs_vague_date_confirmation and not in_billing_flow and not skip_vague_date_reset:
@@ -1598,8 +1606,8 @@ def process(state: WorkflowState) -> GroupResult:
         if is_qna_no_change:
             logger.debug(
                 "[Step1][HASH_QNA_GUARD] Skipping requirements hash routing - Q&A question detected: "
-                "qna=%s, has_question_mark=%s, prev_hash=%s, new_hash=%s",
-                has_qna_question, has_question_mark, prev_req_hash[:8] if prev_req_hash else None,
+                "qna=%s, llm_is_question=%s, prev_hash=%s, new_hash=%s",
+                has_qna_question, llm_is_question, prev_req_hash[:8] if prev_req_hash else None,
                 new_req_hash[:8] if new_req_hash else None
             )
         else:
@@ -1627,8 +1635,8 @@ def process(state: WorkflowState) -> GroupResult:
         if is_qna_no_change:
             logger.debug(
                 "[Step1][ROOM_QNA_GUARD] Skipping room routing - Q&A question detected: "
-                "qna=%s, has_question_mark=%s, room=%s",
-                has_qna_question, has_question_mark, new_preferred_room
+                "qna=%s, llm_is_question=%s, room=%s",
+                has_qna_question, llm_is_question, new_preferred_room
             )
         elif not detoured_to_step2 and not in_billing_flow_for_room:
             prev_step_for_room = event_entry.get("current_step") or previous_step

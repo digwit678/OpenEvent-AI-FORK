@@ -633,15 +633,17 @@ def process(state: WorkflowState) -> GroupResult:
 
     # FIX: Handle Q&A even when date is already confirmed
     # "Does Room A have a projector?" should be answered inline, not trigger Step 3 auto-run
-    # Check for pure Q&A using question mark heuristic as fallback
-    has_question_mark = "?" in message_text
-    is_likely_qna = classification.get("is_general") or has_question_mark
+    llm_is_question = bool(getattr(unified_detection, "is_question", False) if unified_detection else False)
+    llm_general_qna = bool(
+        getattr(unified_detection, "intent", "") in ("general_qna", "non_event") if unified_detection else False
+    )
+    is_likely_qna = classification.get("is_general") or llm_is_question or llm_general_qna
 
     if is_likely_qna and bool(event_entry.get("date_confirmed")):
         # Pure Q&A when date already confirmed - answer inline and halt
         # Don't progress to Step 3 for room selection
-        logger.info("[STEP2][QNA_GUARD] Q&A detected with date_confirmed=True - handling inline (is_general=%s, has_question=%s)",
-                    classification.get("is_general"), has_question_mark)
+        logger.info("[STEP2][QNA_GUARD] Q&A detected with date_confirmed=True - handling inline (is_general=%s, llm_is_question=%s)",
+                    classification.get("is_general"), llm_is_question)
         result = _present_general_room_qna(state, event_entry, classification, thread_id, qa_payload)
         enrich_general_qna_step2(state, classification)
         return result

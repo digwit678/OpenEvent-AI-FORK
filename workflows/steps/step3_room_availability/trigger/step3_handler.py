@@ -329,6 +329,36 @@ def process(state: WorkflowState) -> GroupResult:
                     detail=f"User selected room: {detected_room}",
                     owner_step="Step3_Room",
                 )
+        elif event_entry.get("caller_step") is not None:
+            # Detour smart shortcut: allow room confirmation in detour context even if
+            # acceptance guard blocked room detection, but only when the room is
+            # explicitly mentioned in the message and it's not a pure question.
+            lowered_message = message_text.lower()
+            candidate_room = None
+            extracted_room = user_info.get("room")
+            if extracted_room and str(extracted_room).lower() in lowered_message:
+                candidate_room = extracted_room
+            else:
+                locked_room = event_entry.get("locked_room_id")
+                if locked_room and str(locked_room).lower() in lowered_message:
+                    candidate_room = locked_room
+            is_pure_room_question = bool(
+                unified_detection
+                and getattr(unified_detection, "is_question", False)
+                and not getattr(unified_detection, "is_acceptance", False)
+            )
+            if candidate_room and not is_pure_room_question:
+                user_info["room"] = candidate_room
+                user_info["_room_choice_detected"] = True
+                state.user_info = user_info
+                if thread_id:
+                    trace_marker(
+                        thread_id,
+                        "room_selection_detected_detour",
+                        detail=f"Detour room confirmed: {candidate_room}",
+                        data={"caller_step": event_entry.get("caller_step")},
+                        owner_step="Step3_Room",
+                    )
 
     # -------------------------------------------------------------------------
     # NONSENSE GATE: Check for off-topic/nonsense using existing confidence
@@ -635,13 +665,15 @@ def process(state: WorkflowState) -> GroupResult:
     # After a change_detour (e.g., participant change), force normal room availability
     # path instead of Q&A fallback. The change_detour flag is set by the routing loop.
     # -------------------------------------------------------------------------
-    is_detour_reentry = state.extras.get("change_detour", False)
+    caller_step = event_entry.get("caller_step")
+    is_detour_reentry = state.extras.get("change_detour", False) or caller_step is not None
     if is_detour_reentry:
         general_qna_applicable = False
         trace_marker(
             thread_id,
             "detour_reentry",
-            detail="Forcing room availability path after change_detour",
+            detail="Forcing room availability path after detour",
+            data={"caller_step": caller_step, "change_detour": state.extras.get("change_detour", False)},
             owner_step="Step3_Room",
         )
 

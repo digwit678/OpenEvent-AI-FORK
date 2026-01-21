@@ -192,8 +192,8 @@ def _check_site_visit_intercept(
 
     # Check for site visit CHANGE request (when already scheduled)
     # This handles "change the site visit to X" when sv_status=scheduled
-    message_text = (state.message.body or "").strip()
-    if is_site_visit_scheduled(event_entry) and is_site_visit_change_request(message_text):
+    # Now uses LLM-based detection via is_site_visit_change signal
+    if is_site_visit_scheduled(event_entry) and detection and detection.is_site_visit_change:
         logger.info("[WF][SITE_VISIT] Site visit change request detected (status=scheduled)")
         return handle_site_visit_request(state, event_entry, detection)
 
@@ -224,6 +224,7 @@ def _get_detection_result(state: WorkflowState) -> Optional[UnifiedDetectionResu
             is_acceptance=detection_data.get("signals", {}).get("acceptance", False),
             is_rejection=detection_data.get("signals", {}).get("rejection", False),
             is_change_request=detection_data.get("signals", {}).get("change_request", False),
+            is_site_visit_change=detection_data.get("signals", {}).get("site_visit_change", False),
             is_manager_request=detection_data.get("signals", {}).get("manager_request", False),
             is_question=detection_data.get("signals", {}).get("question", False),
             has_urgency=detection_data.get("signals", {}).get("urgency", False),
