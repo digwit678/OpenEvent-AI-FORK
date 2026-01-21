@@ -418,7 +418,9 @@ def _rooms_by_feature_response(
 ) -> List[str]:
     requested_room = _extract_requested_room(text)
     feature_tokens = _extract_feature_tokens(text, extraction)
-    features_to_check = feature_tokens or ["Natural daylight"]
+    # NO DEFAULT: Only check features if user explicitly asked about them
+    # "Natural daylight" was a noise-causing default - removed
+    features_to_check = feature_tokens
 
     # If asking about a SPECIFIC room's features (e.g., "Does Room A have a projector?"),
     # just answer directly - don't list alternatives. Let _room_features_response handle it.

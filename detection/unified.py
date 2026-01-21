@@ -226,6 +226,11 @@ def run_unified_detection(
     """
     from adapters.agent_adapter import get_adapter_for_provider
     from llm.provider_config import get_intent_provider
+    from detection.pre_filter import pre_filter
+
+    # Run pre-filter first to get keyword-based signals
+    # These signals (especially acceptance) are critical and must not be lost
+    pre_filter_result = pre_filter(message)
 
     # Build the prompt
     prompt = UNIFIED_DETECTION_PROMPT.format(
@@ -264,11 +269,20 @@ def run_unified_detection(
         entities = data.get("entities", {})
 
         # Merge qna_types from LLM with keyword-based detection
-        # This ensures site_visit_request and other types are detected even if LLM misses them
+        # BUT: Respect LLM's semantic understanding - if LLM says it's NOT a question,
+        # don't add keyword-based Q&A types (avoids false positives like "thanks for the parking info")
         from detection.intent.classifier import _detect_qna_types
 
         llm_qna_types = data.get("qna_types", [])
-        keyword_qna_types = _detect_qna_types(message.lower())
+        is_question_by_llm = signals.get("is_question", False)
+
+        # Only add keyword-based Q&A types if LLM thinks it's a question OR LLM found Q&A types
+        # This respects the LLM's semantic understanding while still catching edge cases
+        if is_question_by_llm or llm_qna_types:
+            keyword_qna_types = _detect_qna_types(message.lower())
+        else:
+            # LLM says not a question and found no Q&A types - trust the LLM's semantic judgment
+            keyword_qna_types = []
 
         # Merge both lists, removing duplicates while preserving order
         merged_qna_types = list(llm_qna_types)
@@ -276,16 +290,21 @@ def run_unified_detection(
             if qna_type not in merged_qna_types:
                 merged_qna_types.append(qna_type)
 
+        # Merge pre-filter signals with LLM signals (pre-filter takes precedence for critical signals)
+        # This ensures that keyword-detected acceptance signals aren't lost if the LLM doesn't detect them
+        is_acceptance = signals.get("is_acceptance", False) or pre_filter_result.has_acceptance_signal
+        is_question = signals.get("is_question", False) or pre_filter_result.has_question_signal
+
         result = UnifiedDetectionResult(
             language=data.get("language", "en"),
             intent=data.get("intent", "general_qna"),
             intent_confidence=data.get("intent_confidence", 0.5),
             is_confirmation=signals.get("is_confirmation", False),
-            is_acceptance=signals.get("is_acceptance", False),
+            is_acceptance=is_acceptance,
             is_rejection=signals.get("is_rejection", False),
             is_change_request=signals.get("is_change_request", False),
             is_manager_request=signals.get("is_manager_request", False),
-            is_question=signals.get("is_question", False),
+            is_question=is_question,
             has_urgency=signals.get("has_urgency", False),
             date=entities.get("date"),
             date_text=entities.get("date_text"),
@@ -325,18 +344,21 @@ def run_unified_detection(
                     json_text = json_text.rstrip("`").strip()
                 data = json.loads(json_text)
                 # Success with fallback - return result
+                # IMPORTANT: Merge pre-filter signals (same as primary path)
                 signals = data.get("signals", {})
                 entities = data.get("entities", {})
+                is_acceptance = signals.get("is_acceptance", False) or pre_filter_result.has_acceptance_signal
+                is_question = signals.get("is_question", False) or pre_filter_result.has_question_signal
                 return UnifiedDetectionResult(
                     language=data.get("language", "en"),
                     intent=data.get("intent", "general_qna"),
                     intent_confidence=data.get("intent_confidence", 0.5),
                     is_confirmation=signals.get("is_confirmation", False),
-                    is_acceptance=signals.get("is_acceptance", False),
+                    is_acceptance=is_acceptance,
                     is_rejection=signals.get("is_rejection", False),
                     is_change_request=signals.get("is_change_request", False),
                     is_manager_request=signals.get("is_manager_request", False),
-                    is_question=signals.get("is_question", False),
+                    is_question=is_question,
                     has_urgency=signals.get("has_urgency", False),
                     date=entities.get("date"),
                     date_text=entities.get("date_text"),
@@ -356,13 +378,15 @@ def run_unified_detection(
             except Exception as fallback_err:
                 logger.warning("[UNIFIED_DETECTION] Fallback %s also failed: %s", fallback, fallback_err)
                 continue
-        # All providers failed - return minimal result with heuristic question detection
-        # to ensure Q&A guard can still trigger based on question marks
-        is_question_heuristic = "?" in message
+        # All providers failed - return minimal result with heuristic detection
+        # IMPORTANT: Merge pre-filter signals to preserve acceptance/question detection
+        is_question_heuristic = "?" in message or pre_filter_result.has_question_signal
+        is_acceptance_heuristic = pre_filter_result.has_acceptance_signal
         return UnifiedDetectionResult(
             intent="general_qna",
             intent_confidence=0.3,
             is_question=is_question_heuristic,
+            is_acceptance=is_acceptance_heuristic,
         )
     except Exception as e:
         logger.warning("[UNIFIED_DETECTION] Error with %s: %s", intent_provider, e)
@@ -379,18 +403,21 @@ def run_unified_detection(
                     max_tokens=2000,
                 )
                 data = json.loads(response_text.strip())
+                # IMPORTANT: Merge pre-filter signals (same as primary path)
                 signals = data.get("signals", {})
                 entities = data.get("entities", {})
+                is_acceptance = signals.get("is_acceptance", False) or pre_filter_result.has_acceptance_signal
+                is_question = signals.get("is_question", False) or pre_filter_result.has_question_signal
                 return UnifiedDetectionResult(
                     language=data.get("language", "en"),
                     intent=data.get("intent", "general_qna"),
                     intent_confidence=data.get("intent_confidence", 0.5),
                     is_confirmation=signals.get("is_confirmation", False),
-                    is_acceptance=signals.get("is_acceptance", False),
+                    is_acceptance=is_acceptance,
                     is_rejection=signals.get("is_rejection", False),
                     is_change_request=signals.get("is_change_request", False),
                     is_manager_request=signals.get("is_manager_request", False),
-                    is_question=signals.get("is_question", False),
+                    is_question=is_question,
                     has_urgency=signals.get("has_urgency", False),
                     date=entities.get("date"),
                     date_text=entities.get("date_text"),
@@ -409,12 +436,15 @@ def run_unified_detection(
                 )
             except Exception:
                 continue
-        # All providers failed - return minimal result with heuristic question detection
-        is_question_heuristic = "?" in message
+        # All providers failed - return minimal result with heuristic detection
+        # IMPORTANT: Merge pre-filter signals to preserve acceptance/question detection
+        is_question_heuristic = "?" in message or pre_filter_result.has_question_signal
+        is_acceptance_heuristic = pre_filter_result.has_acceptance_signal
         return UnifiedDetectionResult(
             intent="general_qna",
             intent_confidence=0.3,
             is_question=is_question_heuristic,
+            is_acceptance=is_acceptance_heuristic,
         )
 
 

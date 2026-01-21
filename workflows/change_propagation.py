@@ -990,6 +990,37 @@ def detect_change_type_enhanced(
             )
 
     # -------------------------------------------------------------------------
+    # ACCEPTANCE GUARD: Skip change detection for offer acceptance messages
+    # "I accept this offer for Room A" should NOT trigger room change detection.
+    # The room mentioned in an acceptance is a CONFIRMATION, not a change request.
+    # -------------------------------------------------------------------------
+    _is_accept = getattr(unified_detection, "is_acceptance", False) if unified_detection else False
+
+    # BACKUP: Also check pre-filter directly for acceptance signals
+    # This ensures acceptance is detected even if unified detection merging fails
+    from detection.pre_filter import pre_filter, ACCEPTANCE_SIGNALS_EN, ACCEPTANCE_SIGNALS_DE
+    _text_lower = (message_text or "").lower()
+    _prefilter_accept = any(signal in _text_lower for signal in ACCEPTANCE_SIGNALS_EN + ACCEPTANCE_SIGNALS_DE)
+
+    print(f"[CHANGE_PROP][ACCEPTANCE_DEBUG] unified_accept={_is_accept}, prefilter_accept={_prefilter_accept}, msg={message_text[:50] if message_text else 'N/A'}...")
+
+    if _is_accept or _prefilter_accept:
+        logger.debug(
+            "[CHANGE_PROP][ACCEPTANCE_GUARD] Skipping change detection: "
+            "is_acceptance=True, message is confirming existing selection"
+        )
+        return EnhancedChangeResult(
+            is_change=False,
+            change_type=None,
+            mode=None,
+            confidence=0.0,
+            alternative_intent=MessageIntent.CONFIRMATION,
+            revision_signals=[],
+            target_matches=[],
+            language=getattr(unified_detection, "language", "en") or "en",
+        )
+
+    # -------------------------------------------------------------------------
     # Q&A FALLBACK GUARD: When unified_detection is not available (e.g., during
     # intake before pre-route runs), use simple heuristic: messages with "?"
     # are likely Q&A and should NOT trigger detours unless they have explicit

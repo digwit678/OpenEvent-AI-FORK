@@ -608,11 +608,24 @@ def process(state: WorkflowState) -> GroupResult:
     # Early room-choice detection so we don't rely on classifier confidence
     # Pass unified detection to enable question guard ("Is Room A available?" should not lock)
     unified_detection = get_unified_detection(state)
+
+    # HYBRID FIX: Set general_qna_detected based on unified detection
+    # This is needed for hybrid messages (workflow action + Q&A in same message)
+    # IMPORTANT: Only set if LLM detected is_question=True, otherwise it's just a workflow action
+    has_qna_types = bool(getattr(unified_detection, "qna_types", None) if unified_detection else False)
+    is_question = bool(getattr(unified_detection, "is_question", False) if unified_detection else False)
+    if has_qna_types and is_question:
+        state.extras["general_qna_detected"] = True
+        state.extras["_has_qna_types"] = True
+
     early_room_choice = _detect_room_choice(body_text, linked_event, unified_detection)
+    logger.info("[Step1] early_room_choice=%s (linked_event.current_step=%s)",
+                early_room_choice, linked_event.get("current_step") if linked_event else None)
     if early_room_choice:
         user_info["room"] = early_room_choice
         user_info["_room_choice_detected"] = True
         state.extras["room_choice_selected"] = early_room_choice
+        logger.info("[Step1] Set _room_choice_detected=True for room=%s", early_room_choice)
         # Bump confidence to prevent Step 3 nonsense gate from triggering HIL
         confidence = 1.0
         intent = IntentLabel.EVENT_REQUEST
@@ -1068,6 +1081,19 @@ def process(state: WorkflowState) -> GroupResult:
                     "missing_products": [p.get("name") for p in target_eval.missing_products] if target_eval.missing_products else [],
                 }
 
+                # Store room confirmation prefix for Step 4 (same as Step 3 does)
+                # This ensures Step 4 knows room was just confirmed and generates the offer
+                participants_count = user_info.get("participants")
+                confirmation_intro = (
+                    f"Great choice! {target_eval.record.name} on {event_date_from_msg or 'your date'} is confirmed"
+                )
+                if participants_count:
+                    confirmation_intro += f" for your event with {participants_count} guests."
+                else:
+                    confirmation_intro += "."
+                event_entry["room_confirmation_prefix"] = confirmation_intro + "\n\n"
+                logger.info("[Step1][SMART_SHORTCUT] Set room_confirmation_prefix for Step 4")
+
                 # Generate Q&A response if detected
                 if state.extras.get("general_qna_detected"):
                     unified_detection = state.extras.get("unified_detection") or {}
@@ -1181,6 +1207,18 @@ def process(state: WorkflowState) -> GroupResult:
                 state.caller_step = None
                 state.set_thread_state("Awaiting Client")
                 state.extras["persist"] = True
+
+                # Store room confirmation prefix for Step 4 (same as Step 3 does)
+                # This ensures Step 4 knows room was just confirmed and generates the offer
+                participants_count = user_info.get("participants")
+                chosen_date_display = event_entry.get("chosen_date") or event_entry.get("event_data", {}).get("Event Date") or "your date"
+                confirmation_intro = f"Great choice! {room_choice_selected} on {chosen_date_display} is confirmed"
+                if participants_count:
+                    confirmation_intro += f" for your event with {participants_count} guests."
+                else:
+                    confirmation_intro += "."
+                event_entry["room_confirmation_prefix"] = confirmation_intro + "\n\n"
+                logger.info("[Step1] Set room_confirmation_prefix for Step 4")
 
                 # [HYBRID Q&A] Generate Q&A response if general Q&A was detected
                 # This handles hybrid messages like "Room B looks great + which rooms in February?"

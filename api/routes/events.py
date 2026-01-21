@@ -30,6 +30,9 @@ from workflow_email import (
     process_msg as wf_process_msg,
 )
 from workflows.common.confirmation_gate import check_confirmation_gate
+from workflows.common.types import IncomingMessage, WorkflowState
+from workflows.io.database import update_event_metadata
+from workflows.io import database as db_io
 
 
 router = APIRouter(tags=["events"])
@@ -152,49 +155,85 @@ async def pay_deposit(request: DepositPaymentRequest):
                 "billing_missing": gate_status.billing_missing,
             }
 
-        # All prerequisites met - continue to HIL
-        logger.info("Event %s: All prerequisites met (billing=%s, deposit=%s, offer=%s) - continuing to HIL",
+        # All prerequisites met - continue directly to Step 7 for site visit question
+        logger.info("Event %s: All prerequisites met (billing=%s, deposit=%s, offer=%s) - continuing to Step 7",
                     request.event_id, gate_status.billing_complete, gate_status.deposit_paid, gate_status.offer_accepted)
         logger.debug("Event %s: client_email=%s, thread_id=%s", request.event_id, client_email, thread_id)
 
-        # Continue workflow with synthetic message about deposit payment
-        synthetic_msg = {
-            "msg_id": str(uuid.uuid4()),
-            "from_name": "Client (GUI)",
-            "from_email": client_email,
-            "subject": f"Deposit paid for event {request.event_id}",
-            "ts": _now_iso(),
-            "body": "I have paid the deposit.",
-            "thread_id": thread_id,
-            "session_id": thread_id,
-            "event_id": request.event_id,
-            "deposit_just_paid": True,  # Signal to workflow handler
-        }
-
-        wf_res = {}
+        # Update event to Step 7 and call Step 7 handler directly
+        # This ensures the site visit question is generated (similar to HIL approval flow)
         try:
-            wf_res = wf_process_msg(synthetic_msg)
-            logger.info("Workflow continued: action=%s event_id=%s", wf_res.get('action'), wf_res.get('event_id'))
+            from workflows.steps.step7_confirmation.trigger.process import process as process_step7
+            from pathlib import Path
+
+            # Get database path
+            db_path = Path(os.getenv("WF_DB_PATH", "events_team-shami.json"))
+            lock_path = db_path.with_suffix(".lock")
+
+            # Update event metadata to Step 7
+            update_event_metadata(event_entry, current_step=7, thread_state="Processing")
+
+            # Create a fresh state for Step 7 processing
+            step7_message = IncomingMessage.from_dict({
+                "msg_id": f"deposit-continue-{request.event_id}",
+                "from_email": client_email,
+                "subject": "Deposit paid - continue to confirmation",
+                "body": "",  # Empty body - just continuing the workflow
+                "ts": _now_iso(),
+                "deposit_just_paid": True,
+            })
+            step7_state = WorkflowState(message=step7_message, db_path=db_path, db=db)
+            step7_state.client_id = client_email.lower() if client_email else ""
+            step7_state.event_entry = event_entry
+            step7_state.current_step = 7
+            step7_state.thread_state = "Processing"
+
+            # Call Step 7 to generate the site visit message
+            _step7_result = process_step7(step7_state)
+
+            # Get the generated message from state
+            draft_messages = step7_state.draft_messages or []
+            response_text = None
+            if draft_messages:
+                draft = draft_messages[0]
+                # Use body (client message) first, not body_markdown (manager display)
+                response_text = draft.get("body") or draft.get("body_markdown") or ""
+            else:
+                # Fallback message if Step 7 didn't generate one
+                response_text = "Thank you for the deposit. We will be in touch shortly to finalize the details."
+
+            # Persist changes
+            if step7_state.extras.get("persist"):
+                wf_save_db(db)
+            else:
+                wf_save_db(db)
+
+            logger.info("Event %s: Step 7 generated response, action=%s",
+                       request.event_id, _step7_result.action if _step7_result else "none")
+
+            return {
+                "status": "ok",
+                "event_id": request.event_id,
+                "deposit_amount": deposit_info.get("deposit_amount"),
+                "deposit_paid_at": deposit_info.get("deposit_paid_at"),
+                "workflow_continued": True,
+                "workflow_action": _step7_result.action if _step7_result else "step7_continue",
+                "response": response_text,
+                "draft_messages": draft_messages,
+            }
+
         except Exception as exc:
-            logger.exception("Failed to continue workflow: %s", exc)
-
-        # Extract response from draft_messages (workflow returns draft_messages, not reply_text)
-        draft_messages = wf_res.get("draft_messages") or []
-        response_text = None
-        if draft_messages:
-            latest_draft = draft_messages[-1]
-            response_text = latest_draft.get("body_markdown") or latest_draft.get("body")
-
-        return {
-            "status": "ok",
-            "event_id": request.event_id,
-            "deposit_amount": deposit_info.get("deposit_amount"),
-            "deposit_paid_at": deposit_info.get("deposit_paid_at"),
-            "workflow_continued": True,
-            "workflow_action": wf_res.get("action"),
-            "response": response_text,
-            "draft_messages": draft_messages,
-        }
+            logger.exception("Failed to continue workflow to Step 7: %s", exc)
+            # Fallback: still return success but note the workflow didn't continue
+            return {
+                "status": "ok",
+                "event_id": request.event_id,
+                "deposit_amount": deposit_info.get("deposit_amount"),
+                "deposit_paid_at": deposit_info.get("deposit_paid_at"),
+                "workflow_continued": False,
+                "reason": "step7_processing_failed",
+                "error": str(exc),
+            }
 
     except HTTPException:
         raise

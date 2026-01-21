@@ -57,7 +57,7 @@ from workflows.common.detour_acknowledgment import (
     generate_detour_acknowledgment,
     add_detour_acknowledgment_draft,
 )
-from workflows.qna.router import route_general_qna
+from workflows.qna.router import route_general_qna, generate_hybrid_qna_response
 from workflows.common.types import GroupResult, WorkflowState
 # MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
 from detection.intent.confidence import check_nonsense_gate
@@ -241,7 +241,10 @@ def _maybe_append_general_qna(
     requested_client_dates: Sequence[str],
     deferred_general_qna: bool,
 ) -> GroupResult:
-    if not deferred_general_qna or not requested_client_dates or not classification.get("is_general"):
+    # HYBRID FIX: Also allow Q&A appending when qna_types exist (workflow + Q&A in same message)
+    has_qna_types = state.extras.get("_has_qna_types", False)
+    has_qna_signal = classification.get("is_general") or has_qna_types
+    if not deferred_general_qna or not requested_client_dates or not has_qna_signal:
         return result
 
     pre_count = len(state.draft_messages)
@@ -400,7 +403,31 @@ def process(state: WorkflowState) -> GroupResult:
 
     classification = detect_general_room_query(message_text, state)
     state.extras["_general_qna_classification"] = classification
-    state.extras["general_qna_detected"] = bool(classification.get("is_general"))
+    # HYBRID FIX: Also check qna_types from unified detection for hybrid messages
+    # (workflow action + Q&A in same message, e.g., "Book May 15 for 30. Parking available?")
+    # IMPORTANT: Only use qna_types if LLM detected is_question=True
+    unified_detection = get_unified_detection(state)
+    has_qna_types = bool(getattr(unified_detection, "qna_types", None) if unified_detection else False)
+    is_question = bool(getattr(unified_detection, "is_question", False) if unified_detection else False)
+    has_valid_qna = has_qna_types and is_question  # Only valid if LLM says it's a question
+    state.extras["general_qna_detected"] = bool(classification.get("is_general")) or has_valid_qna
+    state.extras["_has_qna_types"] = has_valid_qna  # Track for deferred Q&A logic
+
+    # HYBRID FIX: Pre-generate hybrid Q&A response for hybrid messages
+    # This will be appended to the workflow response by api/routes/messages.py
+    if has_valid_qna and not classification.get("is_general"):
+        qna_types = getattr(unified_detection, "qna_types", []) or []
+        if qna_types:
+            hybrid_qna_response = generate_hybrid_qna_response(
+                qna_types=qna_types,
+                message_text=state.message.body or "",
+                event_entry=event_entry,
+                db=state.db,
+            )
+            if hybrid_qna_response:
+                state.extras["hybrid_qna_response"] = hybrid_qna_response
+                logger.debug("[STEP2][HYBRID_QNA] Generated hybrid Q&A response for types: %s", qna_types)
+
     classification.setdefault("primary", "general_qna")
     if not classification.get("secondary"):
         classification["secondary"] = ["general"]
@@ -591,9 +618,14 @@ def process(state: WorkflowState) -> GroupResult:
     requested_client_dates = _client_requested_dates(state)
     deferred_general_qna = False
     general_qna_applicable = classification.get("is_general") and not bool(event_entry.get("date_confirmed"))
+    # HYBRID FIX: Also defer Q&A when qna_types exist (workflow + Q&A in same message)
+    has_qna_types = state.extras.get("_has_qna_types", False)
     if general_qna_applicable and requested_client_dates:
         deferred_general_qna = True
         general_qna_applicable = False
+    elif has_qna_types and requested_client_dates and not general_qna_applicable:
+        # Hybrid message: workflow action (date) + Q&A question - defer Q&A to append after workflow response
+        deferred_general_qna = True
     if general_qna_applicable:
         result = _present_general_room_qna(state, event_entry, classification, thread_id, qa_payload)
         enrich_general_qna_step2(state, classification)

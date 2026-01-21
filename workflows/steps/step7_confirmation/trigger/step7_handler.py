@@ -75,6 +75,16 @@ def process(state: WorkflowState) -> GroupResult:
     if state.user_info.get("hil_approve_step") == 7:
         return _process_hil_confirmation(state, event_entry)
 
+    # -------------------------------------------------------------------------
+    # DEPOSIT JUST PAID: Check BEFORE nonsense gate (synthetic message may be empty)
+    # This flag is set by the Pay Deposit button API to continue workflow
+    # Skip HIL for this path since deposit payment itself confirms intent
+    # -------------------------------------------------------------------------
+    is_deposit_signal = (state.message.extras or {}).get("deposit_just_paid", False)
+    if is_deposit_signal:
+        logger.info("[Step7] deposit_just_paid signal detected early - bypassing gates, routing to confirmation (skip_hil=True)")
+        return _prepare_confirmation(state, event_entry, skip_hil=True)
+
     # [CHANGE DETECTION] Run FIRST to detect structural changes
     message_text = (state.message.body or "").strip()
     user_info = state.user_info or {}
@@ -235,15 +245,6 @@ def process(state: WorkflowState) -> GroupResult:
             owner_step="Step7_Confirmation",
         )
 
-    # -------------------------------------------------------------------------
-    # DEPOSIT JUST PAID: Check for deposit_just_paid flag from Pay Deposit button
-    # This synthetic message may not classify correctly via keywords, so handle first
-    # -------------------------------------------------------------------------
-    is_deposit_signal = (state.message.extras or {}).get("deposit_just_paid", False)
-    if is_deposit_signal:
-        logger.info("[Step7] deposit_just_paid signal detected - routing to confirmation")
-        return _prepare_confirmation(state, event_entry)
-
     # Get unified detection for improved site visit vs confirm classification
     unified_detection = get_unified_detection(state)
     classification = classify_message(message_text, event_entry, unified_detection)
@@ -359,8 +360,13 @@ def _detect_structural_change(
     return None
 
 
-def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:
-    """Prepare final confirmation or request deposit if required."""
+def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any], skip_hil: bool = False) -> GroupResult:
+    """Prepare final confirmation or request deposit if required.
+
+    Args:
+        skip_hil: If True, the confirmation message won't require HIL approval.
+                  Used when deposit was just paid (payment itself confirms intent).
+    """
     # Check deposit_info (new schema) first, then fall back to deposit_state (legacy)
     deposit_info = event_entry.get("deposit_info") or {}
     deposit_state = event_entry.setdefault(
@@ -487,7 +493,8 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any]) -> 
         "step": 7,
         "topic": "offer_confirmation",  # Changed from confirmation_final to offer_confirmation
         # Manager's ONLY review point when toggle OFF - full offer review
-        "requires_approval": True,
+        # skip_hil=True when deposit just paid (payment itself confirms intent)
+        "requires_approval": not skip_hil,
         # Add table blocks for HIL display
         "table_blocks": [
             {

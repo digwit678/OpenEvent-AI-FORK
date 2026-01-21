@@ -57,8 +57,11 @@ def detect_room_choice(
         current_step = int(linked_event.get("current_step") or 0)
     except (TypeError, ValueError):
         current_step = 0
+    print(f"[ROOM_DETECT_DEBUG] current_step={current_step}, message={message_text[:50] if message_text else None}")
     if current_step < 3:
+        print(f"[ROOM_DETECT_DEBUG] BLOCKED: current_step={current_step} < 3")
         return None
+    print(f"[ROOM_DETECT_DEBUG] PROCEEDING with detection")
 
     rooms = load_rooms()
     if not rooms:
@@ -118,6 +121,7 @@ def detect_room_choice(
         # Use word boundary regex to avoid "room for" matching "room f"
         room_pattern = rf"\b{re.escape(room_lower)}\b"
         if re.search(room_pattern, lowered):
+            logger.info("[ROOM_DETECT] MATCHED room=%s in message (pattern=%s)", room, room_pattern)
             return room
         if normalize_room_token(room) and normalize_room_token(room) == condensed:
             return room

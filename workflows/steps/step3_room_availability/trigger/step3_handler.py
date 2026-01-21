@@ -32,6 +32,7 @@ from workflows.common.general_qna import (
     _fallback_structured_body,
 )
 from workflows.common.detection_utils import get_unified_detection
+from workflows.qna.router import generate_hybrid_qna_response
 from workflows.change_propagation import (
     ChangeType,
     detect_change_type,
@@ -105,6 +106,10 @@ QNA_SUMMARY_CHAR_THRESHOLD = MENU_CONTENT_CHAR_THRESHOLD
 @profile_step("workflow.step3.room_availability")
 def process(state: WorkflowState) -> GroupResult:
     """[Trigger] Execute Group C — room availability assessment with entry guards and caching."""
+
+    # DEBUG: Log entry point
+    logger.info("[Step3][ENTRY] called with state.user_info=%s",
+                {k: v for k, v in (state.user_info or {}).items() if k in ("room", "_room_choice_detected")})
 
     event_entry = state.event_entry
     if not event_entry:
@@ -367,7 +372,30 @@ def process(state: WorkflowState) -> GroupResult:
     else:
         classification = detect_general_room_query(message_text, state)
         state.extras["_general_qna_classification"] = classification
-    state.extras["general_qna_detected"] = bool(classification.get("is_general"))
+    # HYBRID FIX: Also check qna_types from unified detection for hybrid messages
+    # IMPORTANT: Only use qna_types if LLM detected is_question=True
+    unified_detection = get_unified_detection(state)
+    has_qna_types = bool(getattr(unified_detection, "qna_types", None) if unified_detection else False)
+    is_question = bool(getattr(unified_detection, "is_question", False) if unified_detection else False)
+    has_valid_qna = has_qna_types and is_question  # Only valid if LLM says it's a question
+    state.extras["general_qna_detected"] = bool(classification.get("is_general")) or has_valid_qna
+    state.extras["_has_qna_types"] = has_valid_qna
+
+    # HYBRID FIX: Pre-generate hybrid Q&A response for hybrid messages
+    # This will be appended to the workflow response by api/routes/messages.py
+    if has_valid_qna and not classification.get("is_general"):
+        qna_types = getattr(unified_detection, "qna_types", []) or []
+        if qna_types:
+            hybrid_qna_response = generate_hybrid_qna_response(
+                qna_types=qna_types,
+                message_text=state.message.body or "",
+                event_entry=event_entry,
+                db=state.db,
+            )
+            if hybrid_qna_response:
+                state.extras["hybrid_qna_response"] = hybrid_qna_response
+                logger.debug("[STEP3][HYBRID_QNA] Generated hybrid Q&A response for types: %s", qna_types)
+
     classification.setdefault("primary", "general_qna")
     if not classification.get("secondary"):
         classification["secondary"] = ["general"]
@@ -540,6 +568,14 @@ def process(state: WorkflowState) -> GroupResult:
     # The change_type variable is set earlier (line ~233) if a room change was detected
     room_change_detected_flag = state.user_info.get("_room_choice_detected") or (change_type == ChangeType.ROOM)
     user_requested_room = state.user_info.get("room") if room_change_detected_flag else None
+
+    # DEBUG: Trace user_info state from Step 1 → Step 3
+    logger.info(
+        "[Step3][USER_INFO_TRACE] state.user_info=%s, room_change_detected_flag=%s, user_requested_room=%s",
+        {k: v for k, v in (state.user_info or {}).items() if k in ("room", "_room_choice_detected")},
+        room_change_detected_flag,
+        user_requested_room,
+    )
     locked_room_id = event_entry.get("locked_room_id")
 
     # DEBUG: Trace room confirmation logic
@@ -683,8 +719,23 @@ def process(state: WorkflowState) -> GroupResult:
 
     if general_qna_applicable and not has_step3_history:
         # First entry to Step 3 - only block workflow questions, not pure Q&A
-        if not is_pure_qna:
+        # HYBRID FIX: Check unified detection intent - if it's a booking intent (event_request),
+        # this is a hybrid message (booking + Q&A) and should NOT take the pure Q&A path.
+        # The Q&A will be appended to the workflow response via hybrid_qna_response.
+        is_booking_intent = False
+        if unified_detection:
+            intent = getattr(unified_detection, "intent", None) or ""
+            is_booking_intent = intent in ("event_request", "change_request", "negotiation")
+
+        if not is_pure_qna or is_booking_intent:
             general_qna_applicable = False
+            if is_booking_intent:
+                trace_marker(
+                    thread_id,
+                    "hybrid_booking_detected",
+                    detail=f"Booking intent '{intent}' with Q&A - using hybrid path",
+                    owner_step="Step3_Room",
+                )
         else:
             trace_marker(
                 thread_id,
@@ -894,7 +945,30 @@ def process(state: WorkflowState) -> GroupResult:
             chosen_date=chosen_date,
         )
 
-    selected_entry = _select_room(ranked_rooms)
+    # -------------------------------------------------------------------------
+    # FIX: When user explicitly requests a room (e.g., "Room B looks perfect"),
+    # use THEIR choice if it's available, not the ranking algorithm's choice.
+    # This ensures room confirmation works correctly for hybrid messages.
+    # -------------------------------------------------------------------------
+    if user_requested_room:
+        # Find the user's room in the ranked list
+        user_room_entry = next(
+            (r for r in ranked_rooms if r.room.lower() == user_requested_room.lower()),
+            None
+        )
+        if user_room_entry and user_room_entry.status in (ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION):
+            # User's requested room is available - use it
+            selected_entry = user_room_entry
+            logger.info("[Step3] Using user's explicit room choice: %s (status=%s)",
+                       user_room_entry.room, user_room_entry.status)
+        else:
+            # User's room not available - fall back to ranking
+            selected_entry = _select_room(ranked_rooms)
+            logger.debug("[Step3] User requested %s but not available, using ranked: %s",
+                        user_requested_room, selected_entry.room if selected_entry else None)
+    else:
+        selected_entry = _select_room(ranked_rooms)
+
     selected_room = selected_entry.room if selected_entry else None
     selected_status = selected_entry.status if selected_entry else None
 
@@ -965,6 +1039,8 @@ def process(state: WorkflowState) -> GroupResult:
         and user_requested_room.lower() == selected_room.lower()
         and outcome in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}
     )
+    # DEBUG: Trace room confirmation logic
+    print(f"[STEP3][ROOM_CONFIRM_CHECK] user_requested_room={user_requested_room!r}, selected_room={selected_room!r}, outcome={outcome!r}, is_room_confirmation={is_room_confirmation}")
     if is_room_confirmation:
         headers = ["Room Confirmed"]
         outcome_topic = "room_confirmed"  # Override topic for verbalizer

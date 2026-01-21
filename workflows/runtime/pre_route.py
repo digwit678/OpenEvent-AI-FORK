@@ -213,6 +213,12 @@ def run_unified_pre_filter(
             unified_result.intent, unified_result.is_manager_request,
             unified_result.is_confirmation, unified_result.qna_types
         )
+        print(f"[UNIFIED_DETECTION] is_acceptance={unified_result.is_acceptance}, is_question={unified_result.is_question}, is_change={unified_result.is_change_request}")
+        logger.debug(
+            "[UNIFIED_DETECTION] is_acceptance=%s, is_question=%s, is_change=%s",
+            unified_result.is_acceptance, unified_result.is_question,
+            unified_result.is_change_request
+        )
 
     # Log in enhanced mode
     if is_enhanced_mode() and pre_result.matched_patterns:
