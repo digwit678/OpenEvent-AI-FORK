@@ -693,6 +693,30 @@ Multi-word patterns like "can you", "is there", "could you" remain unchanged as 
 **Impact**: Phrases like "what's available" in the middle of booking requests no longer trigger false positive question signals, allowing the LLM's semantic classification to prevail.
 **Key Learning**: Pre-filter signals should be conservative to avoid bypassing LLM semantic understanding. Single-word interrogatives are weak signals and need additional context (question mark or sentence-initial position) to be reliable.
 
+### BUG-040: Hybrid Messages (Acceptance + Q&A) Not Working
+**Status**: Fixed (2026-01-21)
+**Severity**: High
+**Symptom**: Messages like "Room B looks perfect. Do you offer catering services?" were being treated entirely as questions. The acceptance portion was not recognized, so the workflow did not advance to the next step (billing check) and the Q&A question was not answered.
+**Root Cause**: The `matches_acceptance_pattern()` function in `detection/response/matchers.py` rejected any text containing a "?" character, even if the question was in a separate sentence after the acceptance statement.
+**Fix**: Modified `matches_acceptance_pattern()` to:
+1. Extract the statement portion before "?" when present (e.g., "Room B looks perfect" from "Room B looks perfect. Do you offer catering?")
+2. Check acceptance patterns on just the statement part
+3. Added "perfect" to the list of acceptance keywords
+
+Result: Hybrid messages now correctly detect acceptance from the statement portion, advance to next workflow step (billing check), AND answer the Q&A question in the same response.
+**Files**: `detection/response/matchers.py`
+**Key Learning**: Acceptance detection should be sentence-aware. The presence of a question in a later sentence doesn't negate an acceptance statement in an earlier sentence. This complements BUG-003 and BUG-008 which addressed other hybrid message scenarios.
+
+### BUG-041: Date Change Detour Not Generating New Offer (QNA_GUARD Blocking)
+**Status**: Fixed (2026-01-21)
+**Severity**: High
+**Symptom**: When a date change request came through the detour path (Step 1 → Step 2 → Step 3 → Step 4), messages like "Can we change to May 20, 2026?" were being treated as "Pure Q&A" in Step 4. Instead of generating a new offer with the updated date, the system returned a Q&A-style response without the offer.
+**Root Cause**: Step 4's QNA_GUARD logic detected that the message had a question mark (`has_question_mark = True`) but no acceptance signal (`has_acceptance = False`). This triggered the pure Q&A path (`[Step4][QNA_GUARD] Pure Q&A detected - returning without offer generation`), which bypassed offer generation and returned a Q&A response instead.
+**Fix**: Modified Step 4's QNA_GUARD to check if `caller_step` is set (indicating the call came from a detour). When in detour mode (`is_detour_call = True`), the QNA_GUARD is bypassed and offer generation proceeds automatically.
+**Files**: `workflows/steps/step4_offer/trigger/step4_handler.py`
+**Tests**: Verified with date change detour flow (Step 1 → Step 2 → Step 3 → Step 4)
+**Key Learning**: Detours are initiated by validated change detection, not Q&A. When Step 4 is reached via detour, we should always generate the offer. The QNA_GUARD is meant to prevent premature offer generation from pure questions during normal flow, but it should not block offer generation when we're already in a validated detour flow.
+
 ---
 
 ## Q&A Rules During Detours

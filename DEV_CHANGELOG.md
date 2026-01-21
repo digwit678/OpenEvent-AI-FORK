@@ -1,5 +1,49 @@
 # Development Changelog
 
+## 2026-01-21
+
+### Fix: Date Change Detour Not Generating New Offer (QNA_GUARD Blocking)
+
+**Problem:** When a date change request came through the detour path (Step 1 → Step 2 → Step 3 → Step 4), messages like "Can we change to May 20, 2026?" were being treated as "Pure Q&A" in Step 4, preventing new offer generation. The system would return a Q&A-style response without showing the updated offer.
+
+**Root Cause:** Step 4's QNA_GUARD logic detected that the message had a question mark (`has_question_mark = True`) but no acceptance signal (`has_acceptance = False`). This triggered the `[Step4][QNA_GUARD] Pure Q&A detected - returning without offer generation` path, which returned a Q&A response instead of generating the new offer.
+
+**Log Evidence:** `[Step4][QNA_GUARD] Pure Q&A detected - returning without offer generation`
+
+**Solution:** Modified Step 4's QNA_GUARD to check if `caller_step` is set (indicating the call came from a detour). When `caller_step` is present (detour mode), the QNA_GUARD is bypassed and the offer generation proceeds automatically.
+
+**Files Modified:**
+- `workflows/steps/step4_offer/trigger/step4_handler.py` - Added `is_detour_call` check to bypass QNA_GUARD when called from detour
+
+**Result:** Date change detours now correctly auto-generate new offers without asking for re-confirmation. The detour flow (Step 1 → Step 2 → Step 3 → Step 4) completes with the updated offer being shown to the client.
+
+**Design Principle:** Detours are initiated by change detection (not Q&A), so when we reach Step 4 via detour, we should always generate the offer. The QNA_GUARD is meant to prevent premature offer generation from pure questions, but it should not block offer generation when we're already in a validated detour flow.
+
+---
+
+### Fix: Hybrid Messages (Acceptance + Q&A) Not Working Correctly
+
+**Problem:** Messages like "Room B looks perfect. Do you offer catering services?" were being treated entirely as questions instead of recognizing the acceptance portion. The system would stay at the current step instead of advancing to the next workflow step (billing check) while also answering the Q&A question.
+
+**Root Cause:** The `matches_acceptance_pattern()` function in `detection/response/matchers.py` rejected any text containing a "?" character, even if the question was in a separate sentence. This meant hybrid messages with both acceptance statements and questions would never be recognized as acceptances.
+
+**Solution:** Modified `matches_acceptance_pattern()` to handle hybrid messages:
+1. Extract the statement portion before "?" when present (e.g., "Room B looks perfect" from "Room B looks perfect. Do you offer catering?")
+2. Check acceptance patterns on just the statement part
+3. Added "perfect" to the list of acceptance keywords
+
+**Files Modified:**
+- `detection/response/matchers.py` - Modified `matches_acceptance_pattern()` to extract and check statement portion before question mark
+
+**Result:** Hybrid messages now correctly:
+1. Detect acceptance from the statement portion
+2. Advance to next workflow step (billing check)
+3. Answer the Q&A question in the same response
+
+**Design Principle:** Acceptance detection should be sentence-aware. The presence of a question in a later sentence doesn't negate an acceptance statement in an earlier sentence.
+
+---
+
 ## 2026-01-20
 
 ### Fix: Pattern-only Q&A Detection Requiring LLM Confirmation
