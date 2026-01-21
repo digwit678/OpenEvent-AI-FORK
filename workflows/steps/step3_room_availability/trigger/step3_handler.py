@@ -120,6 +120,30 @@ from .detour_handling import (
     handle_capacity_exceeded as _handle_capacity_exceeded,
 )
 
+# R7 refactoring (Jan 2026): Room ranking extracted to dedicated module
+from .room_ranking import (
+    select_room as _select_room,
+    build_ranked_rows as _build_ranked_rows,
+    derive_hint as _derive_hint,
+    has_explicit_preferences as _has_explicit_preferences,
+    room_requirements_payload as _room_requirements_payload,
+    needs_better_room_alternatives as _needs_better_room_alternatives,
+    available_dates_for_rooms as _available_dates_for_rooms,
+    dates_in_month_weekday_wrapper as _dates_in_month_weekday_wrapper,
+    closest_alternatives_wrapper as _closest_alternatives_wrapper,
+    extract_participants as _extract_participants,
+)
+
+# R7 refactoring (Jan 2026): Room presentation extracted to dedicated module
+from .room_presentation import (
+    compose_preselection_header as _compose_preselection_header,
+    verbalizer_rooms_payload as _verbalizer_rooms_payload,
+    format_requirements_line as _format_requirements_line,
+    format_room_sections as _format_room_sections,
+    format_range_descriptor as _format_range_descriptor,
+    format_dates_list as _format_dates_list,
+)
+
 __workflow_role__ = "trigger"
 
 # Use shared threshold from menu_options; kept as alias for backward compat
@@ -1879,194 +1903,12 @@ def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decis
     return GroupResult(action="room_hil_approved", payload=payload, halt=False)
 
 
-def _needs_better_room_alternatives(
-    user_info: Dict[str, Any],
-    status_map: Dict[str, str],
-    event_entry: Dict[str, Any],
-) -> bool:
-    if (user_info or {}).get("room_feedback") != "not_good_enough":
-        return False
+# R7 (Jan 2026): Room ranking functions moved to room_ranking.py:
+# - _needs_better_room_alternatives, _has_explicit_preferences
+# - _extract_participants, _room_requirements_payload, _derive_hint
 
-    requirements = event_entry.get("requirements") or {}
-    baseline_room = event_entry.get("locked_room_id") or requirements.get("preferred_room")
-    baseline_rank = ROOM_SIZE_ORDER.get(str(baseline_room), 0)
-    if baseline_rank == 0:
-        return True
-
-    larger_available = False
-    for room_name, status in status_map.items():
-        if ROOM_SIZE_ORDER.get(room_name, 0) > baseline_rank and status == ROOM_OUTCOME_AVAILABLE:
-            larger_available = True
-            break
-
-    if not larger_available:
-        return True
-
-    participants = (requirements.get("number_of_participants") or 0)
-    participants_val: Optional[int]
-    try:
-        participants_val = int(participants)
-    except (TypeError, ValueError):
-        participants_val = None
-
-    capacity_map = {
-        1: 36,
-        2: 54,
-        3: 96,
-        4: 140,
-    }
-    if participants_val is not None:
-        baseline_capacity = capacity_map.get(baseline_rank)
-        if baseline_capacity and participants_val > baseline_capacity:
-            return True
-
-    return False
-
-
-def _has_explicit_preferences(preferences: Optional[Dict[str, Any]]) -> bool:
-    if not isinstance(preferences, dict):
-        return False
-    wish_products = preferences.get("wish_products")
-    if isinstance(wish_products, (list, tuple)):
-        for item in wish_products:
-            if isinstance(item, str) and item.strip():
-                return True
-    keywords = preferences.get("keywords")
-    if isinstance(keywords, (list, tuple)):
-        for item in keywords:
-            if isinstance(item, str) and item.strip():
-                return True
-    return False
-
-
-def _compose_preselection_header(
-    status: str,
-    room_name: Optional[str],
-    chosen_date: str,
-    participants: Optional[int],
-    skip_capacity_prompt: bool,
-) -> str:
-    """Compose the lead sentence for the Step-3 draft before room selection."""
-
-    date_label = _format_display_date(chosen_date)
-    if status == ROOM_OUTCOME_AVAILABLE and room_name:
-        if participants and not skip_capacity_prompt:
-            return f"Good news — {room_name} is available on {date_label} and fits {participants} guests."
-        return f"Good news — {room_name} is available on {date_label}."
-    if status == ROOM_OUTCOME_OPTION and room_name:
-        if participants and not skip_capacity_prompt:
-            return f"Heads up — {room_name} is currently on option for {date_label}. It fits {participants} guests."
-        return f"Heads up — {room_name} is currently on option for {date_label}."
-    if participants and not skip_capacity_prompt:
-        return f"I checked availability for {date_label} and captured the latest room status for {participants} guests."
-    return f"I checked availability for {date_label} and captured the latest room status."
-
-
-def _extract_participants(requirements: Dict[str, Any]) -> Optional[int]:
-    raw = requirements.get("number_of_participants")
-    if raw in (None, "", "Not specified", "none"):
-        raw = requirements.get("participants")
-    if raw in (None, "", "Not specified", "none"):
-        return None
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return None
-
-
-def _room_requirements_payload(entry: RankedRoom) -> Dict[str, List[str]]:
-    return {
-        "matched": list(entry.matched),
-        "closest": list(entry.closest),  # Moderate matches with context
-        "missing": list(entry.missing),
-    }
-
-
-def _derive_hint(entry: Optional[RankedRoom], preferences: Optional[Dict[str, Any]], explicit: bool) -> str:
-    if not entry:
-        return "No room selected"
-    matched = [item for item in entry.matched if item]
-    if matched:
-        return ", ".join(matched[:3])
-    # Show closest matches (partial/similar products) if no exact matches
-    closest = [item for item in entry.closest if item]
-    if closest:
-        # Extract just the product name from "Classic Apéro (closest to dinner)" format
-        clean_closest = [item.split(" (closest")[0] for item in closest]
-        return ", ".join(clean_closest[:3])
-    if explicit:
-        missing = [item for item in entry.missing if item]
-        if missing:
-            return f"Missing: {', '.join(missing[:3])}"
-        base_hint = (entry.hint or "").strip()
-        if base_hint and base_hint.lower() != "products available":
-            return base_hint[0].upper() + base_hint[1:]
-        return "No preference match"
-    base_hint = (entry.hint or "").strip()
-    if base_hint and base_hint.lower() != "products available":
-        return base_hint[0].upper() + base_hint[1:]
-    return "Available"
-
-
-def _verbalizer_rooms_payload(
-    ranked: List[RankedRoom],
-    profiles: Dict[str, Dict[str, Any]],
-    available_dates_map: Dict[str, List[str]],
-    *,
-    needs_products: Sequence[str],
-    limit: int = 3,
-) -> List[Dict[str, Any]]:
-    rooms_catalog = load_rooms_config() or []
-    capacity_map = {}
-    for item in rooms_catalog:
-        name = str(item.get("name") or "").strip()
-        if not name:
-            continue
-        capacity = (
-            item.get("capacity_max")
-            or item.get("capacity")
-            or item.get("max_capacity")
-            or item.get("capacity_maximum")
-        )
-        try:
-            capacity_map[name] = int(capacity)
-        except (TypeError, ValueError):
-            capacity_map[name] = capacity
-    payload: List[Dict[str, Any]] = []
-    for entry in ranked[:limit]:
-        profile = profiles.get(entry.room, {})
-        badges_map = profile.get("requirements_badges") or {}
-        coffee_badge = profile.get("coffee_badge", "—")
-        capacity_badge = profile.get("capacity_badge", "—")
-        normalized_products = {str(token).strip().lower() for token in needs_products}
-        if "coffee" not in normalized_products and "tea" not in normalized_products and "drinks" not in normalized_products:
-            coffee_badge = None
-        alt_dates = [
-            format_iso_date_to_ddmmyyyy(value) or value
-            for value in available_dates_map.get(entry.room, [])
-        ]
-        hint_label = _derive_hint(entry, None, bool(entry.matched or entry.missing))
-        payload.append(
-            {
-                "id": entry.room,
-                "name": entry.room,
-                "capacity": capacity_map.get(entry.room),
-                "badges": {
-                    "coffee": coffee_badge,
-                    "capacity": capacity_badge,
-                    "u-shape": badges_map.get("u-shape") if "u-shape" in normalized_products else badges_map.get("u-shape"),
-                    "projector": badges_map.get("projector") if "projector" in normalized_products else badges_map.get("projector"),
-                },
-                "requirements": {
-                    "matched": list(entry.matched),
-                    "closest": list(entry.closest),  # Partial matches with context
-                    "missing": list(entry.missing),
-                },
-                "hint": hint_label,
-                "alternatives": alt_dates,
-            }
-        )
-    return payload
+# R7 (Jan 2026): Room presentation functions moved to room_presentation.py:
+# - _compose_preselection_header, _verbalizer_rooms_payload
 
 
 def _general_qna_lines(state: WorkflowState) -> List[str]:
@@ -2183,204 +2025,13 @@ def _general_qna_lines(state: WorkflowState) -> List[str]:
     return lines
 
 
-def _build_ranked_rows(
-    chosen_date: str,
-    ranked: List[RankedRoom],
-    preferences: Optional[Dict[str, Any]],
-    available_dates_map: Dict[str, List[str]],
-    room_profiles: Dict[str, Dict[str, Any]],
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    rows: List[Dict[str, Any]] = []
-    actions: List[Dict[str, Any]] = []
-    explicit_prefs = _has_explicit_preferences(preferences)
+# R7 (Jan 2026): Room ranking functions moved to room_ranking.py:
+# - _build_ranked_rows, _select_room
+# - _dates_in_month_weekday_wrapper, _closest_alternatives_wrapper, _available_dates_for_rooms
 
-    for entry in ranked:
-        hint_label = _derive_hint(entry, preferences, explicit_prefs)
-        available_dates = available_dates_map.get(entry.room, [])
-        requirements_info = _room_requirements_payload(entry) if explicit_prefs else {"matched": [], "missing": []}
-        profile = room_profiles.get(entry.room, {})
-        badges = profile.get("requirements_badges") or {}
-        row = {
-            "date": chosen_date,
-            "room": entry.room,
-            "status": entry.status,
-            "hint": hint_label,
-            "requirements_score": round(profile.get("requirements_score", entry.score), 2),
-            "available_dates": available_dates,
-            "requirements": requirements_info,
-            "coffee_match": profile.get("coffee_badge"),
-            "u_shape_match": badges.get("u-shape"),
-            "projector_match": badges.get("projector"),
-        }
-        rows.append(row)
-        if entry.status in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}:
-            actions.append(
-                {
-                    "type": "select_room",
-                    "label": f"Proceed with {entry.room} ({hint_label})",
-                    "room": entry.room,
-                    "date": chosen_date,
-                    "status": entry.status,
-                    "hint": hint_label,
-                    "available_dates": available_dates,
-                    "requirements": dict(requirements_info),
-                }
-            )
-
-    return rows, actions
-
-
-def _dates_in_month_weekday_wrapper(
-    month_hint: Optional[Any],
-    weekday_hint: Optional[Any],
-    *,
-    limit: int,
-) -> List[str]:
-    from workflows.io import dates as dates_module
-
-    return dates_module.dates_in_month_weekday(month_hint, weekday_hint, limit=limit)
-
-
-def _closest_alternatives_wrapper(
-    anchor_iso: str,
-    weekday_hint: Optional[Any],
-    month_hint: Optional[Any],
-    *,
-    limit: int,
-) -> List[str]:
-    from workflows.io import dates as dates_module
-
-    return dates_module.closest_alternatives(anchor_iso, weekday_hint, month_hint, limit=limit)
-
-
-def _available_dates_for_rooms(
-    db: Dict[str, Any],
-    ranked: List[RankedRoom],
-    candidate_iso_dates: List[str],
-    participants: Optional[int],
-) -> Dict[str, List[str]]:
-    availability: Dict[str, List[str]] = {}
-    for entry in ranked:
-        dates: List[str] = []
-        for iso_date in candidate_iso_dates:
-            display_date = format_iso_date_to_ddmmyyyy(iso_date)
-            if not display_date:
-                continue
-            status = room_status_on_date(db, display_date, entry.room)
-            if status.lower() in {"available", "option"}:
-                dates.append(iso_date)
-        availability[entry.room] = dates
-    return availability
-
-
-def _format_requirements_line(requirements: Optional[Dict[str, Any]]) -> Optional[str]:
-    if not isinstance(requirements, dict):
-        return None
-    matched = [str(item).strip() for item in requirements.get("matched", []) if str(item).strip()]
-    missing = [str(item).strip() for item in requirements.get("missing", []) if str(item).strip()]
-    tokens: List[str] = []
-    tokens.extend(f"✔ {label}" for label in matched)
-    tokens.extend(f"○ {label}" for label in missing)
-    if not tokens:
-        return None
-    max_tokens = 4
-    display = "; ".join(tokens[:max_tokens])
-    overflow = len(tokens) - max_tokens
-    if overflow > 0:
-        display += f" (+{overflow} more)"
-    return f"- Requirements: {display}"
-
-
-def _format_room_sections(
-    actions: List[Dict[str, Any]],
-    mode: str,
-    vague_month: Optional[Any],
-    vague_weekday: Optional[Any],
-) -> List[str]:
-    lines: List[str] = []
-    if not actions:
-        return lines
-
-    descriptor = _format_range_descriptor(vague_month, vague_weekday)
-    max_display = 5 if mode == "range" else 3
-
-    for action in actions:
-        room = action.get("room")
-        status = action.get("status") or "Available"
-        hint = action.get("hint")
-        iso_dates = action.get("available_dates") or []
-        if not room:
-            continue
-        lines.append(f"### {room} — {status}")
-        if hint:
-            lines.append(f"- _{hint}_")
-        requirements_line = _format_requirements_line(action.get("requirements"))
-        if requirements_line:
-            lines.append(requirements_line)
-        if iso_dates:
-            display_text, remainder = _format_dates_list(iso_dates, max_display)
-            if mode == "range":
-                prefix = "Available dates"
-                if descriptor:
-                    prefix += f" {descriptor}"
-            else:
-                prefix = "Alternative dates (closest)"
-            line = f"- **{prefix}:** {display_text}"
-            if remainder:
-                line += f" (+{remainder} more)"
-            lines.append(line)
-        lines.append("")
-
-    return lines
-
-
-def _format_range_descriptor(month_hint: Optional[Any], weekday_hint: Optional[Any]) -> str:
-    parts: List[str] = []
-    if month_hint:
-        parts.append(str(month_hint).strip().capitalize())
-    if weekday_hint:
-        parts.append(str(weekday_hint).strip().capitalize())
-    if not parts:
-        return ""
-    if len(parts) == 2:
-        return f"in {parts[0]} ({parts[1]})"
-    return f"in {parts[0]}"
-
-
-def _format_dates_list(dates: List[str], max_count: int) -> Tuple[str, int]:
-    shown = dates[:max_count]
-    display = ", ".join(_format_short_date(iso) for iso in shown)
-    remainder = max(0, len(dates) - max_count)
-    return display, remainder
-
-
-# R5: _format_short_date and _to_iso moved to conflict_resolution.py
-
-
-def _select_room(ranked: List[RankedRoom]) -> Optional[RankedRoom]:
-    """Return the top-ranked room that's available or on option AND fits capacity.
-
-    The ranking already incorporates status weight (Available=60, Option=35)
-    plus preferred_room bonus (30 points). We prioritize rooms that fit the
-    requested capacity (capacity_ok=True) over rooms that don't fit.
-
-    Selection priority:
-    1. First Available/Option room that FITS capacity
-    2. First Available/Option room (even if over-capacity) - fallback
-    3. First room in the list - last resort
-    """
-    # First pass: find a room that fits AND is available
-    for entry in ranked:
-        if entry.status in (ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION) and entry.capacity_ok:
-            return entry
-
-    # Second pass: any available room (even if doesn't fit - user may adjust)
-    for entry in ranked:
-        if entry.status in (ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION):
-            return entry
-
-    return ranked[0] if ranked else None
-
+# R7 (Jan 2026): Room presentation functions moved to room_presentation.py:
+# - _format_requirements_line, _format_room_sections
+# - _format_range_descriptor, _format_dates_list
 
 # R3: Functions moved to selection.py:
 # - handle_select_room_action
