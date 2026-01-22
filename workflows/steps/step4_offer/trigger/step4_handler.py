@@ -608,7 +608,15 @@ def process(state: WorkflowState) -> GroupResult:
         if should_generate_offer:
             # Check if this is PURE Q&A (no acceptance signal, no room confirmation this turn)
             has_acceptance = _looks_like_offer_acceptance(normalized_message_text)
-            has_question_mark = "?" in message_text
+            # LLM-first: Check unified detection for question signal (fixes BUG-036)
+            # Only use question mark as fallback when LLM detection unavailable
+            llm_says_question = (
+                unified_detection is not None
+                and unified_detection.is_question
+                and not unified_detection.is_change_request
+            )
+            question_mark_fallback = unified_detection is None and "?" in message_text
+            is_pure_question = llm_says_question or question_mark_fallback
             # Room confirmation prefix indicates room was just confirmed by Step 3 in this turn
             # When present, we should generate the offer (not treat as pure Q&A)
             room_just_confirmed = bool(event_entry.get("room_confirmation_prefix"))
@@ -616,7 +624,7 @@ def process(state: WorkflowState) -> GroupResult:
             # Check if we came from a detour (date/room change) - if so, always generate offer
             is_detour_call = event_entry.get("caller_step") is not None
 
-            if has_question_mark and not has_acceptance and not room_just_confirmed and not is_detour_call:
+            if is_pure_question and not has_acceptance and not room_just_confirmed and not is_detour_call:
                 # PURE Q&A: Return early - don't generate offer or progress steps
                 # E.g., "Does Room A have a projector?" at Step 4 should stay at Step 4
                 # But NOT for detour calls - those must regenerate the offer
