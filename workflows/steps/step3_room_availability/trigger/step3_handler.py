@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +11,6 @@ from workflows.common.menu_options import (
     ALLOW_CONTEXTUAL_HINTS,
     build_menu_title,
     extract_menu_request,
-    format_menu_line,
     format_menu_line_short,
     MENU_CONTENT_CHAR_THRESHOLD,
     normalize_menu_for_display,
@@ -20,22 +18,19 @@ from workflows.common.menu_options import (
 )
 from workflows.common.capture import capture_workflow_requirements
 from workflows.common.requirements import requirements_hash
-from workflows.common.sorting import rank_rooms, RankedRoom
-from workflows.common.room_rules import find_better_room_dates
+from workflows.common.sorting import rank_rooms
 from workflows.common.types import GroupResult, WorkflowState
 # MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
 from detection.intent.confidence import check_nonsense_gate
-from workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
+from workflows.common.timeutils import parse_ddmmyyyy
 from workflows.common.general_qna import (
     append_general_qna_to_primary,
     present_general_room_qna,
-    _fallback_structured_body,
 )
 from workflows.common.detection_utils import get_unified_detection
 from workflows.qna.router import generate_hybrid_qna_response
 from workflows.change_propagation import (
     ChangeType,
-    detect_change_type,
     detect_change_type_enhanced,
     route_change_on_updated_variable,
 )
@@ -43,16 +38,10 @@ from workflows.common.detour_acknowledgment import (
     generate_detour_acknowledgment,
     add_detour_acknowledgment_draft,
 )
-from workflows.qna.engine import build_structured_qna_result
-from workflows.qna.extraction import ensure_qna_extraction
-from workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
-from workflows.io.tasks import enqueue_task
-from domain import TaskType
-from workflow.state import WorkflowStep
+from workflows.io.database import append_audit_entry, update_event_metadata
 from workflows.io.config_store import get_catering_teaser_products, get_currency_code
 # MIGRATED: from workflows.common.conflict -> backend.detection.special.room_conflict
 from detection.special.room_conflict import (
-    ConflictType,
     detect_conflict_type,
     compose_soft_conflict_warning,
     handle_hard_conflict,
@@ -142,6 +131,19 @@ from .room_presentation import (
     format_room_sections as _format_room_sections,
     format_range_descriptor as _format_range_descriptor,
     format_dates_list as _format_dates_list,
+)
+
+# R8 refactoring (Jan 2026): Sourcing handler extracted to dedicated module
+from .sourcing_handler import (
+    handle_product_sourcing_request as _handle_product_sourcing_request,
+    advance_to_offer_from_sourcing as _advance_to_offer_from_sourcing,
+)
+
+# R8 refactoring (Jan 2026): HIL operations extracted to dedicated module
+from .hil_ops import (
+    apply_hil_decision as _apply_hil_decision,
+    preferred_room as _preferred_room,
+    increment_room_attempt as _increment_room_attempt,
 )
 
 __workflow_role__ = "trigger"
@@ -1597,311 +1599,17 @@ def process(state: WorkflowState) -> GroupResult:
 
 # R4: render_rooms_response moved to evaluation.py
 
-
-def _handle_product_sourcing_request(
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-    room_pending: Dict[str, Any],
-    arrangement_result: Any,  # ArrangementDetectionResult
-    thread_id: str,
-) -> GroupResult:
-    """Handle client request to arrange missing products.
-
-    Creates a HIL task for the manager to source the product and pauses
-    the workflow until the manager responds.
-
-    Args:
-        state: Current workflow state
-        event_entry: Event database entry
-        room_pending: The room_pending_decision with selected room info
-        arrangement_result: Detection result with products to source
-        thread_id: Thread ID for tracing
-
-    Returns:
-        GroupResult halting the workflow while waiting for manager
-    """
-    # Use client's explicitly chosen room if detected, otherwise use recommended room
-    # This fixes the bug where client says "Room A please" but we lock Room B (recommended)
-    if arrangement_result.chosen_room:
-        selected_room = arrangement_result.chosen_room
-        logger.debug("[Step3] Using client's EXPLICIT room choice: %s", selected_room)
-    else:
-        selected_room = room_pending.get("selected_room")
-        logger.debug("[Step3] Using recommended room (no explicit choice): %s", selected_room)
-
-    selected_status = room_pending.get("selected_status", "Available")
-    products_to_source = arrangement_result.products_to_source
-
-    # Lock the room - client confirmed by requesting arrangement
-    if not event_entry.get("locked_room_id"):
-        update_event_metadata(
-            event_entry,
-            locked_room_id=selected_room,
-            room_eval_hash=room_pending.get("requirements_hash"),
-            selected_room=selected_room,
-            selected_room_status=selected_status,
-        )
-        event_entry.setdefault("flags", {})["room_selected"] = True
-        trace_marker(
-            thread_id,
-            "room_locked_for_sourcing",
-            detail=f"Locked {selected_room} while sourcing: {products_to_source}",
-            owner_step="Step3_Room",
-        )
-
-    # Create HIL task for manager to source the product
-    task_payload = {
-        "step_id": 3,
-        "event_id": event_entry.get("event_id"),
-        "products": products_to_source,
-        "room": selected_room,
-        "thread_id": thread_id,
-        "client_message": _message_text(state),
-        "action_type": "source_missing_product",
-    }
-    task_id = enqueue_task(
-        state.db,
-        TaskType.SOURCE_MISSING_PRODUCT,
-        state.client_id,
-        event_entry.get("event_id"),
-        task_payload,
-    )
-
-    # Store pending sourcing state
-    event_entry["sourcing_pending"] = {
-        "task_id": task_id,
-        "products": products_to_source,
-        "room": selected_room,
-        "requested_at": datetime.now().isoformat(),
-    }
-
-    # Clear room_pending_decision since we've moved past that stage
-    if "room_pending_decision" in event_entry:
-        del event_entry["room_pending_decision"]
-
-    state.extras["persist"] = True
-
-    # Format the product list for the message
-    if len(products_to_source) == 1:
-        product_text = products_to_source[0]
-    else:
-        product_text = ", ".join(products_to_source[:-1]) + f" and {products_to_source[-1]}"
-
-    # Send response to client
-    draft = {
-        "body": append_footer(
-            f"I'll check with my colleague about arranging the {product_text} for you. "
-            f"I'll get back to you shortly with availability and pricing.",
-            step=3,
-            next_step=4,
-            thread_state="Awaiting Manager",
-        ),
-        "body_markdown": (
-            f"I'll check with my colleague about arranging the **{product_text}** for you. "
-            f"I'll get back to you shortly with availability and pricing."
-        ),
-        "topic": "sourcing_request_acknowledged",
-        "requires_approval": False,
-        "step": 3,
-    }
-    state.add_draft_message(draft)
-
-    update_event_metadata(
-        event_entry,
-        thread_state="Awaiting Manager",
-        current_step=3,
-    )
-    state.set_thread_state("Awaiting Manager")
-
-    return GroupResult(
-        action="sourcing_request_created",
-        payload={
-            "task_id": task_id,
-            "products": products_to_source,
-            "room": selected_room,
-            "step": 3,
-            "draft_messages": state.draft_messages,
-        },
-        halt=True,
-    )
-
-
-def _advance_to_offer_from_sourcing(
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-    thread_id: str,
-) -> GroupResult:
-    """Advance to Step 4 (offer) after sourcing is resolved.
-
-    Called when:
-    - Manager found the product and client auto-advances
-    - Client chooses to continue without the product
-
-    Args:
-        state: Current workflow state
-        event_entry: Event database entry
-        thread_id: Thread ID for tracing
-
-    Returns:
-        GroupResult continuing to Step 4
-    """
-    trace_marker(
-        thread_id,
-        "advance_to_offer_from_sourcing",
-        detail="Advancing to Step 4 after sourcing resolution",
-        owner_step="Step3_Room",
-    )
-
-    # Update state for Step 4
-    update_event_metadata(
-        event_entry,
-        current_step=4,
-        thread_state="Processing",
-    )
-    state.current_step = 4
-    state.set_thread_state("Processing")
-    state.extras["persist"] = True
-
-    return GroupResult(
-        action="advance_to_offer",
-        payload={
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "reason": "sourcing_resolved",
-            "step": 4,
-        },
-        halt=False,  # Continue processing to Step 4
-    )
-
+# R8 (Jan 2026): Sourcing handler functions moved to sourcing_handler.py:
+# - _handle_product_sourcing_request, _advance_to_offer_from_sourcing
 
 # R6 (Jan 2026): Detour handling functions moved to detour_handling.py
 # - _detour_to_date, _detour_for_capacity
 # - _skip_room_evaluation, _handle_capacity_exceeded
 
-
-def _preferred_room(event_entry: dict, user_requested_room: Optional[str]) -> Optional[str]:
-    """[Trigger] Determine the preferred room priority."""
-
-    if user_requested_room:
-        return user_requested_room
-    requirements = event_entry.get("requirements") or {}
-    preferred_room = requirements.get("preferred_room")
-    if preferred_room:
-        return preferred_room
-    return event_entry.get("locked_room_id")
-
+# R8 (Jan 2026): HIL operations moved to hil_ops.py:
+# - _apply_hil_decision, _preferred_room, _increment_room_attempt
 
 # R4: _flatten_statuses moved to evaluation.py
-
-
-def _increment_room_attempt(event_entry: dict) -> int:
-    try:
-        current = int(event_entry.get("room_proposal_attempts") or 0)
-    except (TypeError, ValueError):
-        current = 0
-    updated = current + 1
-    event_entry["room_proposal_attempts"] = updated
-    update_event_metadata(event_entry, room_proposal_attempts=updated)
-    return updated
-
-
-def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decision: str) -> GroupResult:
-    """Handle HIL approval or rejection for the latest room evaluation."""
-
-    thread_id = _thread_id(state)
-    pending = event_entry.get("room_pending_decision")
-    if not pending:
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "reason": "no_pending_room_decision",
-            "context": state.context_snapshot,
-        }
-        return GroupResult(action="room_hil_missing", payload=payload, halt=True)
-
-    if decision != "approve":
-        # Reset pending decision and keep awaiting further actions.
-        event_entry.pop("room_pending_decision", None)
-        draft = {
-            "body": "Approval rejected — please provide updated guidance on the room.",
-            "step": 3,
-            "topic": "room_hil_reject",
-            "requires_approval": True,
-        }
-        state.add_draft_message(draft)
-        update_event_metadata(event_entry, current_step=3, thread_state="Waiting on HIL")
-        state.set_thread_state("Waiting on HIL")
-        state.extras["persist"] = True
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "draft_messages": state.draft_messages,
-            "thread_state": state.thread_state,
-            "context": state.context_snapshot,
-            "persisted": True,
-        }
-        return GroupResult(action="room_hil_rejected", payload=payload, halt=True)
-
-    selected_room = pending.get("selected_room")
-    requirements_hash = event_entry.get("requirements_hash") or pending.get("requirements_hash")
-
-    manager_requested = bool((event_entry.get("flags") or {}).get("manager_requested"))
-    next_thread_state = "Waiting on HIL" if manager_requested else "Awaiting Client"
-
-    update_event_metadata(
-        event_entry,
-        locked_room_id=selected_room,
-        room_eval_hash=requirements_hash,
-        current_step=4,
-        thread_state=next_thread_state,
-        status="Option",  # Room selected → calendar blocked as Option
-    )
-    _reset_room_attempts(event_entry)
-    trace_gate(
-        thread_id,
-        "Step3_Room",
-        "room_selected",
-        True,
-        {"locked_room_id": selected_room, "status": "Option"},
-    )
-    trace_gate(
-        thread_id,
-        "Step3_Room",
-        "requirements_match",
-        bool(requirements_hash),
-        {"requirements_hash": requirements_hash, "room_eval_hash": requirements_hash},
-    )
-    trace_db_write(
-        thread_id,
-        "Step3_Room",
-        "db.events.lock_room",
-        {"locked_room_id": selected_room, "room_eval_hash": requirements_hash, "status": "Option"},
-    )
-    append_audit_entry(event_entry, 3, 4, "room_hil_approved")
-    event_entry.pop("room_pending_decision", None)
-
-    state.current_step = 4
-    state.caller_step = None
-    state.set_thread_state(next_thread_state)
-    state.extras["persist"] = True
-
-    payload = {
-        "client_id": state.client_id,
-        "event_id": event_entry.get("event_id"),
-        "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "selected_room": selected_room,
-        "draft_messages": state.draft_messages,
-        "thread_state": state.thread_state,
-        "context": state.context_snapshot,
-        "persisted": True,
-    }
-    return GroupResult(action="room_hil_approved", payload=payload, halt=False)
-
 
 # R7 (Jan 2026): Room ranking functions moved to room_ranking.py:
 # - _needs_better_room_alternatives, _has_explicit_preferences
