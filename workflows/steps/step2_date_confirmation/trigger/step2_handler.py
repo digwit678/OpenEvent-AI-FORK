@@ -216,6 +216,16 @@ from .candidate_presentation import (
     verbalize_candidate_message,
 )
 
+# D-CTX refactoring: Date context resolution extracted to date_context.py
+from .date_context import (
+    parse_requested_dates,
+    resolve_weekday_preferences,
+    resolve_time_hints,
+    resolve_anchor_date,
+    calculate_collection_limits,
+    get_preferred_room,
+)
+
 __workflow_role__ = "trigger"
 
 logger = logging.getLogger(__name__)
@@ -811,62 +821,34 @@ def _present_candidate_dates(
     """[Trigger] Provide five deterministic candidate dates to the client."""
 
     requested_dates = list(requested_client_dates or _client_requested_dates(state))
-    requested_date_objs = [_safe_parse_iso_date(value) for value in requested_dates]
-    requested_date_objs = [value for value in requested_date_objs if value]
-    min_requested_date = min(requested_date_objs) if requested_date_objs else None
-    preferred_weekdays: set[int] = {value.weekday() for value in requested_date_objs}
+    # D-CTX: Use extracted function for parsing requested dates
+    requested_date_objs, min_requested_date, preferred_weekdays = parse_requested_dates(requested_dates)
     attempt = _increment_date_attempt(event_entry)
     skip_set = _proposal_skip_dates(event_entry, attempt, skip_dates)
     escalate_to_hil = attempt >= 3
     user_info = state.user_info or {}
 
     user_text = f"{state.message.subject or ''} {state.message.body or ''}".strip()
-    if not preferred_weekdays:
-        preferred_weekdays = _parse_weekday_mentions(user_text)
-    if not preferred_weekdays:
-        preferred_weekdays = _weekday_indices_from_hint(
-            user_info.get("vague_weekday") or event_entry.get("vague_weekday")
-        )
     reference_day = _reference_date_from_state(state)
+
+    # D-CTX: Use extracted functions for context resolution
+    preferred_weekdays = resolve_weekday_preferences(
+        user_text, user_info, event_entry, preferred_weekdays
+    )
     fuzzy_candidates = _maybe_fuzzy_friday_candidates(user_text, reference_day)
 
-    requirements = event_entry.get("requirements") or {}
-    preferred_room = requirements.get("preferred_room") or "Not specified"
-    start_hint = _normalize_time_value(user_info.get("start_time"))
-    end_hint = _normalize_time_value(user_info.get("end_time"))
+    preferred_room = get_preferred_room(event_entry)
+    start_hint, end_hint, start_time_obj, end_time_obj = resolve_time_hints(user_info)
     start_pref = start_hint or "18:00"
     end_pref = end_hint or "22:00"
-    try:
-        start_time_obj = _to_time(start_pref)
-        end_time_obj = _to_time(end_pref)
-    except ValueError:
-        start_time_obj = None
-        end_time_obj = None
 
-    anchor = parse_first_date(
-        user_text,
-        fallback_year=reference_day.year,
-        reference=reference_day,
-    )
-    if not anchor and requested_dates:
-        try:
-            anchor = datetime.fromisoformat(requested_dates[0]).date()
-        except ValueError:
-            anchor = None
-    if focus_iso:
-        try:
-            anchor = datetime.fromisoformat(focus_iso).date()
-        except ValueError:
-            pass
-    anchor_dt = datetime.combine(anchor, time(hour=12)) if anchor else None
+    # D-CTX: Use extracted functions for anchor and limits
+    anchor, anchor_dt = resolve_anchor_date(user_text, reference_day, requested_dates, focus_iso)
+    limit, collection_cap = calculate_collection_limits(reason, attempt, preferred_weekdays)
 
     formatted_dates: List[str] = []
     seen_iso: set[str] = set()
     busy_skipped: set[str] = set()
-    limit = 4 if reason and "past" in (reason or "").lower() else 5
-    if attempt > 1 and limit < 5:
-        limit = 5
-    collection_cap = limit if not preferred_weekdays else max(limit * 3, limit + 5)
     event_entry.pop("pending_future_confirmation", None)
 
     # D10: Use extracted resolve_week_scope from candidate_dates.py
