@@ -415,6 +415,13 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any], ski
         payload = base_payload(state, event_entry)
         return GroupResult(action="confirmation_deposit_requested", payload=payload, halt=True)
 
+    # Mark event as Confirmed when deposit is paid (or not required)
+    # This updates both canonical event["status"] and legacy event_data["Status"]
+    if deposit_paid or not deposit_required:
+        update_event_metadata(event_entry, status="Confirmed")
+        # Also sync to event_data for backward compatibility
+        event_entry.setdefault("event_data", {})["Status"] = "Confirmed"
+
     # Build proper offer confirmation message with all details for HIL review
     room_fragment = f"**{room_name}**" if room_name else "the venue"
     date_fragment = f"**{event_date}**" if event_date else "the requested date"

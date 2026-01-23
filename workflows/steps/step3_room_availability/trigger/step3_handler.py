@@ -880,7 +880,9 @@ def process(state: WorkflowState) -> GroupResult:
     vague_weekday = user_info.get("vague_weekday") or event_entry.get("vague_weekday")
     range_detected = bool(user_info.get("range_query_detected") or event_entry.get("range_query_detected"))
 
-    room_statuses = evaluate_room_statuses(state.db, chosen_date)
+    room_statuses = evaluate_room_statuses(
+        state.db, chosen_date, exclude_event_id=state.event_id
+    )
     summary = summarize_room_statuses(room_statuses)
     trace_db_read(
         thread_id,

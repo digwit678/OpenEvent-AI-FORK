@@ -669,3 +669,165 @@ class TestFullScenarioFlow:
         assert result["action"] == "hil_task_created"
 
         # Now wait for manager resolution...
+
+
+class TestCrossClientConflictDetection:
+    """
+    Tests for BUG-045 fix: Cross-client room conflict detection.
+
+    When Client A changes their date TO a date where Client B has a
+    confirmed/option booking, the room should be detected as unavailable.
+    The key is the exclude_event_id parameter that prevents a client
+    from conflicting with themselves.
+    """
+
+    def test_exclude_event_id_sees_other_client_confirmed(self):
+        """
+        Client 2 changing date should see Client 1's Confirmed booking.
+        BUG-045: This was allowing double-bookings because the status
+        field wasn't checked correctly.
+        """
+        from workflows.steps.step3_room_availability.condition.room_status_checker import (
+            room_status_on_date,
+        )
+
+        db = {
+            "events": [
+                {
+                    "event_id": "client1-event",
+                    "status": "Confirmed",  # Client 1 has CONFIRMED booking
+                    "locked_room_id": "Room B",
+                    "event_data": {
+                        "Event Date": "25.01.2026",
+                        "Preferred Room": "Room B",
+                    },
+                },
+                {
+                    "event_id": "client2-event",
+                    "status": "Lead",  # Client 2 is changing their date
+                    "locked_room_id": "Room B",
+                    "event_data": {
+                        "Event Date": "30.01.2026",  # Different date initially
+                        "Preferred Room": "Room B",
+                    },
+                },
+            ]
+        }
+
+        # When Client 2 evaluates room availability for Jan 25,
+        # excluding their own event, they should see "Confirmed"
+        # because Client 1 has a confirmed booking
+        status = room_status_on_date(
+            db, "25.01.2026", "Room B", exclude_event_id="client2-event"
+        )
+        assert status == "Confirmed", f"Expected 'Confirmed', got '{status}'"
+
+    def test_exclude_event_id_sees_other_client_option(self):
+        """
+        Client 2 should see Client 1's Option booking as "Option" status.
+        """
+        from workflows.steps.step3_room_availability.condition.room_status_checker import (
+            room_status_on_date,
+        )
+
+        db = {
+            "events": [
+                {
+                    "event_id": "client1-event",
+                    "status": "Option",  # Client 1 has Option booking
+                    "locked_room_id": "Room B",
+                    "event_data": {
+                        "Event Date": "25.01.2026",
+                        "Preferred Room": "Room B",
+                    },
+                },
+            ]
+        }
+
+        # Client 2 checking this date should see "Option"
+        status = room_status_on_date(
+            db, "25.01.2026", "Room B", exclude_event_id="client2-event"
+        )
+        assert status == "Option", f"Expected 'Option', got '{status}'"
+
+    def test_exclude_event_id_ignores_own_booking(self):
+        """
+        A client should not conflict with their own booking.
+        When Client 1 re-evaluates their own room, their own event
+        should be excluded so they see "Available".
+        """
+        from workflows.steps.step3_room_availability.condition.room_status_checker import (
+            room_status_on_date,
+        )
+
+        db = {
+            "events": [
+                {
+                    "event_id": "client1-event",
+                    "status": "Confirmed",
+                    "locked_room_id": "Room B",
+                    "event_data": {
+                        "Event Date": "25.01.2026",
+                        "Preferred Room": "Room B",
+                    },
+                },
+            ]
+        }
+
+        # Client 1 checking their own date should see "Available"
+        # (their own event is excluded)
+        status = room_status_on_date(
+            db, "25.01.2026", "Room B", exclude_event_id="client1-event"
+        )
+        assert status == "Available", f"Expected 'Available', got '{status}'"
+
+    def test_legacy_status_field_fallback(self):
+        """
+        The fix should work with both canonical event["status"]
+        and legacy event_data["Status"] for backward compatibility.
+        """
+        from workflows.steps.step3_room_availability.condition.room_status_checker import (
+            room_status_on_date,
+        )
+
+        # Test with legacy field only
+        db_legacy = {
+            "events": [
+                {
+                    "event_id": "client1-event",
+                    # No event["status"], only event_data["Status"]
+                    "locked_room_id": "Room B",
+                    "event_data": {
+                        "Event Date": "25.01.2026",
+                        "Preferred Room": "Room B",
+                        "Status": "Confirmed",  # Legacy field
+                    },
+                },
+            ]
+        }
+
+        status = room_status_on_date(
+            db_legacy, "25.01.2026", "Room B", exclude_event_id="other-client"
+        )
+        assert status == "Confirmed", f"Expected 'Confirmed' from legacy field, got '{status}'"
+
+        # Test with canonical field (should take priority)
+        db_canonical = {
+            "events": [
+                {
+                    "event_id": "client1-event",
+                    "status": "Confirmed",  # Canonical field
+                    "locked_room_id": "Room B",
+                    "event_data": {
+                        "Event Date": "25.01.2026",
+                        "Preferred Room": "Room B",
+                        "Status": "Lead",  # Legacy field (different)
+                    },
+                },
+            ]
+        }
+
+        status = room_status_on_date(
+            db_canonical, "25.01.2026", "Room B", exclude_event_id="other-client"
+        )
+        assert status == "Confirmed", f"Expected 'Confirmed' from canonical field, got '{status}'"

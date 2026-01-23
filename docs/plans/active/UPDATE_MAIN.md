@@ -72,7 +72,7 @@ git checkout development-branch -- \
   detection/ \
   docs/ \
   domain/ \
-  e2e-scenarios/ \
+  e2e-scenarios-playwright/ \
   llm/ \
   scripts/ \
   services/ \

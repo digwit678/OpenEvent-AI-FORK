@@ -14,6 +14,7 @@ This file tracks active implementation goals and planned roadmap items. **Check 
 
 | Date Identified | Task | Goal | Priority |
 | :--- | :--- | :--- | :--- |
+| 2026-01-21 | **Detour Date Confirmation Regression** | Add/verify Step 2 → Step 3 recheck after date-change confirmation (`tests/specs/dag/test_change_scenarios_e2e.py`) | **High** |
 | 2025-12-24 | **System Resilience** | Handle diverse client inputs (languages, edge cases) | **Urgent** |
 | 2025-12-24 | **Production Stability** | Verified via zero-failure regression runs | **Urgent** |
 | 2025-12-24 | **Circular Bug Elimination** | Audit routing loops and special flow guards | **Urgent** |

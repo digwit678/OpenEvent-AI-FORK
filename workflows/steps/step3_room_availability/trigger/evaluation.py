@@ -14,7 +14,7 @@ Usage:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
 from workflows.io.database import load_rooms
@@ -22,13 +22,27 @@ from workflows.io.database import load_rooms
 from ..condition.decide import room_status_on_date
 
 
-def evaluate_room_statuses(db: Dict[str, Any], target_date: str | None) -> List[Dict[str, str]]:
-    """[Trigger] Evaluate each configured room for the requested event date."""
+def evaluate_room_statuses(
+    db: Dict[str, Any],
+    target_date: str | None,
+    *,
+    exclude_event_id: Optional[str] = None,
+) -> List[Dict[str, str]]:
+    """[Trigger] Evaluate each configured room for the requested event date.
+
+    Args:
+        db: Database dict with "events" list
+        target_date: Target date in DD.MM.YYYY format
+        exclude_event_id: Event ID to exclude from conflict check (the current client's event).
+                          This prevents a client's own booking from blocking themselves.
+    """
 
     rooms = load_rooms()
     statuses: List[Dict[str, str]] = []
     for room_name in rooms:
-        status = room_status_on_date(db, target_date, room_name)
+        status = room_status_on_date(
+            db, target_date, room_name, exclude_event_id=exclude_event_id
+        )
         statuses.append({room_name: status})
     return statuses
 

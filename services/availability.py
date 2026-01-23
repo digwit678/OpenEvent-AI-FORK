@@ -142,10 +142,11 @@ def calendar_free(room_identifier: str, window: Dict[str, Any], db: Optional[Dic
                     event_data = event.get("event_data", {})
                     if event_data.get("Event Date") != date_ddmmyyyy:
                         continue
-                    stored_room = event_data.get("Preferred Room")
+                    stored_room = event_data.get("Preferred Room") or event.get("locked_room_id")
                     if not stored_room or stored_room.lower() != room_lower:
                         continue
-                    status = (event_data.get("Status") or "").lower()
+                    # Use canonical event["status"], fall back to event_data["Status"] for legacy
+                    status = (event.get("status") or event_data.get("Status") or "").lower()
                     if status in ("option", "confirmed"):
                         return False  # Room blocked by existing booking
 
