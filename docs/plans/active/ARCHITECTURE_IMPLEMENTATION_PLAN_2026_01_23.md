@@ -6,12 +6,12 @@ Based on the 2026-01-19 architecture review and E2E verification on 2026-01-23, 
 
 ## Current State vs. Architecture Review
 
-| File | Jan 19 (LOC) | Jan 23 (LOC) | Change | Status |
-|------|--------------|--------------|--------|--------|
+| File | Jan 19 (LOC) | Current (LOC) | Change | Status |
+|------|--------------|---------------|--------|--------|
 | step3_handler.py | 2924 | 1789 | **-39%** | ✅ Refactored |
 | step4_handler.py | 1605 | 1121 | **-30%** | ✅ Refactored |
 | main.py | 575 | 58 | **-90%** | ✅ Refactored |
-| step2_handler.py | 2043 | 2124 | +4% | ⚠️ Needs work |
+| step2_handler.py | 2043 | **2068** | **-2.6%** | 🔄 In Progress |
 | step1_handler.py | 1840 | 1916 | +4% | ⚠️ Needs work |
 | change_propagation.py | 1460 | 1567 | +7% | ⚠️ Needs work |
 | step5_handler.py | 1316 | 1314 | stable | 🔶 Lower priority |
@@ -25,6 +25,18 @@ Based on the 2026-01-19 architecture review and E2E verification on 2026-01-23, 
 3. ✅ **QNA_GUARD bypass**: Detours now correctly bypass Q&A guards
 4. ✅ **Hybrid message handling**: Acceptance + Q&A in same message works
 5. ✅ **Step 3 extraction**: 8 modules extracted (conflict_resolution, room_ranking, etc.)
+
+### Step 2 Extraction Progress (2026-01-23)
+
+| Commit | Module | Lines | Functions Extracted |
+|--------|--------|-------|---------------------|
+| 1830137 | `candidate_presentation.py` | 313 | 11 presentation functions |
+| 6660bdd | `date_context.py` | 175 | 6 context resolution functions |
+| 629c930 | D-COLL: collection/prioritization | -90 | Uses existing candidate_dates.py functions |
+| beaf328 | `prioritize_by_day_hints` | +45 | 1 dedup helper in candidate_dates.py |
+
+**`_present_candidate_dates` reduction**: 690 → 474 lines (**-31%**)
+**Total step2_handler.py reduction**: 2124 → 1944 lines (**-180 lines, -8.5%**)
 
 ---
 
