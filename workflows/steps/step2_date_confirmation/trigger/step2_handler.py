@@ -178,6 +178,7 @@ from .candidate_dates import (
     collect_candidates_from_suggestions,
     collect_supplemental_candidates,
     prioritize_by_weekday,
+    prioritize_by_day_hints,
     resolve_week_scope,
     preferred_weekday_label,
 )
@@ -988,26 +989,8 @@ def _present_candidate_dates(
     else:
         slot_text = "18:00–22:00"
 
-    if week_scope and week_scope.get("weekdays_hint"):
-        hint_order = []
-        for hint in week_scope["weekdays_hint"]:
-            try:
-                hint_order.append(int(hint))
-            except (TypeError, ValueError):
-                continue
-        if hint_order:
-            prioritized: List[str] = []
-            remaining = list(formatted_dates)
-            for day_hint in hint_order:
-                for iso_value in list(remaining):
-                    try:
-                        day_val = datetime.fromisoformat(iso_value).day
-                    except ValueError:
-                        continue
-                    if day_val == day_hint and iso_value not in prioritized:
-                        prioritized.append(iso_value)
-                        remaining.remove(iso_value)
-            formatted_dates = prioritized + [val for val in formatted_dates if val not in prioritized]
+    # D-COLL: Use extracted day hint prioritization
+    formatted_dates = prioritize_by_day_hints(formatted_dates, week_scope)
 
     greeting = _compose_greeting(state)
     message_lines: List[str] = [greeting, ""]
@@ -1166,26 +1149,9 @@ def _present_candidate_dates(
     time_hint = user_info.get("vague_time_of_day") or event_entry.get("vague_time_of_day")
     time_display = str(time_hint).strip().capitalize() if time_hint else slot_text
 
-    if week_scope and week_scope.get("weekdays_hint"):
-        hint_order = []
-        for hint in week_scope["weekdays_hint"]:
-            try:
-                hint_order.append(int(hint))
-            except (TypeError, ValueError):
-                continue
-        if hint_order:
-            prioritized: List[str] = []
-            remaining = list(formatted_dates)
-            for day_hint in hint_order:
-                for iso_value in list(remaining):
-                    try:
-                        day_val = datetime.fromisoformat(iso_value).day
-                    except ValueError:
-                        continue
-                    if day_val == day_hint and iso_value not in prioritized:
-                        prioritized.append(iso_value)
-                        remaining.remove(iso_value)
-            formatted_dates = prioritized + [val for val in formatted_dates if val not in prioritized]
+    # D-COLL: Use extracted day hint prioritization (before building table/actions)
+    formatted_dates = prioritize_by_day_hints(formatted_dates, week_scope)
+
     # D-PRES: Use extracted functions for table/actions building
     table_rows = build_date_table_rows(formatted_dates, time_display, limit=5)
     actions_payload = build_date_actions(formatted_dates, time_display, limit=5)
