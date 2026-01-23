@@ -201,6 +201,21 @@ from .step2_state import (
 # D16b refactoring: Menu handling extracted to step2_menu.py
 from .step2_menu import append_menu_options_if_requested as _append_menu_impl
 
+# D-PRES refactoring: Candidate presentation extracted to candidate_presentation.py
+from .candidate_presentation import (
+    build_past_date_message,
+    build_reason_message,
+    build_attempt_message,
+    build_unavailable_message,
+    build_date_list_lines,
+    build_closing_prompt,
+    build_date_table_rows,
+    build_date_actions,
+    build_table_label,
+    assemble_candidate_draft,
+    verbalize_candidate_message,
+)
+
 __workflow_role__ = "trigger"
 
 logger = logging.getLogger(__name__)
@@ -1115,16 +1130,12 @@ def _present_candidate_dates(
     if original_requested and original_requested < reference_day:
         future_suggestion = _next_matching_date(original_requested, reference_day)
 
-    if reason and "past" in reason.lower() and future_suggestion:
-        original_display = (
-            format_iso_date_to_ddmmyyyy(original_requested.isoformat())
-            or original_requested.strftime("%d.%m.%Y")
+    if reason and "past" in reason.lower() and future_suggestion and original_requested:
+        # D-PRES: Use extracted function for past date message
+        past_msg, original_display, future_display = build_past_date_message(
+            original_requested, future_suggestion
         )
-        future_display = (
-            format_iso_date_to_ddmmyyyy(future_suggestion.isoformat())
-            or future_suggestion.strftime("%d.%m.%Y")
-        )
-        message_lines.append(f"Sorry, it looks like {original_display} has already passed. Would {future_display} work for you instead?")
+        message_lines.append(past_msg)
 
         future_iso = future_suggestion.isoformat()
         start_iso_val = end_iso_val = None
@@ -1151,21 +1162,15 @@ def _present_candidate_dates(
         event_entry["pending_future_confirmation"] = _window_payload(pending_window)
         # Don't add redundant phrases - the date suggestion above is sufficient
     elif reason:
-        # Simplified: just state the issue briefly, then move to suggestions
-        message_lines.append(_preface_with_apology(reason) or reason)
-        message_lines.append("Here are some alternatives that might work:")
+        # D-PRES: Use extracted function for reason message
+        message_lines.extend(build_reason_message(reason))
     else:
-        if attempt > 1:
-            message_lines.append("Let me show you some fresh options:")
-        else:
-            message_lines.append("Here are some available dates:")
+        # D-PRES: Use extracted function for attempt message
+        message_lines.append(build_attempt_message(attempt))
 
     if unavailable_requested:
-        unavailable_display = _format_display_dates(unavailable_requested)
-        joined = _human_join(unavailable_display)
-        # More natural phrasing
-        message_lines.append(f"Unfortunately {joined} {'is' if len(unavailable_requested) == 1 else 'are'} not available.")
-        message_lines.append("Would any of these work instead?")
+        # D-PRES: Use extracted function for unavailable message
+        message_lines.extend(build_unavailable_message(unavailable_requested))
     if weekday_shortfall and formatted_dates:
         message_lines.append(
             "I couldn't find a free Thursday or Friday in that range. These are the closest available slots right now."
@@ -1260,12 +1265,9 @@ def _present_candidate_dates(
         message_lines.append("")
         message_lines.append("I couldn't find suitable slots within the next 60 days, but I'm still looking.")
 
-    # Next step guidance - conversational
+    # D-PRES: Next step guidance via extracted function
     message_lines.append("")
-    if future_display:
-        message_lines.append(f"Would **{future_display}** work for you? Or let me know another date you'd prefer.")
-    else:
-        message_lines.append("Just let me know which date works best and I'll check room availability for you.")
+    message_lines.append(build_closing_prompt(future_display))
     prompt = "\n".join(message_lines)
 
     weekday_hint = weekday_hint_value
@@ -1292,76 +1294,36 @@ def _present_candidate_dates(
                         prioritized.append(iso_value)
                         remaining.remove(iso_value)
             formatted_dates = prioritized + [val for val in formatted_dates if val not in prioritized]
-    table_rows: List[Dict[str, Any]] = []
-    actions_payload: List[Dict[str, Any]] = []
-    for iso_value in formatted_dates[:5]:
-        display_date = format_iso_date_to_ddmmyyyy(iso_value) or iso_value
-        table_rows.append(
-            {
-                "iso_date": iso_value,
-                "display_date": display_date,
-                "time_of_day": time_display,
-            }
-        )
-        actions_payload.append(
-            {
-                "type": "select_date",
-                "label": f"{display_date} ({time_display})",
-                "date": iso_value,
-                "display_date": display_date,
-            }
-        )
-
-    if weekday_label and month_for_line:
-        label_base = f"{weekday_label} in {_format_label_text(month_for_line)}"
-    elif month_for_line:
-        label_base = f"Dates in {_format_label_text(month_for_line)}"
-    else:
-        label_base = date_header_label or "Candidate dates"
-    if time_hint:
-        label_base = f"{label_base} ({time_display})"
+    # D-PRES: Use extracted functions for table/actions building
+    table_rows = build_date_table_rows(formatted_dates, time_display, limit=5)
+    actions_payload = build_date_actions(formatted_dates, time_display, limit=5)
+    label_base = build_table_label(
+        weekday_label, month_for_line, date_header_label, time_hint, time_display
+    )
 
     _trace_candidate_gate(_thread_id(state), formatted_dates[:5])
 
-    # Universal Verbalizer: transform to warm, human-like message
+    # D-PRES: Universal Verbalizer via extracted function
     participants = _extract_participants_from_state(state)
-    body_markdown = verbalize_draft_body(
-        prompt,
-        step=2,
-        topic="date_candidates",
-        participants_count=participants,
-        candidate_dates=[format_iso_date_to_ddmmyyyy(iso) or iso for iso in formatted_dates[:5]],
-    )
+    body_markdown = verbalize_candidate_message(prompt, participants, formatted_dates)
 
+    # D-PRES: Use extracted function for draft assembly
     headers = ["Availability overview"]
     if date_header_label:
         headers.append(date_header_label)
     if escalate_to_hil:
         headers.append("Manual follow-up required")
-    draft_message = {
-        "body": body_markdown,
-        "body_markdown": body_markdown,
-        "step": 2,
-        "next_step": "Room Availability",
-        "topic": "date_candidates",
-        "candidate_dates": [format_iso_date_to_ddmmyyyy(iso) or iso for iso in formatted_dates[:5]],
-        "table_blocks": [
-            {
-                "type": "dates",
-                "label": label_base,
-                "rows": table_rows,
-            }
-        ] if table_rows else [],
-        "actions": actions_payload,
-        "headers": headers,
-    }
-    thread_state_label = "Waiting on HIL" if escalate_to_hil else "Awaiting Client Response"
-    draft_message["thread_state"] = thread_state_label
-    # Only require HIL approval when escalating (client can't find date, needs manual help)
-    # Normal date options go directly to client
-    draft_message["requires_approval"] = escalate_to_hil
-    if escalate_to_hil:
-        draft_message["hil_reason"] = "Client can't find suitable date, needs manual help"
+
+    draft_message = assemble_candidate_draft(
+        body_markdown=body_markdown,
+        formatted_dates=formatted_dates,
+        table_rows=table_rows,
+        actions_payload=actions_payload,
+        label_base=label_base,
+        headers=headers,
+        escalate_to_hil=escalate_to_hil,
+    )
+    thread_state_label = draft_message["thread_state"]
     if actions_payload:
         event_entry["candidate_dates"] = [action["date"] for action in actions_payload]
     history = _update_proposal_history(event_entry, event_entry.get("candidate_dates") or formatted_dates[:5])
