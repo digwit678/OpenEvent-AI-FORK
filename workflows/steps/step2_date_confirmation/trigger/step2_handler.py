@@ -174,6 +174,10 @@ from .candidate_dates import (
     _collect_preferred_weekday_alternatives,
     collect_candidates_from_week_scope,
     collect_candidates_from_fuzzy,
+    collect_candidates_from_constraints,
+    collect_candidates_from_suggestions,
+    collect_supplemental_candidates,
+    prioritize_by_weekday,
     resolve_week_scope,
     preferred_weekday_label,
 )
@@ -896,173 +900,79 @@ def _present_candidate_dates(
             end_time_obj=end_time_obj,
         )
     else:
-        constraints_for_window = {
-            "vague_month": user_info.get("vague_month") or event_entry.get("vague_month"),
-            "weekday": user_info.get("vague_weekday") or event_entry.get("vague_weekday"),
-            "time_of_day": user_info.get("vague_time_of_day") or event_entry.get("vague_time_of_day"),
-        }
-        window_hints = _resolve_window_hints(constraints_for_window, state)
-        strict_window = _has_window_constraints(window_hints)
-        if strict_window:
-            hinted_dates = _candidate_dates_for_constraints(
-                state,
-                constraints_for_window,
-                limit=limit,
-                window_hints=window_hints,
-                strict=attempt == 1,
-            )
-            for iso_value in hinted_dates:
-                if (
-                    not iso_value
-                    or iso_value in seen_iso
-                    or iso_value in skip_set
-                    or _iso_date_is_past(iso_value)
-                ):
-                    continue
-                candidate_dt = _safe_parse_iso_date(iso_value)
-                if min_requested_date and candidate_dt and candidate_dt < min_requested_date:
-                    continue
-                if not _candidate_is_calendar_free(preferred_room, iso_value, start_time_obj, end_time_obj):
-                    busy_skipped.add(iso_value)
-                    continue
-                seen_iso.add(iso_value)
-                formatted_dates.append(iso_value)
-
+        # D-COLL: Use extracted collection functions
         days_ahead = min(180, 45 + (attempt - 1) * 30)
-        max_results = 5 if attempt <= 2 else 7
 
-        candidate_dates_ddmmyyyy: List[str] = suggest_dates(
-            state.db,
+        # Collect from window constraints first
+        constraint_dates, seen_iso, constraint_busy = collect_candidates_from_constraints(
+            state,
+            user_info,
+            event_entry,
+            attempt=attempt,
+            limit=limit,
+            skip_set=skip_set,
+            seen_iso=seen_iso,
+            min_requested_date=min_requested_date,
             preferred_room=preferred_room,
-            start_from_iso=anchor_dt.isoformat() if anchor_dt else state.message.ts,
-            days_ahead=days_ahead,
-            max_results=max_results,
+            start_time_obj=start_time_obj,
+            end_time_obj=end_time_obj,
         )
-        trace_db_read(
+        formatted_dates.extend(constraint_dates)
+        busy_skipped.update(constraint_busy)
+
+        # Collect from date suggestions
+        suggestion_dates, seen_iso, suggestion_busy = collect_candidates_from_suggestions(
+            state,
             _thread_id(state),
-            "Step2_Date",
-            "db.dates.next5",
-            {
-                "preferred_room": preferred_room,
-                "anchor": anchor_dt.isoformat() if anchor_dt else state.message.ts,
-                "result_count": len(candidate_dates_ddmmyyyy),
-                "days_ahead": days_ahead,
-            },
+            anchor_dt,
+            attempt=attempt,
+            skip_set=skip_set,
+            seen_iso=seen_iso,
+            min_requested_date=min_requested_date,
+            preferred_room=preferred_room,
+            start_time_obj=start_time_obj,
+            end_time_obj=end_time_obj,
+            collection_cap=collection_cap,
         )
+        formatted_dates.extend(suggestion_dates)
+        busy_skipped.update(suggestion_busy)
 
-        for raw in candidate_dates_ddmmyyyy:
-            iso_value = to_iso_date(raw)
-            if not iso_value:
-                continue
-            if (
-                _iso_date_is_past(iso_value)
-                or iso_value in seen_iso
-                or iso_value in skip_set
-            ):
-                continue
-            candidate_dt = _safe_parse_iso_date(iso_value)
-            if min_requested_date and candidate_dt and candidate_dt < min_requested_date:
-                continue
-            if not _candidate_is_calendar_free(preferred_room, iso_value, start_time_obj, end_time_obj):
-                busy_skipped.add(iso_value)
-                continue
-            seen_iso.add(iso_value)
-            formatted_dates.append(iso_value)
-
+        # Collect supplemental if needed
         if len(formatted_dates) < limit:
-            skip_dates_for_next = {_safe_parse_iso_date(iso) for iso in seen_iso.union(skip_set)}
-            supplemental = next_five_venue_dates(
-                anchor_dt,
-                skip_dates={dt for dt in skip_dates_for_next if dt is not None},
-                count=max(limit * 2, 10 if attempt > 1 else 5),
-            )
-            trace_db_read(
+            supplemental_dates, seen_iso, supplemental_busy = collect_supplemental_candidates(
                 _thread_id(state),
-                "Step2_Date",
-                "db.dates.next5",
-                {
-                    "preferred_room": preferred_room,
-                    "anchor": anchor_dt.isoformat() if anchor_dt else state.message.ts,
-                    "result_count": len(supplemental),
-                    "days_ahead": days_ahead,
-                },
-            )
-            for candidate in supplemental:
-                iso_candidate = candidate if isinstance(candidate, str) else candidate.isoformat()
-                if (
-                    iso_candidate in seen_iso
-                    or iso_candidate in skip_set
-                    or _iso_date_is_past(iso_candidate)
-                ):
-                    continue
-                candidate_dt = _safe_parse_iso_date(iso_candidate)
-                if min_requested_date and candidate_dt and candidate_dt < min_requested_date:
-                    continue
-                if not _candidate_is_calendar_free(preferred_room, iso_candidate, start_time_obj, end_time_obj):
-                    busy_skipped.add(iso_candidate)
-                    continue
-                seen_iso.add(iso_candidate)
-                formatted_dates.append(iso_candidate)
-                if len(formatted_dates) >= collection_cap:
-                    break
-
-    prioritized_dates: List[str] = []
-    weekday_shortfall = False
-    preferred_weekday_list = sorted(preferred_weekdays)
-    if preferred_weekdays:
-        weekday_cache: Dict[str, Optional[int]] = {}
-
-        def _weekday_for(iso_value: str) -> Optional[int]:
-            if iso_value not in weekday_cache:
-                parsed = _safe_parse_iso_date(iso_value)
-                weekday_cache[iso_value] = parsed.weekday() if parsed else None
-            return weekday_cache[iso_value]
-
-        formatted_dates = sorted(
-            formatted_dates,
-            key=lambda iso: (
-                0 if (_weekday_for(iso) in preferred_weekdays) else 1,
-                iso,
-            ),
-        )
-        prioritized_matches = [iso for iso in formatted_dates if _weekday_for(iso) in preferred_weekdays]
-        prioritized_rest = [iso for iso in formatted_dates if _weekday_for(iso) not in preferred_weekdays]
-        if not prioritized_matches:
-            supplemental_matches = _collect_preferred_weekday_alternatives(
-                start_from=min_requested_date or reference_day,
-                preferred_weekdays=preferred_weekday_list,
+                anchor_dt,
+                limit=limit,
+                attempt=attempt,
+                skip_set=skip_set,
+                seen_iso=seen_iso,
+                busy_skipped=busy_skipped,
+                min_requested_date=min_requested_date,
                 preferred_room=preferred_room,
-                start_time=start_time_obj,
-                end_time=end_time_obj,
-                skip_dates=skip_set.union(busy_skipped),
-                existing=seen_iso,
-                limit=collection_cap,
+                start_time_obj=start_time_obj,
+                end_time_obj=end_time_obj,
+                collection_cap=collection_cap,
+                days_ahead=days_ahead,
             )
-            if supplemental_matches:
-                for iso_value in supplemental_matches:
-                    if iso_value in seen_iso:
-                        continue
-                    seen_iso.add(iso_value)
-                    formatted_dates.append(iso_value)
-                formatted_dates = sorted(
-                    formatted_dates,
-                    key=lambda iso: (
-                        0 if (_weekday_for(iso) in preferred_weekdays) else 1,
-                        iso,
-                    ),
-                )
-                prioritized_matches = [iso for iso in formatted_dates if _weekday_for(iso) in preferred_weekdays]
-                prioritized_rest = [iso for iso in formatted_dates if _weekday_for(iso) not in preferred_weekdays]
-        if prioritized_matches:
-            formatted_dates = prioritized_matches
-            prioritized_dates = prioritized_matches
-        else:
-            formatted_dates = prioritized_rest
-            prioritized_dates = prioritized_rest
-            weekday_shortfall = bool(formatted_dates)
-    else:
-        formatted_dates = sorted(formatted_dates)
-        prioritized_dates = list(formatted_dates)
+            formatted_dates.extend(supplemental_dates)
+            busy_skipped.update(supplemental_busy)
+
+    # D-COLL: Use extracted prioritization function
+    preferred_weekday_list = sorted(preferred_weekdays)
+    formatted_dates, prioritized_dates, weekday_shortfall = prioritize_by_weekday(
+        formatted_dates,
+        preferred_weekdays,
+        preferred_weekday_list=preferred_weekday_list,
+        min_requested_date=min_requested_date,
+        reference_day=reference_day,
+        preferred_room=preferred_room,
+        start_time_obj=start_time_obj,
+        end_time_obj=end_time_obj,
+        skip_set=skip_set,
+        busy_skipped=busy_skipped,
+        seen_iso=seen_iso,
+        collection_cap=collection_cap,
+    )
 
     if fuzzy_candidates:
         formatted_dates = formatted_dates[:4]
