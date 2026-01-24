@@ -779,6 +779,28 @@ Result: Hybrid messages now correctly detect acceptance from the statement porti
 1. When two fields store the same concept, ensure all readers check both: `event.get("status") or data.get("Status")`
 2. When evaluating room availability for a client, always exclude their own event to prevent self-conflict
 
+### BUG-046: Room Unavailable on New Date Shows Date Alternatives Instead of Room Alternatives
+**Status**: FIXED (2026-01-24)
+**Severity**: HIGH
+**Symptom**: When client changes date to a date where their locked room (Room B) is already Confirmed by another client, system offers date alternatives instead of showing room availability overview with alternative rooms.
+**Root Cause** (Two issues):
+1. `calendar_conflict_reason()` in `calendar_checks.py` treated locked room unavailability as a calendar conflict, triggering date alternative suggestions
+2. Step 3's verbalization wasn't receiving `_cleared_room_name` because the fix path cleared `locked_room_id` before the existing code that sets this flag could run
+
+**Fix**:
+1. In `calendar_checks.py`: Check for `locked_room_id` - when locked room is unavailable on new date, return `None` (no conflict) and set `_locked_room_unavailable_on_new_date` flag
+2. In `step3_handler.py`: When flag is set, store `_cleared_room_name` in `state.extras` BEFORE clearing `locked_room_id`
+
+**Files Changed**:
+- `workflows/steps/step2_date_confirmation/trigger/calendar_checks.py`
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py`
+
+**Expected Flow**:
+1. Step 2: Confirm new date (don't block for locked room conflict)
+2. Step 3: Show "Room B is no longer available on 12.05.2026" + alternative rooms (A, D, F)
+
+**Key Learning**: Inter-step communication via flags (`_locked_room_unavailable_on_new_date`) must set ALL required downstream state before clearing the source data (`locked_room_id`).
+
 ---
 
 ## Q&A Rules During Detours

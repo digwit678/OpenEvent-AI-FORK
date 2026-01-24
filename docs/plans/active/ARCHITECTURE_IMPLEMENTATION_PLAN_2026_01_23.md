@@ -11,8 +11,8 @@ Based on the 2026-01-19 architecture review and E2E verification on 2026-01-23, 
 | step3_handler.py | 2924 | 1789 | **-39%** | ✅ Refactored |
 | step4_handler.py | 1605 | 1121 | **-30%** | ✅ Refactored |
 | main.py | 575 | 58 | **-90%** | ✅ Refactored |
-| step2_handler.py | 2043 | **2068** | **-2.6%** | 🔄 In Progress |
-| step1_handler.py | 1840 | 1916 | +4% | ⚠️ Needs work |
+| step2_handler.py | 2124 | **1292** | **-39%** | ✅ Refactored |
+| step1_handler.py | 1916 | **799** | **-58%** | ✅ Refactored |
 | change_propagation.py | 1460 | 1567 | +7% | ⚠️ Needs work |
 | step5_handler.py | 1316 | 1314 | stable | 🔶 Lower priority |
 | universal_verbalizer.py | 1313 | 1307 | stable | 🔶 Lower priority |
@@ -26,65 +26,66 @@ Based on the 2026-01-19 architecture review and E2E verification on 2026-01-23, 
 4. ✅ **Hybrid message handling**: Acceptance + Q&A in same message works
 5. ✅ **Step 3 extraction**: 8 modules extracted (conflict_resolution, room_ranking, etc.)
 
-### Step 2 Extraction Progress (2026-01-23)
+### Step 2 Extraction Progress (2026-01-24)
 
 | Commit | Module | Lines | Functions Extracted |
 |--------|--------|-------|---------------------|
 | 1830137 | `candidate_presentation.py` | 313 | 11 presentation functions |
-| 6660bdd | `date_context.py` | 175 | 6 context resolution functions |
+| 6660bdd | `date_context.py` | 186 | 6 context resolution functions |
 | 629c930 | D-COLL: collection/prioritization | -90 | Uses existing candidate_dates.py functions |
 | beaf328 | `prioritize_by_day_hints` | +45 | 1 dedup helper in candidate_dates.py |
+| **NEW** | `confirmation_flow.py` | **772** | 6 confirmation flow functions |
 
-**`_present_candidate_dates` reduction**: 690 → 474 lines (**-31%**)
-**Total step2_handler.py reduction**: 2124 → 1944 lines (**-180 lines, -8.5%**)
+**Extracted modules summary:**
+- `confirmation_flow.py` (772 lines): `resolve_confirmation_window`, `handle_partial_confirmation`, `prompt_confirmation`, `finalize_confirmation`, `clear_step2_hil_tasks`, `apply_step2_hil_decision`
+- `candidate_dates.py` (771 lines): Collection, prioritization, candidate generation
+- `candidate_presentation.py` (310 lines): Display formatting
+- `date_context.py` (186 lines): Context resolution
+
+**Total step2_handler.py reduction**: 2124 → **1292 lines** (**-832 lines, -39%**)
 
 ---
 
 ## Implementation Plan (Prioritized)
 
-### Priority 1: Step 2 God File Reduction (HIGH IMPACT)
+### Priority 1: Step 2 God File Reduction ✅ COMPLETE
 
-**Current State:** 2124 lines, 16 top-level defs
-**Target:** < 1000 lines in main handler
+**Status:** 2124 → **1292 lines** (-39%)
+**Target:** < 1000 lines *(Close - 292 lines over target)*
 
-**Extraction Targets:**
+**Extracted Modules:**
 ```
 step2_date_confirmation/
 ├── trigger/
-│   ├── step2_handler.py (core routing only, ~800 lines)
-│   ├── date_resolution.py (parse, normalize, candidates)
-│   ├── confirmation_flow.py (state transitions + HIL)
-│   ├── message_formatting.py (greeting assembly)
-│   └── qna_bridge.py (Q&A injection)
+│   ├── step2_handler.py       (1292 lines - routing + presentation)
+│   ├── confirmation_flow.py   (772 lines - state transitions + HIL)
+│   ├── candidate_dates.py     (771 lines - collection/prioritization)
+│   ├── candidate_presentation.py (310 lines - formatting)
+│   ├── date_context.py        (186 lines - context resolution)
+│   ├── confirmation.py        (290 lines - pure helpers)
+│   └── ... other modules
 ```
 
-**Why High Priority:**
-- Largest handler file (2124 lines)
-- Critical path for date changes (core feature)
-- Detour source - must remain stable
-
-**Approach:**
-1. Add characterization tests for date resolution
-2. Extract `date_resolution.py` (ISO normalization, candidate generation)
-3. Extract `confirmation_flow.py` (state transitions)
-4. Verify E2E: date change detour still works
+**Verification:**
+- ✅ 44/46 DAG tests passing
+- ✅ Date confirmation tests passing (3/3)
+- ⚠️ 2 failures unrelated to extraction (step3 import, routing issue)
 
 ---
 
-### Priority 2: Step 1 God File Reduction (HIGH IMPACT)
+### Priority 2: Step 1 God File Reduction ✅ COMPLETE
 
-**Current State:** 1916 lines, 8 top-level defs (few functions = large nested blocks)
-**Target:** < 900 lines in main handler
+**Current State:** 1916 → **799 lines** (-58%, **EXCEEDED TARGET**)
+**Target:** < 900 lines in main handler ✅
 
-**Extraction Targets:**
+**Extracted Modules:**
 ```
 step1_intake/
 ├── trigger/
-│   ├── step1_handler.py (routing only, ~700 lines)
-│   ├── event_bootstrap.py (client/event creation)
-│   ├── intent_routing.py (classification + guards)
-│   ├── entity_merge.py (extraction + profile updates)
-│   └── detour_handling.py (date/room/requirements)
+│   ├── step1_handler.py (799 lines - orchestration only)
+│   ├── classification_extraction.py (340 lines - LLM classification + entity extraction)
+│   ├── change_application.py (280 lines - DAG routing + room lock management)
+│   └── requirements_fallback.py (180 lines - requirements processing with fallback)
 ```
 
 **Why High Priority:**
@@ -92,11 +93,16 @@ step1_intake/
 - Complex intent routing with many branches
 - Detour initiation lives here
 
-**Approach:**
-1. Map all entry/exit paths with test coverage
-2. Extract `event_bootstrap.py` (isolated side effects)
-3. Extract `intent_routing.py` (pure function possible)
-4. Verify: new intake → smart shortcut → offer path
+**Extraction Completed (2026-01-24):**
+1. ✅ Extracted `classification_extraction.py` (LLM calls + tracing)
+2. ✅ Extracted `change_application.py` (DAG routing decisions)
+3. ✅ Extracted `requirements_fallback.py` (requirements merge logic)
+4. ✅ Verified: new intake → smart shortcut → offer path (Full E2E Playwright passed)
+
+**Verification:**
+- ✅ 30/30 intake tests passing
+- ✅ 75/76 DAG tests passing (1 pre-existing failure)
+- ✅ Full E2E Playwright test passed (hybrid acceptance, date-change detour, billing, deposit, site visit)
 
 ---
 

@@ -1,55 +1,20 @@
 from __future__ import annotations
-from datetime import datetime, time, date
-from typing import Any, Dict, List, Optional, Sequence, Tuple
-import re
+from datetime import datetime, time
+from typing import Any, Dict, List, Optional, Sequence
 import logging
 
-from domain import TaskStatus, TaskType
-from workflows.io.config_store import get_timezone
-from debug.hooks import (
-    set_subloop,
-    trace_db_read,
-    trace_db_write,
-    trace_entity,
-    trace_marker,
-    trace_state,
-    trace_step,
-    trace_gate,
-    trace_general_qa_status,
-)
-from workflows.common.datetime_parse import (
-    build_window_iso,
-    parse_all_dates,
-    parse_first_date,
-    parse_time_range,
-    to_ddmmyyyy,
-    to_iso_date,
-)
-from workflows.common.prompts import append_footer, format_sections_with_headers, verbalize_draft_body
-from workflows.common.capture import capture_user_fields, capture_workflow_requirements, promote_fields
-from workflows.common.requirements import requirements_hash
+from debug.hooks import trace_marker, trace_step
+from workflows.common.datetime_parse import build_window_iso, parse_first_date
+from workflows.common.prompts import append_footer
+from workflows.common.capture import capture_user_fields, capture_workflow_requirements
 from workflows.common.gatekeeper import refresh_gatekeeper
-from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
-from workflows.common.menu_options import (
-    build_menu_payload,
-    build_menu_title,
-    extract_menu_request,
-    format_menu_line,
-    format_menu_line_short,
-    MENU_CONTENT_CHAR_THRESHOLD,
-    normalize_menu_for_display,
-    select_menu_options,
-)
 from utils.pseudolinks import generate_qna_link
 from utils.page_snapshots import create_snapshot
 from workflows.common.general_qna import (
     append_general_qna_to_primary,
-    render_general_qna_reply,
     enrich_general_qna_step2,
-    _fallback_structured_body,
 )
 from workflows.change_propagation import (
-    detect_change_type,
     detect_change_type_enhanced,
     route_change_on_updated_variable,
 )
@@ -59,29 +24,19 @@ from workflows.common.detour_acknowledgment import (
 )
 from workflows.qna.router import route_general_qna, generate_hybrid_qna_response
 from workflows.common.types import GroupResult, WorkflowState
-# MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
 from detection.intent.confidence import check_nonsense_gate
 from workflows.common.detection_utils import get_unified_detection
-from workflows.steps.step1_intake.condition.checks import suggest_dates
-from workflows.io.database import (
-    append_audit_entry,
-    link_event_to_client,
-    load_db,
-    load_rooms,
-    tag_message,
-    update_event_metadata,
-)
+from workflows.io.database import append_audit_entry, update_event_metadata
 from workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
 from utils.profiler import profile_step
 from services.availability import next_five_venue_dates, validate_window
-# D10: from_hints, MONTH_INDEX_TO_NAME now used in candidate_dates.py
-from utils.calendar_events import update_calendar_event_status
-from workflow.state import WorkflowStep, default_subflow, write_stage
+from workflow.state import WorkflowStep, write_stage
 
-from ..condition.decide import is_valid_ddmmyyyy
+# Re-exports for backwards compatibility (used by tests for monkeypatching)
+from workflows.steps.step1_intake.condition.checks import suggest_dates  # noqa: F401
 
 # D1 refactoring: Types and constants extracted to dedicated modules
-from .types import ConfirmationWindow, WindowHints
+from .types import ConfirmationWindow
 # D12: Constants moved to step2_utils.py and confirmation.py - no longer needed here
 
 # D2 refactoring: Date parsing utilities extracted to dedicated module
@@ -229,6 +184,16 @@ from .date_context import (
     resolve_anchor_date,
     calculate_collection_limits,
     get_preferred_room,
+)
+
+# D-FLOW refactoring: Confirmation flow functions extracted to confirmation_flow.py
+from .confirmation_flow import (
+    resolve_confirmation_window as _resolve_confirmation_window,
+    handle_partial_confirmation as _handle_partial_confirmation_impl,
+    prompt_confirmation as _prompt_confirmation_impl,
+    finalize_confirmation as _finalize_confirmation,
+    clear_step2_hil_tasks as _clear_step2_hil_tasks,
+    apply_step2_hil_decision as _apply_step2_hil_decision_impl,
 )
 
 __workflow_role__ = "trigger"
@@ -1292,270 +1257,17 @@ def _present_candidate_dates(
 
 # D13c: _should_auto_accept_first_date moved to confirmation.py
 # D13b: _preferred_room moved to calendar_checks.py
+# D-FLOW: _resolve_confirmation_window moved to confirmation_flow.py
 
 
-def _resolve_confirmation_window(state: WorkflowState, event_entry: dict) -> Optional[ConfirmationWindow]:
-    """Resolve the requested window from the latest client message."""
-
-    user_info = state.user_info or {}
-    body_text = state.message.body or ""
-    subject_text = state.message.subject or ""
-
-    reference_day = _reference_date_from_state(state)
-    # D8: Use extracted function
-    display_date, iso_date = determine_date(
-        user_info,
-        body_text,
-        subject_text,
-        event_entry,
-        reference_day,
-    )
-    if not display_date or not iso_date:
-        return None
-
-    start_time = _normalize_time_value(user_info.get("start_time"))
-    end_time = _normalize_time_value(user_info.get("end_time"))
-
-    inherited_times = False
-    start_obj: Optional[time] = None
-    end_obj: Optional[time] = None
-
-    if start_time:
-        try:
-            start_obj = _to_time(start_time)
-        except ValueError:
-            start_time = None
-            start_obj = None
-    if end_time:
-        try:
-            end_obj = _to_time(end_time)
-        except ValueError:
-            end_time = None
-            end_obj = None
-
-    if start_obj and end_obj and start_obj >= end_obj:
-        end_time = None
-        end_obj = None
-
-    if not (start_time and end_time):
-        parsed_start, parsed_end, matched = parse_time_range(body_text)
-        if parsed_start and parsed_end:
-            start_obj = parsed_start
-            end_obj = parsed_end
-            start_time = f"{parsed_start.hour:02d}:{parsed_start.minute:02d}"
-            end_time = f"{parsed_end.hour:02d}:{parsed_end.minute:02d}"
-        elif matched and not start_time:
-            start_time = None
-
-    if start_time and not end_time and (body_text or subject_text):
-        combined_text = " ".join(value for value in (subject_text, body_text) if value)
-        time_tokens: List[str] = []
-        for match in re.findall(r"\b(\d{1,2}:\d{2})\b", combined_text):
-            normalized_token = _normalize_time_value(match)
-            if normalized_token and normalized_token not in time_tokens:
-                time_tokens.append(normalized_token)
-        if time_tokens:
-            if start_time and not start_obj:
-                try:
-                    start_obj = _to_time(start_time)
-                except ValueError:
-                    start_obj = None
-            chosen_token: Optional[str] = None
-            chosen_obj: Optional[time] = None
-            for token in time_tokens:
-                if start_time and token == start_time:
-                    continue
-                try:
-                    candidate_obj = _to_time(token)
-                except ValueError:
-                    continue
-                if start_obj and candidate_obj <= start_obj:
-                    continue
-                chosen_token = token
-                chosen_obj = candidate_obj
-                break
-            if chosen_obj is None:
-                for token in time_tokens:
-                    if start_time and token == start_time:
-                        continue
-                    try:
-                        candidate_obj = _to_time(token)
-                    except ValueError:
-                        continue
-                    chosen_token = token
-                    chosen_obj = candidate_obj
-                    break
-            if chosen_token and chosen_obj:
-                end_time = chosen_token
-                end_obj = chosen_obj
-
-    if not (start_time and end_time):
-        # D8: Use extracted function
-        fallback = find_existing_time_window(event_entry, iso_date)
-        if fallback:
-            start_time, end_time = fallback
-            inherited_times = True
-            try:
-                start_obj = _to_time(start_time)
-            except (TypeError, ValueError):
-                start_obj = None
-            try:
-                end_obj = _to_time(end_time)
-            except (TypeError, ValueError):
-                end_obj = None
-
-    if start_obj and end_obj and start_obj >= end_obj:
-        end_time = None
-        end_obj = None
-
-    if start_time and not start_obj:
-        try:
-            start_obj = _to_time(start_time)
-        except ValueError:
-            start_obj = None
-            start_time = None
-    if end_time and not end_obj:
-        try:
-            end_obj = _to_time(end_time)
-        except ValueError:
-            end_obj = None
-            end_time = None
-
-    # [FIX] Infer 4-hour default duration when only start time is provided
-    # This prevents the loop of repeatedly asking for time when user provides single time
-    if start_obj and not end_obj:
-        # Check if we're already in a pending_time_request loop for this date
-        pending = event_entry.get("pending_time_request") or {}
-        if pending.get("iso_date") == iso_date:
-            # Already asked for time once - infer 4-hour default duration
-            from datetime import timedelta
-            default_duration_hours = 4
-            start_dt = datetime.combine(datetime.today(), start_obj)
-            end_dt = start_dt + timedelta(hours=default_duration_hours)
-            end_obj = end_dt.time()
-            end_time = f"{end_obj.hour:02d}:{end_obj.minute:02d}"
-            logger.debug("[Step2][TIME_INFER] Single time %s detected, inferring end_time=%s (4-hour default)",
-                        start_time, end_time)
-
-    if start_time:
-        user_info["start_time"] = start_time
-    elif "start_time" in user_info:
-        user_info.pop("start_time", None)
-    if end_time:
-        user_info["end_time"] = end_time
-    elif "end_time" in user_info:
-        user_info.pop("end_time", None)
-
-    partial = not (start_time and end_time)
-    start_iso = end_iso = None
-    if start_obj and end_obj:
-        start_iso, end_iso = build_window_iso(iso_date, start_obj, end_obj)
-
-    return ConfirmationWindow(
-        display_date=display_date,
-        iso_date=iso_date,
-        start_time=start_time,
-        end_time=end_time,
-        start_iso=start_iso,
-        end_iso=end_iso,
-        inherited_times=inherited_times,
-        partial=partial,
-        source_message_id=state.message.msg_id,
-    )
-
-
+# D-FLOW: Thin wrappers delegating to confirmation_flow module
 def _handle_partial_confirmation(
     state: WorkflowState,
     event_entry: dict,
     window: ConfirmationWindow,
-) -> GroupResult:
+) -> Optional[GroupResult]:
     """Persist the date and request a time clarification without stalling the flow."""
-
-    # [FIX] Loop detection: If we've already asked for time on this date, use defaults
-    pending = event_entry.get("pending_time_request") or {}
-    if pending.get("iso_date") == window.iso_date:
-        # Check for loop - if pending was set recently and we're still partial, break the loop
-        time_request_count = pending.get("_request_count", 0) + 1
-        if time_request_count >= 2:
-            # Already asked twice - use default time window
-            logger.debug("[Step2][LOOP_BREAK] Time request loop detected for %s, using default window",
-                        window.display_date)
-            window = ConfirmationWindow(
-                display_date=window.display_date,
-                iso_date=window.iso_date,
-                start_time="14:00",
-                end_time="18:00",
-                start_iso=None,  # Will be computed downstream
-                end_iso=None,
-                inherited_times=False,
-                partial=False,  # No longer partial!
-                source_message_id=window.source_message_id,
-            )
-            # Clean up pending state
-            event_entry.pop("pending_time_request", None)
-            # Return successful confirmation instead of asking again
-            state.user_info["event_date"] = window.display_date
-            state.user_info["date"] = window.iso_date
-            state.user_info["start_time"] = window.start_time
-            state.user_info["end_time"] = window.end_time
-            # Continue with full confirmation flow - return None to let caller proceed
-            return None  # Signal to caller to use non-partial path
-
-    _reset_date_attempts(event_entry)
-
-    event_entry.setdefault("event_data", {})["Event Date"] = window.display_date
-    # D8: Use extracted function
-    set_pending_time_state(event_entry, window)
-    # Track request count for loop detection
-    event_entry["pending_time_request"]["_request_count"] = pending.get("_request_count", 0) + 1
-
-    state.user_info["event_date"] = window.display_date
-    state.user_info["date"] = window.iso_date
-
-    prompt = _with_greeting(
-        state,
-        f"Great, I've noted **{window.display_date}**. What time works best for you? For example, 14:00–18:00 or 18:00–22:00.",
-    )
-    state.add_draft_message({"body": prompt, "step": 2, "topic": "date_time_clarification"})
-
-    update_event_metadata(
-        event_entry,
-        chosen_date=window.display_date,
-        date_confirmed=False,
-        thread_state="Awaiting Client Response",
-        current_step=2,
-    )
-    write_stage(event_entry, current_step=WorkflowStep.STEP_2, subflow_group="date_confirmation")
-
-    state.set_thread_state("Awaiting Client Response")
-    state.extras["persist"] = True
-    _emit_step2_snapshot(
-        state,
-        event_entry,
-        extra={
-            "pending_time": True,
-            "proposed_date": window.display_date,
-        },
-    )
-
-    payload = {
-        "client_id": state.client_id,
-        "event_id": event_entry.get("event_id"),
-        "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "pending_time": True,
-        "event_date": window.display_date,
-        "draft_messages": state.draft_messages,
-        "thread_state": state.thread_state,
-        "context": state.context_snapshot,
-        "persisted": True,
-        "answered_question_first": True,
-    }
-    gatekeeper = refresh_gatekeeper(event_entry)
-    state.telemetry.answered_question_first = True
-    state.telemetry.gatekeeper_passed = dict(gatekeeper)
-    payload["gatekeeper_passed"] = dict(gatekeeper)
-    return GroupResult(action="date_time_clarification", payload=payload, halt=True)
+    return _handle_partial_confirmation_impl(state, event_entry, window, _with_greeting)
 
 
 def _prompt_confirmation(
@@ -1563,380 +1275,16 @@ def _prompt_confirmation(
     event_entry: dict,
     window: ConfirmationWindow,
 ) -> GroupResult:
-    formatted_window = _format_window(window)
-    prompt = _with_greeting(
-        state,
-        f"**{formatted_window}** works on our end! Should I check room availability for this time? Just say yes, or let me know if you'd prefer a different date or time.",
-    )
-
-    draft_message = {
-        "body": prompt,
-        "step": 2,
-        "topic": "date_confirmation_pending",
-        "proposed_date": window.display_date,
-        "proposed_time": f"{window.start_time or ''}–{window.end_time or ''}".strip("–"),
-    }
-    state.add_draft_message(draft_message)
-
-    update_event_metadata(
-        event_entry,
-        current_step=2,
-        thread_state="Awaiting Client Response",
-        date_confirmed=False,
-    )
-    write_stage(event_entry, current_step=WorkflowStep.STEP_2, subflow_group="date_confirmation")
-    state.set_thread_state("Awaiting Client Response")
-    state.extras["persist"] = True
-    _emit_step2_snapshot(
-        state,
-        event_entry,
-        extra={
-            "pending_confirmation": True,
-            "proposed_date": window.display_date,
-        },
-    )
-
-    payload = {
-        "client_id": state.client_id,
-        "event_id": event_entry.get("event_id"),
-        "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "pending_confirmation": True,
-        "proposed_date": window.iso_date,
-        "draft_messages": state.draft_messages,
-        "thread_state": state.thread_state,
-        "context": state.context_snapshot,
-        "persisted": True,
-        "answered_question_first": True,
-    }
-    gatekeeper = refresh_gatekeeper(event_entry)
-    payload["gatekeeper_passed"] = dict(gatekeeper)
-    state.telemetry.answered_question_first = True
-    state.telemetry.gatekeeper_passed = dict(gatekeeper)
-    return GroupResult(action="date_confirmation_pending", payload=payload, halt=True)
+    """Prompt the user to confirm a proposed date/time window."""
+    return _prompt_confirmation_impl(state, event_entry, window, _with_greeting)
 
 
-def _finalize_confirmation(
-    state: WorkflowState,
-    event_entry: dict,
-    window: ConfirmationWindow,
-) -> GroupResult:
-    """Persist the requested window and trigger availability."""
-
-    _reset_date_attempts(event_entry)
-
-    thread_id = _thread_id(state)
-    if isinstance(window, str):
-        try:
-            parsed_date = datetime.strptime(window, "%Y-%m-%d")
-            display_date = parsed_date.strftime("%d.%m.%Y")
-            iso_date = window
-        except ValueError:
-            display_date = window
-            iso_date = to_iso_date(window) or window
-        fallback_window = event_entry.get("requested_window") or {}
-        start_time = fallback_window.get("start_time")
-        end_time = fallback_window.get("end_time")
-        start_iso = fallback_window.get("start")
-        end_iso = fallback_window.get("end")
-        window = ConfirmationWindow(
-            display_date=display_date,
-            iso_date=iso_date,
-            start_time=start_time,
-            end_time=end_time,
-            start_iso=start_iso,
-            end_iso=end_iso,
-            inherited_times=bool(start_time and end_time),
-            partial=not (start_time and end_time),
-            source_message_id=fallback_window.get("source_message_id"),
-        )
-
-    state.event_id = event_entry.get("event_id")
-    _clear_step2_hil_tasks(state, event_entry)
-    tag_message(event_entry, window.source_message_id)
-    event_entry.setdefault("event_data", {})["Event Date"] = window.display_date
-    event_entry["event_data"]["Start Time"] = window.start_time
-    event_entry["event_data"]["End Time"] = window.end_time
-
-    requirements = dict(event_entry.get("requirements") or {})
-    requirements["event_duration"] = {"start": window.start_time, "end": window.end_time}
-    new_req_hash = requirements_hash(requirements)
-
-    state.user_info["event_date"] = window.display_date
-    state.user_info["date"] = window.iso_date
-    state.user_info["start_time"] = window.start_time
-    state.user_info["end_time"] = window.end_time
-
-    previous_window = event_entry.get("requested_window") or {}
-    new_hash = _window_hash(window.iso_date, window.start_iso, window.end_iso)
-    reuse_previous = previous_window.get("hash") == new_hash
-
-    requested_payload = {
-        "display_date": window.display_date,
-        "date_iso": window.iso_date,
-        "start_time": window.start_time,
-        "end_time": window.end_time,
-        "start": window.start_iso,
-        "end": window.end_iso,
-        "tz": get_timezone(),
-        "hash": new_hash,
-        "times_inherited": window.inherited_times,
-        "source_message_id": window.source_message_id,
-        "updated_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-        "cached": reuse_previous,
-    }
-    event_entry["requested_window"] = requested_payload
-    event_entry.pop("pending_time_request", None)
-
-    update_event_metadata(
-        event_entry,
-        chosen_date=window.display_date,
-        date_confirmed=True,
-        requirements=requirements,
-        requirements_hash=new_req_hash,
-        thread_state="In Progress",
-    )
-    if event_entry.get("calendar_event_id"):
-        try:
-            update_calendar_event_status(event_entry.get("event_id", ""), event_entry.get("status", ""), "lead")
-            from utils.calendar_events import create_calendar_event
-
-            create_calendar_event(event_entry, "lead")
-        except Exception as exc:  # pragma: no cover - best-effort calendar logging
-            logger.warning("Failed to update calendar event: %s", exc)
-    if not reuse_previous:
-        # Invalidate room_eval_hash so Step 3 re-verifies room availability
-        # on the new date. KEEP locked_room_id so Step 3 can fast-skip if
-        # the same room is still available on the new date.
-        update_event_metadata(
-            event_entry,
-            room_eval_hash=None,
-            # NOTE: Do NOT clear locked_room_id here - Step 3 will verify
-            # availability and clear it only if the room is no longer available
-        )
-
-    # Always proceed to Step 3 (Room Availability) after confirming a date.
-    #
-    # If a previous step (e.g. Step 5) triggered a detour and the window is
-    # unchanged, Step 3's own hash + caller_step guards will immediately skip
-    # reevaluation and route control back to the caller. This keeps the
-    # detour semantics intact while avoiding stale caller_step values causing
-    # Step 2 to jump directly to unrelated steps.
-    next_step = 3
-
-    _emit_step2_snapshot(
-        state,
-        event_entry,
-        extra={
-            "confirmed_date": window.display_date,
-            "date_confirmed": True,
-        },
-    )
-    append_audit_entry(event_entry, 2, next_step, "date_confirmed")
-    update_event_metadata(event_entry, current_step=next_step)
-    try:
-        next_stage = WorkflowStep(f"step_{next_step}")
-    except ValueError:
-        next_stage = WorkflowStep.STEP_3
-    write_stage(event_entry, current_step=next_stage, subflow_group=default_subflow(next_stage))
-
-    if state.client and state.event_id:
-        link_event_to_client(state.client, state.event_id)
-
-    # D8: Use extracted function
-    record_confirmation_log(event_entry, state, window, reuse_previous)
-
-    state.set_thread_state("In Progress")
-    state.current_step = next_step
-    # Preserve caller_step so Step 3 can optionally hand control back.
-    state.caller_step = event_entry.get("caller_step")
-    state.subflow_group = default_subflow(next_stage)
-    state.extras["persist"] = True
-
-    payload = {
-        "client_id": state.client_id,
-        "event_id": state.event_id,
-        "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "event_date": window.display_date,
-        "requested_window": requested_payload,
-        "draft_messages": state.draft_messages,
-        "thread_state": state.thread_state,
-        "next_step": next_step,
-        "cache_reused": reuse_previous,
-        "context": state.context_snapshot,
-        "persisted": True,
-        "answered_question_first": True,
-    }
-    payload["actions"] = [{"type": "send_reply"}]
-    gatekeeper = refresh_gatekeeper(event_entry)
-    state.telemetry.answered_question_first = True
-    state.telemetry.gatekeeper_passed = dict(gatekeeper)
-    payload["gatekeeper_passed"] = dict(gatekeeper)
-    state.intent_detail = "event_update"
-
-    promote_fields(
-        state,
-        event_entry,
-        {
-            ("date",): window.iso_date,
-            ("event_date",): window.display_date,
-            ("start_time",): window.start_time,
-            ("end_time",): window.end_time,
-        },
-        remove_deferred=["date_confirmation"],
-    )
-    if event_entry.get("caller_step") is not None:
-        # Prevent downstream steps from re-detecting the same date change
-        # within this routing loop (e.g., Step 4 looping back to Step 2).
-        state.extras["detour_change_applied"] = "date"
-        # BUG-024 FIX: Also persist to event_entry for acknowledgment in step5
-        # The flag in state.extras is lost between routing loops
-        event_entry["_pending_date_change_ack"] = True
-        state.extras["persist"] = True
-
-    autorun_failed = False
-    autorun_result: Optional[GroupResult] = None
-    autorun_error: Optional[Dict[str, Any]] = None
-    if next_step == 3:
-        try:
-            from workflows.steps.step3_room_availability.trigger.process import process as room_process
-
-            room_result = room_process(state)
-            if isinstance(room_result.payload, dict):
-                room_result.payload.setdefault("confirmed_date", window.display_date)
-                room_result.payload.setdefault("gatekeeper_passed", dict(gatekeeper))
-            autorun_result = room_result
-        except Exception as exc:  # pragma: no cover - defensive guard
-            autorun_failed = True
-            state.extras["room_autorun_failed"] = True
-            autorun_error = {
-                "type": exc.__class__.__name__,
-                "message": str(exc),
-            }
-            trace_marker(
-                thread_id,
-                "STEP3_AUTORUN_FAILED",
-                detail=str(exc),
-                data={
-                    "type": exc.__class__.__name__,
-                    "event_id": state.event_id,
-                },
-                owner_step="Step2_Date",
-            )
-
-    participants = _extract_participants_from_state(state)
-    noted_line = (
-        f"Perfect! I've locked in **{window.display_date}** for **{participants} guests**."
-        if participants
-        else f"Perfect! **{window.display_date}** is confirmed."
-    )
-    follow_up_line = "Let me find the best rooms for you now."
-    ack_body, ack_headers = format_sections_with_headers(
-        [("Next step", [noted_line, follow_up_line])]
-    )
-    if not autorun_result:
-        state.add_draft_message(
-            {
-                "body": ack_body,
-                "body_markdown": ack_body,
-                "step": next_step,
-                "topic": "date_confirmed",
-                "headers": ack_headers,
-            }
-        )
-    if autorun_failed:
-        payload["room_autorun_failed"] = True
-        if autorun_error:
-            payload["room_autorun_error"] = autorun_error
-        return GroupResult(action="date_confirmed", payload=payload, halt=False)
-    if autorun_result:
-        if isinstance(autorun_result.payload, dict):
-            autorun_result.payload.setdefault("confirmed_date", window.display_date)
-            autorun_result.payload.setdefault("gatekeeper_passed", dict(gatekeeper))
-            autorun_result.payload.setdefault("room_autorun", True)
-        state.extras["room_autorun_action"] = autorun_result.action
-        return autorun_result
-    return GroupResult(action="date_confirmed", payload=payload, halt=True)
-
-
-# D13d: _trace_candidate_gate moved to step2_utils.py
-
-
-def _clear_step2_hil_tasks(state: WorkflowState, event_entry: dict) -> None:
-    """Remove pending Step 2 HIL artifacts once a date is confirmed."""
-
-    pending = event_entry.get("pending_hil_requests") or []
-    filtered = [entry for entry in pending if entry.get("step") != 2]
-    if len(filtered) != len(pending):
-        event_entry["pending_hil_requests"] = filtered
-        state.extras["persist"] = True
-
-    tasks = state.db.get("tasks") if state.db else None
-    if not tasks:
-        return
-    changed = False
-    for task in tasks:
-        if (
-            task.get("event_id") == event_entry.get("event_id")
-            and task.get("type") == TaskType.DATE_CONFIRMATION_MESSAGE.value
-            and task.get("status") == TaskStatus.PENDING.value
-        ):
-            task["status"] = TaskStatus.DONE.value
-            changed = True
-    if changed:
-        state.extras["persist"] = True
+# D-FLOW: _finalize_confirmation, _clear_step2_hil_tasks moved to confirmation_flow.py
 
 
 def _apply_step2_hil_decision(state: WorkflowState, event_entry: dict, decision: str) -> GroupResult:
     """Handle HIL approval or rejection for pending date confirmation."""
-
-    pending_window = _window_from_payload(event_entry.get("pending_date_confirmation") or {})
-    if not pending_window:
-        pending_window = _window_from_payload(event_entry.get("pending_future_confirmation") or {})
-
-    normalized_decision = (decision or "").strip().lower() or "approve"
-    if normalized_decision != "approve":
-        event_entry.pop("pending_date_confirmation", None)
-        event_entry.pop("pending_future_confirmation", None)
-        _clear_step2_hil_tasks(state, event_entry)
-        draft_message = {
-            "body": "Manual review declined. Please advise which alternative dates to offer next.",
-            "step": 2,
-            "topic": "date_hil_reject",
-            "requires_approval": True,
-        }
-        state.add_draft_message(draft_message)
-        update_event_metadata(event_entry, current_step=2, thread_state="Waiting on HIL")
-        state.set_thread_state("Waiting on HIL")
-        state.extras["persist"] = True
-        append_audit_entry(event_entry, 2, 2, "date_hil_rejected")
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "draft_messages": state.draft_messages,
-            "thread_state": state.thread_state,
-            "context": state.context_snapshot,
-            "persisted": True,
-        }
-        return GroupResult(action="date_hil_rejected", payload=payload, halt=True)
-
-    if not pending_window:
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "reason": "no_pending_date_decision",
-            "context": state.context_snapshot,
-        }
-        return GroupResult(action="date_hil_missing", payload=payload, halt=True)
-
-    event_entry.pop("pending_date_confirmation", None)
-    event_entry.pop("pending_future_confirmation", None)
-    return _finalize_confirmation(state, event_entry, pending_window)
+    return _apply_step2_hil_decision_impl(state, event_entry, decision, _window_from_payload)
 
 
 # D15d: Thin wrapper delegating to step2_state.maybe_general_qa_payload

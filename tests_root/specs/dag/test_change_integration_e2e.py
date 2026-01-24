@@ -278,9 +278,11 @@ class TestIntegration_InitialFlow:
         result = process_intake(state)
 
         # Should create new event without triggering change detection
-        assert result.action == "intake_complete"
+        # Note: Since the message contains room + date + participants,
+        # smart shortcut may trigger if room is available
+        assert result.action in ("intake_complete", "smart_shortcut_to_offer")
 
-        # For new events, should proceed normally (likely to Step 2 or 3)
+        # For new events, should proceed normally (likely to Step 2 or 3, or Step 4 via shortcut)
         # Change detection should NOT be triggered (previous_step <= 1)
 
 

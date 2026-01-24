@@ -154,6 +154,13 @@ def calendar_conflict_reason(
 
     Extracted from step2_handler.py as part of D14a refactoring.
 
+    BUG FIX (2026-01-24): When there's a locked_room_id (from a detour) and
+    the room is unavailable on the new date, we should NOT treat this as a
+    calendar conflict. Instead, confirm the date and let Step 3 handle room
+    re-selection. This fixes the "room unavailable on new date" detour flow
+    where the system was incorrectly offering alternative dates instead of
+    alternative rooms.
+
     Args:
         event_entry: Event data dict
         window: ConfirmationWindow with date/time info
@@ -162,6 +169,7 @@ def calendar_conflict_reason(
     Returns:
         Conflict message string if room is booked, None if available.
         Also records the conflict in event_entry if found.
+        Returns None if locked_room_id is set and unavailable (Step 3 handles).
     """
     room = preferred_room(event_entry)
     if not room:
@@ -183,6 +191,19 @@ def calendar_conflict_reason(
     is_free = calendar_free(room, {"date_iso": window.iso_date, "start": start_iso, "end": end_iso}, db=db)
     if is_free:
         return None
+
+    # BUG FIX: If there's a locked_room_id (from a detour), don't treat room
+    # unavailability as a calendar conflict. Instead, confirm the date and let
+    # Step 3 handle room selection. This ensures the expected flow:
+    # 1. Step 2: Confirm new date (even if locked room is unavailable)
+    # 2. Step 3: Show room availability overview with alternative rooms
+    locked_room = event_entry.get("locked_room_id")
+    if locked_room and locked_room.lower() == normalized:
+        # Mark that the locked room needs re-evaluation in Step 3
+        event_entry["_locked_room_unavailable_on_new_date"] = True
+        update_event_metadata(event_entry, _locked_room_unavailable_on_new_date=True)
+        return None  # Don't block date confirmation, let Step 3 handle room
+
     slot_text = f"{window.start_time}–{window.end_time}"
     conflicts = event_entry.setdefault("calendar_conflicts", [])
     conflict_record = {

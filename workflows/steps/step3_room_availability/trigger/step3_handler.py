@@ -871,6 +871,25 @@ def process(state: WorkflowState) -> GroupResult:
     explicit_room_change = bool(user_requested_room and user_requested_room != locked_room_id)
     missing_lock = not room_selected_flag
 
+    # BUG FIX (2026-01-24): If Step 2 detected that the locked room is unavailable
+    # on the new date, we MUST re-evaluate rooms even if other conditions say skip.
+    # This ensures the room availability overview is shown with alternative rooms.
+    locked_room_unavailable = event_entry.get("_locked_room_unavailable_on_new_date", False)
+    if locked_room_unavailable:
+        logger.info("[Step3] Forcing room re-evaluation: locked room unavailable on new date")
+        # Clear the flag since we're handling it now
+        event_entry.pop("_locked_room_unavailable_on_new_date", None)
+        # STORE cleared room info so verbalization tells user their room is unavailable
+        # This must be done BEFORE clearing locked_room_id
+        state.extras["_cleared_room_name"] = locked_room_id
+        state.extras["_cleared_room_reason"] = "unavailable_on_new_date"
+        # Clear the room lock so we can select a new room
+        update_event_metadata(event_entry, locked_room_id=None, room_eval_hash=None)
+        # CRITICAL: Also clear LOCAL variable to bypass FAST-SKIP section at line 925
+        locked_room_id = None
+        room_selected_flag = False
+        missing_lock = True
+
     eval_needed = missing_lock or explicit_room_change or requirements_changed
     if not eval_needed:
         return _skip_room_evaluation(state, event_entry)
