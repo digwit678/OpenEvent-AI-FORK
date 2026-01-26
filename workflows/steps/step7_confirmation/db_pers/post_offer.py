@@ -581,7 +581,21 @@ def _generate_event_date_suggestions(
     return dates
 
 
-def _ensure_status(event_data: Dict[str, Any], target: EventStatus) -> bool:
+def _ensure_status(
+    event_data: Dict[str, Any],
+    target: EventStatus,
+    event_entry: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Update booking status in both legacy (event_data['Status']) and canonical (event['status']) fields.
+
+    Args:
+        event_data: The event_data dict to update (legacy field)
+        target: The target EventStatus
+        event_entry: Optional parent event dict for canonical status sync
+
+    Returns:
+        True if status was updated, False if already at target or no change needed
+    """
     current_raw = event_data.get("Status") or EventStatus.LEAD.value
     try:
         current = EventStatus(current_raw)  # type: ignore[arg-type]
@@ -589,15 +603,22 @@ def _ensure_status(event_data: Dict[str, Any], target: EventStatus) -> bool:
         current = EventStatus.LEAD
     if current == target:
         return False
+
+    new_status: Optional[str] = None
     if current == EventStatus.LEAD and target == EventStatus.OPTION:
-        event_data["Status"] = EventStatus.OPTION.value
-        return True
-    if current == EventStatus.OPTION and target == EventStatus.CONFIRMED:
-        event_data["Status"] = EventStatus.CONFIRMED.value
-        return True
-    if current == EventStatus.LEAD and target == EventStatus.CONFIRMED:
+        new_status = EventStatus.OPTION.value
+    elif current == EventStatus.OPTION and target == EventStatus.CONFIRMED:
+        new_status = EventStatus.CONFIRMED.value
+    elif current == EventStatus.LEAD and target == EventStatus.CONFIRMED:
         # Respect progression: go through OPTION first.
-        event_data["Status"] = EventStatus.OPTION.value
+        new_status = EventStatus.OPTION.value
+
+    if new_status:
+        # Update legacy field (event_data["Status"])
+        event_data["Status"] = new_status
+        # Sync to canonical field (event["status"]) for cross-client conflict detection
+        if event_entry is not None:
+            event_entry["status"] = new_status
         return True
     return False
 
@@ -768,14 +789,14 @@ class HandlePostOfferRoute(OpenEventAction):
 
                 if result["action"] == "ask_for_reason":
                     # Block confirmation, ask for reason
-                    _ensure_status(event_data, EventStatus.OPTION)
+                    _ensure_status(event_data, EventStatus.OPTION, event_entry)
                     message = result["message"]
                     note = "confirm: conflict-blocked"
                     return {"message": message, "note": note}
 
                 elif result["action"] == "hil_task_created":
                     # HIL task created, wait for resolution
-                    _ensure_status(event_data, EventStatus.OPTION)
+                    _ensure_status(event_data, EventStatus.OPTION, event_entry)
                     message = result["message"]
                     note = "confirm: conflict-hil-pending"
                     return {"message": message, "note": note}
@@ -785,7 +806,7 @@ class HandlePostOfferRoute(OpenEventAction):
         manager_status = _manager_status(event_data)
 
         if deposit_req and not deposit_paid:
-            _ensure_status(event_data, EventStatus.OPTION)
+            _ensure_status(event_data, EventStatus.OPTION, event_entry)
             if classification.get("extracted_fields", {}).get("wants_to_pay_deposit_now"):
                 event_data.setdefault("Deposit Status", "pending payment")
             status_label = _current_status_label(event_data)
@@ -798,7 +819,7 @@ class HandlePostOfferRoute(OpenEventAction):
             return {"message": message, "note": note}
 
         if manager_status != "approved":
-            _ensure_status(event_data, EventStatus.OPTION)
+            _ensure_status(event_data, EventStatus.OPTION, event_entry)
             _set_manager_status(event_data, "pending")
             status_label = _current_status_label(event_data)
             message = (
@@ -809,7 +830,7 @@ class HandlePostOfferRoute(OpenEventAction):
             return {"message": message, "note": note}
 
         # Deposit satisfied and manager already approved → confirm event.
-        updated = _ensure_status(event_data, EventStatus.CONFIRMED)
+        updated = _ensure_status(event_data, EventStatus.CONFIRMED, event_entry)
         status_label = _current_status_label(event_data)
         date_label = event_data.get("Event Date") or "your event date"
         time_label = f"{event_data.get('Start Time') or 'start'}–{event_data.get('End Time') or 'end'}"
@@ -834,7 +855,7 @@ class HandlePostOfferRoute(OpenEventAction):
         message_id: str,
         client_id: str,
     ) -> Dict[str, Any]:
-        _ensure_status(event_data, EventStatus.OPTION)
+        _ensure_status(event_data, EventStatus.OPTION, event_entry)
         status_label = _current_status_label(event_data)
         message = (
             "I’ve placed a provisional Option hold for your event. "
@@ -855,7 +876,7 @@ class HandlePostOfferRoute(OpenEventAction):
         message_id: str,
         client_id: str,
     ) -> Dict[str, Any]:
-        _ensure_status(event_data, EventStatus.OPTION)
+        _ensure_status(event_data, EventStatus.OPTION, event_entry)
         patch = classification.get("extracted_fields", {}).get("change_request_patch") or {}
         summary = _summarize_change_patch(patch)
         summary_text = ", ".join(summary) if summary else "updates noted"

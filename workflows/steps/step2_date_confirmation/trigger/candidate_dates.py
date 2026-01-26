@@ -705,6 +705,51 @@ def preferred_weekday_label(
     return ", ".join(labels[:-1]) + f", & {labels[-1]}"
 
 
+def prioritize_by_day_hints(
+    formatted_dates: List[str],
+    week_scope: Optional[Dict[str, Any]],
+) -> List[str]:
+    """Prioritize dates by day-of-month hints from week_scope.
+
+    If week_scope has weekdays_hint (e.g., [3, 5]), prioritizes dates
+    whose day-of-month matches these hints first, preserving order.
+
+    Args:
+        formatted_dates: List of ISO date strings to prioritize
+        week_scope: Optional week scope dict with 'weekdays_hint' key
+
+    Returns:
+        Reordered list with hint-matching dates first
+    """
+    if not week_scope or not week_scope.get("weekdays_hint"):
+        return formatted_dates
+
+    hint_order = []
+    for hint in week_scope["weekdays_hint"]:
+        try:
+            hint_order.append(int(hint))
+        except (TypeError, ValueError):
+            continue
+
+    if not hint_order:
+        return formatted_dates
+
+    prioritized: List[str] = []
+    remaining = list(formatted_dates)
+
+    for day_hint in hint_order:
+        for iso_value in list(remaining):
+            try:
+                day_val = datetime.fromisoformat(iso_value).day
+            except ValueError:
+                continue
+            if day_val == day_hint and iso_value not in prioritized:
+                prioritized.append(iso_value)
+                remaining.remove(iso_value)
+
+    return prioritized + [val for val in formatted_dates if val not in prioritized]
+
+
 __all__ = [
     # Weekday alternatives (moved from step2_handler.py)
     "_collect_preferred_weekday_alternatives",
@@ -716,6 +761,7 @@ __all__ = [
     "collect_supplemental_candidates",
     # Prioritization
     "prioritize_by_weekday",
+    "prioritize_by_day_hints",
     # Payload building
     "build_table_and_actions",
     "build_draft_message",

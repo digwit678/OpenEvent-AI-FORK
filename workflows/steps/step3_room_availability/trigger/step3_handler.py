@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +11,6 @@ from workflows.common.menu_options import (
     ALLOW_CONTEXTUAL_HINTS,
     build_menu_title,
     extract_menu_request,
-    format_menu_line,
     format_menu_line_short,
     MENU_CONTENT_CHAR_THRESHOLD,
     normalize_menu_for_display,
@@ -20,22 +18,19 @@ from workflows.common.menu_options import (
 )
 from workflows.common.capture import capture_workflow_requirements
 from workflows.common.requirements import requirements_hash
-from workflows.common.sorting import rank_rooms, RankedRoom
-from workflows.common.room_rules import find_better_room_dates
+from workflows.common.sorting import rank_rooms
 from workflows.common.types import GroupResult, WorkflowState
 # MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
 from detection.intent.confidence import check_nonsense_gate
-from workflows.common.timeutils import format_iso_date_to_ddmmyyyy, parse_ddmmyyyy
+from workflows.common.timeutils import parse_ddmmyyyy
 from workflows.common.general_qna import (
     append_general_qna_to_primary,
     present_general_room_qna,
-    _fallback_structured_body,
 )
 from workflows.common.detection_utils import get_unified_detection
 from workflows.qna.router import generate_hybrid_qna_response
 from workflows.change_propagation import (
     ChangeType,
-    detect_change_type,
     detect_change_type_enhanced,
     route_change_on_updated_variable,
 )
@@ -43,16 +38,10 @@ from workflows.common.detour_acknowledgment import (
     generate_detour_acknowledgment,
     add_detour_acknowledgment_draft,
 )
-from workflows.qna.engine import build_structured_qna_result
-from workflows.qna.extraction import ensure_qna_extraction
-from workflows.io.database import append_audit_entry, load_rooms, update_event_metadata, update_event_room
-from workflows.io.tasks import enqueue_task
-from domain import TaskType
-from workflow.state import WorkflowStep
+from workflows.io.database import append_audit_entry, update_event_metadata
 from workflows.io.config_store import get_catering_teaser_products, get_currency_code
 # MIGRATED: from workflows.common.conflict -> backend.detection.special.room_conflict
 from detection.special.room_conflict import (
-    ConflictType,
     detect_conflict_type,
     compose_soft_conflict_warning,
     handle_hard_conflict,
@@ -95,6 +84,67 @@ from .selection import (
 
 # R4 refactoring: Evaluation functions extracted to dedicated module
 from .evaluation import evaluate_room_statuses, render_rooms_response, _flatten_statuses
+
+# R5 refactoring (Jan 2026): Conflict resolution extracted to dedicated module
+from .conflict_resolution import (
+    handle_conflict_response as _handle_conflict_response,
+    detect_wants_alternative as _detect_wants_alternative,
+    detect_wants_to_insist as _detect_wants_to_insist,
+    extract_insist_reason as _extract_insist_reason,
+    is_generic_question as _is_generic_question,
+    collect_alternative_dates as _collect_alternative_dates,
+    merge_alternative_dates as _merge_alternative_dates,
+    dedupe_dates as _dedupe_dates,
+    format_alternative_dates_section as _format_alternative_dates_section,
+    _message_text,
+    _to_iso,
+    _format_short_date,
+)
+
+# R6 refactoring (Jan 2026): Detour handling extracted to dedicated module
+from .detour_handling import (
+    detour_to_date as _detour_to_date,
+    detour_for_capacity as _detour_for_capacity,
+    skip_room_evaluation as _skip_room_evaluation,
+    handle_capacity_exceeded as _handle_capacity_exceeded,
+)
+
+# R7 refactoring (Jan 2026): Room ranking extracted to dedicated module
+from .room_ranking import (
+    select_room as _select_room,
+    build_ranked_rows as _build_ranked_rows,
+    derive_hint as _derive_hint,
+    has_explicit_preferences as _has_explicit_preferences,
+    room_requirements_payload as _room_requirements_payload,
+    needs_better_room_alternatives as _needs_better_room_alternatives,
+    available_dates_for_rooms as _available_dates_for_rooms,
+    dates_in_month_weekday_wrapper as _dates_in_month_weekday_wrapper,
+    closest_alternatives_wrapper as _closest_alternatives_wrapper,
+    extract_participants as _extract_participants,
+)
+
+# R7 refactoring (Jan 2026): Room presentation extracted to dedicated module
+from .room_presentation import (
+    compose_preselection_header as _compose_preselection_header,
+    verbalizer_rooms_payload as _verbalizer_rooms_payload,
+    format_requirements_line as _format_requirements_line,
+    format_room_sections as _format_room_sections,
+    format_range_descriptor as _format_range_descriptor,
+    format_dates_list as _format_dates_list,
+)
+
+# R8 refactoring (Jan 2026): Sourcing handler extracted to dedicated module
+from .sourcing_handler import (
+    handle_product_sourcing_request as _handle_product_sourcing_request,
+    advance_to_offer_from_sourcing as _advance_to_offer_from_sourcing,
+)
+
+# R8 refactoring (Jan 2026): HIL operations extracted to dedicated module
+from .hil_ops import (
+    apply_hil_decision as _apply_hil_decision,
+    preferred_room as _preferred_room,
+    increment_room_attempt as _increment_room_attempt,
+)
 
 __workflow_role__ = "trigger"
 
@@ -821,6 +871,25 @@ def process(state: WorkflowState) -> GroupResult:
     explicit_room_change = bool(user_requested_room and user_requested_room != locked_room_id)
     missing_lock = not room_selected_flag
 
+    # BUG FIX (2026-01-24): If Step 2 detected that the locked room is unavailable
+    # on the new date, we MUST re-evaluate rooms even if other conditions say skip.
+    # This ensures the room availability overview is shown with alternative rooms.
+    locked_room_unavailable = event_entry.get("_locked_room_unavailable_on_new_date", False)
+    if locked_room_unavailable:
+        logger.info("[Step3] Forcing room re-evaluation: locked room unavailable on new date")
+        # Clear the flag since we're handling it now
+        event_entry.pop("_locked_room_unavailable_on_new_date", None)
+        # STORE cleared room info so verbalization tells user their room is unavailable
+        # This must be done BEFORE clearing locked_room_id
+        state.extras["_cleared_room_name"] = locked_room_id
+        state.extras["_cleared_room_reason"] = "unavailable_on_new_date"
+        # Clear the room lock so we can select a new room
+        update_event_metadata(event_entry, locked_room_id=None, room_eval_hash=None)
+        # CRITICAL: Also clear LOCAL variable to bypass FAST-SKIP section at line 925
+        locked_room_id = None
+        room_selected_flag = False
+        missing_lock = True
+
     eval_needed = missing_lock or explicit_room_change or requirements_changed
     if not eval_needed:
         return _skip_room_evaluation(state, event_entry)
@@ -830,7 +899,9 @@ def process(state: WorkflowState) -> GroupResult:
     vague_weekday = user_info.get("vague_weekday") or event_entry.get("vague_weekday")
     range_detected = bool(user_info.get("range_query_detected") or event_entry.get("range_query_detected"))
 
-    room_statuses = evaluate_room_statuses(state.db, chosen_date)
+    room_statuses = evaluate_room_statuses(
+        state.db, chosen_date, exclude_event_id=state.event_id
+    )
     summary = summarize_room_statuses(room_statuses)
     trace_db_read(
         thread_id,
@@ -1549,777 +1620,24 @@ def process(state: WorkflowState) -> GroupResult:
 
 # R4: render_rooms_response moved to evaluation.py
 
+# R8 (Jan 2026): Sourcing handler functions moved to sourcing_handler.py:
+# - _handle_product_sourcing_request, _advance_to_offer_from_sourcing
 
-def _handle_product_sourcing_request(
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-    room_pending: Dict[str, Any],
-    arrangement_result: Any,  # ArrangementDetectionResult
-    thread_id: str,
-) -> GroupResult:
-    """Handle client request to arrange missing products.
+# R6 (Jan 2026): Detour handling functions moved to detour_handling.py
+# - _detour_to_date, _detour_for_capacity
+# - _skip_room_evaluation, _handle_capacity_exceeded
 
-    Creates a HIL task for the manager to source the product and pauses
-    the workflow until the manager responds.
-
-    Args:
-        state: Current workflow state
-        event_entry: Event database entry
-        room_pending: The room_pending_decision with selected room info
-        arrangement_result: Detection result with products to source
-        thread_id: Thread ID for tracing
-
-    Returns:
-        GroupResult halting the workflow while waiting for manager
-    """
-    # Use client's explicitly chosen room if detected, otherwise use recommended room
-    # This fixes the bug where client says "Room A please" but we lock Room B (recommended)
-    if arrangement_result.chosen_room:
-        selected_room = arrangement_result.chosen_room
-        logger.debug("[Step3] Using client's EXPLICIT room choice: %s", selected_room)
-    else:
-        selected_room = room_pending.get("selected_room")
-        logger.debug("[Step3] Using recommended room (no explicit choice): %s", selected_room)
-
-    selected_status = room_pending.get("selected_status", "Available")
-    products_to_source = arrangement_result.products_to_source
-
-    # Lock the room - client confirmed by requesting arrangement
-    if not event_entry.get("locked_room_id"):
-        update_event_metadata(
-            event_entry,
-            locked_room_id=selected_room,
-            room_eval_hash=room_pending.get("requirements_hash"),
-            selected_room=selected_room,
-            selected_room_status=selected_status,
-        )
-        event_entry.setdefault("flags", {})["room_selected"] = True
-        trace_marker(
-            thread_id,
-            "room_locked_for_sourcing",
-            detail=f"Locked {selected_room} while sourcing: {products_to_source}",
-            owner_step="Step3_Room",
-        )
-
-    # Create HIL task for manager to source the product
-    task_payload = {
-        "step_id": 3,
-        "event_id": event_entry.get("event_id"),
-        "products": products_to_source,
-        "room": selected_room,
-        "thread_id": thread_id,
-        "client_message": _message_text(state),
-        "action_type": "source_missing_product",
-    }
-    task_id = enqueue_task(
-        state.db,
-        TaskType.SOURCE_MISSING_PRODUCT,
-        state.client_id,
-        event_entry.get("event_id"),
-        task_payload,
-    )
-
-    # Store pending sourcing state
-    event_entry["sourcing_pending"] = {
-        "task_id": task_id,
-        "products": products_to_source,
-        "room": selected_room,
-        "requested_at": datetime.now().isoformat(),
-    }
-
-    # Clear room_pending_decision since we've moved past that stage
-    if "room_pending_decision" in event_entry:
-        del event_entry["room_pending_decision"]
-
-    state.extras["persist"] = True
-
-    # Format the product list for the message
-    if len(products_to_source) == 1:
-        product_text = products_to_source[0]
-    else:
-        product_text = ", ".join(products_to_source[:-1]) + f" and {products_to_source[-1]}"
-
-    # Send response to client
-    draft = {
-        "body": append_footer(
-            f"I'll check with my colleague about arranging the {product_text} for you. "
-            f"I'll get back to you shortly with availability and pricing.",
-            step=3,
-            next_step=4,
-            thread_state="Awaiting Manager",
-        ),
-        "body_markdown": (
-            f"I'll check with my colleague about arranging the **{product_text}** for you. "
-            f"I'll get back to you shortly with availability and pricing."
-        ),
-        "topic": "sourcing_request_acknowledged",
-        "requires_approval": False,
-        "step": 3,
-    }
-    state.add_draft_message(draft)
-
-    update_event_metadata(
-        event_entry,
-        thread_state="Awaiting Manager",
-        current_step=3,
-    )
-    state.set_thread_state("Awaiting Manager")
-
-    return GroupResult(
-        action="sourcing_request_created",
-        payload={
-            "task_id": task_id,
-            "products": products_to_source,
-            "room": selected_room,
-            "step": 3,
-            "draft_messages": state.draft_messages,
-        },
-        halt=True,
-    )
-
-
-def _advance_to_offer_from_sourcing(
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-    thread_id: str,
-) -> GroupResult:
-    """Advance to Step 4 (offer) after sourcing is resolved.
-
-    Called when:
-    - Manager found the product and client auto-advances
-    - Client chooses to continue without the product
-
-    Args:
-        state: Current workflow state
-        event_entry: Event database entry
-        thread_id: Thread ID for tracing
-
-    Returns:
-        GroupResult continuing to Step 4
-    """
-    trace_marker(
-        thread_id,
-        "advance_to_offer_from_sourcing",
-        detail="Advancing to Step 4 after sourcing resolution",
-        owner_step="Step3_Room",
-    )
-
-    # Update state for Step 4
-    update_event_metadata(
-        event_entry,
-        current_step=4,
-        thread_state="Processing",
-    )
-    state.current_step = 4
-    state.set_thread_state("Processing")
-    state.extras["persist"] = True
-
-    return GroupResult(
-        action="advance_to_offer",
-        payload={
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "reason": "sourcing_resolved",
-            "step": 4,
-        },
-        halt=False,  # Continue processing to Step 4
-    )
-
-
-def _detour_to_date(state: WorkflowState, event_entry: dict) -> GroupResult:
-    """[Trigger] Redirect to Step 2 when no chosen date exists.
-
-    This function is self-contained: it adds a draft message explaining that
-    we need the date confirmed before checking room availability. This ensures
-    a response is always generated, even when the original message was about
-    room selection (which Step 2 wouldn't know how to handle).
-    """
-    # Use enum for step references to avoid hardcoded values
-    target_step = WorkflowStep.STEP_2
-    current_step = WorkflowStep.STEP_3
-
-    thread_id = _thread_id(state)
-    trace_detour(
-        thread_id,
-        "Step3_Room",
-        "Step2_Date",
-        "date_confirmed_missing",
-        {"date_confirmed": event_entry.get("date_confirmed")},
-    )
-    if event_entry.get("caller_step") is None:
-        update_event_metadata(event_entry, caller_step=current_step.numeric)
-    update_event_metadata(
-        event_entry,
-        current_step=target_step.numeric,
-        date_confirmed=False,
-        thread_state="Awaiting Client Response",
-    )
-    append_audit_entry(event_entry, current_step.numeric, target_step.numeric, "room_requires_confirmed_date")
-    state.current_step = target_step.numeric
-    state.caller_step = current_step.numeric
-    state.set_thread_state("Awaiting Client Response")
-    state.extras["persist"] = True
-
-    # Add draft message explaining we need date confirmation first
-    # This ensures a response even when the original message was about rooms
-    guidance = (
-        "Thank you for your interest! Before I can check room availability, "
-        "I need to confirm your preferred event date. "
-        "Could you please let me know which date works best for you?"
-    )
-    state.add_draft_message({
-        "body_markdown": guidance,
-        "topic": "date_confirmation_required",
-    })
-
-    payload = {
-        "client_id": state.client_id,
-        "event_id": state.event_id,
-        "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "reason": "date_missing",
-        "context": state.context_snapshot,
-        "persisted": True,
-    }
-    # halt=True since we're providing a response (self-contained detour pattern)
-    return GroupResult(action="room_detour_date", payload=payload, halt=True)
-
-
-def _detour_for_capacity(state: WorkflowState, event_entry: dict) -> GroupResult:
-    """[Trigger] Ask for attendee count when missing, stay at Step 3.
-
-    Instead of detouring to Step 1 (which has no handler in the routing loop),
-    we generate a response asking for capacity and stay at Step 3. When the
-    client responds with capacity, intake will extract it and routing will
-    return to Step 3 for room evaluation.
-    """
-
-    thread_id = _thread_id(state)
-    trace_detour(
-        thread_id,
-        "Step3_Room",
-        "Step3_Room",  # Stay at Step 3
-        "capacity_missing",
-        {},
-    )
-
-    # Generate message asking for participant count
-    draft_body = append_footer(
-        "To find the best room for your event, I need to know how many people will be attending. "
-        "Could you please share the expected number of participants?",
-        step=3,
-        next_step=3,
-        thread_state="Awaiting Client",
-    )
-    draft = {
-        "body": draft_body,
-        "body_markdown": draft_body,
-        "topic": "capacity_request",
-        "requires_approval": False,
-    }
-    state.add_draft_message(draft)
-
-    # Stay at Step 3, waiting for capacity
-    update_event_metadata(
-        event_entry,
-        current_step=3,
-        thread_state="Awaiting Client",
-    )
-    append_audit_entry(event_entry, 3, 3, "room_requires_capacity")
-    state.current_step = 3
-    state.set_thread_state("Awaiting Client")
-    state.extras["persist"] = True
-
-    payload = {
-        "client_id": state.client_id,
-        "event_id": state.event_id,
-        "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "reason": "capacity_missing",
-        "context": state.context_snapshot,
-        "persisted": True,
-    }
-    # halt=True so the draft message is returned to the client
-    return GroupResult(action="room_detour_capacity", payload=payload, halt=True)
-
-
-def _skip_room_evaluation(state: WorkflowState, event_entry: dict) -> GroupResult:
-    """[Trigger] Skip Step 3 and return to the caller when caching allows."""
-
-    caller = event_entry.get("caller_step")
-    logger.debug("[Step3] _skip_room_evaluation caller_step=%s", caller)
-
-    # CRITICAL: If offer_hash is None, we MUST go through Step 4 to regenerate the offer
-    # This happens after date changes - the offer shows the date, so it must be updated
-    # Don't skip directly to caller (e.g., Step 5) without regenerating the offer first
-    needs_offer_regen = event_entry.get("offer_hash") is None and caller and caller >= 4
-
-    if caller is not None and not needs_offer_regen:
-        append_audit_entry(event_entry, 3, caller, "room_eval_cache_hit")
-        update_event_metadata(event_entry, current_step=caller, caller_step=None)
-        state.current_step = caller
-        state.caller_step = None
-        logger.debug("[Step3] _skip_room_evaluation -> returning to caller step %s", caller)
-    elif needs_offer_regen:
-        # Date changed - must regenerate offer even though room is still available
-        # Route to Step 4, but preserve caller_step so Step 4 knows to return there after
-        logger.info("[Step3] _skip_room_evaluation -> routing to Step 4 for offer regeneration (caller=%s)", caller)
-        append_audit_entry(event_entry, 3, 4, "offer_regen_required_after_date_change")
-        update_event_metadata(event_entry, current_step=4)  # Keep caller_step so we return there after
-        state.current_step = 4
-        # Don't clear caller_step - Step 4/5 will use it to return after offer is regenerated
-    else:
-        # No caller - proceeding to step 4 (offer), update current_step so product detection works
-        logger.warning("[Step3] NO CALLER - updating current_step to 4 for product detection")
-        # IMPORTANT: Update room_eval_hash to match requirements_hash stored in event
-        # Step 4's P2 gate compares event["room_eval_hash"] with event["requirements_hash"]
-        # So we just copy the stored requirements_hash to room_eval_hash
-        stored_req_hash = event_entry.get("requirements_hash")
-        logger.debug("[Step3] Setting room_eval_hash to stored requirements_hash=%s, locked_room_id=%s",
-                     stored_req_hash, event_entry.get('locked_room_id'))
-        update_event_metadata(event_entry, current_step=4, room_eval_hash=stored_req_hash)
-        # Also update the event_entry directly to ensure it's set
-        event_entry["room_eval_hash"] = stored_req_hash
-        state.current_step = 4
-        logger.debug("[Step3] _skip_room_evaluation -> advancing to step 4")
-    state.extras["persist"] = True
-    payload = {
-        "client_id": state.client_id,
-        "event_id": state.event_id,
-        "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "cached": True,
-        "thread_state": event_entry.get("thread_state"),
-        "context": state.context_snapshot,
-        "persisted": True,
-    }
-    return GroupResult(action="room_eval_skipped", payload=payload, halt=False)
-
-
-def _handle_capacity_exceeded(
-    state: WorkflowState,
-    event_entry: dict,
-    participants: int,
-    max_capacity: int,
-    chosen_date: Optional[str],
-) -> GroupResult:
-    """
-    Handle the case where requested capacity exceeds all available rooms.
-
-    Per workflow spec S3_Unavailable:
-    - Verbalize unavailability
-    - Propose capacity change (reduce to fit largest room)
-    - Offer alternatives (split event, external venue)
-    """
-    from workflows.common.prompts import verbalize_draft_body
-
-    display_date = _format_display_date(chosen_date) if chosen_date else "your requested date"
-
-    # Build core facts for verbalizer
-    body_lines = [
-        f"[CAPACITY_LIMIT] Client requested {participants} guests.",
-        f"Maximum venue capacity is {max_capacity} guests (Room E).",
-        f"Event date: {display_date}.",
-        "",
-        "OPTIONS:",
-        f"1. Reduce to {max_capacity} or fewer guests",
-        "2. Try a different date (some rooms may have higher capacity on other days)",
-        "3. Split into two sessions/time slots",
-        "4. External venue partnership for larger groups",
-        "",
-        "ASK: Which option works best, or provide updated guest count.",
-    ]
-    raw_body = "\n".join(body_lines)
-
-    # Verbalize to professional, warm message
-    body_markdown = verbalize_draft_body(
-        raw_body,
-        step=3,
-        topic="capacity_exceeded",
-        event_date=display_date,
-        participants_count=participants,
-        rooms=[],  # No rooms available
-        room_name=None,
-        room_status=ROOM_OUTCOME_CAPACITY_EXCEEDED,
-    )
-
-    # Log and audit
-    append_audit_entry(event_entry, 3, 3, "capacity_exceeded", {
-        "requested": participants,
-        "max_available": max_capacity,
-    })
-    logger.debug("[Step3][CAPACITY_EXCEEDED] Generated response for %d guests (max: %d)",
-                participants, max_capacity)
-
-    # Update state - stay at Step 3 awaiting client response
-    state.extras["persist"] = True
-    state.extras["capacity_exceeded"] = True
-
-    # Build actions for frontend
-    actions_payload = [
-        {
-            "type": "reduce_capacity",
-            "label": f"Proceed with {max_capacity} guests",
-            "capacity": max_capacity,
-        },
-        {
-            "type": "change_date",
-            "label": "Try a different date",
-            "detour_to_step": 2,
-        },
-        {
-            "type": "contact_manager",
-            "label": "Discuss alternatives with manager",
-        },
-    ]
-
-    draft_message = {
-        "body": body_markdown,
-        "body_markdown": body_markdown,
-        "step": 3,
-        "next_step": "Capacity confirmation",
-        "thread_state": "Awaiting Client",
-        "topic": "capacity_exceeded",
-        "room": None,
-        "status": ROOM_OUTCOME_CAPACITY_EXCEEDED,
-        "table_blocks": [],
-        "actions": actions_payload,
-        "headers": ["Capacity exceeded"],
-        "requires_approval": False,
-        "created_at_step": 3,
-    }
-
-    # Add draft to state (standard pattern for all step handlers)
-    state.add_draft_message(draft_message)
-
-    payload = {
-        "client_id": state.client_id,
-        "event_id": state.event_id,
-        "draft_messages": state.draft_messages,
-        "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "persisted": True,
-        "thread_state": "Awaiting Client",
-        "context": state.context_snapshot,
-        "capacity_exceeded": True,
-        "requested_capacity": participants,
-        "max_capacity": max_capacity,
-    }
-    return GroupResult(action="capacity_exceeded", payload=payload, halt=True)
-
-
-def _preferred_room(event_entry: dict, user_requested_room: Optional[str]) -> Optional[str]:
-    """[Trigger] Determine the preferred room priority."""
-
-    if user_requested_room:
-        return user_requested_room
-    requirements = event_entry.get("requirements") or {}
-    preferred_room = requirements.get("preferred_room")
-    if preferred_room:
-        return preferred_room
-    return event_entry.get("locked_room_id")
-
+# R8 (Jan 2026): HIL operations moved to hil_ops.py:
+# - _apply_hil_decision, _preferred_room, _increment_room_attempt
 
 # R4: _flatten_statuses moved to evaluation.py
 
+# R7 (Jan 2026): Room ranking functions moved to room_ranking.py:
+# - _needs_better_room_alternatives, _has_explicit_preferences
+# - _extract_participants, _room_requirements_payload, _derive_hint
 
-def _increment_room_attempt(event_entry: dict) -> int:
-    try:
-        current = int(event_entry.get("room_proposal_attempts") or 0)
-    except (TypeError, ValueError):
-        current = 0
-    updated = current + 1
-    event_entry["room_proposal_attempts"] = updated
-    update_event_metadata(event_entry, room_proposal_attempts=updated)
-    return updated
-
-
-def _apply_hil_decision(state: WorkflowState, event_entry: Dict[str, Any], decision: str) -> GroupResult:
-    """Handle HIL approval or rejection for the latest room evaluation."""
-
-    thread_id = _thread_id(state)
-    pending = event_entry.get("room_pending_decision")
-    if not pending:
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "reason": "no_pending_room_decision",
-            "context": state.context_snapshot,
-        }
-        return GroupResult(action="room_hil_missing", payload=payload, halt=True)
-
-    if decision != "approve":
-        # Reset pending decision and keep awaiting further actions.
-        event_entry.pop("room_pending_decision", None)
-        draft = {
-            "body": "Approval rejected — please provide updated guidance on the room.",
-            "step": 3,
-            "topic": "room_hil_reject",
-            "requires_approval": True,
-        }
-        state.add_draft_message(draft)
-        update_event_metadata(event_entry, current_step=3, thread_state="Waiting on HIL")
-        state.set_thread_state("Waiting on HIL")
-        state.extras["persist"] = True
-        payload = {
-            "client_id": state.client_id,
-            "event_id": event_entry.get("event_id"),
-            "intent": state.intent.value if state.intent else None,
-            "confidence": round(state.confidence or 0.0, 3),
-            "draft_messages": state.draft_messages,
-            "thread_state": state.thread_state,
-            "context": state.context_snapshot,
-            "persisted": True,
-        }
-        return GroupResult(action="room_hil_rejected", payload=payload, halt=True)
-
-    selected_room = pending.get("selected_room")
-    requirements_hash = event_entry.get("requirements_hash") or pending.get("requirements_hash")
-
-    manager_requested = bool((event_entry.get("flags") or {}).get("manager_requested"))
-    next_thread_state = "Waiting on HIL" if manager_requested else "Awaiting Client"
-
-    update_event_metadata(
-        event_entry,
-        locked_room_id=selected_room,
-        room_eval_hash=requirements_hash,
-        current_step=4,
-        thread_state=next_thread_state,
-        status="Option",  # Room selected → calendar blocked as Option
-    )
-    _reset_room_attempts(event_entry)
-    trace_gate(
-        thread_id,
-        "Step3_Room",
-        "room_selected",
-        True,
-        {"locked_room_id": selected_room, "status": "Option"},
-    )
-    trace_gate(
-        thread_id,
-        "Step3_Room",
-        "requirements_match",
-        bool(requirements_hash),
-        {"requirements_hash": requirements_hash, "room_eval_hash": requirements_hash},
-    )
-    trace_db_write(
-        thread_id,
-        "Step3_Room",
-        "db.events.lock_room",
-        {"locked_room_id": selected_room, "room_eval_hash": requirements_hash, "status": "Option"},
-    )
-    append_audit_entry(event_entry, 3, 4, "room_hil_approved")
-    event_entry.pop("room_pending_decision", None)
-
-    state.current_step = 4
-    state.caller_step = None
-    state.set_thread_state(next_thread_state)
-    state.extras["persist"] = True
-
-    payload = {
-        "client_id": state.client_id,
-        "event_id": event_entry.get("event_id"),
-        "intent": state.intent.value if state.intent else None,
-        "confidence": round(state.confidence or 0.0, 3),
-        "selected_room": selected_room,
-        "draft_messages": state.draft_messages,
-        "thread_state": state.thread_state,
-        "context": state.context_snapshot,
-        "persisted": True,
-    }
-    return GroupResult(action="room_hil_approved", payload=payload, halt=False)
-
-
-def _needs_better_room_alternatives(
-    user_info: Dict[str, Any],
-    status_map: Dict[str, str],
-    event_entry: Dict[str, Any],
-) -> bool:
-    if (user_info or {}).get("room_feedback") != "not_good_enough":
-        return False
-
-    requirements = event_entry.get("requirements") or {}
-    baseline_room = event_entry.get("locked_room_id") or requirements.get("preferred_room")
-    baseline_rank = ROOM_SIZE_ORDER.get(str(baseline_room), 0)
-    if baseline_rank == 0:
-        return True
-
-    larger_available = False
-    for room_name, status in status_map.items():
-        if ROOM_SIZE_ORDER.get(room_name, 0) > baseline_rank and status == ROOM_OUTCOME_AVAILABLE:
-            larger_available = True
-            break
-
-    if not larger_available:
-        return True
-
-    participants = (requirements.get("number_of_participants") or 0)
-    participants_val: Optional[int]
-    try:
-        participants_val = int(participants)
-    except (TypeError, ValueError):
-        participants_val = None
-
-    capacity_map = {
-        1: 36,
-        2: 54,
-        3: 96,
-        4: 140,
-    }
-    if participants_val is not None:
-        baseline_capacity = capacity_map.get(baseline_rank)
-        if baseline_capacity and participants_val > baseline_capacity:
-            return True
-
-    return False
-
-
-def _has_explicit_preferences(preferences: Optional[Dict[str, Any]]) -> bool:
-    if not isinstance(preferences, dict):
-        return False
-    wish_products = preferences.get("wish_products")
-    if isinstance(wish_products, (list, tuple)):
-        for item in wish_products:
-            if isinstance(item, str) and item.strip():
-                return True
-    keywords = preferences.get("keywords")
-    if isinstance(keywords, (list, tuple)):
-        for item in keywords:
-            if isinstance(item, str) and item.strip():
-                return True
-    return False
-
-
-def _compose_preselection_header(
-    status: str,
-    room_name: Optional[str],
-    chosen_date: str,
-    participants: Optional[int],
-    skip_capacity_prompt: bool,
-) -> str:
-    """Compose the lead sentence for the Step-3 draft before room selection."""
-
-    date_label = _format_display_date(chosen_date)
-    if status == ROOM_OUTCOME_AVAILABLE and room_name:
-        if participants and not skip_capacity_prompt:
-            return f"Good news — {room_name} is available on {date_label} and fits {participants} guests."
-        return f"Good news — {room_name} is available on {date_label}."
-    if status == ROOM_OUTCOME_OPTION and room_name:
-        if participants and not skip_capacity_prompt:
-            return f"Heads up — {room_name} is currently on option for {date_label}. It fits {participants} guests."
-        return f"Heads up — {room_name} is currently on option for {date_label}."
-    if participants and not skip_capacity_prompt:
-        return f"I checked availability for {date_label} and captured the latest room status for {participants} guests."
-    return f"I checked availability for {date_label} and captured the latest room status."
-
-
-def _extract_participants(requirements: Dict[str, Any]) -> Optional[int]:
-    raw = requirements.get("number_of_participants")
-    if raw in (None, "", "Not specified", "none"):
-        raw = requirements.get("participants")
-    if raw in (None, "", "Not specified", "none"):
-        return None
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return None
-
-
-def _room_requirements_payload(entry: RankedRoom) -> Dict[str, List[str]]:
-    return {
-        "matched": list(entry.matched),
-        "closest": list(entry.closest),  # Moderate matches with context
-        "missing": list(entry.missing),
-    }
-
-
-def _derive_hint(entry: Optional[RankedRoom], preferences: Optional[Dict[str, Any]], explicit: bool) -> str:
-    if not entry:
-        return "No room selected"
-    matched = [item for item in entry.matched if item]
-    if matched:
-        return ", ".join(matched[:3])
-    # Show closest matches (partial/similar products) if no exact matches
-    closest = [item for item in entry.closest if item]
-    if closest:
-        # Extract just the product name from "Classic Apéro (closest to dinner)" format
-        clean_closest = [item.split(" (closest")[0] for item in closest]
-        return ", ".join(clean_closest[:3])
-    if explicit:
-        missing = [item for item in entry.missing if item]
-        if missing:
-            return f"Missing: {', '.join(missing[:3])}"
-        base_hint = (entry.hint or "").strip()
-        if base_hint and base_hint.lower() != "products available":
-            return base_hint[0].upper() + base_hint[1:]
-        return "No preference match"
-    base_hint = (entry.hint or "").strip()
-    if base_hint and base_hint.lower() != "products available":
-        return base_hint[0].upper() + base_hint[1:]
-    return "Available"
-
-
-def _verbalizer_rooms_payload(
-    ranked: List[RankedRoom],
-    profiles: Dict[str, Dict[str, Any]],
-    available_dates_map: Dict[str, List[str]],
-    *,
-    needs_products: Sequence[str],
-    limit: int = 3,
-) -> List[Dict[str, Any]]:
-    rooms_catalog = load_rooms_config() or []
-    capacity_map = {}
-    for item in rooms_catalog:
-        name = str(item.get("name") or "").strip()
-        if not name:
-            continue
-        capacity = (
-            item.get("capacity_max")
-            or item.get("capacity")
-            or item.get("max_capacity")
-            or item.get("capacity_maximum")
-        )
-        try:
-            capacity_map[name] = int(capacity)
-        except (TypeError, ValueError):
-            capacity_map[name] = capacity
-    payload: List[Dict[str, Any]] = []
-    for entry in ranked[:limit]:
-        profile = profiles.get(entry.room, {})
-        badges_map = profile.get("requirements_badges") or {}
-        coffee_badge = profile.get("coffee_badge", "—")
-        capacity_badge = profile.get("capacity_badge", "—")
-        normalized_products = {str(token).strip().lower() for token in needs_products}
-        if "coffee" not in normalized_products and "tea" not in normalized_products and "drinks" not in normalized_products:
-            coffee_badge = None
-        alt_dates = [
-            format_iso_date_to_ddmmyyyy(value) or value
-            for value in available_dates_map.get(entry.room, [])
-        ]
-        hint_label = _derive_hint(entry, None, bool(entry.matched or entry.missing))
-        payload.append(
-            {
-                "id": entry.room,
-                "name": entry.room,
-                "capacity": capacity_map.get(entry.room),
-                "badges": {
-                    "coffee": coffee_badge,
-                    "capacity": capacity_badge,
-                    "u-shape": badges_map.get("u-shape") if "u-shape" in normalized_products else badges_map.get("u-shape"),
-                    "projector": badges_map.get("projector") if "projector" in normalized_products else badges_map.get("projector"),
-                },
-                "requirements": {
-                    "matched": list(entry.matched),
-                    "closest": list(entry.closest),  # Partial matches with context
-                    "missing": list(entry.missing),
-                },
-                "hint": hint_label,
-                "alternatives": alt_dates,
-            }
-        )
-    return payload
+# R7 (Jan 2026): Room presentation functions moved to room_presentation.py:
+# - _compose_preselection_header, _verbalizer_rooms_payload
 
 
 def _general_qna_lines(state: WorkflowState) -> List[str]:
@@ -2436,219 +1754,13 @@ def _general_qna_lines(state: WorkflowState) -> List[str]:
     return lines
 
 
-def _build_ranked_rows(
-    chosen_date: str,
-    ranked: List[RankedRoom],
-    preferences: Optional[Dict[str, Any]],
-    available_dates_map: Dict[str, List[str]],
-    room_profiles: Dict[str, Dict[str, Any]],
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    rows: List[Dict[str, Any]] = []
-    actions: List[Dict[str, Any]] = []
-    explicit_prefs = _has_explicit_preferences(preferences)
+# R7 (Jan 2026): Room ranking functions moved to room_ranking.py:
+# - _build_ranked_rows, _select_room
+# - _dates_in_month_weekday_wrapper, _closest_alternatives_wrapper, _available_dates_for_rooms
 
-    for entry in ranked:
-        hint_label = _derive_hint(entry, preferences, explicit_prefs)
-        available_dates = available_dates_map.get(entry.room, [])
-        requirements_info = _room_requirements_payload(entry) if explicit_prefs else {"matched": [], "missing": []}
-        profile = room_profiles.get(entry.room, {})
-        badges = profile.get("requirements_badges") or {}
-        row = {
-            "date": chosen_date,
-            "room": entry.room,
-            "status": entry.status,
-            "hint": hint_label,
-            "requirements_score": round(profile.get("requirements_score", entry.score), 2),
-            "available_dates": available_dates,
-            "requirements": requirements_info,
-            "coffee_match": profile.get("coffee_badge"),
-            "u_shape_match": badges.get("u-shape"),
-            "projector_match": badges.get("projector"),
-        }
-        rows.append(row)
-        if entry.status in {ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION}:
-            actions.append(
-                {
-                    "type": "select_room",
-                    "label": f"Proceed with {entry.room} ({hint_label})",
-                    "room": entry.room,
-                    "date": chosen_date,
-                    "status": entry.status,
-                    "hint": hint_label,
-                    "available_dates": available_dates,
-                    "requirements": dict(requirements_info),
-                }
-            )
-
-    return rows, actions
-
-
-def _dates_in_month_weekday_wrapper(
-    month_hint: Optional[Any],
-    weekday_hint: Optional[Any],
-    *,
-    limit: int,
-) -> List[str]:
-    from workflows.io import dates as dates_module
-
-    return dates_module.dates_in_month_weekday(month_hint, weekday_hint, limit=limit)
-
-
-def _closest_alternatives_wrapper(
-    anchor_iso: str,
-    weekday_hint: Optional[Any],
-    month_hint: Optional[Any],
-    *,
-    limit: int,
-) -> List[str]:
-    from workflows.io import dates as dates_module
-
-    return dates_module.closest_alternatives(anchor_iso, weekday_hint, month_hint, limit=limit)
-
-
-def _available_dates_for_rooms(
-    db: Dict[str, Any],
-    ranked: List[RankedRoom],
-    candidate_iso_dates: List[str],
-    participants: Optional[int],
-) -> Dict[str, List[str]]:
-    availability: Dict[str, List[str]] = {}
-    for entry in ranked:
-        dates: List[str] = []
-        for iso_date in candidate_iso_dates:
-            display_date = format_iso_date_to_ddmmyyyy(iso_date)
-            if not display_date:
-                continue
-            status = room_status_on_date(db, display_date, entry.room)
-            if status.lower() in {"available", "option"}:
-                dates.append(iso_date)
-        availability[entry.room] = dates
-    return availability
-
-
-def _format_requirements_line(requirements: Optional[Dict[str, Any]]) -> Optional[str]:
-    if not isinstance(requirements, dict):
-        return None
-    matched = [str(item).strip() for item in requirements.get("matched", []) if str(item).strip()]
-    missing = [str(item).strip() for item in requirements.get("missing", []) if str(item).strip()]
-    tokens: List[str] = []
-    tokens.extend(f"✔ {label}" for label in matched)
-    tokens.extend(f"○ {label}" for label in missing)
-    if not tokens:
-        return None
-    max_tokens = 4
-    display = "; ".join(tokens[:max_tokens])
-    overflow = len(tokens) - max_tokens
-    if overflow > 0:
-        display += f" (+{overflow} more)"
-    return f"- Requirements: {display}"
-
-
-def _format_room_sections(
-    actions: List[Dict[str, Any]],
-    mode: str,
-    vague_month: Optional[Any],
-    vague_weekday: Optional[Any],
-) -> List[str]:
-    lines: List[str] = []
-    if not actions:
-        return lines
-
-    descriptor = _format_range_descriptor(vague_month, vague_weekday)
-    max_display = 5 if mode == "range" else 3
-
-    for action in actions:
-        room = action.get("room")
-        status = action.get("status") or "Available"
-        hint = action.get("hint")
-        iso_dates = action.get("available_dates") or []
-        if not room:
-            continue
-        lines.append(f"### {room} — {status}")
-        if hint:
-            lines.append(f"- _{hint}_")
-        requirements_line = _format_requirements_line(action.get("requirements"))
-        if requirements_line:
-            lines.append(requirements_line)
-        if iso_dates:
-            display_text, remainder = _format_dates_list(iso_dates, max_display)
-            if mode == "range":
-                prefix = "Available dates"
-                if descriptor:
-                    prefix += f" {descriptor}"
-            else:
-                prefix = "Alternative dates (closest)"
-            line = f"- **{prefix}:** {display_text}"
-            if remainder:
-                line += f" (+{remainder} more)"
-            lines.append(line)
-        lines.append("")
-
-    return lines
-
-
-def _format_range_descriptor(month_hint: Optional[Any], weekday_hint: Optional[Any]) -> str:
-    parts: List[str] = []
-    if month_hint:
-        parts.append(str(month_hint).strip().capitalize())
-    if weekday_hint:
-        parts.append(str(weekday_hint).strip().capitalize())
-    if not parts:
-        return ""
-    if len(parts) == 2:
-        return f"in {parts[0]} ({parts[1]})"
-    return f"in {parts[0]}"
-
-
-def _format_dates_list(dates: List[str], max_count: int) -> Tuple[str, int]:
-    shown = dates[:max_count]
-    display = ", ".join(_format_short_date(iso) for iso in shown)
-    remainder = max(0, len(dates) - max_count)
-    return display, remainder
-
-
-def _format_short_date(iso_date: str) -> str:
-    """Format ISO date to DD.MM.YYYY for display."""
-    try:
-        parsed = datetime.strptime(iso_date, "%Y-%m-%d")
-        return parsed.strftime("%d.%m.%Y")
-    except ValueError:
-        return iso_date
-
-
-def _to_iso(display_date: Optional[str]) -> Optional[str]:
-    if not display_date:
-        return None
-    parsed = parse_ddmmyyyy(display_date)
-    if not parsed:
-        return None
-    return parsed.strftime("%Y-%m-%d")
-
-
-def _select_room(ranked: List[RankedRoom]) -> Optional[RankedRoom]:
-    """Return the top-ranked room that's available or on option AND fits capacity.
-
-    The ranking already incorporates status weight (Available=60, Option=35)
-    plus preferred_room bonus (30 points). We prioritize rooms that fit the
-    requested capacity (capacity_ok=True) over rooms that don't fit.
-
-    Selection priority:
-    1. First Available/Option room that FITS capacity
-    2. First Available/Option room (even if over-capacity) - fallback
-    3. First room in the list - last resort
-    """
-    # First pass: find a room that fits AND is available
-    for entry in ranked:
-        if entry.status in (ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION) and entry.capacity_ok:
-            return entry
-
-    # Second pass: any available room (even if doesn't fit - user may adjust)
-    for entry in ranked:
-        if entry.status in (ROOM_OUTCOME_AVAILABLE, ROOM_OUTCOME_OPTION):
-            return entry
-
-    return ranked[0] if ranked else None
-
+# R7 (Jan 2026): Room presentation functions moved to room_presentation.py:
+# - _format_requirements_line, _format_room_sections
+# - _format_range_descriptor, _format_dates_list
 
 # R3: Functions moved to selection.py:
 # - handle_select_room_action
@@ -2656,440 +1768,14 @@ def _select_room(ranked: List[RankedRoom]) -> Optional[RankedRoom]:
 # - _reset_room_attempts
 # - _format_display_date
 
+# R5 (Jan 2026): CONFLICT RESPONSE HANDLING moved to conflict_resolution.py
+# - _handle_conflict_response, _detect_wants_alternative, _detect_wants_to_insist
+# - _extract_insist_reason, _is_generic_question
+# - _handle_conflict_choose_alternative, _handle_conflict_insist_with_reason
+# - _handle_conflict_ask_for_reason, _collect_alternative_dates
+# - _merge_alternative_dates, _dedupe_dates, _format_alternative_dates_section
+# - _strip_system_subject, _message_text, _format_short_date, _to_iso
 
-# -------------------------------------------------------------------------
-# CONFLICT RESPONSE HANDLING
-# Handles client response to soft conflict warning (Option + Option scenario)
-# -------------------------------------------------------------------------
-
-
-def _handle_conflict_response(
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-    conflict_pending: Dict[str, Any],
-    thread_id: str,
-) -> Optional[GroupResult]:
-    """Handle client response to soft conflict warning.
-
-    Args:
-        state: Workflow state
-        event_entry: Event entry dict
-        conflict_pending: The conflict_pending_decision dict from event
-        thread_id: Thread identifier for tracing
-
-    Returns:
-        GroupResult if handled, None if client hasn't made clear choice
-    """
-    message_text = _message_text(state) or ""
-    message_lower = message_text.lower()
-
-    room_id = conflict_pending.get("room_id")
-    event_date = conflict_pending.get("event_date")
-    conflict_info = conflict_pending.get("conflict_info") or {}
-
-    # Detect client's choice from message
-    wants_alternative = _detect_wants_alternative(message_lower, state)
-    wants_to_insist = _detect_wants_to_insist(message_lower, state)
-    has_reason = _extract_insist_reason(message_text, state)
-
-    if thread_id:
-        trace_marker(
-            thread_id,
-            "CONFLICT_RESPONSE",
-            detail=f"alternative={wants_alternative}, insist={wants_to_insist}, has_reason={bool(has_reason)}",
-            data={
-                "room_id": room_id,
-                "event_date": event_date,
-                "message_preview": message_text[:100] if message_text else "",
-            },
-            owner_step="Step3_Room",
-        )
-
-    # Case 1: Client wants alternatives - clear conflict and re-show rooms
-    if wants_alternative:
-        return _handle_conflict_choose_alternative(state, event_entry, conflict_pending, thread_id)
-
-    # Case 2: Client insists WITH reason - escalate to HIL
-    if wants_to_insist and has_reason:
-        return _handle_conflict_insist_with_reason(
-            state, event_entry, conflict_pending, has_reason, thread_id
-        )
-
-    # Case 3: Client insists WITHOUT reason - ask for reason
-    if wants_to_insist and not has_reason:
-        return _handle_conflict_ask_for_reason(state, event_entry, conflict_pending, thread_id)
-
-    # Case 4: Unclear response but has substantive text - treat as reason to insist
-    if message_text and len(message_text) > 20 and not _is_generic_question(message_lower):
-        # Client wrote something substantive - might be their reason
-        return _handle_conflict_insist_with_reason(
-            state, event_entry, conflict_pending, message_text, thread_id
-        )
-
-    # No clear choice - fall through to normal flow
-    return None
-
-
-def _detect_wants_alternative(message_lower: str, state: WorkflowState) -> bool:
-    """Detect if client wants to see alternative rooms."""
-    # Check button click action from state
-    user_info = state.user_info or {}
-    if user_info.get("clicked_action") == "conflict_choose_alternative":
-        return True
-
-    # Check message keywords
-    alternative_keywords = [
-        "other option", "other room", "alternative", "different room",
-        "show me other", "what else", "another room", "see other",
-        "different date", "another date",
-    ]
-    return any(kw in message_lower for kw in alternative_keywords)
-
-
-def _detect_wants_to_insist(message_lower: str, state: WorkflowState) -> bool:
-    """Detect if client wants to insist on this room."""
-    # Check button click action from state
-    user_info = state.user_info or {}
-    if user_info.get("clicked_action") == "conflict_insist":
-        return True
-
-    # Check message keywords
-    insist_keywords = [
-        "i need this", "i really need", "must have", "insist",
-        "this room please", "please this room", "important",
-        "birthday", "anniversary", "special", "only this",
-        "can't change", "no other", "has to be",
-    ]
-    return any(kw in message_lower for kw in insist_keywords)
-
-
-def _extract_insist_reason(message_text: str, state: WorkflowState) -> Optional[str]:
-    """Extract the reason why client insists on this room."""
-    if not message_text or len(message_text) < 10:
-        return None
-
-    # If message is substantive enough, use it as the reason
-    # Skip generic responses
-    generic_patterns = ["yes", "ok", "okay", "sure", "proceed", "continue"]
-    text_lower = message_text.lower().strip()
-    if text_lower in generic_patterns:
-        return None
-
-    return message_text
-
-
-def _is_generic_question(message_lower: str) -> bool:
-    """Check if message is a generic question rather than a reason."""
-    question_starters = ["what", "when", "where", "how", "why", "can you", "do you"]
-    return any(message_lower.strip().startswith(q) for q in question_starters)
-
-
-def _handle_conflict_choose_alternative(
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-    conflict_pending: Dict[str, Any],
-    thread_id: str,
-) -> GroupResult:
-    """Handle client choosing to see alternative rooms."""
-    event_id = event_entry.get("event_id")
-    conflicted_room = conflict_pending.get("room_id")
-    event_date = conflict_pending.get("event_date")
-
-    # Clear conflict pending state
-    event_entry.pop("conflict_pending_decision", None)
-    event_entry.pop("has_conflict", None)
-    event_entry.pop("conflict_with", None)
-    event_entry.pop("conflict_type", None)
-
-    # Get available rooms excluding the conflicted one
-    available_rooms = get_available_rooms_on_date(
-        state.db, event_id, event_date, exclude_statuses=["confirmed"]
-    )
-    # Filter out the conflicted room from alternatives
-    alternative_rooms = [r for r in available_rooms if r.lower() != (conflicted_room or "").lower()]
-
-    state.extras["persist"] = True
-    append_audit_entry(event_entry, 3, 3, "conflict_chose_alternative")
-
-    if thread_id:
-        trace_marker(
-            thread_id,
-            "CONFLICT_ALTERNATIVE",
-            detail=f"alternatives={len(alternative_rooms)}",
-            data={"conflicted_room": conflicted_room, "alternatives": alternative_rooms},
-            owner_step="Step3_Room",
-        )
-
-    if alternative_rooms:
-        # Show alternatives
-        alt_list = ", ".join(alternative_rooms[:5])
-        body = (
-            f"No problem! Let me show you some alternatives.\n\n"
-            f"The following rooms are available on {_format_display_date(event_date)}:\n"
-            f"{alt_list}\n\n"
-            f"Would you like me to recommend one based on your requirements, or do you have a preference?"
-        )
-    else:
-        # No alternatives on this date - suggest different date
-        body = (
-            f"I'm sorry, but all rooms are already reserved for {_format_display_date(event_date)}.\n\n"
-            f"Would you like to check a different date? Let me know and I'll find available options."
-        )
-
-    body_with_footer = append_footer(
-        body,
-        step=3,
-        next_step="Room selection",
-        thread_state="Awaiting Client",
-    )
-
-    state.clear_regular_drafts()
-    state.add_draft_message({
-        "body": body_with_footer,
-        "body_markdown": body,
-        "step": 3,
-        "thread_state": "Awaiting Client",
-        "topic": "conflict_alternatives",
-        "requires_approval": False,
-    })
-
-    return GroupResult(
-        action="conflict_chose_alternative",
-        payload={
-            "client_id": state.client_id,
-            "event_id": event_id,
-            "conflicted_room": conflicted_room,
-            "alternatives": alternative_rooms,
-            "draft_messages": state.draft_messages,
-        },
-        halt=False,
-    )
-
-
-def _handle_conflict_insist_with_reason(
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-    conflict_pending: Dict[str, Any],
-    reason: str,
-    thread_id: str,
-) -> GroupResult:
-    """Handle client insisting on the room with a reason - escalate to HIL."""
-    event_id = event_entry.get("event_id")
-    conflict_info = conflict_pending.get("conflict_info") or {}
-
-    # Use existing handle_hard_conflict which creates the HIL task
-    result = handle_hard_conflict(
-        db=state.db,
-        event_id=event_id,
-        conflict_info=conflict_info,
-        client_reason=reason,
-    )
-
-    # Clear conflict_pending_decision but keep conflict flags (now managed by handle_hard_conflict)
-    event_entry.pop("conflict_pending_decision", None)
-    state.extras["persist"] = True
-    append_audit_entry(event_entry, 3, 3, "conflict_escalated_to_hil")
-
-    if thread_id:
-        trace_marker(
-            thread_id,
-            "CONFLICT_HIL_CREATED",
-            detail=f"task_id={result.get('task_id')}",
-            data={"reason_preview": reason[:100]},
-            owner_step="Step3_Room",
-        )
-
-    # Return the message from handle_hard_conflict
-    body = result.get("message", "I'm reviewing your request and will get back to you shortly.")
-    body_with_footer = append_footer(
-        body,
-        step=3,
-        next_step="Awaiting decision",
-        thread_state="Waiting on HIL",
-    )
-
-    state.clear_regular_drafts()
-    state.add_draft_message({
-        "body": body_with_footer,
-        "body_markdown": body,
-        "step": 3,
-        "thread_state": "Waiting on HIL",
-        "topic": "conflict_hil_pending",
-        "requires_approval": False,
-    })
-
-    update_event_metadata(event_entry, thread_state="Waiting on HIL")
-    state.set_thread_state("Waiting on HIL")
-
-    return GroupResult(
-        action="conflict_escalated_to_hil",
-        payload={
-            "client_id": state.client_id,
-            "event_id": event_id,
-            "task_id": result.get("task_id"),
-            "draft_messages": state.draft_messages,
-        },
-        halt=False,
-    )
-
-
-def _handle_conflict_ask_for_reason(
-    state: WorkflowState,
-    event_entry: Dict[str, Any],
-    conflict_pending: Dict[str, Any],
-    thread_id: str,
-) -> GroupResult:
-    """Ask client to provide reason for insisting on this room."""
-    event_id = event_entry.get("event_id")
-    room_id = conflict_pending.get("room_id")
-    event_date = conflict_pending.get("event_date")
-
-    if thread_id:
-        trace_marker(
-            thread_id,
-            "CONFLICT_ASK_REASON",
-            detail="asking_for_reason",
-            owner_step="Step3_Room",
-        )
-
-    body = (
-        f"I understand you'd like to keep {room_id} for {_format_display_date(event_date)}.\n\n"
-        f"Could you share why this specific room is important for your event? "
-        f"For example, is it a special occasion like a birthday or anniversary?\n\n"
-        f"This will help our manager make a fair decision when reviewing both bookings."
-    )
-
-    body_with_footer = append_footer(
-        body,
-        step=3,
-        next_step="Awaiting reason",
-        thread_state="Awaiting Client",
-    )
-
-    state.clear_regular_drafts()
-    state.add_draft_message({
-        "body": body_with_footer,
-        "body_markdown": body,
-        "step": 3,
-        "thread_state": "Awaiting Client",
-        "topic": "conflict_ask_reason",
-        "requires_approval": False,
-    })
-
-    # Keep conflict_pending_decision so next message is still handled as conflict response
-    state.extras["persist"] = True
-
-    return GroupResult(
-        action="conflict_ask_reason",
-        payload={
-            "client_id": state.client_id,
-            "event_id": event_id,
-            "room_id": room_id,
-            "draft_messages": state.draft_messages,
-        },
-        halt=False,
-    )
-
-
-def _collect_alternative_dates(
-    state: WorkflowState,
-    preferred_room: Optional[str],
-    chosen_date: Optional[str],
-    *,
-    count: int = 7,
-) -> List[str]:
-    from workflows.common.catalog import list_free_dates
-
-    try:
-        alt = list_free_dates(count=count, db=state.db, preferred_room=preferred_room)
-    except Exception:  # pragma: no cover - safety net for missing fixtures
-        alt = []
-
-    chosen_iso = _to_iso(chosen_date)
-    iso_dates: List[str] = []
-    for value in alt:
-        label = str(value).strip()
-        if not label:
-            continue
-        candidate_iso = _to_iso(label) or label if len(label) == 10 and label.count("-") == 2 else None
-        if not candidate_iso:
-            continue
-        if chosen_iso and candidate_iso == chosen_iso:
-            continue
-        if candidate_iso not in iso_dates:
-            iso_dates.append(candidate_iso)
-    return iso_dates
-
-
-def _merge_alternative_dates(primary: List[str], fallback: List[str]) -> List[str]:
-    combined: List[str] = []
-    for source in (primary, fallback):
-        for value in source:
-            if value and value not in combined:
-                combined.append(value)
-    return combined
-
-
-def _dedupe_dates(dates: List[str], chosen_date: Optional[str]) -> List[str]:
-    result: List[str] = []
-    for date in dates:
-        if not date:
-            continue
-        if chosen_date and date == chosen_date:
-            continue
-        if date not in result:
-            result.append(date)
-    return result
-
-
-def _format_alternative_dates_section(dates: List[str], more_available: bool) -> str:
-    if not dates and not more_available:
-        return "Alternative Dates:\n- Let me know if you'd like me to explore additional dates."
-    if not dates:
-        return "Alternative Dates:\n- More options are available on request."
-
-    label = "Alternative Dates"
-    if len(dates) > 1:
-        label = f"Alternative Dates (top {len(dates)})"
-
-    lines = [f"{label}:"]
-    for value in dates:
-        display = _format_short_date(value)
-        lines.append(f"- {display}")
-    if more_available:
-        lines.append("More options are available on request.")
-    return "\n".join(lines)
-
-
-def _strip_system_subject(subject: str) -> str:
-    """Strip system-generated metadata from subject lines.
-
-    The API adds "Client follow-up (YYYY-MM-DD HH:MM)" to follow-up messages.
-    This timestamp should NOT be used for change detection as it represents
-    when the message was sent, not the requested event date.
-    """
-    import re
-    # Pattern: "Client follow-up (YYYY-MM-DD HH:MM)" or similar system-generated prefixes
-    pattern = r"^Client follow-up\s*\(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\)\s*"
-    return re.sub(pattern, "", subject, flags=re.IGNORECASE).strip()
-
-
-def _message_text(state: WorkflowState) -> str:
-    """Extract full message text from state.
-
-    BUG FIX: Strips system-generated timestamps from subject before combining.
-    These timestamps were incorrectly triggering DATE change detection.
-    """
-    message = state.message
-    if not message:
-        return ""
-    subject = message.subject or ""
-    body = message.body or ""
-    # Strip system-generated timestamps from subject
-    clean_subject = _strip_system_subject(subject)
-    if clean_subject and body:
-        return f"{clean_subject}\n{body}"
-    return clean_subject or body
 
 
 def _present_general_room_qna(

@@ -743,14 +743,63 @@ Result: Hybrid messages now correctly detect acceptance from the statement porti
 ### BUG-044: Detour Smart Shortcut Skips Not Applied for Date + Room Confirmation
 **Status**: Fixed (2026-01-21)
 **Severity**: High
-**Symptom**: After a date-change detour, a single confirmation message that includes both the new date and room (e.g., “Yes, 21.01.2026 from 10:00 to 12:00 works. Please proceed with Room B.”) still triggered a full Step 3 availability overview and re-prompted for room selection instead of going straight to the updated offer.
-**Root Cause**: Step 3’s room confirmation detection relied on the room-choice detector, which was blocked by acceptance guards. In detour context, this prevented room confirmation from being recognized even when the room was explicitly mentioned.
+**Symptom**: After a date-change detour, a single confirmation message that includes both the new date and room (e.g., "Yes, 21.01.2026 from 10:00 to 12:00 works. Please proceed with Room B.") still triggered a full Step 3 availability overview and re-prompted for room selection instead of going straight to the updated offer.
+**Root Cause**: Step 3's room confirmation detection relied on the room-choice detector, which was blocked by acceptance guards. In detour context, this prevented room confirmation from being recognized even when the room was explicitly mentioned.
 **Fix**: In detour context (`caller_step` set), treat explicit room mentions as confirmations when the message is not a pure question, using LLM signals for question/acceptance gating. This enables the smart shortcut to proceed directly to Step 4 when the room is available.
 **Files**: `workflows/steps/step3_room_availability/trigger/step3_handler.py`
 **Repro**: `e2e-scenarios/2026-01-21_hybrid-detour-second-offer-site-visit.md`
 **E2E Verified**: `e2e-scenarios/2026-01-21_hybrid-detour-second-offer-site-visit.md` (hybrid I:ope / E:gem / V:ope)
 **Tests**: `tests_root/specs/dag/test_change_scenarios_e2e.py::TestScenario6_DetourSmartShortcutDateRoomConfirmation`
 **Key Learning**: Detour confirmations should not be blocked by acceptance heuristics when the room is explicitly mentioned and LLM signals indicate it is not a pure question.
+
+### BUG-045: Cross-Client Room Conflict Detection Missing
+**Status**: FIXED (2026-01-22)
+**Severity**: CRITICAL
+**Symptom**: When Client A has a CONFIRMED booking (deposit paid) for Room X on Date Y, and Client B changes their date TO Date Y, Room X is still offered to Client B without detecting the conflict. This results in double-booking.
+**Root Cause** (Two issues):
+1. **Status Field Duality**: `room_status_checker.py` only checked `event_data["Status"]` (legacy), ignoring `event["status"]` (canonical)
+2. **Self-Conflict in Evaluation**: `evaluate_room_statuses` didn't exclude the current client's event, causing incorrect status detection
+
+**Fix**:
+1. Added `exclude_event_id` parameter to `room_status_on_date` to skip current client's event
+2. Updated `evaluate_room_statuses` to accept and pass `exclude_event_id`
+3. Updated `step3_handler.py` to pass `state.event_id` when evaluating room statuses
+4. Updated status check pattern: `event.get("status") or data.get("Status")` in both `room_status_checker.py` and `services/availability.py`
+5. Added sync in `update_event_metadata` to keep `event_data["Status"]` updated for backward compatibility
+
+**Files Changed**:
+- `workflows/steps/step3_room_availability/condition/room_status_checker.py` (exclude_event_id + dual field check)
+- `workflows/steps/step3_room_availability/trigger/evaluation.py` (pass-through exclude_event_id)
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py` (pass state.event_id)
+- `services/availability.py` (dual field check)
+- `workflows/io/database.py` (update_event_metadata sync)
+**Repro**: `e2e-scenarios-playwright/2026-01-22_date-change-room-conflict-missing.md`
+**Tests**: `tests/flow/test_room_conflict.py` (30 tests pass - 26 original + 4 new for exclude_event_id)
+**Key Learning**:
+1. When two fields store the same concept, ensure all readers check both: `event.get("status") or data.get("Status")`
+2. When evaluating room availability for a client, always exclude their own event to prevent self-conflict
+
+### BUG-046: Room Unavailable on New Date Shows Date Alternatives Instead of Room Alternatives
+**Status**: FIXED (2026-01-24)
+**Severity**: HIGH
+**Symptom**: When client changes date to a date where their locked room (Room B) is already Confirmed by another client, system offers date alternatives instead of showing room availability overview with alternative rooms.
+**Root Cause** (Two issues):
+1. `calendar_conflict_reason()` in `calendar_checks.py` treated locked room unavailability as a calendar conflict, triggering date alternative suggestions
+2. Step 3's verbalization wasn't receiving `_cleared_room_name` because the fix path cleared `locked_room_id` before the existing code that sets this flag could run
+
+**Fix**:
+1. In `calendar_checks.py`: Check for `locked_room_id` - when locked room is unavailable on new date, return `None` (no conflict) and set `_locked_room_unavailable_on_new_date` flag
+2. In `step3_handler.py`: When flag is set, store `_cleared_room_name` in `state.extras` BEFORE clearing `locked_room_id`
+
+**Files Changed**:
+- `workflows/steps/step2_date_confirmation/trigger/calendar_checks.py`
+- `workflows/steps/step3_room_availability/trigger/step3_handler.py`
+
+**Expected Flow**:
+1. Step 2: Confirm new date (don't block for locked room conflict)
+2. Step 3: Show "Room B is no longer available on 12.05.2026" + alternative rooms (A, D, F)
+
+**Key Learning**: Inter-step communication via flags (`_locked_room_unavailable_on_new_date`) must set ALL required downstream state before clearing the source data (`locked_room_id`).
 
 ---
 

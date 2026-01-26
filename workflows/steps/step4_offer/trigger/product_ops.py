@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from services.products import find_product, normalise_product_payload
 from services.rooms import load_room_catalog
-from workflows.common.menu_options import DINNER_MENU_OPTIONS
+# Note: DINNER_MENU_OPTIONS moved to workflows.common.product_utils
 
 
 # -----------------------------------------------------------------------------
@@ -66,13 +66,12 @@ def has_offer_update(user_info: Dict[str, Any]) -> bool:
     return any(bool(user_info.get(key)) for key in update_keys)
 
 
-def menu_name_set() -> Set[str]:
-    """Return set of dinner menu names (lowercase)."""
-    return {
-        str(entry.get("menu_name") or "").strip().lower()
-        for entry in DINNER_MENU_OPTIONS
-        if entry.get("menu_name")
-    }
+# N4 refactoring (Jan 2026): Consolidated to workflows/common/product_utils
+from workflows.common.product_utils import menu_name_set, normalise_product_fields
+
+# Re-export for backwards compatibility (other modules import from here)
+menu_name_set = menu_name_set  # noqa: F811
+normalise_product_fields = normalise_product_fields  # noqa: F811
 
 
 def infer_participant_count(event_entry: Dict[str, Any]) -> Optional[int]:
@@ -163,31 +162,7 @@ def upsert_product(products: List[Dict[str, Any]], item: Dict[str, Any]) -> None
     products.append(item)
 
 
-def normalise_product_fields(product: Dict[str, Any], *, menu_names: Optional[Set[str]] = None) -> Dict[str, Any]:
-    """Normalize product quantity/unit for pricing and display."""
-    menu_names = menu_names or menu_name_set()
-    normalised = dict(product)
-    name = str(normalised.get("name") or "").strip()
-    unit = normalised.get("unit")
-    if not unit and name.lower() in menu_names:
-        unit = "per_event"
-    try:
-        quantity = float(normalised.get("quantity") or 1)
-    except (TypeError, ValueError):
-        quantity = 1
-    try:
-        unit_price = float(normalised.get("unit_price") or 0.0)
-    except (TypeError, ValueError):
-        unit_price = 0.0
-
-    if unit == "per_event":
-        quantity = 1
-
-    normalised["name"] = name or "Unnamed item"
-    normalised["unit"] = unit
-    normalised["quantity"] = quantity
-    normalised["unit_price"] = unit_price
-    return normalised
+# normalise_product_fields is now imported from workflows.common.product_utils (line 70)
 
 
 # -----------------------------------------------------------------------------

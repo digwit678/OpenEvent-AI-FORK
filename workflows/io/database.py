@@ -538,11 +538,22 @@ def append_audit_entry(
 
 
 def update_event_metadata(event: Dict[str, Any], **fields: Any) -> None:
-    """[OpenEvent Database] Apply metadata updates on workflow-specific fields."""
+    """[OpenEvent Database] Apply metadata updates on workflow-specific fields.
+
+    When 'status' is set to a booking status (Lead/Option/Confirmed),
+    also syncs to event_data["Status"] for backward compatibility.
+    """
 
     ensure_event_defaults(event)
     for key, value in fields.items():
         event[key] = value
+
+    # Sync booking status to event_data["Status"] for backward compatibility
+    # Only sync recognized booking statuses, not workflow stages
+    if "status" in fields:
+        booking_status = fields["status"]
+        if booking_status in ("Lead", "Option", "Confirmed"):
+            event.setdefault("event_data", {})["Status"] = booking_status
 
 
 def tag_message(event_entry: Dict[str, Any], msg_id: Optional[str]) -> None:

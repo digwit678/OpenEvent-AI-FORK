@@ -14,7 +14,7 @@ Usage:
 from __future__ import annotations
 
 from datetime import date, time, timedelta
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from services.availability import calendar_free
 from workflows.common.datetime_parse import build_window_iso
@@ -54,6 +54,7 @@ def candidate_is_calendar_free(
     iso_date: str,
     start_time: Optional[time],
     end_time: Optional[time],
+    db: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """
     Check if a room is available on the given date and time window.
@@ -62,13 +63,14 @@ def candidate_is_calendar_free(
     - No room preference specified
     - Room preference is "not specified"
     - No time window specified
-    - Room is actually free per calendar
+    - Room is actually free per calendar AND no Option/Confirmed booking exists
 
     Args:
         preferred_room: Room name to check
         iso_date: ISO date string (YYYY-MM-DD)
         start_time: Start time of the event
         end_time: End time of the event
+        db: Optional events database to check for Option/Confirmed bookings
 
     Returns:
         True if the slot is available, False otherwise
@@ -84,7 +86,7 @@ def candidate_is_calendar_free(
         start_iso, end_iso = build_window_iso(iso_date, start_time, end_time)
     except ValueError:
         return True
-    return calendar_free(preferred_room, {"start": start_iso, "end": end_iso})
+    return calendar_free(preferred_room, {"date_iso": iso_date, "start": start_iso, "end": end_iso}, db=db)
 
 
 # -----------------------------------------------------------------------------
@@ -143,18 +145,31 @@ def maybe_fuzzy_friday_candidates(text: str, anchor: date) -> List[str]:
 # -----------------------------------------------------------------------------
 
 
-def calendar_conflict_reason(event_entry: dict, window: ConfirmationWindow) -> Optional[str]:
+def calendar_conflict_reason(
+    event_entry: dict,
+    window: ConfirmationWindow,
+    db: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
     """Check if a calendar conflict exists and return a conflict message.
 
     Extracted from step2_handler.py as part of D14a refactoring.
 
+    BUG FIX (2026-01-24): When there's a locked_room_id (from a detour) and
+    the room is unavailable on the new date, we should NOT treat this as a
+    calendar conflict. Instead, confirm the date and let Step 3 handle room
+    re-selection. This fixes the "room unavailable on new date" detour flow
+    where the system was incorrectly offering alternative dates instead of
+    alternative rooms.
+
     Args:
         event_entry: Event data dict
         window: ConfirmationWindow with date/time info
+        db: Optional events database to check for Option/Confirmed bookings
 
     Returns:
         Conflict message string if room is booked, None if available.
         Also records the conflict in event_entry if found.
+        Returns None if locked_room_id is set and unavailable (Step 3 handles).
     """
     room = preferred_room(event_entry)
     if not room:
@@ -173,9 +188,22 @@ def calendar_conflict_reason(event_entry: dict, window: ConfirmationWindow) -> O
             start_iso, end_iso = build_window_iso(window.iso_date, start_obj, end_obj)
         except ValueError:
             return None
-    is_free = calendar_free(room, {"start": start_iso, "end": end_iso})
+    is_free = calendar_free(room, {"date_iso": window.iso_date, "start": start_iso, "end": end_iso}, db=db)
     if is_free:
         return None
+
+    # BUG FIX: If there's a locked_room_id (from a detour), don't treat room
+    # unavailability as a calendar conflict. Instead, confirm the date and let
+    # Step 3 handle room selection. This ensures the expected flow:
+    # 1. Step 2: Confirm new date (even if locked room is unavailable)
+    # 2. Step 3: Show room availability overview with alternative rooms
+    locked_room = event_entry.get("locked_room_id")
+    if locked_room and locked_room.lower() == normalized:
+        # Mark that the locked room needs re-evaluation in Step 3
+        event_entry["_locked_room_unavailable_on_new_date"] = True
+        update_event_metadata(event_entry, _locked_room_unavailable_on_new_date=True)
+        return None  # Don't block date confirmation, let Step 3 handle room
+
     slot_text = f"{window.start_time}–{window.end_time}"
     conflicts = event_entry.setdefault("calendar_conflicts", [])
     conflict_record = {

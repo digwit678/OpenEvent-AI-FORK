@@ -191,8 +191,8 @@ class TestDepositTriggersStep7:
         message_body = "I have paid the deposit."
 
         # This should NOT look like a billing address
-        from workflows.steps.step1_intake.trigger.step1_handler import _looks_like_billing_fragment
-        assert _looks_like_billing_fragment(message_body.lower()) is False
+        from workflows.steps.step1_intake.trigger.gate_confirmation import looks_like_billing_fragment
+        assert looks_like_billing_fragment(message_body.lower()) is False
 
 
 class TestDepositFlowIntegration:
