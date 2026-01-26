@@ -36,7 +36,6 @@ Act as a senior **Test & Workflow Engineer** prioritizing deterministic behavior
     *   **Reproduce First:** Write a failing test before fixing.
     *   **Run Tests:** `pytest backend/tests/regression/` (Zero failures).
     *   **E2E Check:** Verify critical flows (Billing -> Deposit -> HIL).
-    *   **The 2-Strike Rule:** If you fail to fix a bug **twice** (tests still fail), you **MUST** use the `oe-codex-debug-expert` skill. Do not spin your wheels.
 
 ## 2. Prevention Patterns (From TEAM_GUIDE)
 
