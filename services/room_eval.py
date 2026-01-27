@@ -38,7 +38,18 @@ class RoomEvaluation:
         }
 
 
-def evaluate_rooms(event_entry: Dict[str, Any], requested_products: Optional[List[Dict[str, Any]]] = None) -> List[RoomEvaluation]:
+def evaluate_rooms(
+    event_entry: Dict[str, Any],
+    requested_products: Optional[List[Dict[str, Any]]] = None,
+    db: Optional[Dict[str, Any]] = None,
+) -> List[RoomEvaluation]:
+    """Evaluate all rooms for availability and feature matching.
+
+    Args:
+        event_entry: Event data with requirements and requested_window
+        requested_products: Optional product list to check availability
+        db: Optional events database for checking Option/Confirmed bookings
+    """
     requirements = event_entry.get("requirements") or {}
     participants = _safe_int(requirements.get("number_of_participants"))
     layout = str(requirements.get("seating_layout") or "").strip().lower()
@@ -48,7 +59,7 @@ def evaluate_rooms(event_entry: Dict[str, Any], requested_products: Optional[Lis
 
     evaluations: List[RoomEvaluation] = []
     for record in load_room_catalog():
-        available = calendar_free(record.name, window)
+        available = calendar_free(record.name, window, db=db)
         capacity_ok, slack, capacity_reason = _check_capacity(record, participants, layout)
 
         matched, missing = _feature_coverage(record.features, requested_features)

@@ -108,7 +108,19 @@ def next_five_venue_dates(
     return results
 
 
-def calendar_free(room_identifier: str, window: Dict[str, Any]) -> bool:
+def calendar_free(room_identifier: str, window: Dict[str, Any], db: Optional[Dict[str, Any]] = None) -> bool:
+    """Check if a room is available for the given time window.
+
+    Checks both:
+    1. Calendar busy slots (external calendar or fixtures)
+    2. Events database for Option/Confirmed bookings (single source of truth)
+
+    Args:
+        room_identifier: Room name or ID
+        window: Dict with 'date_iso', 'start', 'end' keys
+        db: Optional events database dict. If provided, also checks for
+            Option/Confirmed events blocking this room on this date.
+    """
     record = get_room(room_identifier)
     if record is None:
         return True
@@ -116,6 +128,29 @@ def calendar_free(room_identifier: str, window: Dict[str, Any]) -> bool:
     end_iso = window.get("end")
     if not (start_iso and end_iso):
         return True
+
+    # Check 1: Events database for Option/Confirmed bookings
+    # This is the primary source of truth (will be Supabase events table)
+    if db is not None:
+        date_iso = window.get("date_iso")
+        if date_iso:
+            from workflows.common.timeutils import format_iso_date_to_ddmmyyyy
+            date_ddmmyyyy = format_iso_date_to_ddmmyyyy(date_iso)
+            if date_ddmmyyyy:
+                room_lower = room_identifier.lower()
+                for event in db.get("events", []):
+                    event_data = event.get("event_data", {})
+                    if event_data.get("Event Date") != date_ddmmyyyy:
+                        continue
+                    stored_room = event_data.get("Preferred Room") or event.get("locked_room_id")
+                    if not stored_room or stored_room.lower() != room_lower:
+                        continue
+                    # Use canonical event["status"], fall back to event_data["Status"] for legacy
+                    status = (event.get("status") or event_data.get("Status") or "").lower()
+                    if status in ("option", "confirmed"):
+                        return False  # Room blocked by existing booking
+
+    # Check 2: Calendar busy slots (legacy, for external calendar integration)
     calendar_id = record.calendar_id
     if not calendar_id:
         return True
