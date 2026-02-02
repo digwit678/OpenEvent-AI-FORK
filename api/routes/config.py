@@ -44,6 +44,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from api.utils.errors import raise_safe_error
+from api.middleware import get_request_team_id, require_admin_role
 
 from workflow_email import (
     load_db as wf_load_db,
@@ -231,6 +232,7 @@ async def set_global_deposit_config(config: GlobalDepositConfig):
     This setting applies to all offers unless overridden by room-specific
     deposit settings (future feature).
     """
+    require_admin_role()
     try:
         db = wf_load_db()
         if "config" not in db:
@@ -315,6 +317,7 @@ async def set_hil_mode(config: HILModeConfig):
     This setting persists in the database and takes effect immediately.
     It overrides the OE_HIL_ALL_LLM_REPLIES environment variable.
     """
+    require_admin_role()
     try:
         db = wf_load_db()
         if "config" not in db:
@@ -481,6 +484,7 @@ async def set_llm_provider_config(config: LLMProviderConfig):
     | Entity    | ~$0.008          | ~$0.002      | 75%     |
     | Verbalize | ~$0.015          | ~$0.004      | 73%     |
     """
+    require_admin_role()
     import os
 
     # Validate providers
@@ -633,6 +637,7 @@ async def set_hybrid_enforcement_config(config: HybridEnforcementConfig):
     - Allows single-provider modes (OpenAI-only or Gemini-only)
     - Logs warning that enforcement is bypassed
     """
+    require_admin_role()
     import os
     from llm.provider_config import (
         get_llm_providers,
@@ -760,6 +765,7 @@ async def set_pre_filter_config(config: PreFilterConfig):
 
     This setting persists in the database and takes effect immediately.
     """
+    require_admin_role()
     import os
 
     # Validate mode
@@ -863,6 +869,7 @@ async def set_detection_mode_config(config: DetectionModeConfig):
 
     This setting persists in the database and takes effect immediately.
     """
+    require_admin_role()
     import os
 
     # Validate mode
@@ -945,6 +952,7 @@ async def set_prompts_config(config: PromptConfig):
     Save new prompt configuration.
     Archives the previous version to history.
     """
+    require_admin_role()
     _assert_prompts_editor_enabled()
     try:
         db = wf_load_db()
@@ -993,6 +1001,7 @@ async def revert_prompts_config(index: int):
     Revert prompt configuration to a historical version.
     The current state is pushed to history before reverting.
     """
+    require_admin_role()
     _assert_prompts_editor_enabled()
     try:
         db = wf_load_db()
@@ -1085,6 +1094,7 @@ async def set_room_deposit_config(room_id: str, deposit_required: bool, deposit_
 
     This overrides the global deposit setting for offers using this room.
     """
+    require_admin_role()
     try:
         db = wf_load_db()
         if "config" not in db:
@@ -1177,6 +1187,7 @@ async def set_hil_email_config(config: HILEmailConfig):
     (the logged-in Event Manager). This endpoint is for testing
     or as a fallback.
     """
+    require_admin_role()
     try:
         db = wf_load_db()
         if "config" not in db:
@@ -1222,6 +1233,7 @@ async def test_hil_email():
 
     Use this to verify email configuration is working correctly.
     """
+    require_admin_role()
     try:
         from services.hil_email_notification import (
             is_hil_email_enabled,
@@ -1341,6 +1353,7 @@ async def set_venue_config(config: VenueConfig):
 
     Changes take effect immediately for new requests.
     """
+    require_admin_role()
     try:
         db = wf_load_db()
         if "config" not in db:
@@ -1443,6 +1456,7 @@ async def set_site_visit_config(config: SiteVisitConfig):
     - Change available hours: {"default_slots": [9, 11, 14, 16]}
     - Allow weekends: {"weekdays_only": false}
     """
+    require_admin_role()
     try:
         db = wf_load_db()
         if "config" not in db:
@@ -1519,6 +1533,7 @@ async def set_manager_config(config: ManagerConfig):
     EXAMPLE:
     {"names": ["John", "Sarah", "Michael"]}
     """
+    require_admin_role()
     try:
         db = wf_load_db()
         if "config" not in db:
@@ -1590,6 +1605,7 @@ async def set_product_config(config: ProductConfig):
     - More suggestions: {"autofill_min_score": 0.3}
     - Fewer suggestions: {"autofill_min_score": 0.7}
     """
+    require_admin_role()
     if config.autofill_min_score is not None:
         if not 0.0 <= config.autofill_min_score <= 1.0:
             raise HTTPException(
@@ -1710,6 +1726,7 @@ async def set_menus_config(config: MenusConfig):
     Set to empty array to reset to built-in defaults:
     {"dinner_options": []}
     """
+    require_admin_role()
     try:
         db = wf_load_db()
         if "config" not in db:
@@ -1802,6 +1819,7 @@ async def set_catalog_config(config: CatalogConfig):
     Set to empty array to reset to built-in defaults:
     {"product_room_map": []}
     """
+    require_admin_role()
     try:
         db = wf_load_db()
         if "config" not in db:
@@ -1898,6 +1916,7 @@ async def set_faq_config(config: FAQConfig):
     Set to empty array to reset to built-in defaults:
     {"items": []}
     """
+    require_admin_role()
     try:
         db = wf_load_db()
         if "config" not in db:
@@ -1924,3 +1943,148 @@ async def set_faq_config(config: FAQConfig):
         }
     except Exception as exc:
         raise_safe_error(500, "save FAQ config", exc, logger)
+
+
+# ---------------------------------------------------------------------------
+# Product Availability Configuration Endpoints (Three-Tier System)
+# ---------------------------------------------------------------------------
+#
+# Three-tier product availability:
+#   - RECOMMENDED: AI suggests in offers & answers questions (default)
+#   - ON_REQUEST: Not suggested by AI, but manager can add manually
+#   - UNAVAILABLE: Completely hidden, cannot be added even manually
+# ---------------------------------------------------------------------------
+
+class ProductAvailabilityConfig(BaseModel):
+    """
+    Product availability configuration using three-tier system.
+
+    - on_request_products: List of product IDs that are available on request only
+    - unavailable_products: List of product IDs that are completely unavailable
+    - Products not in either list are 'recommended' (default)
+
+    BACKWARD COMPATIBLE: Also accepts old 'disabled_products' field (treated as unavailable)
+    """
+    on_request_products: Optional[List[str]] = None
+    unavailable_products: Optional[List[str]] = None
+    # Backward compatibility
+    disabled_products: Optional[List[str]] = None
+
+
+@router.get("/product-availability")
+async def get_product_availability():
+    """
+    Get all products with their availability status.
+
+    Returns all products from the catalog with a `status` field indicating
+    the availability tier for each product.
+
+    Status values:
+    - 'recommended': AI suggests in offers & answers questions (default)
+    - 'on_request': Not suggested by AI, but manager can add manually
+    - 'unavailable': Completely hidden, cannot be added
+
+    Returns:
+        products: List of products with status
+        counts: Breakdown by status
+        total_count: Total number of products
+    """
+    try:
+        from services.products import list_product_records
+        from workflows.io.config_store import get_product_status
+
+        # Get all products from catalog
+        all_products = list_product_records()
+
+        products = []
+        counts = {"recommended": 0, "on_request": 0, "unavailable": 0}
+
+        for p in all_products:
+            status = get_product_status(p.product_id)
+            counts[status] += 1
+            products.append({
+                "product_id": p.product_id,
+                "name": p.name,
+                "category": p.category or "Other",
+                "unit": p.unit,
+                "base_price": p.base_price,
+                "status": status,
+                # Backward compatibility
+                "enabled": status != "unavailable",
+            })
+
+        # Sort by category then name for consistent UI display
+        products.sort(key=lambda x: (x["category"], x["name"]))
+
+        return {
+            "products": products,
+            "counts": counts,
+            "total_count": len(products),
+            # Backward compatibility
+            "disabled_count": counts["unavailable"],
+        }
+    except Exception as exc:
+        raise_safe_error(500, "load product availability", exc, logger)
+
+
+@router.post("/product-availability")
+async def set_product_availability(config: ProductAvailabilityConfig):
+    """
+    Set the product availability configuration.
+
+    Three-tier system:
+    - on_request_products: Products available only on explicit client request
+    - unavailable_products: Products completely blocked (staff-only, discontinued)
+    - Products not in either list are 'recommended' (suggested by AI)
+
+    EXAMPLE - Set specific statuses:
+    {
+        "on_request_products": ["catering-christmas-menu", "catering-vip-package"],
+        "unavailable_products": ["catering-staff-lunch", "equipment-internal"]
+    }
+
+    EXAMPLE - Reset all to recommended:
+    {"on_request_products": [], "unavailable_products": []}
+
+    BACKWARD COMPATIBLE - Old format still works:
+    {"disabled_products": ["product-a", "product-b"]}
+    (treated as unavailable_products)
+    """
+    require_admin_role()
+    try:
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+
+        # Handle backward compatibility
+        on_request = config.on_request_products or []
+        unavailable = config.unavailable_products or []
+
+        # If old format used, treat disabled_products as unavailable
+        if config.disabled_products is not None and not unavailable:
+            unavailable = config.disabled_products
+
+        db["config"]["product_availability"] = {
+            "on_request_products": on_request,
+            "unavailable_products": unavailable,
+            "updated_at": _now_iso(),
+        }
+        wf_save_db(db)
+
+        logger.info(
+            "Product availability updated: %d on_request, %d unavailable",
+            len(on_request), len(unavailable)
+        )
+
+        return {
+            "status": "ok",
+            "on_request_products": on_request,
+            "unavailable_products": unavailable,
+            "counts": {
+                "on_request": len(on_request),
+                "unavailable": len(unavailable),
+            },
+            "message": f"Product availability updated. {len(on_request)} on-request, {len(unavailable)} unavailable.",
+        }
+    except Exception as exc:
+        raise_safe_error(500, "save product availability", exc, logger)

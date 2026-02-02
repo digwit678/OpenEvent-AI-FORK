@@ -6,11 +6,19 @@ This document tracks backend work needed to fully support the OpeneventGithub pr
 
 | Feature | Backend Status | Frontend Ready |
 |---------|----------------|----------------|
-| Prompts Editor API | Done | Docs ready |
-| CORS Configuration | Done | - |
-| Auth Headers | Partial | Needed |
-| Team Context | TODO | Required |
-| Supabase Integration | TODO | Required |
+| Prompts Editor API | ✅ Done | Docs ready |
+| CORS Configuration | ✅ Done | - |
+| Auth Headers | ✅ Done | Ready |
+| Team Context | ✅ Done | Ready |
+| JWT Verification | ✅ Done | Ready |
+| Admin Role Guard | ✅ Done | Ready |
+| Supabase Storage | 🔲 TODO | Required |
+
+### Recent Completions (Feb 2026)
+
+**P1: Team Context** - Team-scoped config via `X-Team-Id` header or JWT claims
+**P3: JWT Verification** - Full Supabase JWT decode with signature verification
+**P4: Admin Role Guard** - `require_admin_role()` protects all POST config endpoints
 
 ---
 
@@ -274,33 +282,48 @@ async def save_prompts(
 
 ## Implementation Checklist
 
-### Phase 1: Team Context (Enables Basic Integration)
-- [ ] Add `get_team_context` dependency to extract team_id
-- [ ] Update `/api/config/prompts` GET to scope by team
-- [ ] Update `/api/config/prompts` POST to scope by team
-- [ ] Update `/api/config/prompts/history` to scope by team
-- [ ] Update `/api/config/prompts/revert` to scope by team
-- [ ] Test with X-Team-Id header
+### Phase 1: Team Context ✅ DONE (Feb 2026)
+- [x] Add `get_team_context` via `api/middleware/tenant_context.py`
+- [x] Auto-enable tenant headers when `AUTH_MODE=supabase_jwt`
+- [x] All config endpoints use team-scoped `load_db()`/`save_db()`
+- [x] Test with X-Team-Id header
 
-### Phase 2: Supabase Storage (Enables Persistence)
+**Implementation:** `TenantContextMiddleware` sets `CURRENT_TEAM_ID` contextvar, which `workflow_email.load_db()` uses via `get_team_id()`.
+
+### Phase 2: Supabase Storage (Enables Persistence) 🔲 REQUIRED BEFORE INTEGRATION
 - [ ] Create `ai_config` table in Supabase
 - [ ] Add RLS policies
 - [ ] Create `SupabaseConfigStorage` class
 - [ ] Replace JSON storage calls with Supabase calls
-- [ ] Add `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` to .env
+- [ ] Add Supabase env vars to .env (see below)
+- [ ] Enable `verify_team_membership()` in auth middleware
 - [ ] Test config persistence across restarts
 
-### Phase 3: Auth Verification (Enables Security)
-- [ ] Add JWT verification middleware
-- [ ] Add `require_admin_role` dependency
-- [ ] Apply auth to all config endpoints
-- [ ] Test with real Supabase tokens
-- [ ] Document auth flow in API_TESTS.md
+> **⚠️ BLOCKING FOR PRODUCTION:** This phase MUST be completed before frontend integration.
+> The stub code for `verify_team_membership()` is ready in `api/middleware/auth.py`.
+> See "Supabase Variables Required" section below for what you need from the dashboard.
 
-### Phase 4: Full API Scoping
+### Phase 3: Auth Verification ✅ DONE (Feb 2026)
+- [x] Add JWT verification middleware (`api/middleware/auth.py`)
+- [x] Complete `_validate_supabase_jwt()` with PyJWT decode
+- [x] Extract claims from `app_metadata` (Supabase convention)
+- [x] Handle token_expired and invalid_token errors
+- [x] Test with test JWT tokens
+
+**Implementation:** `AuthMiddleware` validates JWT and sets `CURRENT_USER_ID`, `CURRENT_USER_ROLE`, and `CURRENT_TEAM_ID` contextvars.
+
+### Phase 4: Admin Role Guard ✅ DONE (Feb 2026)
+- [x] Add `require_admin_role()` helper
+- [x] Apply to all 18 POST config endpoints
+- [x] Returns 401 if not authenticated
+- [x] Returns 403 if role not in (admin, owner)
+- [x] Export from `api/middleware/__init__.py`
+
+**Implementation:** Each POST handler calls `require_admin_role()` at the start.
+
+### Phase 5: Full API Scoping (Future)
 - [ ] Scope `/api/events` by team_id
 - [ ] Scope `/api/tasks/*` by team_id
-- [ ] Scope `/api/config/*` (all endpoints) by team_id
 - [ ] Update activity logger to include team_id
 - [ ] Test multi-tenant isolation
 
@@ -333,6 +356,44 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ---
 
+---
+
+## Supabase Variables Required
+
+### Where to Find Them
+
+| Variable | Where in Supabase Dashboard | Description |
+|----------|----------------------------|-------------|
+| `SUPABASE_JWT_SECRET` | Settings → API → JWT Secret | Signs/verifies JWT tokens |
+| `OE_SUPABASE_URL` | Settings → API → Project URL | `https://xxx.supabase.co` |
+| `OE_SUPABASE_KEY` | Settings → API → `service_role` key | Backend writes (NOT anon!) |
+
+### Multi-Tenant IDs (from your tables)
+
+| Variable | Source | Description |
+|----------|--------|-------------|
+| `OE_TEAM_ID` | `teams` table | Your team's UUID |
+| `OE_SYSTEM_USER_ID` | `auth.users` table | System user for automated writes |
+| `OE_EMAIL_ACCOUNT_ID` | `email_accounts` table | Email integration UUID |
+
+### Quick Copy Template
+
+```bash
+# Auth (REQUIRED)
+SUPABASE_JWT_SECRET=your-jwt-secret-here
+
+# Supabase Connection (REQUIRED for P2)
+OE_SUPABASE_URL=https://igrfkpxebvuvfwogondx.supabase.co
+OE_SUPABASE_KEY=your-service-role-key-here
+
+# Multi-tenant IDs
+OE_TEAM_ID=your-team-uuid
+OE_SYSTEM_USER_ID=your-system-user-uuid
+OE_EMAIL_ACCOUNT_ID=your-email-account-uuid
+```
+
+---
+
 ## Environment Variables Summary
 
 ### Development (.env)
@@ -342,9 +403,19 @@ OPENAI_API_KEY=sk-...
 GOOGLE_API_KEY=AIza...
 PROMPTS_EDITOR_ENABLED=true
 
-# Add for Supabase integration
-SUPABASE_URL=https://igrfkpxebvuvfwogondx.supabase.co
-SUPABASE_SERVICE_KEY=eyJ...  # Service role key
+# Auth (optional in dev - set AUTH_ENABLED=0 to disable)
+AUTH_ENABLED=0
+```
+
+### Staging (with auth testing)
+```bash
+# Enable auth for testing
+AUTH_ENABLED=1
+AUTH_MODE=supabase_jwt
+SUPABASE_JWT_SECRET=<from Supabase Dashboard: Settings → API → JWT Secret>
+
+# Tenant headers auto-enabled in JWT mode
+# TENANT_HEADER_ENABLED=1  # Not needed when AUTH_MODE=supabase_jwt
 ```
 
 ### Production (/opt/openevent/.env)
@@ -353,15 +424,85 @@ SUPABASE_SERVICE_KEY=eyJ...  # Service role key
 OPENAI_API_KEY=sk-...
 GOOGLE_API_KEY=AIza...
 PROMPTS_EDITOR_ENABLED=true
-AUTH_ENABLED=1
 ENV=prod
 
-# Supabase
-SUPABASE_URL=https://igrfkpxebvuvfwogondx.supabase.co
-SUPABASE_SERVICE_KEY=eyJ...
+# Auth (REQUIRED in production)
+AUTH_ENABLED=1
+AUTH_MODE=supabase_jwt
+SUPABASE_JWT_SECRET=<from Supabase Dashboard>
+
+# For P2 (Supabase Storage) - add when implementing
+# SUPABASE_URL=https://igrfkpxebvuvfwogondx.supabase.co
+# SUPABASE_SERVICE_KEY=eyJ...  # Service role key for backend writes
 
 # CORS
 ALLOWED_ORIGINS=https://your-production-domain.com
+```
+
+---
+
+---
+
+## Security Considerations
+
+### JWT Claims vs Database Verification
+
+**Current Implementation (Trust JWT Claims):**
+The backend trusts the `team_id` and `role` from the JWT's `app_metadata`. This is standard practice because:
+- ✅ JWT is cryptographically signed by Supabase (can't be tampered)
+- ✅ Fast - no DB round-trip on every request
+- ✅ Simpler implementation
+
+**Trade-off:**
+- ⚠️ If a user is removed from a team, their JWT is still valid until it expires
+- ⚠️ Role changes won't take effect until JWT refresh
+
+### Option: Database Verification (P2 Enhancement)
+
+For maximum security at integration time, P2 (Supabase Storage) can include real-time verification:
+
+```python
+# In api/middleware/auth.py (Future P2 enhancement)
+
+async def verify_team_membership(user_id: str, team_id: str) -> str:
+    """Verify user is still a member of team and return current role."""
+    supabase = get_supabase_client()
+
+    # Check team_members_new table
+    result = await supabase.table("team_members_new")\
+        .select("role")\
+        .eq("team_id", team_id)\
+        .eq("user_id", user_id)\
+        .eq("invitation_status", "active")\
+        .single()\
+        .execute()
+
+    if not result.data:
+        # Check if user is team owner
+        team = await supabase.table("teams")\
+            .select("owner_id")\
+            .eq("id", team_id)\
+            .single()\
+            .execute()
+
+        if team.data and team.data["owner_id"] == user_id:
+            return "owner"
+
+        raise HTTPException(status_code=403, detail="Not a team member")
+
+    return result.data["role"]
+```
+
+**Recommendation:**
+1. **For initial integration:** Trust JWT claims (current implementation)
+2. **For P2 (Supabase Storage):** Add optional DB verification behind feature flag
+3. **For production launch:** Enable DB verification with caching (5-minute TTL)
+
+```python
+# Example with caching
+@lru_cache(maxsize=1000, ttl=300)  # 5 min cache
+async def get_verified_role(user_id: str, team_id: str) -> str:
+    return await verify_team_membership(user_id, team_id)
 ```
 
 ---
