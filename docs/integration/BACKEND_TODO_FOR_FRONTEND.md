@@ -14,6 +14,8 @@ This document tracks backend work needed to fully support the OpeneventGithub pr
 | Admin Role Guard | ✅ Done | Ready |
 | Supabase Storage | 🔲 TODO | Required |
 
+> **Supabase Schema:** See `docs/integration/SUPABASE_INTEGRATION.md` for schema requirements.
+
 ### Recent Completions (Feb 2026)
 
 **P1: Team Context** - Team-scoped config via `X-Team-Id` header or JWT claims
@@ -521,3 +523,9 @@ All changes should be backwards compatible:
 - If no auth header, fall back to X-Team-Id header
 - If no X-Team-Id, use "default" tenant
 - Test frontend continues to work without Supabase tokens
+
+---
+
+## Related Documentation
+
+- **Supabase Schema:** See `docs/integration/SUPABASE_INTEGRATION.md` for schema requirements and SQL scripts
