@@ -6,12 +6,14 @@
    - what changed recently
    - current risk areas (routing/detection/workflow/site-visit/billing/HIL/fallback)
    - suggested quick checks + smallest relevant test subset
-2. If the primer file is missing or stale, fall back to:
+2. If it exists, also skim `docs/daily_scrum/weekly_agent_pack.md` for the broader weekly context (startup packs + docs triage).
+3. If the primer file is missing or stale, fall back to:
    - `DEV_CHANGELOG.md`
    - `docs/guides/TEAM_GUIDE.md` (focus on regressions / high-risk areas)
    - `TO_DO_NEXT_SESS.md`
 
 **Primer path:** `docs/daily_scrum/session_primer.md`
+**Weekly pack path:** `docs/daily_scrum/weekly_agent_pack.md`
 
 ## No-conflict rules (safe alongside PyCharm/IDEA)
 
