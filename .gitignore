@@ -84,3 +84,4 @@ events_team-*.json
 docs/frontend/*.docx
 docs/frontend/*.html
 .playwright-mcp/
+.mcp-tools/

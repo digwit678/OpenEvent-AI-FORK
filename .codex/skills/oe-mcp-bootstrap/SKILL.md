@@ -25,8 +25,32 @@ Add servers (examples; adjust versions as needed):
 - Playwright (browser automation):
   - `codex mcp add playwright --env npm_config_cache=/tmp/codex-npm-cache -- npx -y @playwright/mcp@0.0.53`
 
+- Web search (optional; vetted):
+  - Kindly web search MCP server (Python). Requires local Chromium plus a search provider (Serper/Tavily/SearXNG). Optional `GITHUB_TOKEN` improves GitHub Issues content fetch. Use only after code review and least-privilege keys.
+
 Verify:
 - `codex mcp list --json`
+
+## Optional MCPs for maintenance & bug triage
+
+- GitHub MCP (issues/PRs). Use read-only or least-privilege tokens.
+- Sentry MCP (prod error triage). Use separate dev/prod tokens.
+- Semgrep MCP (security findings).
+- Supabase MCP (DB/auth/edge functions). Prefer read-only credentials for debugging.
+
+## Optional MCPs for codebase analysis & refactors
+
+- RepoMapper MCP (repo map + prototypes). Requires local clone.
+- FileScopeMCP (dependency-based file ranking). Requires local clone + build.
+- Renamify MCP (safe multi-file renames).
+- fast-filesystem-mcp: do not enable while CVE-2025-67364 is unpatched.
+
+## Security guardrails
+
+- Prefer official or well-maintained servers; review third-party code before enabling.
+- Reference servers are for dev/test only; do not assume production hardening.
+- Avoid broad shell/exec or auto-install/remote-aggregator MCPs.
+- Constrain Playwright MCP with allowlist/blocklist settings if available.
 
 ## Claude Code
 
@@ -35,5 +59,10 @@ Use the equivalent Claude Code MCP configuration for:
 - context7
 - LSP bridge (Pyright)
 - Playwright
+- optional web search and triage servers above
 
 Keep secrets out of the repo; use env vars (`CONTEXT7_API_KEY`, etc.).
+
+## Gemini CLI
+
+Use the same MCP set if your Gemini tooling supports MCP. Keep secrets out of the repo.
