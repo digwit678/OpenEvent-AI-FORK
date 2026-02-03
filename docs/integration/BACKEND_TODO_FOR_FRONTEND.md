@@ -526,6 +526,54 @@ All changes should be backwards compatible:
 
 ---
 
+---
+
+## Frontend Components Ready for Integration
+
+### Product Availability Admin Panel
+
+**Backend Status:** ✅ Done
+**Frontend Component:** `atelier-ai-frontend/app/components/admin/ProductAvailability.tsx`
+**Page Route:** `atelier-ai-frontend/app/admin/products/page.tsx`
+
+**Backend Endpoints:**
+- `GET /api/config/product-availability` - Returns all products with status (recommended/on_request/unavailable)
+- `POST /api/config/product-availability` - Update product availability (requires admin role)
+
+**Frontend Integration Tasks:**
+- [ ] Add route to OpeneventGithub admin navigation
+- [ ] Wire up auth headers (Bearer token + X-Team-Id)
+- [ ] Test three-tier status toggle (recommended → on_request → unavailable)
+- [ ] Verify admin role guard works (non-admins should get 403)
+
+**Component Features:**
+- Search/filter products by name
+- Group by category with collapsible sections
+- Bulk toggle enabled/disabled per category
+- Unsaved changes indicator with Save/Discard buttons
+- Real-time notification on save success/error
+
+**API Response Format:**
+```json
+{
+  "products": [
+    {
+      "product_id": "classic-apero",
+      "name": "Classic Apéro",
+      "category": "Catering",
+      "unit": "per person",
+      "base_price": 45.00,
+      "enabled": true,
+      "status": "recommended"
+    }
+  ],
+  "on_request_products": ["product-id-1"],
+  "unavailable_products": ["product-id-2"]
+}
+```
+
+---
+
 ## Related Documentation
 
 - **Supabase Schema:** See `docs/integration/SUPABASE_INTEGRATION.md` for schema requirements and SQL scripts
