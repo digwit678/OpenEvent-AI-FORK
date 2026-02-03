@@ -15,7 +15,7 @@ from llm.provider_registry import get_provider, reset_provider_for_tests
 from workflows.common.fallback_reason import create_fallback_reason
 
 from prefs.semantics import normalize_catering, normalize_products
-from services.products import list_product_records, normalise_product_payload
+from services.products import list_recommended_products, normalise_product_payload
 from workflows.common.room_rules import (
     USER_INFO_KEYS,
     clean_text,
@@ -150,7 +150,7 @@ def _extract_requirement_hints(text: str) -> Dict[str, Any]:
 def _match_catalog_products(text: str) -> List[Dict[str, Any]]:
     if not text:
         return []
-    catalog_names = [record.name for record in list_product_records()]
+    catalog_names = [record.name for record in list_recommended_products()]
     agent_instance = _agent()
     if not hasattr(agent_instance, "match_catalog_items"):
         return []

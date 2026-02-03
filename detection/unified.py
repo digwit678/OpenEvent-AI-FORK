@@ -89,6 +89,9 @@ class UnifiedDetectionResult:
     site_visit_date: Optional[str] = None  # Date mentioned for site visit (YYYY-MM-DD)
     site_visit_time: Optional[str] = None  # Time mentioned for site visit (HH:MM)
 
+    # Event time slot selection (for mandatory time slot booking)
+    time_slot_label: Optional[str] = None  # "morning", "afternoon", "evening", or ordinal ("first")
+
     # Contact info extraction (for global capture)
     contact_name: Optional[str] = None     # Contact person name
     contact_email: Optional[str] = None    # Contact email address
@@ -134,6 +137,7 @@ class UnifiedDetectionResult:
                 "contact_name": self.contact_name,
                 "contact_email": self.contact_email,
                 "contact_phone": self.contact_phone,
+                "time_slot_label": self.time_slot_label,
             },
             "qna_types": self.qna_types,
             "step_anchor": self.step_anchor,
@@ -205,7 +209,8 @@ Return a JSON object with this exact structure:
     "site_visit_time": "HH:MM" (24h format) or null - extract if client mentions a time for site visit (e.g., "14:00", "2pm", "afternoon" -> "14:00", "morning" -> "10:00"),
     "contact_name": contact person name mentioned or null (e.g., "My contact is Jane Doe" -> "Jane Doe"),
     "contact_email": email address mentioned or null,
-    "contact_phone": phone number mentioned or null (extract as-is, any format)
+    "contact_phone": phone number mentioned or null (extract as-is, any format),
+    "time_slot_label": time slot label if client selects by name ("morning", "afternoon", "evening") or ordinal ("first", "second", "third") - null otherwise
   }},
   "qna_types": list of applicable types from ["free_dates", "room_features", "catering_for", "products_for", "site_visit_overview", "site_visit_request", "parking", "check_availability", "check_capacity"],
   "step_anchor": suggested workflow step or null
@@ -439,6 +444,7 @@ def run_unified_detection(
             contact_name=entities.get("contact_name"),
             contact_email=entities.get("contact_email"),
             contact_phone=entities.get("contact_phone"),
+            time_slot_label=entities.get("time_slot_label"),
             qna_types=merged_qna_types,
             step_anchor=data.get("step_anchor"),
             raw_response=data,
@@ -513,6 +519,7 @@ def run_unified_detection(
                     contact_name=entities.get("contact_name"),
                     contact_email=entities.get("contact_email"),
                     contact_phone=entities.get("contact_phone"),
+                    time_slot_label=entities.get("time_slot_label"),
                     qna_types=data.get("qna_types", []),
                     step_anchor=data.get("step_anchor"),
                     raw_response=data,
@@ -587,6 +594,7 @@ def run_unified_detection(
                     contact_name=entities.get("contact_name"),
                     contact_email=entities.get("contact_email"),
                     contact_phone=entities.get("contact_phone"),
+                    time_slot_label=entities.get("time_slot_label"),
                     qna_types=data.get("qna_types", []),
                     step_anchor=data.get("step_anchor"),
                     raw_response=data,

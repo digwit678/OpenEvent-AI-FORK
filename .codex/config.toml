@@ -9,3 +9,56 @@ args = ["-y", "@upstash/context7-mcp@1.0.33", "--transport", "stdio"]
 env = { npm_config_cache = "/tmp/codex-npm-cache" }
 env_vars = ["CONTEXT7_API_KEY"]
 
+[mcp_servers.github]
+url = "https://api.githubcopilot.com/mcp/"
+bearer_token_env_var = "GITHUB_PERSONAL_ACCESS_TOKEN"
+
+[mcp_servers.supabase]
+# Optional: add ?project_ref=YOUR_PROJECT_REF to scope access.
+url = "https://mcp.supabase.com/mcp"
+# Optional for CI/manual auth:
+# bearer_token_env_var = "SUPABASE_ACCESS_TOKEN"
+
+[mcp_servers.kindly_web_search]
+command = "uvx"
+args = ["kindly-web-search-mcp-server"]
+env_vars = [
+  "SERPER_API_KEY",
+  "TAVILY_API_KEY",
+  "SEARXNG_URL",
+  "KINDLY_WEB_SEARCH_CHROMIUM_PATH",
+  "KINDLY_WEB_SEARCH_PROFILE",
+  "KINDLY_WEB_SEARCH_MAX_RESULTS",
+  "GITHUB_TOKEN",
+]
+
+[mcp_servers.lsp]
+command = "npx"
+args = ["-y", "@axivo/mcp-lsp@1.0.5"]
+env = { npm_config_cache = "/tmp/codex-npm-cache" }
+env_vars = ["LSP_FILE_PATH"]
+
+[mcp_servers.renamify]
+command = "npx"
+args = ["-y", "@renamify/mcp-server"]
+env = { npm_config_cache = "/tmp/codex-npm-cache" }
+
+[mcp_servers.repomapper]
+command = "bash"
+args = ["-lc", "/Users/nico/PycharmProjects/OpenEvent-AI/scripts/mcp/repomapper_server.sh"]
+
+[mcp_servers.filescope]
+command = "bash"
+args = ["-lc", "/Users/nico/PycharmProjects/OpenEvent-AI/scripts/mcp/filescope_server.sh"]
+
+[mcp_servers.semgrep]
+command = "uvx"
+args = ["semgrep-mcp"]
+env_vars = ["SEMGREP_APP_TOKEN"]
+
+# Disabled: known path traversal vulnerability (CVE-2025-67364).
+# [mcp_servers.fast_filesystem]
+# command = "npx"
+# args = ["-y", "fast-filesystem-mcp"]
+# env = { npm_config_cache = "/tmp/codex-npm-cache" }
+

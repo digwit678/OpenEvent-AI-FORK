@@ -148,6 +148,25 @@ The project `/Users/nico/PycharmProjects/OpenEvent-AI` is set to `trusted`.
 | lsp | Language Server Protocol (pyright) |
 | playwright | Browser automation |
 
+### Recommended MCP Additions (2026-02-02)
+
+These are optional, security-reviewed additions from current MCP server registries. Enable only when needed.
+
+**Web search**
+- Kindly web search MCP (Python). Supports Serper/Tavily/SearXNG, uses local Chromium; optional `GITHUB_TOKEN` for better GitHub Issues content.
+- Alternatives: Kagi Search MCP (Kagi Search API), `mcp-read-website-fast` for efficient page-to-Markdown extraction.
+
+**Maintenance & triage**
+- GitHub official MCP server (issues/PRs).
+- Sentry official MCP server (error triage).
+- Semgrep official MCP server (security findings).
+- Supabase MCP server (DB/auth/edge functions).
+
+**Safety notes**
+- Reference MCP servers are not production-ready; treat as dev/test only.
+- Constrain Playwright MCP with allowlist/blocklist settings to reduce exposure.
+- Use least-privilege tokens and review third-party MCP code before enabling.
+
 ---
 
 ## 5. Usage Commands

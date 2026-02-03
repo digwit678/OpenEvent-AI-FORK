@@ -28,6 +28,7 @@ from workflows.io.tasks import enqueue_task
 from workflows.io.config_store import get_manager_names
 from workflows.common.billing_capture import capture_billing_anytime, add_billing_validation_draft
 from workflows.common.capture import capture_fields_anytime
+from workflows.common.site_visit_state import get_site_visit_state
 
 
 # =============================================================================
@@ -128,6 +129,44 @@ def _has_counter_evidence(text: str) -> bool:
     if re.search(r"\b(can|could|would)\s+you\s+do\s+\d", text_lower):
         return True
     return False
+
+
+def _check_site_visit_event_date_conflict(
+    state: WorkflowState,
+    new_date_iso: Optional[str],
+) -> None:
+    """Check if new event date conflicts with a scheduled site visit.
+
+    If the client changes their event date to match a scheduled site visit date,
+    this logs a warning. The actual conflict resolution happens in site_visit_handler
+    via _get_blocked_dates() which includes event dates.
+
+    This is a defensive check to surface the issue early in the pipeline.
+    """
+    if not new_date_iso or not state.event_entry:
+        return
+
+    sv_state = get_site_visit_state(state.event_entry)
+    if sv_state.get("status") != "scheduled":
+        return
+
+    sv_date = sv_state.get("date_iso")
+    if not sv_date:
+        return
+
+    # Normalize dates for comparison
+    new_date_normalized = new_date_iso[:10]  # YYYY-MM-DD
+    sv_date_normalized = sv_date[:10]
+
+    if new_date_normalized == sv_date_normalized:
+        logger.warning(
+            "[SITE_VISIT_CONFLICT] Event date %s conflicts with scheduled site visit. "
+            "Site visit may need to be rescheduled.",
+            new_date_normalized,
+        )
+        # Mark conflict in state for potential manager notification
+        sv_state["has_event_conflict"] = True
+        state.extras["persist"] = True
 
 
 # Type aliases for callback functions
@@ -863,6 +902,10 @@ def run_pre_route_pipeline(
                 current_step_for_capture,
                 field_capture_result.fields,
             )
+
+        # 0.5. SITE VISIT CONFLICT CHECK: Warn if new event date conflicts with scheduled site visit
+        if unified_result.date:
+            _check_site_visit_event_date_conflict(state, unified_result.date)
 
     # 0.6. Out-of-context check - step-specific intents at wrong steps
     # Example: "I confirm the date" at step 5 (negotiation) → silently ignored

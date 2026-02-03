@@ -1,22 +1,36 @@
 """Tests for authentication middleware."""
 
+from __future__ import annotations
+
 import os
+import sys
 import pytest
 from unittest.mock import patch
 
-# Conditional imports - skip if auth middleware not implemented
+# Fix sys.path to prioritize project root over tests/api namespace
+_project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Remove any test paths that might shadow the real api module
+sys.path = [p for p in sys.path if 'tests/api' not in p and 'tests\\api' not in p]
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+# Now import - this should find the real api module
 try:
-    from api.middleware.auth import (
+    from api.middleware.auth import (  # noqa: E402
         AuthMiddleware,
         _extract_bearer_token,
         _validate_api_key,
+        _validate_supabase_jwt,
         get_current_user_id,
         get_current_user_role,
+        require_admin_role,
+        CURRENT_USER_ID,
+        CURRENT_USER_ROLE,
         ALLOWLIST_PREFIXES,
         ALLOWLIST_EXACT,
     )
 except ImportError as e:
-    pytest.skip(f"Auth middleware not implemented: {e}", allow_module_level=True)
+    pytest.skip(f"Auth middleware not available: {e}", allow_module_level=True)
 
 
 class TestExtractBearerToken:
@@ -172,3 +186,324 @@ class TestAuthMiddlewareIntegration:
             )
             assert response.status_code == 500
             assert "invalid_auth_mode" in response.json().get("detail", "")
+
+
+# =============================================================================
+# JWT Validation Tests (Supabase JWT Mode)
+# =============================================================================
+
+class TestValidateSupabaseJWT:
+    """Tests for Supabase JWT validation."""
+
+    @pytest.fixture
+    def jwt_secret(self):
+        """Standard test JWT secret."""
+        return "test-jwt-secret-for-testing-only"
+
+    def _create_token(self, payload: dict, secret: str, algorithm: str = "HS256") -> str:
+        """Helper to create a JWT token."""
+        import jwt
+        return jwt.encode(payload, secret, algorithm=algorithm)
+
+    def test_missing_token_returns_error(self):
+        """Missing token should return error."""
+        with patch.dict(os.environ, {"SUPABASE_JWT_SECRET": "secret"}):
+            is_valid, error, claims = _validate_supabase_jwt(None)
+            assert is_valid is False
+            assert error == "missing_token"
+            assert claims == {}
+
+    def test_empty_token_returns_error(self):
+        """Empty string token should return error."""
+        with patch.dict(os.environ, {"SUPABASE_JWT_SECRET": "secret"}):
+            is_valid, error, claims = _validate_supabase_jwt("")
+            assert is_valid is False
+            assert error == "missing_token"
+            assert claims == {}
+
+    def test_no_jwt_secret_configured(self):
+        """Missing SUPABASE_JWT_SECRET should return misconfigured."""
+        with patch.dict(os.environ, {"SUPABASE_JWT_SECRET": ""}):
+            is_valid, error, claims = _validate_supabase_jwt("some_token")
+            assert is_valid is False
+            assert error == "server_misconfigured"
+
+    def test_valid_token_extracts_claims(self, jwt_secret):
+        """Valid JWT should extract user_id, team_id, and role from claims."""
+        payload = {
+            "sub": "user-uuid-123",
+            "team_id": "team-abc",
+            "role": "admin",
+        }
+        token = self._create_token(payload, jwt_secret)
+
+        with patch.dict(os.environ, {"SUPABASE_JWT_SECRET": jwt_secret}):
+            is_valid, error, claims = _validate_supabase_jwt(token)
+            assert is_valid is True
+            assert error == ""
+            assert claims["user_id"] == "user-uuid-123"
+            assert claims["team_id"] == "team-abc"
+            assert claims["role"] == "admin"
+
+    def test_app_metadata_claims_preferred(self, jwt_secret):
+        """Claims in app_metadata should be used (Supabase convention)."""
+        payload = {
+            "sub": "user-456",
+            "team_id": "top-level-team",  # Should be ignored
+            "role": "user",  # Should be ignored
+            "app_metadata": {
+                "team_id": "app-metadata-team",
+                "role": "owner",
+            },
+        }
+        token = self._create_token(payload, jwt_secret)
+
+        with patch.dict(os.environ, {"SUPABASE_JWT_SECRET": jwt_secret}):
+            is_valid, error, claims = _validate_supabase_jwt(token)
+            assert is_valid is True
+            assert claims["team_id"] == "app-metadata-team"
+            assert claims["role"] == "owner"
+
+    def test_fallback_to_toplevel_if_no_app_metadata(self, jwt_secret):
+        """If no app_metadata, fallback to top-level claims."""
+        payload = {
+            "sub": "user-789",
+            "team_id": "top-level-team",
+            "role": "manager",
+        }
+        token = self._create_token(payload, jwt_secret)
+
+        with patch.dict(os.environ, {"SUPABASE_JWT_SECRET": jwt_secret}):
+            is_valid, error, claims = _validate_supabase_jwt(token)
+            assert is_valid is True
+            assert claims["team_id"] == "top-level-team"
+            assert claims["role"] == "manager"
+
+    def test_default_role_is_user(self, jwt_secret):
+        """If no role claim, default to 'user'."""
+        payload = {"sub": "user-no-role"}
+        token = self._create_token(payload, jwt_secret)
+
+        with patch.dict(os.environ, {"SUPABASE_JWT_SECRET": jwt_secret}):
+            is_valid, error, claims = _validate_supabase_jwt(token)
+            assert is_valid is True
+            assert claims["role"] == "user"
+
+    def test_invalid_signature_rejected(self, jwt_secret):
+        """Token signed with wrong secret should be rejected."""
+        payload = {"sub": "user-123"}
+        token = self._create_token(payload, "wrong-secret")
+
+        with patch.dict(os.environ, {"SUPABASE_JWT_SECRET": jwt_secret}):
+            is_valid, error, claims = _validate_supabase_jwt(token)
+            assert is_valid is False
+            assert error == "invalid_token"
+
+    def test_malformed_token_rejected(self):
+        """Malformed token should be rejected."""
+        with patch.dict(os.environ, {"SUPABASE_JWT_SECRET": "secret"}):
+            is_valid, error, claims = _validate_supabase_jwt("not.a.valid.jwt")
+            assert is_valid is False
+            assert error == "invalid_token"
+
+    def test_expired_token_rejected(self, jwt_secret):
+        """Expired token should return token_expired error."""
+        import time
+        payload = {
+            "sub": "user-123",
+            "exp": int(time.time()) - 3600,  # Expired 1 hour ago
+        }
+        token = self._create_token(payload, jwt_secret)
+
+        with patch.dict(os.environ, {"SUPABASE_JWT_SECRET": jwt_secret}):
+            is_valid, error, claims = _validate_supabase_jwt(token)
+            assert is_valid is False
+            assert error == "token_expired"
+
+
+# =============================================================================
+# Admin Role Guard Tests
+# =============================================================================
+
+class TestRequireAdminRole:
+    """Tests for require_admin_role() guard function."""
+
+    def test_unauthenticated_raises_401(self):
+        """If not authenticated (no user_id), should raise 401."""
+        from fastapi import HTTPException
+
+        # Reset context vars to default (unauthenticated state)
+        CURRENT_USER_ID.set(None)
+        CURRENT_USER_ROLE.set(None)
+
+        with pytest.raises(HTTPException) as exc_info:
+            require_admin_role()
+
+        assert exc_info.value.status_code == 401
+        assert "Authentication required" in exc_info.value.detail
+
+    def test_non_admin_user_raises_403(self):
+        """User with role 'user' should get 403."""
+        from fastapi import HTTPException
+
+        CURRENT_USER_ID.set("user-123")
+        CURRENT_USER_ROLE.set("user")
+
+        with pytest.raises(HTTPException) as exc_info:
+            require_admin_role()
+
+        assert exc_info.value.status_code == 403
+        assert "Admin role required" in exc_info.value.detail
+
+    def test_manager_role_raises_403(self):
+        """User with role 'manager' should get 403 (not admin/owner)."""
+        from fastapi import HTTPException
+
+        CURRENT_USER_ID.set("user-456")
+        CURRENT_USER_ROLE.set("manager")
+
+        with pytest.raises(HTTPException) as exc_info:
+            require_admin_role()
+
+        assert exc_info.value.status_code == 403
+
+    def test_admin_role_allowed(self):
+        """User with role 'admin' should pass."""
+        CURRENT_USER_ID.set("admin-user-123")
+        CURRENT_USER_ROLE.set("admin")
+
+        # Should not raise
+        require_admin_role()
+
+    def test_owner_role_allowed(self):
+        """User with role 'owner' should pass."""
+        CURRENT_USER_ID.set("owner-user-456")
+        CURRENT_USER_ROLE.set("owner")
+
+        # Should not raise
+        require_admin_role()
+
+    def test_none_role_raises_403(self):
+        """User with None role should get 403."""
+        from fastapi import HTTPException
+
+        CURRENT_USER_ID.set("user-with-no-role")
+        CURRENT_USER_ROLE.set(None)
+
+        with pytest.raises(HTTPException) as exc_info:
+            require_admin_role()
+
+        assert exc_info.value.status_code == 403
+
+
+# =============================================================================
+# JWT Mode Integration Tests
+# =============================================================================
+
+class TestJWTModeIntegration:
+    """Integration tests for Supabase JWT auth mode with config endpoints."""
+
+    @pytest.fixture
+    def jwt_secret(self):
+        return "integration-test-secret"
+
+    @pytest.fixture
+    def admin_token(self, jwt_secret):
+        """Generate admin JWT token."""
+        import jwt
+        return jwt.encode(
+            {"sub": "admin-user", "app_metadata": {"team_id": "team-1", "role": "admin"}},
+            jwt_secret,
+            algorithm="HS256",
+        )
+
+    @pytest.fixture
+    def user_token(self, jwt_secret):
+        """Generate regular user JWT token."""
+        import jwt
+        return jwt.encode(
+            {"sub": "regular-user", "app_metadata": {"team_id": "team-1", "role": "user"}},
+            jwt_secret,
+            algorithm="HS256",
+        )
+
+    @pytest.fixture
+    def test_client(self):
+        """Create test client with fresh app instance."""
+        from fastapi.testclient import TestClient
+        from main import app
+        return TestClient(app)
+
+    def test_jwt_mode_valid_admin_can_post_config(self, test_client, jwt_secret, admin_token):
+        """Admin user with valid JWT can POST to config endpoints."""
+        env = {
+            "AUTH_ENABLED": "1",
+            "AUTH_MODE": "supabase_jwt",
+            "SUPABASE_JWT_SECRET": jwt_secret,
+        }
+        with patch.dict(os.environ, env, clear=False):
+            response = test_client.post(
+                "/api/config/hil-mode",
+                json={"enabled": False},
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+            # Should not be 401 or 403
+            assert response.status_code not in (401, 403), f"Got {response.status_code}: {response.json()}"
+
+    def test_jwt_mode_regular_user_blocked_from_post(self, test_client, jwt_secret, user_token):
+        """Regular user with valid JWT should get 403 on POST config endpoints."""
+        env = {
+            "AUTH_ENABLED": "1",
+            "AUTH_MODE": "supabase_jwt",
+            "SUPABASE_JWT_SECRET": jwt_secret,
+        }
+        with patch.dict(os.environ, env, clear=False):
+            response = test_client.post(
+                "/api/config/hil-mode",
+                json={"enabled": False},
+                headers={"Authorization": f"Bearer {user_token}"},
+            )
+            assert response.status_code == 403
+            assert "Admin role required" in response.json().get("detail", "")
+
+    def test_jwt_mode_user_can_read_config(self, test_client, jwt_secret, user_token):
+        """Regular user with valid JWT can GET config endpoints."""
+        env = {
+            "AUTH_ENABLED": "1",
+            "AUTH_MODE": "supabase_jwt",
+            "SUPABASE_JWT_SECRET": jwt_secret,
+        }
+        with patch.dict(os.environ, env, clear=False):
+            response = test_client.get(
+                "/api/config/hil-mode",
+                headers={"Authorization": f"Bearer {user_token}"},
+            )
+            # Should not be 401 (authenticated) and not 403 (reads are allowed)
+            assert response.status_code not in (401, 403)
+
+    def test_jwt_mode_no_token_returns_401(self, test_client, jwt_secret):
+        """Request without token in JWT mode should return 401."""
+        env = {
+            "AUTH_ENABLED": "1",
+            "AUTH_MODE": "supabase_jwt",
+            "SUPABASE_JWT_SECRET": jwt_secret,
+        }
+        with patch.dict(os.environ, env, clear=False):
+            response = test_client.get("/api/config/hil-mode")
+            assert response.status_code == 401
+            assert "missing_token" in response.json().get("detail", "")
+
+    def test_jwt_mode_invalid_token_returns_401(self, test_client, jwt_secret):
+        """Request with invalid token in JWT mode should return 401."""
+        env = {
+            "AUTH_ENABLED": "1",
+            "AUTH_MODE": "supabase_jwt",
+            "SUPABASE_JWT_SECRET": jwt_secret,
+        }
+        with patch.dict(os.environ, env, clear=False):
+            response = test_client.get(
+                "/api/config/hil-mode",
+                headers={"Authorization": "Bearer invalid.token.here"},
+            )
+            assert response.status_code == 401
+            assert "invalid_token" in response.json().get("detail", "")

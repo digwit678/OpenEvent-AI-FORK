@@ -169,11 +169,13 @@ def normalize_language(token: Optional[Any]) -> Optional[str]:
 
 
 def site_visit_allowed(event_entry: dict) -> bool:
-    """Return whether site visits are permitted for the current event configuration."""
+    """Return whether site visits are permitted for the current event configuration.
 
+    Site visits are venue-wide and can be scheduled at any workflow step.
+    They do NOT require a locked_room_id since they show the entire venue.
+    """
     policy = event_entry.get("policy") or {}
-    allow_site_visit = policy.get("allow_site_visit", True)
-    return bool(allow_site_visit) and bool(event_entry.get("locked_room_id"))
+    return policy.get("allow_site_visit", True)
 
 
 def find_better_room_dates(event_entry: dict) -> list[str]:

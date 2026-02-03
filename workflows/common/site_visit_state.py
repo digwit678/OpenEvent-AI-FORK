@@ -44,6 +44,7 @@ class SiteVisitState(TypedDict, total=False):
     status: SiteVisitStatus
     date_iso: Optional[str]           # Scheduled date (ISO format)
     time_slot: Optional[str]          # "10:00", "14:00", etc.
+    duration_minutes: Optional[int]   # Duration stored with booking for overlap detection
     proposed_slots: List[str]         # Offered time slots (legacy, now used for times)
     proposed_dates: List[str]         # Offered dates (ISO format) for date selection
     selected_date: Optional[str]      # Date selected by client (ISO), before time selection
@@ -258,12 +259,25 @@ def set_site_visit_date(
     date_iso: str,
     time_slot: Optional[str] = None,
 ) -> None:
-    """Set the date for site visit and mark as scheduled."""
+    """Set the date for site visit and mark as scheduled.
+
+    Stores the duration with the booking for proper overlap detection,
+    even if admin changes duration config after bookings are made.
+    """
+    from workflows.io.config_store import get_site_visit_slot_duration, is_site_visit_time_range_mode
+
     state = get_site_visit_state(event_entry)
     state["date_iso"] = date_iso
     if time_slot:
         state["time_slot"] = time_slot
     state["status"] = "scheduled"
+
+    # Store duration for overlap detection (prevents issues if config changes later)
+    if is_site_visit_time_range_mode():
+        state["duration_minutes"] = get_site_visit_slot_duration()
+    else:
+        state["duration_minutes"] = 60  # Legacy: 1-hour default
+
     # Legacy fields for backward compat
     state["confirmed_date"] = date_iso
     state["confirmed_time"] = time_slot

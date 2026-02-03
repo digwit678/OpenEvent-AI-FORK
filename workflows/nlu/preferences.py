@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from services.products import list_product_records
+from services.products import list_recommended_products
 from prefs.semantics import normalize_catering, normalize_products
 
 PreferencePayload = Dict[str, Any]
@@ -455,7 +455,7 @@ def _room_catalog() -> Dict[str, Dict[str, Any]]:
         }
     room_ids = {room.get("id", "").strip().lower(): room["name"] for room in rooms if room.get("id")}
     room_aliases = {room["name"].strip().lower(): room["name"] for room in rooms}
-    product_records = list_product_records()
+    product_records = list_recommended_products()
 
     for record in product_records:
         variants = [record.name] + [syn for syn in record.synonyms if syn]

@@ -25,6 +25,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+# Import HTTPException for require_admin_role
+try:
+    from fastapi import HTTPException
+except ImportError:
+    # Fallback for non-FastAPI environments
+    HTTPException = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 # Request-scoped auth context (for Supabase JWT mode)
@@ -55,6 +62,168 @@ def get_current_user_id() -> Optional[str]:
 def get_current_user_role() -> Optional[str]:
     """Get user role from authenticated request, or None if not authenticated."""
     return CURRENT_USER_ROLE.get()
+
+
+def require_admin_role() -> None:
+    """
+    Verify the authenticated user has admin or owner role.
+    Call this at the start of admin-only route handlers.
+
+    Raises:
+        HTTPException 401 if not authenticated
+        HTTPException 403 if role is insufficient
+
+    Usage in route handlers:
+        @router.post("/config/setting")
+        async def update_setting(data: SettingModel):
+            require_admin_role()  # Guard at the start
+            # ... rest of handler
+    """
+    if HTTPException is None:
+        raise RuntimeError("FastAPI not available - cannot use require_admin_role")
+
+    user_id = get_current_user_id()
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    role = get_current_user_role()
+    if role not in ("admin", "owner"):
+        logger.warning(
+            "Admin access denied for user=%s role=%s",
+            user_id[:8] + "..." if user_id else "unknown",
+            role,
+        )
+        raise HTTPException(status_code=403, detail="Admin role required")
+
+
+# =============================================================================
+# P2 STUB: Supabase Database Verification (NOT YET ACTIVE)
+# =============================================================================
+# TODO: Enable this when P2 (Supabase Storage) is implemented.
+# This provides real-time verification of team membership against the database,
+# catching cases where a user is removed from a team but still has a valid JWT.
+#
+# To enable:
+# 1. Implement P2 (Supabase Storage) first
+# 2. Set SUPABASE_VERIFY_MEMBERSHIP=1 in .env
+# 3. Call verify_team_membership() in the middleware after JWT validation
+# =============================================================================
+
+# Cache for team membership verification (5 min TTL)
+_membership_cache: dict = {}
+_MEMBERSHIP_CACHE_TTL = 300  # 5 minutes
+
+
+async def verify_team_membership(user_id: str, team_id: str) -> str:
+    """
+    [P2 STUB] Verify user is still a member of team and return current role.
+
+    This function queries Supabase to verify:
+    1. User is an active member of the team (team_members_new table)
+    2. OR user is the team owner (teams table)
+
+    Returns:
+        str: The user's role ("admin", "owner", "member", etc.)
+
+    Raises:
+        HTTPException 403 if user is not a team member
+
+    NOTE: This is a STUB - requires P2 (Supabase Storage) to be implemented first.
+    """
+    import time
+
+    if HTTPException is None:
+        raise RuntimeError("FastAPI not available")
+
+    # Check cache first
+    cache_key = f"{user_id}:{team_id}"
+    cached = _membership_cache.get(cache_key)
+    if cached:
+        cached_role, cached_time = cached
+        if time.time() - cached_time < _MEMBERSHIP_CACHE_TTL:
+            logger.debug("Team membership cache hit for user=%s team=%s", user_id[:8], team_id[:8])
+            return cached_role
+
+    # P2 STUB: When Supabase is integrated, uncomment this code:
+    # -----------------------------------------------------------------
+    # from supabase import create_client
+    #
+    # supabase_url = os.getenv("OE_SUPABASE_URL")
+    # supabase_key = os.getenv("OE_SUPABASE_KEY")
+    #
+    # if not supabase_url or not supabase_key:
+    #     logger.warning("Supabase not configured, skipping membership verification")
+    #     return "user"  # Fallback to JWT claim
+    #
+    # client = create_client(supabase_url, supabase_key)
+    #
+    # # Check team_members_new table
+    # result = client.table("team_members_new")\
+    #     .select("role")\
+    #     .eq("team_id", team_id)\
+    #     .eq("user_id", user_id)\
+    #     .eq("invitation_status", "active")\
+    #     .execute()
+    #
+    # if result.data:
+    #     role = result.data[0]["role"]
+    #     _membership_cache[cache_key] = (role, time.time())
+    #     return role
+    #
+    # # Check if user is team owner
+    # team_result = client.table("teams")\
+    #     .select("owner_id")\
+    #     .eq("id", team_id)\
+    #     .execute()
+    #
+    # if team_result.data and team_result.data[0]["owner_id"] == user_id:
+    #     _membership_cache[cache_key] = ("owner", time.time())
+    #     return "owner"
+    #
+    # # Not a member
+    # logger.warning("User %s not a member of team %s", user_id[:8], team_id[:8])
+    # raise HTTPException(status_code=403, detail="Not a team member")
+    # -----------------------------------------------------------------
+
+    # STUB: For now, just return the JWT role (trust claims)
+    logger.debug("P2 stub: verify_team_membership not active, trusting JWT claims")
+    return get_current_user_role() or "user"
+
+
+def clear_membership_cache(user_id: Optional[str] = None, team_id: Optional[str] = None) -> int:
+    """
+    Clear the membership verification cache.
+
+    Call this when:
+    - A user is added/removed from a team
+    - A user's role changes
+    - You need to force re-verification
+
+    Args:
+        user_id: Clear cache for specific user (None = all users)
+        team_id: Clear cache for specific team (None = all teams)
+
+    Returns:
+        int: Number of cache entries cleared
+    """
+    global _membership_cache
+
+    if user_id is None and team_id is None:
+        count = len(_membership_cache)
+        _membership_cache = {}
+        return count
+
+    to_remove = []
+    for key in _membership_cache:
+        cached_user, cached_team = key.split(":")
+        if (user_id is None or cached_user == user_id) and \
+           (team_id is None or cached_team == team_id):
+            to_remove.append(key)
+
+    for key in to_remove:
+        del _membership_cache[key]
+
+    return len(to_remove)
 
 
 def _extract_bearer_token(auth_header: str) -> Optional[str]:
@@ -98,11 +267,18 @@ def _validate_supabase_jwt(token: Optional[str]) -> Tuple[bool, str, dict]:
     Returns:
         (is_valid, error_message, claims_dict)
 
-    Note: This is a placeholder for Phase 3. Currently returns error.
-    When implemented, will:
-      1. Validate JWT signature using SUPABASE_JWT_SECRET or JWKS
-      2. Extract claims (sub, team_id, role)
-      3. Set contextvars for downstream access
+    Supabase stores custom claims in `app_metadata`, so we check both
+    app_metadata and top-level payload for team_id and role.
+
+    Expected JWT payload structure:
+        {
+            "sub": "user-uuid",
+            "app_metadata": {
+                "team_id": "team-uuid",
+                "role": "admin"
+            },
+            ...
+        }
     """
     if not token:
         return False, "missing_token", {}
@@ -113,23 +289,41 @@ def _validate_supabase_jwt(token: Optional[str]) -> Tuple[bool, str, dict]:
         logger.warning("AUTH_MODE=supabase_jwt but SUPABASE_JWT_SECRET not configured")
         return False, "server_misconfigured", {}
 
-    # TODO Phase 3: Implement JWT validation
-    # For now, return not implemented
-    # When ready:
-    #   import jwt
-    #   try:
-    #       payload = jwt.decode(token, jwt_secret, algorithms=["HS256"])
-    #       return True, "", {
-    #           "user_id": payload.get("sub"),
-    #           "team_id": payload.get("team_id"),
-    #           "role": payload.get("role", "user"),
-    #       }
-    #   except jwt.ExpiredSignatureError:
-    #       return False, "token_expired", {}
-    #   except jwt.InvalidTokenError:
-    #       return False, "invalid_token", {}
+    try:
+        import jwt as pyjwt
 
-    return False, "supabase_jwt_not_implemented", {}
+        # Supabase uses HS256 by default
+        payload = pyjwt.decode(token, jwt_secret, algorithms=["HS256"])
+
+        # Extract app_metadata (where Supabase stores custom claims)
+        app_metadata = payload.get("app_metadata", {})
+
+        # Check both app_metadata and top-level for team_id/role
+        # (Supabase recommends app_metadata, but support both for flexibility)
+        return True, "", {
+            "user_id": payload.get("sub"),
+            "team_id": app_metadata.get("team_id") or payload.get("team_id"),
+            "role": app_metadata.get("role") or payload.get("role", "user"),
+        }
+
+    except ImportError:
+        logger.error("PyJWT not installed - run: pip install PyJWT")
+        return False, "server_misconfigured", {}
+
+    except Exception as e:
+        # Use module name to access exception types
+        import jwt as pyjwt
+
+        if isinstance(e, pyjwt.ExpiredSignatureError):
+            return False, "token_expired", {}
+
+        if isinstance(e, pyjwt.InvalidTokenError):
+            logger.debug("JWT validation failed: %s", e)
+            return False, "invalid_token", {}
+
+        # Unexpected error
+        logger.error("Unexpected JWT error: %s", e)
+        return False, "invalid_token", {}
 
 
 class AuthMiddleware(BaseHTTPMiddleware):

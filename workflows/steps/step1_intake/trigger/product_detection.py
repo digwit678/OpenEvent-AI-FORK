@@ -10,7 +10,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from workflows.common.menu_options import DINNER_MENU_OPTIONS
-from services.products import list_product_records, merge_product_requests, normalise_product_payload
+from services.products import list_recommended_products, merge_product_requests, normalise_product_payload
 
 from .keyword_matching import (
     PRODUCT_ADD_KEYWORDS,
@@ -152,7 +152,7 @@ def detect_product_update_request(
     existing_ops = bool(existing_additions or existing_removals)
     additions: List[Dict[str, Any]] = []
     removals: List[str] = []
-    catalog = list_product_records()
+    catalog = list_recommended_products()
 
     # Bulk removal detection: "remove all menus", "no food", "don't need any food"
     bulk_remove_menus = detect_bulk_menu_removal(text)

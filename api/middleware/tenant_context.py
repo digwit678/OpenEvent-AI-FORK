@@ -43,13 +43,22 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
     """
     Middleware to extract tenant context from request headers.
 
-    Only active when TENANT_HEADER_ENABLED=1 (test/dev environments).
-    In production, tenant context comes from authenticated identity (JWT claims).
+    Active when:
+    1. TENANT_HEADER_ENABLED=1 (explicit opt-in for test/dev)
+    2. AUTH_MODE=supabase_jwt (implicit multi-tenancy in JWT mode)
+
+    In JWT mode, the AuthMiddleware sets team_id from JWT claims first,
+    but X-Team-Id header can still override for testing/admin scenarios.
     """
 
     async def dispatch(self, request: Request, call_next):
-        # Only allow header overrides in explicitly enabled environments
-        if os.getenv("TENANT_HEADER_ENABLED", "0") == "1":
+        # Enable tenant headers when:
+        # 1. Explicitly enabled (TENANT_HEADER_ENABLED=1)
+        # 2. Running in Supabase JWT auth mode (implicit multi-tenancy)
+        auth_mode = os.getenv("AUTH_MODE", "api_key")
+        header_enabled = os.getenv("TENANT_HEADER_ENABLED", "0") == "1"
+
+        if header_enabled or auth_mode == "supabase_jwt":
             team_id = request.headers.get("X-Team-Id")
             manager_id = request.headers.get("X-Manager-Id")
 

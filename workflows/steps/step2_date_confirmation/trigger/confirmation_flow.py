@@ -52,6 +52,11 @@ from .window_helpers import (
     _extract_participants_from_state,
 )
 from .proposal_tracking import reset_date_attempts as _reset_date_attempts
+from .time_slot_flow import (
+    should_prompt_time_slot,
+    set_time_slot_pending,
+    build_time_slot_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -438,6 +443,72 @@ def prompt_confirmation(
     return GroupResult(action="date_confirmation_pending", payload=payload, halt=True)
 
 
+def _prompt_time_slot_selection(
+    state: WorkflowState,
+    event_entry: dict,
+    window: ConfirmationWindow,
+) -> GroupResult:
+    """Prompt the client to select a time slot (Morning/Afternoon/Evening).
+
+    Called when time slot selection is required and the client confirmed
+    a date without specifying a time.
+
+    Args:
+        state: Current workflow state
+        event_entry: Event data dict
+        window: The confirmed window (date only, times may be partial/inherited)
+
+    Returns:
+        GroupResult halting for time slot selection
+    """
+    from .time_slot_flow import get_pending_slot_info
+
+    pending = get_pending_slot_info(event_entry)
+    if not pending:
+        # Should not happen - set_time_slot_pending should have been called
+        logger.warning("[TIME_SLOT] Prompt called but no pending state")
+        return GroupResult(action="time_slot_error", halt=True)
+
+    date_display = pending.get("date_display", window.display_date)
+    slots = pending.get("slots", [])
+
+    prompt_body = build_time_slot_prompt(date_display, slots)
+
+    draft = {
+        "body": prompt_body,
+        "body_markdown": prompt_body,
+        "step": 2,
+        "topic": "time_slot_selection",
+        "requires_approval": False,
+    }
+    state.add_draft_message(draft)
+
+    update_event_metadata(event_entry, thread_state="Awaiting Client")
+    state.set_thread_state("Awaiting Client")
+
+    _emit_step2_snapshot(
+        state,
+        event_entry,
+        extra={
+            "time_slot_pending": True,
+            "date": window.iso_date,
+            "slots": slots,
+        },
+    )
+
+    payload = {
+        "client_id": state.client_id,
+        "event_id": event_entry.get("event_id"),
+        "date_confirmed": window.iso_date,
+        "time_slot_pending": True,
+        "available_slots": slots,
+        "draft_messages": state.draft_messages,
+        "thread_state": state.thread_state,
+        "persisted": True,
+    }
+    return GroupResult(action="time_slot_selection_pending", payload=payload, halt=True)
+
+
 def finalize_confirmation(
     state: WorkflowState,
     event_entry: dict,
@@ -486,6 +557,23 @@ def finalize_confirmation(
             partial=not (start_time and end_time),
             source_message_id=fallback_window.get("source_message_id"),
         )
+
+    # === TIME SLOT SELECTION CHECK ===
+    # If time slot selection is required and client didn't provide specific times,
+    # prompt for Morning/Afternoon/Evening selection before proceeding to Step 3.
+    # This is checked AFTER window normalization but BEFORE state changes.
+    if should_prompt_time_slot(event_entry, window.start_time, window.end_time):
+        # Check if times are inherited defaults (not explicitly provided)
+        # inherited_times=True means times came from previous request, not this message
+        if window.partial or window.inherited_times:
+            logger.info(
+                "[TIME_SLOT] Prompting for slot selection - date=%s, has_time=%s",
+                window.iso_date,
+                bool(window.start_time and window.end_time),
+            )
+            set_time_slot_pending(event_entry, window.iso_date, window.display_date)
+            state.extras["persist"] = True
+            return _prompt_time_slot_selection(state, event_entry, window)
 
     state.event_id = event_entry.get("event_id")
     clear_step2_hil_tasks(state, event_entry)
