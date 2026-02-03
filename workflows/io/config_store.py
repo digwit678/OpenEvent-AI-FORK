@@ -37,9 +37,15 @@ _DEFAULTS: Dict[str, Any] = {
 # Site visit defaults - match current hardcoded behavior
 _SITE_VISIT_DEFAULTS: Dict[str, Any] = {
     "blocked_dates": [],  # Additional blocked dates (ISO format)
-    "default_slots": [10, 14, 16],  # Hours in 24-hour format
+    "default_slots": [10, 14, 16],  # Hours in 24-hour format (legacy mode)
     "weekdays_only": True,  # Only allow weekday site visits
-    "min_days_ahead": 2,  # Minimum days before event for site visit
+    "min_days_ahead": 2,  # Minimum days before event (now = WORKING days in range mode)
+    # NEW: Time range mode settings
+    "range_start_hour": 10,  # 10:00 AM
+    "range_end_hour": 22,  # 10:00 PM
+    "slot_duration_minutes": 30,  # 30-min slots
+    "default_working_days_ahead": 3,  # TODAY + 3 working days
+    "use_time_range_mode": False,  # Toggle: false = legacy, true = dynamic range
 }
 
 # Manager defaults
@@ -198,6 +204,7 @@ def get_site_visit_min_days_ahead() -> int:
     """[OpenEvent Config Store] Return minimum days ahead for site visit booking.
 
     Site visits must be booked at least this many days before the event.
+    In time_range_mode, this is interpreted as WORKING days (Mon-Fri, minus holidays).
     """
     sv = _get_site_visit_config()
     val = sv.get("min_days_ahead")
@@ -206,11 +213,149 @@ def get_site_visit_min_days_ahead() -> int:
     return int(val)
 
 
+def get_site_visit_range_start_hour() -> int:
+    """[OpenEvent Config Store] Return start hour for site visit time range.
+
+    Used in time_range_mode to generate dynamic slots.
+    Default: 10 (10:00 AM)
+    """
+    sv = _get_site_visit_config()
+    val = sv.get("range_start_hour")
+    if val is None:
+        return _SITE_VISIT_DEFAULTS["range_start_hour"]
+    return int(val)
+
+
+def get_site_visit_range_end_hour() -> int:
+    """[OpenEvent Config Store] Return end hour for site visit time range.
+
+    Used in time_range_mode to generate dynamic slots.
+    Default: 22 (10:00 PM)
+    """
+    sv = _get_site_visit_config()
+    val = sv.get("range_end_hour")
+    if val is None:
+        return _SITE_VISIT_DEFAULTS["range_end_hour"]
+    return int(val)
+
+
+def get_site_visit_slot_duration() -> int:
+    """[OpenEvent Config Store] Return slot duration in minutes.
+
+    Used in time_range_mode to generate dynamic slots at this interval.
+    Default: 30 (30-minute slots)
+    """
+    sv = _get_site_visit_config()
+    val = sv.get("slot_duration_minutes")
+    if val is None:
+        return _SITE_VISIT_DEFAULTS["slot_duration_minutes"]
+    return int(val)
+
+
+def get_site_visit_default_working_days_ahead() -> int:
+    """[OpenEvent Config Store] Return default working days ahead for site visit.
+
+    In time_range_mode, the default site visit date is TODAY + N working days
+    (skipping weekends and holidays) instead of event_date - 7 days.
+    Default: 3 (TODAY + 3 working days)
+    """
+    sv = _get_site_visit_config()
+    val = sv.get("default_working_days_ahead")
+    if val is None:
+        return _SITE_VISIT_DEFAULTS["default_working_days_ahead"]
+    return int(val)
+
+
+def is_site_visit_time_range_mode() -> bool:
+    """[OpenEvent Config Store] Return whether time range mode is enabled.
+
+    When True:
+    - Slots are generated dynamically from range_start_hour to range_end_hour
+      at slot_duration_minutes intervals
+    - Default date is TODAY + default_working_days_ahead (working days)
+    - min_days_ahead is interpreted as working days
+
+    When False (default):
+    - Legacy mode: uses default_slots list [10, 14, 16]
+    - Default date is event_date - 7 days
+    - min_days_ahead is calendar days
+    """
+    sv = _get_site_visit_config()
+    val = sv.get("use_time_range_mode")
+    if val is None:
+        return _SITE_VISIT_DEFAULTS["use_time_range_mode"]
+    return bool(val)
+
+
 def get_all_site_visit_config() -> Dict[str, Any]:
     """[OpenEvent Config Store] Return complete site visit config with defaults."""
     sv = _get_site_visit_config()
     result = dict(_SITE_VISIT_DEFAULTS)
     result.update({k: v for k, v in sv.items() if v is not None})
+    return result
+
+
+# =============================================================================
+# Event Time Slot Configuration
+# =============================================================================
+
+# Default time slots for event booking (disabled by default)
+_EVENT_TIME_SLOT_DEFAULTS: Dict[str, Any] = {
+    "slots": [
+        {"label": "Morning", "start": 9, "end": 12},
+        {"label": "Afternoon", "start": 13, "end": 17},
+        {"label": "Evening", "start": 18, "end": 22},
+    ],
+    "require_selection": False,  # Disabled by default for backward compatibility
+}
+
+
+def _get_event_time_slots_config() -> Dict[str, Any]:
+    """[OpenEvent Config Store] Load event time slots config from database."""
+    try:
+        db = load_db(DB_PATH)
+        config = db.get("config", {})
+        return config.get("event_time_slots", {})
+    except Exception:
+        return {}
+
+
+def get_event_time_slots() -> List[Dict[str, Any]]:
+    """[OpenEvent Config Store] Return manager-configured time slots for event booking.
+
+    Returns list of slot dicts with: label, start (hour), end (hour).
+    Example: [{"label": "Morning", "start": 9, "end": 12}]
+
+    These are offered to clients during date confirmation when
+    require_selection is enabled and no specific time is provided.
+    """
+    config = _get_event_time_slots_config()
+    slots = config.get("slots")
+    if not slots:
+        return list(_EVENT_TIME_SLOT_DEFAULTS["slots"])
+    return list(slots)
+
+
+def is_event_time_slot_required() -> bool:
+    """[OpenEvent Config Store] Return whether time slot selection is mandatory.
+
+    If True, clients MUST select a time slot (Morning/Afternoon/Evening)
+    during date confirmation unless they provide specific start/end times.
+
+    Default: False (backward compatible - no time slot prompt)
+    """
+    config = _get_event_time_slots_config()
+    val = config.get("require_selection")
+    if val is None:
+        return _EVENT_TIME_SLOT_DEFAULTS["require_selection"]
+    return bool(val)
+
+
+def get_all_event_time_slots_config() -> Dict[str, Any]:
+    """[OpenEvent Config Store] Return complete event time slots config with defaults."""
+    config = _get_event_time_slots_config()
+    result = dict(_EVENT_TIME_SLOT_DEFAULTS)
+    result.update({k: v for k, v in config.items() if v is not None})
     return result
 
 
@@ -524,3 +669,140 @@ def get_all_faq_config() -> Dict[str, Any]:
     result = dict(_FAQ_DEFAULTS)
     result.update({k: v for k, v in faq.items() if v is not None})
     return result
+
+
+# =============================================================================
+# Product Availability Configuration (Three-Tier System)
+# =============================================================================
+#
+# Three-tier product availability:
+#   - RECOMMENDED: AI suggests in offers & answers questions (default)
+#   - ON_REQUEST: Not suggested by AI, but manager can add manually
+#   - UNAVAILABLE: Completely hidden, cannot be added even manually
+#
+# Storage:
+#   - on_request_products: List of product IDs with "on_request" status
+#   - unavailable_products: List of product IDs with "unavailable" status
+#   - Products not in either list are "recommended" (default)
+#
+# Backward compatibility: Old "disabled_products" treated as "unavailable_products"
+# =============================================================================
+
+def _get_product_availability_config() -> Dict[str, Any]:
+    """[OpenEvent Config Store] Load product availability config from database."""
+    try:
+        db = load_db(DB_PATH)
+        config = db.get("config", {})
+        return config.get("product_availability", {})
+    except Exception:
+        return {}
+
+
+def get_on_request_products() -> List[str]:
+    """[OpenEvent Config Store] Return list of 'on request' product IDs.
+
+    Products in this list are available but NOT recommended by AI.
+    Managers can still add them manually to offers.
+
+    Returns:
+        List of product_id strings with 'on_request' status
+    """
+    pa = _get_product_availability_config()
+    on_request = pa.get("on_request_products")
+    if on_request is None:
+        return []
+    return list(on_request)
+
+
+def get_unavailable_products() -> List[str]:
+    """[OpenEvent Config Store] Return list of unavailable product IDs.
+
+    Products in this list are completely blocked - AI ignores them
+    and they cannot be added to offers even manually.
+
+    Backward compatible: Also checks legacy 'disabled_products' field.
+
+    Returns:
+        List of product_id strings with 'unavailable' status
+    """
+    pa = _get_product_availability_config()
+    # Check new field first
+    unavailable = pa.get("unavailable_products")
+    if unavailable is not None:
+        return list(unavailable)
+    # Backward compatibility: treat old disabled_products as unavailable
+    disabled = pa.get("disabled_products")
+    if disabled is not None:
+        return list(disabled)
+    return []
+
+
+def get_disabled_products() -> List[str]:
+    """[OpenEvent Config Store] DEPRECATED - Use get_unavailable_products().
+
+    Kept for backward compatibility. Returns unavailable products.
+    """
+    return get_unavailable_products()
+
+
+def get_product_status(product_id: str) -> str:
+    """[OpenEvent Config Store] Get the availability status of a product.
+
+    Args:
+        product_id: The product ID to check
+
+    Returns:
+        'recommended' | 'on_request' | 'unavailable'
+    """
+    if not product_id:
+        return "unavailable"
+
+    if product_id in get_unavailable_products():
+        return "unavailable"
+    if product_id in get_on_request_products():
+        return "on_request"
+    return "recommended"
+
+
+def is_product_enabled(product_id: str) -> bool:
+    """[OpenEvent Config Store] Check if a product can be added to offers.
+
+    Returns True for 'recommended' and 'on_request' products.
+    Returns False only for 'unavailable' products.
+
+    Args:
+        product_id: The product ID to check
+
+    Returns:
+        True if the product can be added (recommended or on_request)
+    """
+    if not product_id:
+        return False
+    return get_product_status(product_id) != "unavailable"
+
+
+def is_product_recommended(product_id: str) -> bool:
+    """[OpenEvent Config Store] Check if a product should be recommended by AI.
+
+    Returns True only for 'recommended' products.
+    Returns False for 'on_request' and 'unavailable' products.
+
+    Args:
+        product_id: The product ID to check
+
+    Returns:
+        True if the product should be suggested by AI
+    """
+    if not product_id:
+        return False
+    return get_product_status(product_id) == "recommended"
+
+
+def get_all_product_availability_config() -> Dict[str, Any]:
+    """[OpenEvent Config Store] Return complete product availability config."""
+    pa = _get_product_availability_config()
+    return {
+        "on_request_products": pa.get("on_request_products", []),
+        "unavailable_products": get_unavailable_products(),  # Handles backward compat
+        "updated_at": pa.get("updated_at"),
+    }

@@ -53,6 +53,11 @@ from workflows.io.config_store import (
     get_site_visit_slots,
     get_site_visit_weekdays_only,
     get_site_visit_min_days_ahead,
+    get_site_visit_range_start_hour,
+    get_site_visit_range_end_hour,
+    get_site_visit_slot_duration,
+    get_site_visit_default_working_days_ahead,
+    is_site_visit_time_range_mode,
 )
 from workflows.common.types import GroupResult, WorkflowState
 from workflows.io.database import (
@@ -85,6 +90,212 @@ def _load_database() -> Dict[str, Any]:
     if _db_loader is not None:
         return _db_loader()
     return load_db(_DEFAULT_DB_PATH)
+
+
+# =============================================================================
+# Working Days and Holiday Logic
+# =============================================================================
+
+# Default holidays (month, day) - common EU/US holidays
+# These are checked yearly (not specific to a year)
+DEFAULT_HOLIDAYS: List[Tuple[int, int]] = [
+    (1, 1),    # New Year's Day
+    (12, 25),  # Christmas Day
+    (12, 26),  # Boxing Day (EU)
+    (12, 31),  # New Year's Eve
+    (7, 4),    # Independence Day (US)
+]
+
+
+def _is_default_holiday(d: datetime) -> bool:
+    """Check if a date is a default holiday.
+
+    Args:
+        d: datetime to check
+
+    Returns:
+        True if the date is a default holiday
+    """
+    return (d.month, d.day) in DEFAULT_HOLIDAYS
+
+
+def _add_working_days(
+    start_date: datetime,
+    working_days: int,
+    blocked_dates: Set[str],
+) -> datetime:
+    """Add N working days to a start date, skipping weekends, holidays, and blocked dates.
+
+    Working days are Monday-Friday, excluding:
+    - Weekends (Saturday/Sunday)
+    - Default holidays (EU/US common)
+    - Custom blocked_dates from config
+
+    Args:
+        start_date: Starting datetime
+        working_days: Number of working days to add
+        blocked_dates: Set of ISO date strings to skip (custom holidays, etc.)
+
+    Returns:
+        datetime that is N working days after start_date
+    """
+    result = start_date
+    days_added = 0
+
+    while days_added < working_days:
+        result += timedelta(days=1)
+
+        # Skip weekends
+        if result.weekday() >= 5:
+            continue
+
+        # Skip default holidays
+        if _is_default_holiday(result):
+            continue
+
+        # Skip custom blocked dates
+        if result.date().isoformat() in blocked_dates:
+            continue
+
+        days_added += 1
+
+    return result
+
+
+# =============================================================================
+# Duration-Aware Overlap Detection
+# =============================================================================
+
+
+def _time_to_minutes(time_slot: str) -> int:
+    """Convert HH:MM time string to minutes since midnight.
+
+    Args:
+        time_slot: Time in "HH:MM" format (e.g., "10:30")
+
+    Returns:
+        Minutes since midnight (e.g., "10:30" -> 630)
+
+    Raises:
+        ValueError: If time_slot is invalid format or out of range
+    """
+    if not time_slot or not isinstance(time_slot, str):
+        raise ValueError(f"Invalid time slot: {time_slot}")
+
+    match = re.match(r'^(\d{1,2}):(\d{2})$', time_slot)
+    if not match:
+        raise ValueError(f"Time must be HH:MM format, got: {time_slot}")
+
+    hours, minutes = int(match.group(1)), int(match.group(2))
+    if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+        raise ValueError(f"Invalid time values: {time_slot}")
+
+    return hours * 60 + minutes
+
+
+def _slot_overlaps_with_booked(
+    candidate_time: str,
+    booked_slots: Set[Tuple[str, str, int]],
+    date_iso: str,
+    duration_minutes: int,
+) -> bool:
+    """Check if a candidate slot's duration window overlaps with any booked slot.
+
+    A slot is considered overlapping if its window [start, start + duration]
+    intersects with any booked slot's window on the same date.
+
+    Uses the classic interval overlap formula:
+    Two windows [A_start, A_end] and [B_start, B_end] overlap if:
+    A_start < B_end AND B_start < A_end
+
+    Args:
+        candidate_time: Proposed start time (HH:MM)
+        booked_slots: Set of (date_iso, time_slot, duration_minutes) already booked
+        date_iso: Date being checked (YYYY-MM-DD)
+        duration_minutes: Duration of the candidate slot in minutes
+
+    Returns:
+        True if there's an overlap with any booked slot, False if slot is free
+    """
+    try:
+        candidate_start = _time_to_minutes(candidate_time)
+    except ValueError:
+        logger.warning("Invalid candidate time format: %s", candidate_time)
+        return True  # Treat invalid times as unavailable for safety
+
+    candidate_end = candidate_start + duration_minutes
+
+    for booked_date, booked_time, booked_duration in booked_slots:
+        if booked_date != date_iso:
+            continue
+
+        try:
+            booked_start = _time_to_minutes(booked_time)
+        except ValueError:
+            logger.warning("Invalid booked time format: %s", booked_time)
+            continue
+
+        booked_end = booked_start + booked_duration
+
+        # Overlap formula: A_start < B_end AND B_start < A_end
+        if candidate_start < booked_end and booked_start < candidate_end:
+            return True
+
+    return False
+
+
+def _generate_time_slots_from_range(
+    booked_slots: Set[Tuple[str, str, int]],
+    date_iso: str,
+) -> List[str]:
+    """Generate time slots from configured time range at configured intervals.
+
+    Uses duration-aware overlap detection to ensure the ENTIRE slot window
+    is free, not just the start time. This prevents double-booking when
+    a 45-min slot at 10:00 would overlap with a proposed slot at 10:15.
+
+    Uses config values:
+    - range_start_hour: Start of available time (e.g., 10)
+    - range_end_hour: End of available time (e.g., 22)
+    - slot_duration_minutes: Interval between slots (e.g., 30)
+
+    Example with 10-22 range and 30-min duration:
+    ["10:00", "10:30", "11:00", ..., "21:30"]
+
+    Args:
+        booked_slots: Set of (date_iso, time_slot, duration_minutes) tuples already booked
+        date_iso: Date in ISO format (YYYY-MM-DD)
+
+    Returns:
+        List of available time slot strings (HH:MM format)
+    """
+    start_hour = get_site_visit_range_start_hour()
+    end_hour = get_site_visit_range_end_hour()
+    duration = get_site_visit_slot_duration()
+
+    slots: List[str] = []
+
+    # Generate all slots in the range
+    current_minutes = start_hour * 60
+    end_minutes = end_hour * 60
+
+    while current_minutes < end_minutes:
+        hour = current_minutes // 60
+        minute = current_minutes % 60
+        time_slot = f"{hour:02d}:{minute:02d}"
+
+        # Guard: Ensure slot doesn't cross midnight (end_time <= 24:00)
+        slot_end_minutes = current_minutes + duration
+        if slot_end_minutes > 1440:  # 24 * 60 = 1440 minutes
+            break  # Stop generating slots that would cross midnight
+
+        # Use duration-aware overlap check instead of simple membership
+        if not _slot_overlaps_with_booked(time_slot, booked_slots, date_iso, duration):
+            slots.append(time_slot)
+
+        current_minutes += duration
+
+    return slots
 
 
 # =============================================================================
@@ -217,8 +428,39 @@ def _start_site_visit(
     Since site visits are venue-wide, we go directly to date selection.
     Shows all available date+time combinations upfront for UX improvement.
     Only goes to conflict check path when BOTH date AND time are explicit.
+
+    GUARD: At Step 1, we require at least an event date or participant count
+    as context. This prevents offering site visit slots for undefined events.
     """
     current_step = event_entry.get("current_step", 3)
+
+    # GUARD: At Step 1, require some event context before scheduling site visit
+    # This prevents booking tours for undefined events
+    if current_step == 1:
+        has_event_date = bool(
+            event_entry.get("chosen_date")
+            or event_entry.get("user_info", {}).get("date")
+        )
+        has_participants = bool(
+            event_entry.get("participants")
+            or event_entry.get("requirements", {}).get("number_of_participants")
+        )
+        if not has_event_date and not has_participants:
+            body = (
+                "I'd be happy to schedule a site visit for you! "
+                "First, could you tell me a bit about your event - "
+                "your preferred date and the approximate number of guests? "
+                "This helps me suggest tour times that work well for you."
+            )
+            draft = {
+                "body": body,
+                "step": 1,
+                "topic": "site_visit_needs_context",
+                "requires_approval": False,
+            }
+            state.add_draft_message(draft)
+            state.extras["persist"] = True
+            return GroupResult(action="site_visit_deferred", halt=True)
 
     # Start the flow (records initiated_at_step)
     start_site_visit_flow(event_entry, initiated_at_step=current_step)
@@ -306,6 +548,9 @@ def _check_date_conflict(
     Checks two levels of conflicts:
     1. Date blocked entirely (event day) - hard block
     2. Specific time slot already booked - offer alternative times
+
+    Uses duration-aware overlap detection in range mode to catch conflicts
+    where the requested slot's window overlaps with an existing booking.
     """
     blocked_dates = _get_blocked_dates(event_entry)
     booked_slots = _get_booked_site_visit_slots(event_entry)
@@ -321,8 +566,19 @@ def _check_date_conflict(
     if date_iso in blocked_dates:
         return _date_conflict_response(state, event_entry, requested_date)
 
-    # Check for specific slot already booked
-    if (date_iso, time_slot) in booked_slots:
+    # Check for specific slot already booked (duration-aware in range mode)
+    has_conflict = False
+    if is_site_visit_time_range_mode():
+        duration = get_site_visit_slot_duration()
+        has_conflict = _slot_overlaps_with_booked(time_slot, booked_slots, date_iso, duration)
+    else:
+        # Legacy mode: check simple membership (convert 3-tuple to 2-tuple check)
+        has_conflict = any(
+            (d == date_iso and t == time_slot)
+            for d, t, _ in booked_slots
+        )
+
+    if has_conflict:
         return _slot_conflict_response(state, event_entry, requested_date, date_iso, time_slot, booked_slots)
 
     # No conflict - ask for explicit confirmation
@@ -379,7 +635,7 @@ def _slot_conflict_response(
     requested_date: str,
     date_iso: str,
     time_slot: str,
-    booked_slots: Set[tuple[str, str]],
+    booked_slots: Set[Tuple[str, str, int]],
 ) -> GroupResult:
     """Response when specific time slot is already booked.
 
@@ -390,11 +646,15 @@ def _slot_conflict_response(
     blocked_dates = _get_blocked_dates(event_entry)
     times = get_site_visit_slots()
 
+    # Get duration for overlap checking
+    duration = get_site_visit_slot_duration() if is_site_visit_time_range_mode() else 60
+
     # Find alternative times on the same day
     same_day_alternatives: List[str] = []
     for hour in times:
         alt_time = f"{hour:02d}:00"
-        if alt_time != time_slot and (date_iso, alt_time) not in booked_slots:
+        # Use duration-aware overlap check
+        if alt_time != time_slot and not _slot_overlaps_with_booked(alt_time, booked_slots, date_iso, duration):
             try:
                 dt = datetime.fromisoformat(date_iso)
                 same_day_alternatives.append(dt.strftime("%d.%m.%Y") + f" at {alt_time}")
@@ -827,9 +1087,12 @@ def _handle_time_selection(
     if not selected_time:
         return _ask_for_time_clarification(state, event_entry, selected_date, proposed_times)
 
-    # Validate that the time slot is still available
+    # Validate that the time slot is still available (duration-aware in range mode)
     booked_slots = _get_booked_site_visit_slots(event_entry)
-    if (selected_date, selected_time) in booked_slots:
+    duration = get_site_visit_slot_duration() if is_site_visit_time_range_mode() else 60
+    slot_is_conflicted = _slot_overlaps_with_booked(selected_time, booked_slots, selected_date, duration)
+
+    if slot_is_conflicted:
         # Slot was booked in the meantime - offer remaining times
         available_times = _generate_time_slots_for_date(event_entry, selected_date)
         if not available_times:
@@ -1146,12 +1409,15 @@ def _get_blocked_dates(
 def _get_booked_site_visit_slots(
     event_entry: Dict[str, Any],
     db: Optional[Dict[str, Any]] = None,
-) -> Set[tuple[str, str]]:
-    """Get already-booked site visit slots (per-slot availability).
+) -> Set[Tuple[str, str, int]]:
+    """Get already-booked site visit slots with their durations.
 
-    Returns a set of (date_iso, time_slot) tuples that are already booked
-    OR pending confirmation. This prevents double-booking when another
-    client is in the process of confirming a slot.
+    Returns a set of (date_iso, time_slot, duration_minutes) tuples that are
+    already booked OR pending confirmation. This prevents double-booking when
+    another client is in the process of confirming a slot.
+
+    Duration is stored with each booking to enable proper overlap detection
+    even if the admin changes the duration config after bookings are made.
 
     Includes slots with status: "scheduled" OR "confirm_pending"
 
@@ -1160,9 +1426,9 @@ def _get_booked_site_visit_slots(
         db: Optional database dict (if None, loads from file)
 
     Returns:
-        Set of (date_iso, time_slot) tuples that are booked or pending
+        Set of (date_iso, time_slot, duration_minutes) tuples that are booked or pending
     """
-    booked_slots: Set[tuple[str, str]] = set()
+    booked_slots: Set[Tuple[str, str, int]] = set()
 
     # Load database if not provided
     if db is None:
@@ -1185,12 +1451,14 @@ def _get_booked_site_visit_slots(
         if status == "scheduled":
             date_iso = sv_state.get("date_iso") or sv_state.get("confirmed_date")
             time_slot = sv_state.get("time_slot") or sv_state.get("confirmed_time")
+            # Use stored duration, fallback to 60 min for legacy bookings
+            duration = sv_state.get("duration_minutes", 60)
 
             if date_iso and time_slot:
-                booked_slots.add((date_iso, time_slot))
+                booked_slots.add((date_iso, time_slot, duration))
             elif date_iso:
                 # If no time slot, consider the default time slot booked
-                booked_slots.add((date_iso, "10:00"))
+                booked_slots.add((date_iso, "10:00", duration))
 
         elif status == "confirm_pending":
             # Also block slots that are pending confirmation
@@ -1198,8 +1466,10 @@ def _get_booked_site_visit_slots(
             if pending_slot:
                 from workflows.common.site_visit_state import parse_slot_string
                 date_iso, time_slot = parse_slot_string(pending_slot)
+                # Use stored duration, fallback to 60 min
+                duration = sv_state.get("duration_minutes", 60)
                 if date_iso and time_slot:
-                    booked_slots.add((date_iso, time_slot))
+                    booked_slots.add((date_iso, time_slot, duration))
 
     return booked_slots
 
@@ -1277,7 +1547,7 @@ def _has_any_room_available_for_slot(date_iso: str, time_slot: str) -> bool:
 def _generate_visit_slots(
     event_entry: Dict[str, Any],
     blocked_dates: Set[str],
-    booked_slots: Optional[Set[tuple[str, str]]] = None,
+    booked_slots: Optional[Set[Tuple[str, str, int]]] = None,
 ) -> List[str]:
     """Generate available site visit slots.
 
@@ -1286,6 +1556,7 @@ def _generate_visit_slots(
     - If no event date: base = today + 7 days
 
     Excludes blocked dates (event days) and already-booked site visit slots.
+    Uses duration-aware overlap detection in range mode.
     """
     # Get booked slots if not provided
     if booked_slots is None:
@@ -1353,12 +1624,15 @@ def _generate_visit_slots(
             candidate += timedelta(days=1)
             continue
 
+        # Get duration for overlap checking
+        duration = get_site_visit_slot_duration() if is_site_visit_time_range_mode() else 60
+
         # Check each time slot for availability
         for hour in times:
             time_slot = f"{hour:02d}:00"
-            # Check if this specific slot is booked
-            if (candidate_iso, time_slot) in booked_slots:
-                continue  # This slot is booked, try next time
+            # Use duration-aware overlap check
+            if _slot_overlaps_with_booked(time_slot, booked_slots, candidate_iso, duration):
+                continue  # This slot overlaps with a booked slot, try next time
 
             slot_dt = candidate.replace(hour=hour, minute=0)
             slots.append(slot_dt.strftime("%d.%m.%Y at %H:%M"))
@@ -1383,6 +1657,10 @@ def _generate_date_time_slots(
     Returns a dict of date_iso -> [available_times] for display in one message.
     This is a UX improvement to avoid requiring two separate selections.
 
+    DUAL-MODE SUPPORT:
+    - time_range_mode=True: Base date is TODAY + N working days, slots from range
+    - time_range_mode=False: Base date is event_date - 7 days, slots from default_slots
+
     Args:
         event_entry: Current event being processed
         blocked_dates: Set of dates blocked for site visits
@@ -1402,32 +1680,44 @@ def _generate_date_time_slots(
     # Determine the base date
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
-    try:
-        if event_date_str:
-            if "." in event_date_str:
-                day, month, year = map(int, event_date_str.split("."))
-                event_date = datetime(year, month, day)
+    # Check if time range mode is enabled
+    use_range_mode = is_site_visit_time_range_mode()
+
+    if use_range_mode:
+        # TIME RANGE MODE: Base date is TODAY + N working days
+        working_days_ahead = get_site_visit_default_working_days_ahead()
+        base_date = _add_working_days(today, working_days_ahead, blocked_dates)
+        event_date = None  # No upper bound in range mode
+    else:
+        # LEGACY MODE: Base date is event_date - 7 days
+        try:
+            if event_date_str:
+                if "." in event_date_str:
+                    day, month, year = map(int, event_date_str.split("."))
+                    event_date = datetime(year, month, day)
+                else:
+                    event_date = datetime.fromisoformat(event_date_str.replace("Z", ""))
+                base_date = event_date - timedelta(days=7)
             else:
-                event_date = datetime.fromisoformat(event_date_str.replace("Z", ""))
-            base_date = event_date - timedelta(days=7)
-        else:
+                base_date = today + timedelta(days=7)
+                event_date = None
+        except (ValueError, IndexError):
             base_date = today + timedelta(days=7)
             event_date = None
-    except (ValueError, IndexError):
-        base_date = today + timedelta(days=7)
-        event_date = None
 
     result: Dict[str, List[str]] = {}
-    times = get_site_visit_slots()
     weekdays_only = get_site_visit_weekdays_only()
     min_days_ahead = get_site_visit_min_days_ahead()
 
     candidate = base_date
 
     for _ in range(60):
-        if candidate < today + timedelta(days=min_days_ahead):
-            candidate += timedelta(days=1)
-            continue
+        # In range mode, min_days_ahead is already baked into base_date via working days
+        # In legacy mode, use calendar days
+        if not use_range_mode:
+            if candidate < today + timedelta(days=min_days_ahead):
+                candidate += timedelta(days=1)
+                continue
 
         if event_date and candidate >= event_date:
             candidate = event_date - timedelta(days=1)
@@ -1445,17 +1735,35 @@ def _generate_date_time_slots(
             candidate += timedelta(days=1)
             continue
 
+        # Skip default holidays in range mode
+        if use_range_mode and _is_default_holiday(candidate):
+            candidate += timedelta(days=1)
+            continue
+
         # Collect available time slots for this date
         # A slot is available if: (1) not already booked, (2) at least one room is free
-        available_times: List[str] = []
-        for hour in times:
-            time_slot = f"{hour:02d}:00"
-            if (candidate_iso, time_slot) in booked_slots:
-                continue
-            # Check if any room is available at this time
-            if not _has_any_room_available_for_slot(candidate_iso, time_slot):
-                continue
-            available_times.append(time_slot)
+        if use_range_mode:
+            # TIME RANGE MODE: Generate slots from configured range
+            available_times = _generate_time_slots_from_range(booked_slots, candidate_iso)
+            # Filter by room availability
+            available_times = [
+                t for t in available_times
+                if _has_any_room_available_for_slot(candidate_iso, t)
+            ]
+        else:
+            # LEGACY MODE: Use default_slots list with duration-aware overlap check
+            times = get_site_visit_slots()
+            available_times: List[str] = []
+            legacy_duration = 60  # Legacy mode uses 1-hour slots
+            for hour in times:
+                time_slot = f"{hour:02d}:00"
+                # Use duration-aware overlap check (legacy bookings default to 60 min)
+                if _slot_overlaps_with_booked(time_slot, booked_slots, candidate_iso, legacy_duration):
+                    continue
+                # Check if any room is available at this time
+                if not _has_any_room_available_for_slot(candidate_iso, time_slot):
+                    continue
+                available_times.append(time_slot)
 
         if available_times:
             result[candidate_iso] = available_times
@@ -1529,11 +1837,15 @@ def _generate_available_dates(
             candidate += timedelta(days=1)
             continue
 
+        # Get duration for overlap checking
+        duration = get_site_visit_slot_duration() if is_site_visit_time_range_mode() else 60
+
         # Check if at least one time slot is available on this date
         has_available_slot = False
         for hour in times:
             time_slot = f"{hour:02d}:00"
-            if (candidate_iso, time_slot) not in booked_slots:
+            # Use duration-aware overlap check
+            if not _slot_overlaps_with_booked(time_slot, booked_slots, candidate_iso, duration):
                 has_available_slot = True
                 break
 
@@ -1556,24 +1868,37 @@ def _generate_time_slots_for_date(
     Returns list of time strings like ["10:00", "14:00", "16:00"].
     Used for step 2 of 2-step selection.
 
+    DUAL-MODE SUPPORT:
+    - time_range_mode=True: Generate slots from configured range at intervals
+    - time_range_mode=False: Use default_slots list [10, 14, 16]
+
     A slot is available if:
     1. It's not already booked as a site visit
     2. At least one room is available (not Option/Confirmed) at that time
     """
     booked_slots = _get_booked_site_visit_slots(event_entry)
-    times = get_site_visit_slots()
 
-    available_times: List[str] = []
-    for hour in times:
-        time_slot = f"{hour:02d}:00"
-        if (date_iso, time_slot) in booked_slots:
-            continue
-        # Check if any room is available at this time
-        if not _has_any_room_available_for_slot(date_iso, time_slot):
-            continue
-        available_times.append(time_slot)
+    # Check if time range mode is enabled
+    if is_site_visit_time_range_mode():
+        # TIME RANGE MODE: Generate slots from configured range
+        available_times = _generate_time_slots_from_range(booked_slots, date_iso)
+    else:
+        # LEGACY MODE: Use default_slots list with duration-aware overlap check
+        times = get_site_visit_slots()
+        available_times: List[str] = []
+        legacy_duration = 60  # Legacy mode uses 1-hour slots
+        for hour in times:
+            time_slot = f"{hour:02d}:00"
+            # Use duration-aware overlap check (legacy bookings default to 60 min)
+            if _slot_overlaps_with_booked(time_slot, booked_slots, date_iso, legacy_duration):
+                continue
+            available_times.append(time_slot)
 
-    return available_times
+    # Filter by room availability (applies to both modes)
+    return [
+        t for t in available_times
+        if _has_any_room_available_for_slot(date_iso, t)
+    ]
 
 
 def _extract_date_from_message(message_text: str) -> Optional[str]:
