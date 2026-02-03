@@ -376,3 +376,166 @@ def has_specific_product_request(text: str, exclude_categories: Optional[List[st
         if cat.lower() not in exclude:
             return True
     return False
+
+
+# =============================================================================
+# Product Availability Filtering (Three-Tier System)
+# =============================================================================
+#
+# Three-tier product availability:
+#   - RECOMMENDED: AI suggests in offers & answers questions (default)
+#   - ON_REQUEST: Not suggested by AI, but manager can add manually
+#   - UNAVAILABLE: Completely hidden, cannot be added even manually
+#
+# Functions:
+#   - list_recommended_products(): Only 'recommended' products (for AI suggestions)
+#   - list_available_products(): 'recommended' + 'on_request' (for manual addition)
+#   - is_product_recommended(): Check if AI should suggest this product
+#   - is_product_available(): Check if product can be added to offers
+# =============================================================================
+
+def list_recommended_products(path: Optional[Path] = None) -> List[ProductRecord]:
+    """
+    Return only RECOMMENDED products from the catalog.
+
+    Filters out both 'on_request' and 'unavailable' products.
+    USE THIS FOR AI SUGGESTIONS - the AI should only recommend these products.
+
+    This function is NOT cached because the status lists can change at runtime.
+
+    Args:
+        path: Optional path to products.json (for testing)
+
+    Returns:
+        List of ProductRecord for recommended products only
+    """
+    from workflows.io.config_store import is_product_recommended
+
+    all_products = list_product_records(path)
+    return [p for p in all_products if is_product_recommended(p.product_id)]
+
+
+def list_available_products(path: Optional[Path] = None) -> List[ProductRecord]:
+    """
+    Return products that CAN be added to offers (recommended + on_request).
+
+    Filters out only 'unavailable' products.
+    Use this for manual product addition by managers.
+
+    For AI suggestions, use list_recommended_products() instead.
+
+    Args:
+        path: Optional path to products.json (for testing)
+
+    Returns:
+        List of ProductRecord for available products (recommended + on_request)
+    """
+    from workflows.io.config_store import is_product_enabled
+
+    all_products = list_product_records(path)
+    return [p for p in all_products if is_product_enabled(p.product_id)]
+
+
+def is_product_recommended(product_id: str) -> bool:
+    """
+    Check if a product should be RECOMMENDED by AI.
+
+    Returns True only for 'recommended' status products.
+    Returns False for 'on_request' and 'unavailable' products.
+
+    Args:
+        product_id: The product ID to check
+
+    Returns:
+        True if the product should be suggested by AI
+    """
+    from workflows.io.config_store import is_product_recommended as config_is_recommended
+
+    if not product_id:
+        return False
+
+    # First check if product exists in catalog
+    catalog = _load_catalog()
+    product_exists = any(p.product_id == product_id for p in catalog.values())
+
+    if not product_exists:
+        return False
+
+    return config_is_recommended(product_id)
+
+
+def is_product_available(product_id: str) -> bool:
+    """
+    Check if a product CAN be added to offers (by manager).
+
+    Returns True for 'recommended' and 'on_request' products.
+    Returns False only for 'unavailable' products.
+
+    Args:
+        product_id: The product ID to check
+
+    Returns:
+        True if the product can be added to offers
+    """
+    from workflows.io.config_store import is_product_enabled
+
+    if not product_id:
+        return False
+
+    # First check if product exists in catalog
+    catalog = _load_catalog()
+    product_exists = any(p.product_id == product_id for p in catalog.values())
+
+    if not product_exists:
+        return False
+
+    return is_product_enabled(product_id)
+
+
+def find_available_product(name: str) -> Optional[ProductRecord]:
+    """
+    Find a product by name, but only if it's available (not unavailable).
+
+    Like find_product(), but returns None if the product is unavailable.
+    Returns the product even if it's 'on_request' (can be added manually).
+
+    Args:
+        name: Product name to search for
+
+    Returns:
+        ProductRecord if found and available, None otherwise
+    """
+    from workflows.io.config_store import is_product_enabled
+
+    record = find_product(name)
+    if record is None:
+        return None
+
+    if not is_product_enabled(record.product_id):
+        return None
+
+    return record
+
+
+def find_recommended_product(name: str) -> Optional[ProductRecord]:
+    """
+    Find a product by name, but only if it's recommended (for AI use).
+
+    Like find_product(), but returns None if the product is on_request or unavailable.
+
+    Args:
+        name: Product name to search for
+
+    Returns:
+        ProductRecord if found and recommended, None otherwise
+    """
+    from workflows.io.config_store import is_product_recommended as config_is_recommended
+
+    record = find_product(name)
+    if record is None:
+        return None
+
+    if not config_is_recommended(record.product_id):
+        return None
+
+    return record

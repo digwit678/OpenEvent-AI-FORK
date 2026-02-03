@@ -346,6 +346,80 @@ def process(state: WorkflowState) -> GroupResult:
         decision = state.user_info.get("hil_decision") or "approve"
         return _apply_step2_hil_decision(state, event_entry, decision)
 
+    # === TIME SLOT PENDING CHECK ===
+    # If client was prompted to select a time slot, process their selection
+    from .time_slot_flow import (
+        is_time_slot_pending,
+        parse_slot_from_detection,
+        clear_time_slot_pending,
+        get_pending_slot_info,
+    )
+    from workflows.io.config_store import get_event_time_slots, get_timezone
+
+    if is_time_slot_pending(event_entry):
+        unified_detection = get_unified_detection(state)
+        slots_config = get_event_time_slots()
+        selection = parse_slot_from_detection(unified_detection, slots_config)
+
+        if selection:
+            start_time_slot, end_time_slot = selection
+            pending_info = get_pending_slot_info(event_entry)
+            date_iso = pending_info.get("date_iso") if pending_info else None
+            date_display = pending_info.get("date_display") if pending_info else None
+
+            if date_iso:
+                clear_time_slot_pending(event_entry)
+                logger.info(
+                    "[TIME_SLOT] Client selected slot: %s - %s for %s",
+                    start_time_slot, end_time_slot, date_iso,
+                )
+                # Build window and finalize confirmation
+                # Convert time strings to time objects for build_window_iso
+                start_h, start_m = map(int, start_time_slot.split(":"))
+                end_h, end_m = map(int, end_time_slot.split(":"))
+                start_iso, end_iso = build_window_iso(
+                    date_iso, time(start_h, start_m), time(end_h, end_m)
+                )
+                window = ConfirmationWindow(
+                    display_date=date_display or date_iso,
+                    iso_date=date_iso,
+                    start_time=start_time_slot,
+                    end_time=end_time_slot,
+                    start_iso=start_iso,
+                    end_iso=end_iso,
+                    inherited_times=False,
+                    partial=False,
+                    source_message_id=state.message.msg_id if state.message else None,
+                )
+                return _finalize_confirmation(state, event_entry, window)
+
+        # Could not parse selection - re-prompt
+        logger.debug("[TIME_SLOT] Could not parse selection, re-prompting")
+        pending_info = get_pending_slot_info(event_entry)
+        if pending_info:
+            slots = pending_info.get("slots", [])
+            prompt_body = (
+                "I didn't quite catch which time slot you prefer. "
+                "Please select one of these options:\n\n"
+                + "\n".join(f"- **{slot}**" for slot in slots)
+            )
+            state.add_draft_message({
+                "body": prompt_body,
+                "body_markdown": prompt_body,
+                "step": 2,
+                "topic": "time_slot_clarification",
+                "requires_approval": False,
+            })
+            update_event_metadata(event_entry, thread_state="Awaiting Client")
+            state.set_thread_state("Awaiting Client")
+            state.extras["persist"] = True
+            return GroupResult(
+                action="time_slot_clarification",
+                payload={"available_slots": slots},
+                halt=True,
+            )
+    # === END TIME SLOT PENDING CHECK ===
+
     # D9: Use extracted function
     msg = state.message
     message_text = get_message_text(msg.subject if msg else None, msg.body if msg else None)
