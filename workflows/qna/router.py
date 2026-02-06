@@ -1062,6 +1062,14 @@ def _dates_response(
 
 
 def _site_visit_response() -> List[str]:
+    from workflows.io.config_store import is_site_visit_enabled
+
+    if not is_site_visit_enabled():
+        info = [
+            "Unfortunately, there are no site visits available for our venue right now.",
+        ]
+        return _with_preface(info, "Site visit availability:")
+
     info = [
         "Site visits run Tuesday–Thursday between 10:00 and 18:00.",
         "We need a confirmed event date and time window before booking the tour.",

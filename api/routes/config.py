@@ -29,6 +29,10 @@ ENDPOINTS:
     POST /api/config/catalog          - Set catalog settings
     GET  /api/config/faq              - Get FAQ settings
     POST /api/config/faq              - Set FAQ settings
+    GET  /api/config/assistant        - Get assistant persona (name)
+    POST /api/config/assistant        - Set assistant persona (name)
+    GET  /api/config/response-style   - Get response style (tone-only)
+    POST /api/config/response-style   - Set response style (tone-only)
 
 DEPENDS ON:
     - backend/workflow_email.py  # Database operations
@@ -39,7 +43,7 @@ import os
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -70,7 +74,7 @@ class GlobalDepositConfig(BaseModel):
     deposit_type: str = "percentage"  # "percentage" or "fixed"
     deposit_percentage: int = 30
     deposit_fixed_amount: float = 0.0
-    deposit_deadline_days: int = 10
+    deposit_deadline_days: int = 3
 
 
 class HILModeConfig(BaseModel):
@@ -184,6 +188,28 @@ class PromptHistoryResponse(BaseModel):
     history: List[PromptHistoryEntry]
 
 
+class AssistantPersonaConfig(BaseModel):
+    """
+    Assistant persona configuration for client-facing messages.
+
+    - representative_name: Name the AI should represent in client replies.
+    """
+    representative_name: Optional[str] = None
+
+
+class ResponseStyleConfig(BaseModel):
+    """
+    Response style configuration (tone-only).
+
+    - tone: formal | friendly | neutral
+    - temperament: 0-100 slider (reserved -> enthusiastic)
+    - style_adjectives: Comma-separated adjectives or list of adjectives
+    """
+    tone: Optional[str] = None
+    temperament: Optional[int] = None
+    style_adjectives: Optional[Union[str, List[str]]] = None
+
+
 # --- Helper Functions ---
 
 def _now_iso() -> str:
@@ -218,7 +244,7 @@ async def get_global_deposit_config():
             "deposit_type": config.get("deposit_type", "percentage"),
             "deposit_percentage": config.get("deposit_percentage", 30),
             "deposit_fixed_amount": config.get("deposit_fixed_amount", 0.0),
-            "deposit_deadline_days": config.get("deposit_deadline_days", 10),
+            "deposit_deadline_days": config.get("deposit_deadline_days", 3),
         }
     except Exception as exc:
         raise_safe_error(500, "load deposit config", exc, logger)
@@ -1040,6 +1066,128 @@ async def revert_prompts_config(index: int):
         raise_safe_error(500, "revert prompts", exc, logger)
 
 
+# ---------------------------------------------------------------------------
+# Assistant Persona & Response Style Endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/assistant")
+async def get_assistant_config():
+    """
+    Get assistant persona configuration.
+    """
+    try:
+        from workflows.io.config_store import get_assistant_persona
+
+        db = wf_load_db()
+        stored = db.get("config", {}).get("assistant", {})
+        config = get_assistant_persona()
+        return {
+            "representative_name": config.get("representative_name"),
+            "source": "database",
+            "updated_at": stored.get("updated_at"),
+        }
+    except Exception as exc:
+        raise_safe_error(500, "load assistant config", exc, logger)
+
+
+@router.post("/assistant")
+async def set_assistant_config(config: AssistantPersonaConfig):
+    """
+    Set assistant persona configuration.
+    """
+    require_admin_role()
+    try:
+        from workflows.io.config_store import _sanitize_representative_name, get_assistant_persona
+
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+
+        current = db["config"].get("assistant", {})
+        warnings: List[str] = []
+
+        if config.representative_name is not None:
+            sanitized = _sanitize_representative_name(config.representative_name)
+            if sanitized:
+                current["representative_name"] = sanitized
+            else:
+                current.pop("representative_name", None)
+                if str(config.representative_name).strip():
+                    warnings.append("representative_name_rejected")
+
+        current["updated_at"] = _now_iso()
+        db["config"]["assistant"] = current
+        wf_save_db(db)
+
+        response: Dict[str, Any] = {"status": "ok", "config": get_assistant_persona()}
+        if warnings:
+            response["warnings"] = warnings
+        return response
+    except Exception as exc:
+        raise_safe_error(500, "save assistant config", exc, logger)
+
+
+@router.get("/response-style")
+async def get_response_style_config():
+    """
+    Get response style configuration (tone-only controls).
+    """
+    try:
+        from workflows.io.config_store import get_response_style_config
+
+        db = wf_load_db()
+        stored = db.get("config", {}).get("response_style", {})
+        config = get_response_style_config()
+        return {
+            **config,
+            "source": "database",
+            "updated_at": stored.get("updated_at"),
+        }
+    except Exception as exc:
+        raise_safe_error(500, "load response style config", exc, logger)
+
+
+@router.post("/response-style")
+async def set_response_style_config(config: ResponseStyleConfig):
+    """
+    Set response style configuration (tone-only controls).
+    """
+    require_admin_role()
+    try:
+        from workflows.io.config_store import (
+            _sanitize_style_adjectives,
+            _sanitize_temperament,
+            _sanitize_tone,
+            get_response_style_config as get_effective_style,
+        )
+
+        db = wf_load_db()
+        if "config" not in db:
+            db["config"] = {}
+
+        current = db["config"].get("response_style", {})
+        rejected: List[str] = []
+
+        if config.tone is not None:
+            current["tone"] = _sanitize_tone(config.tone)
+        if config.temperament is not None:
+            current["temperament"] = _sanitize_temperament(config.temperament)
+        if config.style_adjectives is not None:
+            adjectives, rejected = _sanitize_style_adjectives(config.style_adjectives)
+            current["style_adjectives"] = adjectives
+
+        current["updated_at"] = _now_iso()
+        db["config"]["response_style"] = current
+        wf_save_db(db)
+
+        response: Dict[str, Any] = {"status": "ok", "config": get_effective_style()}
+        if rejected:
+            response["rejected_adjectives"] = rejected
+        return response
+    except Exception as exc:
+        raise_safe_error(500, "save response style config", exc, logger)
+
+
 
 # ---------------------------------------------------------------------------
 # Room-Specific Deposit Endpoints (INACTIVE - For Future Integration)
@@ -1407,6 +1555,7 @@ class SiteVisitConfig(BaseModel):
     Site visit configuration for scheduling venue tours.
 
     Controls when and how site visits can be booked:
+    - enabled: Master toggle for site visit availability
     - blocked_dates: Additional dates to block (holidays, maintenance)
     - default_slots: Available hours for site visits (24-hour format) [legacy mode]
     - weekdays_only: Whether to restrict to weekdays only
@@ -1419,6 +1568,7 @@ class SiteVisitConfig(BaseModel):
     - slot_duration_minutes: Duration of each slot (15, 30, 45, or 60)
     - default_working_days_ahead: Default date = TODAY + N working days
     """
+    enabled: Optional[bool] = None
     blocked_dates: Optional[List[str]] = None
     default_slots: Optional[List[int]] = None
     weekdays_only: Optional[bool] = None
@@ -1437,6 +1587,7 @@ async def get_site_visit_config():
     Get the current site visit configuration.
 
     Returns settings for site visit scheduling:
+    - enabled: Master toggle for site visit availability
     - blocked_dates: Additional blocked dates (ISO format)
     - default_slots: Available hours [10, 14, 16] (legacy mode)
     - weekdays_only: True = Mon-Fri only
@@ -1454,6 +1605,7 @@ async def get_site_visit_config():
 
         config = get_all_site_visit_config()
         return {
+            "enabled": config.get("enabled", True),
             # Legacy fields
             "blocked_dates": config.get("blocked_dates", []),
             "default_slots": config.get("default_slots", [10, 14, 16]),
@@ -1479,6 +1631,7 @@ async def set_site_visit_config(config: SiteVisitConfig):
     Update site visit scheduling settings. Only provided fields are updated.
 
     EXAMPLES:
+    - Disable site visits: {"enabled": false}
     - Block holidays: {"blocked_dates": ["2026-01-01", "2026-12-25"]}
     - Change available hours: {"default_slots": [9, 11, 14, 16]}
     - Allow weekends: {"weekdays_only": false}
@@ -1526,6 +1679,9 @@ async def set_site_visit_config(config: SiteVisitConfig):
             db["config"] = {}
 
         current = db["config"].get("site_visit", {})
+
+        if config.enabled is not None:
+            current["enabled"] = config.enabled
 
         # Legacy fields
         if config.blocked_dates is not None:

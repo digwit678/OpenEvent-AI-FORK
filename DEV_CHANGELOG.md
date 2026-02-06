@@ -1,5 +1,66 @@
 # Development Changelog
 
+## 2026-02-06
+
+### Feature: Client-Initiated Event Cancellation (Hard Delete)
+
+**Goal:** Allow clients to cancel their event at any workflow step (1-7) via natural language. The event is hard-deleted from the database, freeing the date and room for other bookings.
+
+**What changed:**
+- `workflows/io/database.py` — New `delete_event()` function: hard-deletes event + all related records (email_messages, event_signatures, thread_mappings, client event_ids, snapshots)
+- `detection/unified.py` — New `is_cancellation` signal in LLM detection with strict negative examples (distinguishes full event cancel from partial changes, site visit changes, Q&A)
+- `workflows/common/cancellation_handler.py` — **NEW**: `is_cancellation_intent()` (LLM-first with keyword fallback), `handle_cancellation()` (immediate hard-delete + HIL task + farewell draft)
+- `workflows/runtime/router.py` — Cancellation intercept added BEFORE site visit intercept in routing loop
+- `workflows/runtime/pre_route.py` — Added `cancel_event` to `ALWAYS_VALID_INTENTS`
+- `api/routes/events.py` — Manager cancel endpoint now hard-deletes instead of status-marking
+- `workflows/steps/step7_confirmation/trigger/step7_handler.py` — Step 7 decline now hard-deletes instead of status-marking
+
+**Detection precision:** LLM prompt includes explicit negative examples:
+- "cancel the site visit" → `is_site_visit_change`, NOT cancellation
+- "cancel room B, take room A" → `is_change_request`, NOT cancellation
+- "what's the cancellation policy?" → `is_question`, NOT cancellation
+
+**Tests:** `pytest tests/unit/test_delete_event.py tests/detection/test_cancellation.py tests/regression/test_cancellation_flow.py -v`
+
+### Feature: Site Visit Disable Toggle (API + Workflow Guard)
+
+- Added `enabled` flag to `/api/config/site-visit` with default **true**.
+- Site visit scheduling and prompts are now blocked when disabled; requests return an "unavailable" response.
+- Q&A responses for site visit availability now reflect the disabled state.
+
+**Files:** `api/routes/config.py`, `workflows/io/config_store.py`, `workflows/common/room_rules.py`, `workflows/common/site_visit_handler.py`, `workflows/qna/router.py`, `workflows/steps/step4_offer/trigger/step4_handler.py`, `workflows/steps/step7_confirmation/trigger/step7_handler.py`, `workflows/steps/step7_confirmation/trigger/site_visit.py`
+
+**Tests:** `pytest tests/regression/test_mvp_features.py::TestSiteVisitAllowed::test_site_visit_allowed_disabled_by_config tests/e2e/test_site_visit_time_range_e2e.py::TestTimeRangeMode::test_new_config_fields_have_defaults -v`
+
+### Bugfix: Cancellation Blocked by is_change_request Co-Signal (BUG-051)
+
+Some LLMs (Gemini Flash) return both `is_change_request=True` and `is_cancellation=True` for full event cancellation messages. The original guard logic checked `is_change_request` first and blocked cancellation. Fixed by reordering: `is_cancellation=True` now takes priority over `is_change_request`. Also clarified the LLM prompt to explicitly say "cancel the event" is NOT a change request.
+
+**Files:** `workflows/common/cancellation_handler.py`, `detection/unified.py`
+
+### Feature: Country-Sensitive Timezone Resolution
+
+- Added request-scoped timezone context so workflow scheduling and time formatting can follow the client account timezone.
+- `workflow_email.py::process_msg` now resolves `clients[<email>].profile.country/timezone` from JSON DB and applies that timezone for the full turn.
+- Added country->timezone resolver utilities and client profile defaults (`country`, `timezone`) in DB helpers.
+- `workflows/io/config_store.py::get_timezone()` now honors request-scoped timezone overrides.
+- Persisted `client_country` and `client_timezone` on event records when available.
+- Added mock country/timezone data in `events_database.json` and `data/events_database.seed.json`.
+- Added Supabase integration TODO note for `clients.country` and `clients.timezone` schema support.
+
+**Tests:** `pytest tests/unit/test_country_timezone_context.py tests/unit/test_activity.py -q`
+
+## 2026-02-03
+
+### Feature: Assistant Persona + Response Style Settings
+
+- Added config endpoints for assistant persona and response style (`/api/config/assistant`, `/api/config/response-style`).
+- Wired persona/style into universal verbalizer and HIL verbalizer prompts with style-only guardrails.
+- Added frontend mock settings cards for representative name + tone controls.
+- Added sanitization for style adjectives and persona input.
+
+**Tests:** `pytest tests/regression/test_security_prompt_injection.py -v`, `pytest tests/unit/test_response_style_sanitization.py -v`
+
 ## 2026-01-28
 
 ### Feature: Activity Logger Workflow Integration

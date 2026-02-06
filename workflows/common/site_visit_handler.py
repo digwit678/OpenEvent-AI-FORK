@@ -42,12 +42,15 @@ from workflows.common.site_visit_state import (
     get_site_visit_state,
     is_site_visit_change_request,
     is_site_visit_pending_time,
+    is_site_visit_scheduled,
     parse_slot_string,
+    reset_site_visit_state,
     set_pending_confirmation,
     set_site_visit_date,
     set_time_pending,
     start_site_visit_flow,
 )
+from workflows.common.room_rules import site_visit_allowed
 from workflows.io.config_store import (
     get_site_visit_blocked_dates,
     get_site_visit_slots,
@@ -355,6 +358,25 @@ def _send_draft_response(
     )
 
 
+def site_visit_unavailable_response(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+) -> GroupResult:
+    """Respond when site visits are disabled for this venue/manager."""
+    body = (
+        "Unfortunately, there are no site visits available for our venue right now. "
+        "I'm happy to share additional details or photos if that helps."
+    )
+    return _send_draft_response(
+        state,
+        event_entry,
+        body=body,
+        action="site_visit_unavailable",
+        next_step="Share any questions",
+        requires_approval=False,
+    )
+
+
 def handle_site_visit_request(
     state: WorkflowState,
     event_entry: Dict[str, Any],
@@ -368,6 +390,11 @@ def handle_site_visit_request(
     Returns:
         GroupResult if site visit was handled, None if not applicable
     """
+    if not site_visit_allowed(event_entry):
+        if not is_site_visit_scheduled(event_entry):
+            reset_site_visit_state(event_entry)
+        return site_visit_unavailable_response(state, event_entry)
+
     sv_state = get_site_visit_state(event_entry)
 
     # Determine what state we're in

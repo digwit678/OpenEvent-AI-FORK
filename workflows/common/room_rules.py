@@ -174,8 +174,11 @@ def site_visit_allowed(event_entry: dict) -> bool:
     Site visits are venue-wide and can be scheduled at any workflow step.
     They do NOT require a locked_room_id since they show the entire venue.
     """
+    from workflows.io.config_store import is_site_visit_enabled
+
     policy = event_entry.get("policy") or {}
-    return policy.get("allow_site_visit", True)
+    allow_by_policy = policy.get("allow_site_visit", True)
+    return bool(allow_by_policy) and is_site_visit_enabled()
 
 
 def find_better_room_dates(event_entry: dict) -> list[str]:

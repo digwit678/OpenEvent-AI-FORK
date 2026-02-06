@@ -49,6 +49,15 @@ class TestSiteVisitAllowed:
         event_entry = {}
         assert site_visit_allowed(event_entry) is True
 
+    def test_site_visit_allowed_disabled_by_config(self):
+        """Site visit should be blocked when config disables it."""
+        from workflows.common.room_rules import site_visit_allowed
+
+        event_entry = {"policy": {"allow_site_visit": True}}
+
+        with patch("workflows.io.config_store._get_site_visit_config", return_value={"enabled": False}):
+            assert site_visit_allowed(event_entry) is False
+
 
 class TestSiteVisitStep1Guard:
     """Test Step 1 guard for site visit requests."""
