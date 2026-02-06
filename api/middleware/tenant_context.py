@@ -13,6 +13,7 @@ Headers (only parsed when TENANT_HEADER_ENABLED=1):
 from __future__ import annotations
 
 import os
+import logging
 from contextvars import ContextVar
 from typing import Optional
 
@@ -33,9 +34,6 @@ def get_request_manager_id() -> Optional[str]:
     """Get manager_id from current request context, or None if not set."""
     return CURRENT_MANAGER_ID.get()
 
-
-import logging
-
 logger = logging.getLogger(__name__)
 
 
@@ -45,22 +43,36 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
 
     Active when:
     1. TENANT_HEADER_ENABLED=1 (explicit opt-in for test/dev)
-    2. AUTH_MODE=supabase_jwt (implicit multi-tenancy in JWT mode)
+    2. AUTH_MODE=supabase_jwt (team derived from JWT claims)
 
-    In JWT mode, the AuthMiddleware sets team_id from JWT claims first,
-    but X-Team-Id header can still override for testing/admin scenarios.
+    In JWT mode, team_id comes from auth claims by default.
+    X-Team-Id override is only allowed when TENANT_HEADER_ENABLED=1.
     """
 
     async def dispatch(self, request: Request, call_next):
-        # Enable tenant headers when:
-        # 1. Explicitly enabled (TENANT_HEADER_ENABLED=1)
-        # 2. Running in Supabase JWT auth mode (implicit multi-tenancy)
-        auth_mode = os.getenv("AUTH_MODE", "api_key")
-        header_enabled = os.getenv("TENANT_HEADER_ENABLED", "0") == "1"
+        # Always scope tenant context to the current request.
+        team_token = CURRENT_TEAM_ID.set(None)
+        manager_token = CURRENT_MANAGER_ID.set(None)
 
-        if header_enabled or auth_mode == "supabase_jwt":
-            team_id = request.headers.get("X-Team-Id")
-            manager_id = request.headers.get("X-Manager-Id")
+        try:
+            auth_mode = os.getenv("AUTH_MODE", "api_key")
+            header_enabled = os.getenv("TENANT_HEADER_ENABLED", "0") == "1"
+
+            team_id: Optional[str] = None
+            manager_id: Optional[str] = None
+
+            # In JWT mode, auth middleware attaches the team claim on request state.
+            if auth_mode == "supabase_jwt":
+                team_id = getattr(request.state, "auth_team_id", None)
+
+            # Header-based overrides are opt-in only.
+            if header_enabled:
+                header_team_id = request.headers.get("X-Team-Id")
+                header_manager_id = request.headers.get("X-Manager-Id")
+                if header_team_id:
+                    team_id = header_team_id
+                if header_manager_id:
+                    manager_id = header_manager_id
 
             if team_id:
                 CURRENT_TEAM_ID.set(team_id)
@@ -68,5 +80,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             if manager_id:
                 CURRENT_MANAGER_ID.set(manager_id)
 
-        response = await call_next(request)
-        return response
+            return await call_next(request)
+        finally:
+            CURRENT_TEAM_ID.reset(team_token)
+            CURRENT_MANAGER_ID.reset(manager_token)
