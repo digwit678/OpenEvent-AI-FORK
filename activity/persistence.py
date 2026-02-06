@@ -20,6 +20,9 @@ DESIGN:
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 import logging
+from zoneinfo import ZoneInfo
+
+from workflows.io.config_store import get_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +50,9 @@ COARSE_ACTIVITIES = {
     "date_denied", "room_denied", "date_conflict", "room_conflict", "capacity_exceeded",
     # HIL (Manager Approvals - managers need to verify their decisions!)
     "hil_approved", "hil_rejected", "hil_modified", "product_sourced",
+    # Manager Actions (from frontend - always visible for audit trail)
+    "manager_date_changed", "manager_room_changed", "manager_room_cancelled",
+    "manager_requirements_updated", "manager_offer_updated", "manager_site_visit_rescheduled",
 }
 
 
@@ -75,8 +81,11 @@ def log_activity(
 
     activity_log = event_entry.setdefault("activity_log", [])
 
-    # Create activity record with local timestamp
-    now = datetime.now()
+    # Create activity record in active workflow timezone (country-aware when context is set).
+    try:
+        now = datetime.now(ZoneInfo(get_timezone()))
+    except Exception:
+        now = datetime.now()
     activity = {
         "id": f"act_{int(now.timestamp() * 1000)}",
         "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -181,6 +190,14 @@ WORKFLOW_ACTIVITIES = {
     "hil_rejected": ("✗", "Manager Rejected", "Step {step}: {reason}"),
     "hil_modified": ("✏️", "Manager Edited Response", "Step {step}"),
     "product_sourced": ("📦", "Product Sourced", "{products}"),
+
+    # Manager Actions (from frontend) - COARSE for audit trail
+    "manager_date_changed": ("📅", "Manager Changed Date", "{old_date} → {new_date}"),
+    "manager_room_changed": ("🏢", "Manager Changed Room", "{old_room} → {new_room}"),
+    "manager_room_cancelled": ("🚫", "Manager Cancelled Room", "{room}: {reason}"),
+    "manager_requirements_updated": ("👥", "Manager Updated Requirements", "{details}"),
+    "manager_offer_updated": ("💰", "Manager Updated Offer", "{details}"),
+    "manager_site_visit_rescheduled": ("🏛️", "Manager Rescheduled Site Visit", "{date}"),
 
     # Verification Failures (COARSE - manager needs to see these!)
     "date_denied": ("❌", "Date Denied", "{date} - {reason}"),

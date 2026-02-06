@@ -55,6 +55,7 @@ ALWAYS_VALID_INTENTS = {
     "edit_date",  # Date changes can happen at any step
     "edit_room",  # Room changes can happen at any step
     "edit_requirements",  # Requirement changes can happen at any step
+    "cancel_event",  # Cancellation can happen at any step
     "message_manager",  # Manager requests are always valid
     "general_qna",  # Q&A is always valid
     "non_event",  # Non-event messages need other handling
@@ -253,7 +254,6 @@ def run_unified_pre_filter(
             unified_result.intent, unified_result.is_manager_request,
             unified_result.is_confirmation, unified_result.qna_types
         )
-        print(f"[UNIFIED_DETECTION] is_acceptance={unified_result.is_acceptance}, is_question={unified_result.is_question}, is_change={unified_result.is_change_request}")
         logger.debug(
             "[UNIFIED_DETECTION] is_acceptance=%s, is_question=%s, is_change=%s",
             unified_result.is_acceptance, unified_result.is_question,

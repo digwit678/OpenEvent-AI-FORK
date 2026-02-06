@@ -262,6 +262,8 @@ curl -H "X-Team-Id: your-team-id" http://72.60.135.183:8000/api/...
 | `/api/config/global-deposit` | GET/POST | Deposit settings |
 | `/api/config/hil-mode` | GET/POST | HIL mode toggle |
 | `/api/config/prompts` | GET/POST | LLM prompt config |
+| `/api/config/assistant` | GET/POST | Assistant persona (representative name) |
+| `/api/config/response-style` | GET/POST | Response style (tone-only) |
 | `/api/config/llm-provider` | GET/POST | LLM provider routing |
 | `/api/config/venue` | GET/POST | Venue identity settings |
 | `/api/config/site-visit` | GET/POST | Site visit scheduling |

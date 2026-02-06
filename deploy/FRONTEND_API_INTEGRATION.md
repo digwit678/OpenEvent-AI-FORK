@@ -452,6 +452,22 @@ export interface PromptHistoryEntry {
   config: PromptConfig;
 }
 
+export interface AssistantPersonaConfig {
+  representative_name?: string;
+  source?: string;
+  updated_at?: string;
+}
+
+export interface ResponseStyleConfig {
+  tone?: 'formal' | 'friendly' | 'neutral';
+  temperament?: number;
+  temperament_label?: string;
+  style_adjectives?: string[];
+  style_adjectives_raw?: string;
+  source?: string;
+  updated_at?: string;
+}
+
 // ============================================================================
 // TEST DATA
 // ============================================================================
@@ -824,6 +840,8 @@ type ConfigKey =
   | 'site-visit'
   | 'managers'
   | 'llm-provider'
+  | 'assistant'
+  | 'response-style'
   | 'email-format'
   | 'products'
   | 'menus'
@@ -1139,6 +1157,8 @@ const { data: activity } = useEventActivity(selectedEventId, teamId, {
 | Get/Set HIL mode | `GET/POST /api/config/hil-mode` | `useHILMode()` |
 | Get/Set deposit config | `GET/POST /api/config/global-deposit` | `useGlobalDeposit()` |
 | Get/Set LLM provider | `GET/POST /api/config/llm-provider` | `useAIConfigQuery/Mutation('llm-provider')` |
+| Get/Set assistant persona | `GET/POST /api/config/assistant` | `useAIConfigQuery/Mutation('assistant')` |
+| Get/Set response style | `GET/POST /api/config/response-style` | `useAIConfigQuery/Mutation('response-style')` |
 | Get/Set email format | `GET/POST /api/config/email-format` | `useAIConfigQuery/Mutation('email-format')` |
 
 **Usage Example:**

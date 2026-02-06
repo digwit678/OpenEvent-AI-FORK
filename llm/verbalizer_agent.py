@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from llm.client import get_openai_client, is_llm_available
+from llm.client import is_llm_available
 from ux.verb_rubric import enforce as enforce_rubric
-from workflows.io.config_store import get_currency_code
+from ux.verbalizer_common import resolve_verbalizer_tone, call_verbalizer_llm
+from workflows.io.config_store import build_style_prompt_block, get_currency_code
 
 logger = logging.getLogger(__name__)
 
@@ -104,22 +104,8 @@ def verbalize_gui_reply(
 
 
 def _resolve_tone() -> str:
-    """Determine verbalization tone from environment.
-
-    Default is 'empathetic' for human-like UX.
-    Set VERBALIZER_TONE=plain to disable LLM verbalization.
-    """
-    tone_env = os.getenv("VERBALIZER_TONE")
-    if tone_env:
-        candidate = tone_env.strip().lower()
-        if candidate in {"empathetic", "plain"}:
-            return candidate
-    # Check for explicit disable flag
-    plain_flag = os.getenv("PLAIN_VERBALIZER", "")
-    if plain_flag.strip().lower() in {"1", "true", "yes", "on"}:
-        return "plain"
-    # Default to empathetic for human-like UX
-    return "empathetic"
+    """Determine verbalization tone from environment."""
+    return resolve_verbalizer_tone()
 
 
 def _telemetry_extra(
@@ -190,10 +176,12 @@ def _build_prompt_payload(
             {"header": header, "bullets": bullets} for header, bullets in sections
         ],
     }
+    style_block = build_style_prompt_block()
     return {
         "system": (
             "You are OpenEvent's professional event manager. Rewrite the provided draft in a direct, "
-            "competent tone while preserving all factual content and workflow structure.\n\n"
+            "competent tone while preserving all factual content and workflow structure."
+            f"{style_block}\n\n"
             "Style Guidelines:\n"
             "- Be concise and confident. No fluff.\n"
             "- Avoid 'AI-isms' (delve, underscore, seamless, tapestry).\n"
@@ -215,19 +203,8 @@ def _build_prompt_payload(
 
 
 def _call_verbalizer(payload: Dict[str, Any]) -> str:
-    deterministic = os.getenv("OPENAI_TEST_MODE") == "1"
-    temperature = 0.0 if deterministic else 0.2
-
-    client = get_openai_client()
-    response = client.responses.create(
-        model=os.getenv("OPENAI_VERBALIZER_MODEL", "gpt-4o-mini"),
-        input=[
-            {"role": "system", "content": payload["system"]},
-            {"role": "user", "content": payload["user"]},
-        ],
-        temperature=temperature,
-    )
-    return getattr(response, "output_text", "").strip()
+    """Thin wrapper — delegates to shared call_verbalizer_llm (keeps mock target stable)."""
+    return call_verbalizer_llm(payload, temperature=0.2)
 
 
 def _validate_sections(text: str, sections: List[Tuple[str, List[str]]]) -> bool:

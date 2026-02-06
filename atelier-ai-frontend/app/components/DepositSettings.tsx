@@ -49,7 +49,7 @@ const DEFAULT_CONFIG: DepositConfig = {
   deposit_type: 'percentage',
   deposit_percentage: 30,
   deposit_fixed_amount: 0,
-  deposit_deadline_days: 10,
+  deposit_deadline_days: 3,
 };
 
 export default function DepositSettings({
@@ -79,7 +79,7 @@ export default function DepositSettings({
               deposit_type: data.deposit_type ?? 'percentage',
               deposit_percentage: data.deposit_percentage ?? 30,
               deposit_fixed_amount: data.deposit_fixed_amount ?? 0,
-              deposit_deadline_days: data.deposit_deadline_days ?? 10,
+              deposit_deadline_days: data.deposit_deadline_days ?? 3,
             });
           }
         }
@@ -330,7 +330,7 @@ export default function DepositSettings({
                 onChange={(e) =>
                   setConfig((prev) => ({
                     ...prev,
-                    deposit_deadline_days: parseInt(e.target.value) || 10,
+                    deposit_deadline_days: parseInt(e.target.value) || 3,
                   }))
                 }
                 disabled={!isEditing}
@@ -338,6 +338,7 @@ export default function DepositSettings({
                   !isEditing ? 'bg-gray-100 cursor-not-allowed' : ''
                 }`}
               >
+                <option value={3}>3 days</option>
                 <option value={7}>7 days</option>
                 <option value={10}>10 days</option>
                 <option value={14}>14 days</option>

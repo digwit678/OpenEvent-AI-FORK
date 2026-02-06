@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from detection.unified import UnifiedDetectionResult
+from workflows.common.cancellation_handler import (
+    handle_cancellation,
+    is_cancellation_intent,
+)
 from workflows.common.site_visit_handler import (
     handle_site_visit_request,
     is_site_visit_intent,
@@ -103,6 +107,18 @@ def run_routing_loop(
         logger.debug("[WF][ROUTE][%d] current_step=%s", iteration, step)
 
         # =================================================================
+        # CANCELLATION INTERCEPT: Handle full event cancellation at ANY step
+        # =================================================================
+        cancellation_result = _check_cancellation_intercept(state, event_entry)
+        if cancellation_result:
+            last_result = cancellation_result
+            persist_fn(state, path, lock_path)
+            if last_result.halt:
+                debug_fn(f"halt_cancellation_step{step}", state)
+                return finalize_fn(last_result, state, path, lock_path), last_result
+        # =================================================================
+
+        # =================================================================
         # SITE VISIT INTERCEPT: Handle site visit requests at ANY step
         # =================================================================
         # Check if there's an active site visit flow OR new site visit intent
@@ -145,6 +161,28 @@ def run_routing_loop(
     # Loop completed without halting
     logger.debug("[WF][ROUTE] Loop completed after %d iterations", iteration + 1)
     return None, last_result
+
+
+def _check_cancellation_intercept(
+    state: WorkflowState,
+    event_entry: Dict[str, Any],
+) -> Optional[GroupResult]:
+    """Check if the message is a full event cancellation request.
+
+    Runs BEFORE site visit intercept so "cancel the event" isn't misrouted.
+    Uses LLM-first detection with strict guards against false positives.
+
+    Returns GroupResult if cancellation was handled, None otherwise.
+    """
+    detection = _get_detection_result(state)
+    message_text = (state.message.body or "") if state.message else ""
+
+    if not is_cancellation_intent(detection, message_text):
+        return None
+
+    current_step = event_entry.get("current_step", 1)
+    logger.info("[WF][CANCEL] Cancellation intent detected at step %s", current_step)
+    return handle_cancellation(state, event_entry, detection)
 
 
 def _check_site_visit_intercept(
@@ -227,6 +265,7 @@ def _get_detection_result(state: WorkflowState) -> Optional[UnifiedDetectionResu
             is_site_visit_change=detection_data.get("signals", {}).get("site_visit_change", False),
             is_manager_request=detection_data.get("signals", {}).get("manager_request", False),
             is_question=detection_data.get("signals", {}).get("question", False),
+            is_cancellation=detection_data.get("signals", {}).get("cancellation", False),
             has_urgency=detection_data.get("signals", {}).get("urgency", False),
             has_injection_attempt=detection_data.get("signals", {}).get("injection_attempt", False),
             date=detection_data.get("entities", {}).get("date"),

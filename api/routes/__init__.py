@@ -31,6 +31,7 @@ from .workflow import router as workflow_router
 from .messages import router as messages_router
 from .emails import router as emails_router
 from .activity import router as activity_router
+from .manager_actions import router as manager_actions_router
 
 __all__ = [
     "tasks_router",
@@ -44,4 +45,5 @@ __all__ = [
     "messages_router",
     "emails_router",
     "activity_router",
+    "manager_actions_router",
 ]

@@ -16,6 +16,7 @@ from workflows.steps import step1_intake as intake
 # Step handlers moved to runtime/router.py (W3 extraction)
 from workflows.io import database as db_io
 from workflows.io.database import update_event_metadata
+from workflows.io.timezone_context import set_timezone_context, reset_timezone_context
 from workflows.io import tasks as task_io
 from workflows.io.integration.config import is_hil_all_replies_enabled
 from workflows.llm import adapter as llm_adapter
@@ -373,126 +374,139 @@ def process_msg(msg: Dict[str, Any], db_path: Path = DB_PATH) -> Dict[str, Any]:
     path = _resolve_tenant_db_path(Path(db_path))
     lock_path = _resolve_lock_path(path)
     db = db_io.load_db(path, lock_path=lock_path)
-
-    message = IncomingMessage.from_dict(msg)
-    state = WorkflowState(message=message, db_path=path, db=db)
-    raw_thread_id = (
-        msg.get("thread_id")
-        or msg.get("thread")
-        or msg.get("session_id")
+    client_tz_context = db_io.resolve_client_timezone_context(db, msg.get("from_email"))
+    tz_tokens = set_timezone_context(
+        email=(msg.get("from_email") or "").strip().lower() or None,
+        country=client_tz_context.get("country"),
+        timezone=client_tz_context.get("timezone"),
     )
-    if not raw_thread_id:
-        # Generate unique thread_id to prevent unrelated conversations from colliding
-        # NOTE: Using msg_id or from_email as fallback caused thread collisions (F-10)
-        raw_thread_id = f"auto-{uuid.uuid4().hex[:12]}"
-        logger.warning(
-            "[WF] No thread_id/session_id provided, generated %s. "
-            "Callers should provide explicit thread_id for session continuity.",
-            raw_thread_id,
+    try:
+        message = IncomingMessage.from_dict(msg)
+        state = WorkflowState(message=message, db_path=path, db=db)
+        if client_tz_context.get("country"):
+            state.extras["client_country"] = client_tz_context["country"]
+        if client_tz_context.get("timezone"):
+            state.extras["client_timezone"] = client_tz_context["timezone"]
+
+        raw_thread_id = (
+            msg.get("thread_id")
+            or msg.get("thread")
+            or msg.get("session_id")
         )
-    state.thread_id = str(raw_thread_id)
-    STATE_STORE.clear(state.thread_id)
-    combined_text = "\n".join(
-        part for part in ((message.subject or "").strip(), (message.body or "").strip()) if part
-    )
-    state.extras["general_qna_scan"] = quick_general_qna_scan(combined_text)
-    # [DEV TEST MODE] Pass through skip_dev_choice flag for testing convenience
-    if msg.get("skip_dev_choice"):
-        state.extras["skip_dev_choice"] = True
-    classification = _ensure_general_qna_classification(state, combined_text)
-    _debug_state("init", state, extra={"entity": "client"})
-    last_result = intake.process(state)
-    _debug_state("post_intake", state, extra={"intent": state.intent.value if state.intent else None})
-
-    # Run pre-routing pipeline (P1 extraction)
-    # Handles: duplicate detection, post-intake halt, guards, shortcuts, billing flow correction
-    early_return, last_result = run_pre_route_pipeline(
-        state,
-        last_result,
-        combined_text,
-        path,
-        lock_path,
-        persist_fn=_persist_if_needed,
-        debug_fn=_debug_state,
-        finalize_fn=_flush_and_finalize,
-    )
-    if early_return is not None:
-        return early_return
-
-    # Run the step routing loop (W3 extraction)
-    halted_result, last_result = run_routing_loop(
-        state,
-        last_result,
-        path,
-        lock_path,
-        persist_fn=_persist_if_needed,
-        debug_fn=_debug_state,
-        finalize_fn=_flush_and_finalize,
-    )
-
-    # If router halted, return the finalized result directly
-    if halted_result is not None:
-        return halted_result
-
-    # Loop completed without halting - finalize and return
-    _debug_state("final", state)
-    logger.debug("[WF][FINAL] Returning with action=%s, halt=%s",
-                last_result.action if last_result else 'None',
-                last_result.halt if last_result else 'N/A')
-
-    # [WF0.1 FIX] Safety net: if routing loop completed without any draft messages,
-    # add a fallback message to prevent empty replies
-    if not state.draft_messages:
-        event_entry = state.event_entry
-        current_step = event_entry.get("current_step") if event_entry else None
-        event_id = event_entry.get("event_id") if event_entry else None
-        action = last_result.action if last_result else "unknown"
-
-        logger.warning("[WF][EMPTY_REPLY_GUARD] No draft messages after routing loop!")
-        logger.warning("[WF][EMPTY_REPLY_GUARD] step=%s, action=%s, event_id=%s",
-                      current_step, action, event_id)
-
-        # Create a context-aware fallback message
-        fallback_body = (
-            "I'm processing your request. Let me check the details and get back to you shortly."
+        if not raw_thread_id:
+            # Generate unique thread_id to prevent unrelated conversations from colliding
+            # NOTE: Using msg_id or from_email as fallback caused thread collisions (F-10)
+            raw_thread_id = f"auto-{uuid.uuid4().hex[:12]}"
+            logger.warning(
+                "[WF] No thread_id/session_id provided, generated %s. "
+                "Callers should provide explicit thread_id for session continuity.",
+                raw_thread_id,
+            )
+        state.thread_id = str(raw_thread_id)
+        STATE_STORE.clear(state.thread_id)
+        combined_text = "\n".join(
+            part for part in ((message.subject or "").strip(), (message.body or "").strip()) if part
         )
-        # If we know the step, give more specific feedback
-        if current_step == 3:
-            fallback_body = (
-                "I'm checking room availability for your event. "
-                "I'll have options ready for you shortly."
-            )
-        elif current_step == 4:
-            fallback_body = (
-                "I'm preparing your offer with the selected options. "
-                "You'll receive it shortly."
-            )
-        elif current_step == 5:
-            fallback_body = (
-                "I'm reviewing your response and will follow up shortly."
-            )
+        state.extras["general_qna_scan"] = quick_general_qna_scan(combined_text)
+        # [DEV TEST MODE] Pass through skip_dev_choice flag for testing convenience
+        if msg.get("skip_dev_choice"):
+            state.extras["skip_dev_choice"] = True
+        classification = _ensure_general_qna_classification(state, combined_text)
+        _debug_state("init", state, extra={"entity": "client"})
+        last_result = intake.process(state)
+        _debug_state("post_intake", state, extra={"intent": state.intent.value if state.intent else None})
 
-        fallback_draft = {
-            "body_markdown": fallback_body,
-            "step": current_step or 1,
-            "topic": "empty_reply_fallback",
-            "thread_state": "In Progress",
-            "requires_approval": False,
-            "_fallback_reason": f"empty_reply_after_routing_loop_action_{action}",
-        }
-        state.add_draft_message(fallback_draft)
+        # Run pre-routing pipeline (P1 extraction)
+        # Handles: duplicate detection, post-intake halt, guards, shortcuts, billing flow correction
+        early_return, last_result = run_pre_route_pipeline(
+            state,
+            last_result,
+            combined_text,
+            path,
+            lock_path,
+            persist_fn=_persist_if_needed,
+            debug_fn=_debug_state,
+            finalize_fn=_flush_and_finalize,
+        )
+        if early_return is not None:
+            return early_return
 
-        # Trace this for debugging
-        from debug.hooks import trace_marker
-        trace_marker(
-            state.thread_id,
-            "EMPTY_REPLY_GUARD",
-            detail=f"Fallback added after routing loop completed with action={action}",
-            data={"step": current_step, "action": action, "event_id": event_id},
-            owner_step=f"Step{current_step}" if current_step else "Unknown",
+        # Run the step routing loop (W3 extraction)
+        halted_result, last_result = run_routing_loop(
+            state,
+            last_result,
+            path,
+            lock_path,
+            persist_fn=_persist_if_needed,
+            debug_fn=_debug_state,
+            finalize_fn=_flush_and_finalize,
         )
 
-    return _flush_and_finalize(last_result, state, path, lock_path)
+        # If router halted, return the finalized result directly
+        if halted_result is not None:
+            return halted_result
+
+        # Loop completed without halting - finalize and return
+        _debug_state("final", state)
+        logger.debug("[WF][FINAL] Returning with action=%s, halt=%s",
+                    last_result.action if last_result else 'None',
+                    last_result.halt if last_result else 'N/A')
+
+        # [WF0.1 FIX] Safety net: if routing loop completed without any draft messages,
+        # add a fallback message to prevent empty replies
+        if not state.draft_messages:
+            event_entry = state.event_entry
+            current_step = event_entry.get("current_step") if event_entry else None
+            event_id = event_entry.get("event_id") if event_entry else None
+            action = last_result.action if last_result else "unknown"
+
+            logger.warning("[WF][EMPTY_REPLY_GUARD] No draft messages after routing loop!")
+            logger.warning("[WF][EMPTY_REPLY_GUARD] step=%s, action=%s, event_id=%s",
+                          current_step, action, event_id)
+
+            # Create a context-aware fallback message
+            fallback_body = (
+                "I'm processing your request. Let me check the details and get back to you shortly."
+            )
+            # If we know the step, give more specific feedback
+            if current_step == 3:
+                fallback_body = (
+                    "I'm checking room availability for your event. "
+                    "I'll have options ready for you shortly."
+                )
+            elif current_step == 4:
+                fallback_body = (
+                    "I'm preparing your offer with the selected options. "
+                    "You'll receive it shortly."
+                )
+            elif current_step == 5:
+                fallback_body = (
+                    "I'm reviewing your response and will follow up shortly."
+                )
+
+            fallback_draft = {
+                "body_markdown": fallback_body,
+                "step": current_step or 1,
+                "topic": "empty_reply_fallback",
+                "thread_state": "In Progress",
+                "requires_approval": False,
+                "_fallback_reason": f"empty_reply_after_routing_loop_action_{action}",
+            }
+            state.add_draft_message(fallback_draft)
+
+            # Trace this for debugging
+            from debug.hooks import trace_marker
+            trace_marker(
+                state.thread_id,
+                "EMPTY_REPLY_GUARD",
+                detail=f"Fallback added after routing loop completed with action={action}",
+                data={"step": current_step, "action": action, "event_id": event_id},
+                owner_step=f"Step{current_step}" if current_step else "Unknown",
+            )
+
+        return _flush_and_finalize(last_result, state, path, lock_path)
+    finally:
+        reset_timezone_context(tz_tokens)
 
 
 def run_samples() -> list[Any]:

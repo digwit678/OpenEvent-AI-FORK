@@ -14,6 +14,7 @@ from functools import lru_cache
 from domain import EventStatus, TaskStatus
 from utils import json_io
 from utils.calendar_events import create_calendar_event
+from workflows.common.country_timezone import normalize_country_name, resolve_timezone
 
 __workflow_role__ = "Database"
 
@@ -153,7 +154,62 @@ class FileLock:
 def get_default_db() -> Dict[str, Any]:
     """[OpenEvent Database] Provide the baseline JSON schema for a clean database."""
 
-    return {"events": [], "clients": {}, "tasks": []}
+    return {
+        "events": [],
+        "clients": {},
+        "tasks": [],
+        # Email threading collections (Layer 1 & 2 resolution)
+        "email_messages": [],      # EmailMessage records for reply detection
+        "event_signatures": [],    # EventSignature records for semantic matching
+        "thread_mappings": [],     # ThreadMapping records for quick lookup
+    }
+
+
+def _ensure_client_defaults(client: Dict[str, Any]) -> None:
+    """Backfill profile fields on legacy client records."""
+    profile = client.setdefault("profile", {})
+    if not isinstance(profile, dict):
+        profile = {}
+        client["profile"] = profile
+    profile.setdefault("name", None)
+    profile.setdefault("org", None)
+    profile.setdefault("phone", None)
+    profile.setdefault("country", None)
+    profile.setdefault("timezone", None)
+    client.setdefault("history", [])
+    client.setdefault("event_ids", [])
+
+
+def _clean_profile_value(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() == "not specified":
+        return None
+    return text
+
+
+def resolve_client_timezone_context(db: Dict[str, Any], email: Optional[str]) -> Dict[str, Optional[str]]:
+    """Resolve country/timezone from a stored client profile by email."""
+    email_lc = (email or "").strip().lower()
+    if not email_lc:
+        return {"country": None, "timezone": None}
+
+    client = db.get("clients", {}).get(email_lc)
+    if not isinstance(client, dict):
+        return {"country": None, "timezone": None}
+
+    _ensure_client_defaults(client)
+    profile = client.get("profile") or {}
+    country_raw = _clean_profile_value(profile.get("country"))
+    timezone_raw = _clean_profile_value(profile.get("timezone"))
+
+    normalized_country = normalize_country_name(country_raw)
+    timezone_name = resolve_timezone(country_raw, timezone_raw)
+    return {
+        "country": normalized_country or country_raw,
+        "timezone": timezone_name,
+    }
 
 
 def lock_path_for(path: Path, default_lock: Optional[Path] = None) -> Path:
@@ -194,6 +250,16 @@ def load_db(path: Path, lock_path: Optional[Path] = None, *, _lock_held: bool = 
         db["clients"] = {}
     if "tasks" not in db or not isinstance(db["tasks"], list):
         db["tasks"] = []
+    # Email threading collections
+    if "email_messages" not in db or not isinstance(db["email_messages"], list):
+        db["email_messages"] = []
+    if "event_signatures" not in db or not isinstance(db["event_signatures"], list):
+        db["event_signatures"] = []
+    if "thread_mappings" not in db or not isinstance(db["thread_mappings"], list):
+        db["thread_mappings"] = []
+    for client in db.get("clients", {}).values():
+        if isinstance(client, dict):
+            _ensure_client_defaults(client)
     events = db.get("events", [])
     for event in events:
         ensure_event_defaults(event)
@@ -216,6 +282,10 @@ def save_db(db: Dict[str, Any], path: Path, lock_path: Optional[Path] = None, *,
         "clients": db.get("clients", {}),
         "tasks": db.get("tasks", []),
         "config": db.get("config", {}),
+        # Email threading collections
+        "email_messages": db.get("email_messages", []),
+        "event_signatures": db.get("event_signatures", []),
+        "thread_mappings": db.get("thread_mappings", []),
     }
 
     def _do_save():
@@ -247,11 +317,12 @@ def upsert_client(db: Dict[str, Any], email: str, name: Optional[str] = None, ev
     client = clients.setdefault(
         client_id,
         {
-            "profile": {"name": None, "org": None, "phone": None},
+            "profile": {"name": None, "org": None, "phone": None, "country": None, "timezone": None},
             "history": [],
             "event_ids": [],
         },
     )
+    _ensure_client_defaults(client)
     if name:
         client["profile"]["name"] = client["profile"]["name"] or name
 
@@ -354,6 +425,88 @@ def find_event_idx_by_id(db: Dict[str, Any], event_id: str) -> Optional[int]:
     return None
 
 
+def delete_event(db: Dict[str, Any], event_id: str) -> Dict[str, Any]:
+    """[OpenEvent Database] Hard-delete an event and all related records.
+
+    Removes the event from db["events"] and cleans up associated records in
+    email_messages, event_signatures, thread_mappings, and the client's event_ids list.
+    Also deletes page snapshots (best-effort).
+
+    Room/date are freed automatically because get_event_dates() scans db["events"].
+
+    Args:
+        db: The database dict
+        event_id: The event ID to delete
+
+    Returns:
+        Summary dict with deleted event metadata (for logging/response)
+
+    Raises:
+        ValueError: If event_id not found
+    """
+    from utils.page_snapshots import delete_snapshots_for_event
+
+    idx = find_event_idx_by_id(db, event_id)
+    if idx is None:
+        raise ValueError(f"Event {event_id} not found")
+
+    event = db["events"][idx]
+
+    # Capture summary before deletion
+    event_data = event.get("event_data", {})
+    summary = {
+        "event_id": event_id,
+        "client_email": (event_data.get("Email") or "").lower(),
+        "chosen_date": event.get("chosen_date"),
+        "locked_room_id": event.get("locked_room_id"),
+        "step": event.get("current_step"),
+        "status": event.get("status"),
+    }
+
+    # 1. Remove the event record
+    db["events"].pop(idx)
+
+    # 2. Filter out related email_messages
+    db["email_messages"] = [
+        m for m in db.get("email_messages", [])
+        if m.get("resolved_event_id") != event_id
+    ]
+
+    # 3. Filter out related event_signatures
+    db["event_signatures"] = [
+        s for s in db.get("event_signatures", [])
+        if s.get("event_id") != event_id
+    ]
+
+    # 4. Filter out related thread_mappings
+    db["thread_mappings"] = [
+        t for t in db.get("thread_mappings", [])
+        if t.get("event_id") != event_id
+    ]
+
+    # 5. Remove from client's event_ids list
+    client_email = summary["client_email"]
+    if client_email and client_email in db.get("clients", {}):
+        client = db["clients"][client_email]
+        event_ids = client.get("event_ids", [])
+        if event_id in event_ids:
+            event_ids.remove(event_id)
+
+    # 6. Delete page snapshots (best-effort)
+    try:
+        delete_snapshots_for_event(event_id)
+    except Exception as exc:
+        logger.warning("Failed to delete snapshots for event %s: %s", event_id, exc)
+
+    logger.info(
+        "Hard-deleted event %s (email=%s, date=%s, room=%s, step=%s)",
+        event_id, summary["client_email"], summary["chosen_date"],
+        summary["locked_room_id"], summary["step"],
+    )
+
+    return summary
+
+
 def create_event_entry(db: Dict[str, Any], event_data: Dict[str, Any]) -> str:
     """[OpenEvent Database] Insert a new event entry and return its identifier."""
 
@@ -372,6 +525,8 @@ def create_event_entry(db: Dict[str, Any], event_data: Dict[str, Any]) -> str:
         "chosen_date": None,
         "end_date": None,           # DD.MM.YYYY for multi-day events
         "end_date_iso": None,       # YYYY-MM-DD for multi-day events
+        "client_country": None,
+        "client_timezone": None,
         "date_confirmed": False,
         "locked_room_id": None,
         "requirements": {},
@@ -453,6 +608,8 @@ def ensure_event_defaults(event: Dict[str, Any]) -> None:
     event.setdefault("chosen_date", None)
     event.setdefault("end_date", None)       # DD.MM.YYYY for multi-day events
     event.setdefault("end_date_iso", None)   # YYYY-MM-DD for multi-day events
+    event.setdefault("client_country", None)
+    event.setdefault("client_timezone", None)
     event.setdefault("date_confirmed", False)
     event.setdefault("locked_room_id", None)
     event.setdefault("requested_window", {})

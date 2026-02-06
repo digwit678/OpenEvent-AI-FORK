@@ -62,3 +62,7 @@ env_vars = ["SEMGREP_APP_TOKEN"]
 # args = ["-y", "fast-filesystem-mcp"]
 # env = { npm_config_cache = "/tmp/codex-npm-cache" }
 
+
+[mcp_servers.apple_notes]
+command = "npx"
+args = ["-y", "apple-notes-mcp"]

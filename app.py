@@ -91,6 +91,7 @@ def create_app() -> FastAPI:
         messages_router,
         emails_router,
         activity_router,
+        manager_actions_router,
     )
     from api.agent_router import router as agent_router
 
@@ -110,6 +111,7 @@ def create_app() -> FastAPI:
     app.include_router(messages_router)
     app.include_router(emails_router)
     app.include_router(activity_router)
+    app.include_router(manager_actions_router)
     app.include_router(agent_router)
 
     # Import middleware (lazy import)

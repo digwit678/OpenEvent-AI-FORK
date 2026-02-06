@@ -386,7 +386,7 @@ async def cancel_event(event_id: str, request: CancelEventRequest):
         if not event_entry:
             raise HTTPException(status_code=404, detail="Event not found")
 
-        # Check if already cancelled
+        # Check if already cancelled (event might not exist if previously hard-deleted)
         if event_entry.get("status") == "cancelled":
             return {
                 "status": "already_cancelled",
@@ -394,30 +394,23 @@ async def cancel_event(event_id: str, request: CancelEventRequest):
                 "cancelled_at": event_entry.get("cancelled_at"),
             }
 
-        # Determine cancellation type
+        # Capture info before deletion
         current_step = event_entry.get("current_step", 1)
         had_site_visit = current_step >= 7 or event_entry.get("site_visit_scheduled", False)
         cancellation_type = "site_visit" if had_site_visit else "standard"
 
-        # Archive the event (don't delete for audit trail)
-        cancelled_at = _now_iso()
-        event_entry["status"] = "cancelled"
-        event_entry["cancelled_at"] = cancelled_at
-        event_entry["cancellation_reason"] = request.reason
-        event_entry["cancellation_type"] = cancellation_type
-        event_entry["previous_step"] = current_step
-
-        # Mark thread state for UI
-        event_entry["thread_state"] = "Cancelled"
-
-        # Log cancellation activity for manager visibility
+        # Log cancellation activity BEFORE delete (event_entry is gone after)
         from activity.persistence import log_workflow_activity
         reason_text = request.reason or cancellation_type
         log_workflow_activity(event_entry, "status_cancelled", reason=reason_text)
 
+        # Hard-delete the event and all related records (frees date/room)
+        from workflows.io.database import delete_event
+        summary = delete_event(db, event_id)
+
         wf_save_db(db)
         logger.info(
-            "Event %s cancelled: type=%s, previous_step=%d, reason=%s",
+            "Event %s hard-deleted: type=%s, previous_step=%d, reason=%s",
             event_id, cancellation_type, current_step, request.reason
         )
 
@@ -427,7 +420,7 @@ async def cancel_event(event_id: str, request: CancelEventRequest):
             previous_step=current_step,
             had_site_visit=had_site_visit,
             cancellation_type=cancellation_type,
-            archived_at=cancelled_at,
+            archived_at=_now_iso(),
         )
 
     except HTTPException:

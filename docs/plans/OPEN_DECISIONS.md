@@ -474,7 +474,7 @@ When a client requests a product/equipment that isn't available in the room:
 
 **Date Raised:** 2026-01-06
 **Context:** E2E testing - no way for client to cancel an event via email
-**Status:** Open
+**Status:** Implemented (2026-02-06) — Hard-delete variant. See `workflows/common/cancellation_handler.py`.
 
 **Problem Statement:**
 Clients cannot cancel events via email. This is a critical UX gap:

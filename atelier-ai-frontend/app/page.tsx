@@ -23,6 +23,8 @@ import remarkGfm from 'remark-gfm';
 import DebugPanel from './components/DebugPanel';
 import DepositSettings from './components/DepositSettings';
 import LLMSettings from './components/LLMSettings';
+import AssistantPersonaSettings from './components/AssistantPersonaSettings';
+import ResponseStyleSettings from './components/ResponseStyleSettings';
 
 const BACKEND_BASE =
   (process.env.NEXT_PUBLIC_BACKEND_BASE || 'http://localhost:8000').replace(/\/$/, '');
@@ -1823,30 +1825,36 @@ function EmailThreadUIContent() {
       )}
 
       {/* Manager Settings Section */}
-      <div className="mx-auto max-w-[1800px] mt-4 flex gap-4">
-        <div className="flex-1">
+      <div className="mx-auto max-w-[1800px] mt-4 flex flex-wrap gap-4">
+        <div className="flex-1 min-w-[320px]">
           <DepositSettings compact />
         </div>
-        <div className="flex-1">
+        <div className="flex-1 min-w-[320px]">
           <LLMSettings compact />
         </div>
-        <div className="flex gap-2 items-start">
-          <button
-            onClick={() => clearResolvedTasks().catch(() => undefined)}
-            disabled={cleanupLoading || tasks.length === 0}
-            className="px-3 py-2 text-xs font-semibold rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
-          >
-            {cleanupLoading ? 'Clearing...' : 'Clear Tasks'}
-          </button>
-          <button
-            onClick={() => resetClientData().catch(() => undefined)}
-            disabled={resetClientLoading || !clientEmail}
-            className="px-3 py-2 text-xs font-semibold rounded-lg border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
-            title={clientEmail ? `Reset data for ${clientEmail}` : 'Start a conversation first'}
-          >
-            {resetClientLoading ? 'Resetting...' : 'Reset Client'}
-          </button>
+        <div className="flex-1 min-w-[320px]">
+          <AssistantPersonaSettings compact />
         </div>
+        <div className="flex-1 min-w-[320px]">
+          <ResponseStyleSettings compact />
+        </div>
+      </div>
+      <div className="mx-auto max-w-[1800px] mt-3 flex gap-2 items-start">
+        <button
+          onClick={() => clearResolvedTasks().catch(() => undefined)}
+          disabled={cleanupLoading || tasks.length === 0}
+          className="px-3 py-2 text-xs font-semibold rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
+        >
+          {cleanupLoading ? 'Clearing...' : 'Clear Tasks'}
+        </button>
+        <button
+          onClick={() => resetClientData().catch(() => undefined)}
+          disabled={resetClientLoading || !clientEmail}
+          className="px-3 py-2 text-xs font-semibold rounded-lg border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
+          title={clientEmail ? `Reset data for ${clientEmail}` : 'Start a conversation first'}
+        >
+          {resetClientLoading ? 'Resetting...' : 'Reset Client'}
+        </button>
       </div>
     </div>
   );

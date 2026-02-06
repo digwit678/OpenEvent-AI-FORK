@@ -128,7 +128,7 @@ def create_offer_record(
     deposit_type: str = "percentage",
     deposit_percentage: Optional[float] = None,
     deposit_amount: Optional[float] = None,
-    deposit_deadline_days: int = 10,
+    deposit_deadline_days: int = 3,
     validity_days: int = 14,
     team_prefix: str = "OE",
 ) -> Dict[str, Any]:

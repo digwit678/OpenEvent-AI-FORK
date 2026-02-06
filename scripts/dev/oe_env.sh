@@ -9,8 +9,15 @@
 #   - VERBALIZER_TONE default
 
 export PYTHONPATH="$(pwd -P)"
-export OPENAI_API_KEY="$(security find-generic-password -a "$USER" -s 'openevent-api-test-key' -w 2>/dev/null || true)"
-export GOOGLE_API_KEY="$(security find-generic-password -s 'openevent-gemini-key' -w 2>/dev/null || true)"
+
+# Only fetch from Keychain if not already set (prevents overwriting valid env vars)
+if [ -z "$OPENAI_API_KEY" ]; then
+    export OPENAI_API_KEY="$(security find-generic-password -a "$USER" -s 'openevent-api-test-key' -w 2>/dev/null || true)"
+fi
+
+if [ -z "$GOOGLE_API_KEY" ]; then
+    export GOOGLE_API_KEY="$(security find-generic-password -s 'openevent-gemini-key' -w 2>/dev/null || true)"
+fi
 
 # Default to empathetic verbalizer (human-like UX) for development
 # Set VERBALIZER_TONE=plain to disable LLM verbalization for testing
