@@ -195,6 +195,122 @@ def check_manual_review_gate(
     )
 
 
+def apply_gate_result(
+    gate_result: ManualReviewResult,
+    *,
+    state: Any,
+    user_info: Dict[str, Any],
+    linked_event: Optional[Dict[str, Any]],
+    message_payload: Dict[str, Any],
+    thread_id: str,
+    owner_step: str,
+    context: Any,
+    enqueue_manual_review_task_fn: Any,
+    trace_marker_fn: Any,
+) -> Optional["GroupResult"]:
+    """Apply the gate decision to state and return a GroupResult if halting.
+
+    Returns ``None`` when the decision is CONTINUE (caller should proceed).
+    Returns a ``GroupResult`` with ``halt=True`` for STANDALONE_QNA and
+    MANUAL_REVIEW decisions.
+
+    For CONTINUE decisions this also updates ``state``, ``user_info``, and
+    ``linked_event`` in-place with any gate-provided modifications (e.g.
+    boosted intent/confidence, room choice locking).
+    """
+    from workflows.common.types import GroupResult
+    from workflows.io.database import update_event_metadata
+
+    if gate_result.decision == GateDecision.STANDALONE_QNA:
+        state.add_draft_message({
+            "body": gate_result.qna_response,
+            "step": 1,
+            "topic": "standalone_qna",
+        })
+        state.set_thread_state("Awaiting Client")
+        return GroupResult(
+            action="standalone_qna",
+            payload={
+                "client_id": state.client_id,
+                "event_id": None,
+                "intent": gate_result.intent.value,
+                "confidence": round(gate_result.confidence, 3),
+                "draft_messages": state.draft_messages,
+                "thread_state": state.thread_state,
+                "standalone_qna": True,
+            },
+            halt=True,
+        )
+
+    if gate_result.decision == GateDecision.MANUAL_REVIEW:
+        trace_marker_fn(
+            thread_id,
+            "CONDITIONAL_HIL",
+            detail="manual_review_required",
+            data={"intent": gate_result.intent.value, "confidence": round(gate_result.confidence, 3)},
+            owner_step=owner_step,
+        )
+        linked_event_id = linked_event.get("event_id") if linked_event else None
+        task_id = enqueue_manual_review_task_fn(
+            state.db,
+            state.client_id,
+            linked_event_id,
+            {
+                "subject": message_payload.get("subject"),
+                "snippet": (message_payload.get("body") or "")[:200],
+                "ts": message_payload.get("ts"),
+                "reason": "manual_review_required",
+                "thread_id": thread_id,
+            },
+        )
+        state.extras.update({"task_id": task_id, "persist": True})
+        clarification = append_footer(
+            "Thanks for your message. A member of our team will review it shortly "
+            "to make sure it reaches the right place.",
+            step=1,
+            next_step="Team review (HIL)",
+            thread_state="Waiting on HIL",
+        )
+        state.add_draft_message({"body": clarification, "step": 1, "topic": "manual_review"})
+        state.set_thread_state("Waiting on HIL")
+        return GroupResult(
+            action="manual_review_enqueued",
+            payload={
+                "client_id": state.client_id,
+                "event_id": linked_event_id,
+                "intent": gate_result.intent.value,
+                "confidence": round(gate_result.confidence, 3),
+                "persisted": True,
+                "task_id": task_id,
+                "user_info": user_info,
+                "context": context,
+                "draft_messages": state.draft_messages,
+                "thread_state": state.thread_state,
+            },
+            halt=True,
+        )
+
+    # CONTINUE decision — apply gate modifications to state
+    state.intent = gate_result.intent
+    state.confidence = gate_result.confidence
+    if gate_result.intent_detail:
+        state.intent_detail = gate_result.intent_detail
+    if gate_result.user_info_updates:
+        user_info.update(gate_result.user_info_updates)
+    if gate_result.room_choice:
+        state.extras["room_choice_selected"] = gate_result.room_choice
+        if gate_result.should_lock_room and linked_event:
+            req_hash = linked_event.get("requirements_hash")
+            update_event_metadata(
+                linked_event,
+                locked_room_id=gate_result.room_choice,
+                room_eval_hash=req_hash,
+                room_status="Available",
+                caller_step=None,
+            )
+    return None
+
+
 def _generate_standalone_qna_response(state_message: Any) -> str:
     """Generate response for standalone Q&A without event context.
 

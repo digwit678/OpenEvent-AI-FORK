@@ -12,7 +12,7 @@
 | Area | Rating | Notes |
 |------|--------|-------|
 | **Security** | RED | Auth opt-in (not opt-out), unprotected GETs, JWT stub |
-| **Code Quality** | AMBER | God functions (644-792 LOC), stray print, duplication |
+| **Code Quality** | GREEN | God functions refactored (CQ-2/3), stray print fixed (CQ-1), duplication resolved (CQ-4) |
 | **Resilience** | AMBER | Good fallbacks; no circuit breaker for LLM calls |
 | **Architecture** | GREEN | Solid layered design, defensive programming throughout |
 | **Maintainability** | GREEN | Excellent docs (TEAM_GUIDE 895 lines, 51 bugs tracked) |
@@ -37,12 +37,12 @@
 
 ### High (Before MVP — ~1 week)
 
-- [ ] **CQ-2** — Refactor god function in `step1_handler.py` (lines 102-745, 644 LOC)
-  - Extract sub-handlers: date handling, room selection, requirement capture
-- [ ] **CQ-3** — Refactor god function in `step4_handler.py` (lines 115-907, 792 LOC)
-  - Extract sub-handlers: offer generation, negotiation, acceptance/rejection
-- [ ] **CQ-4** — Eliminate verbalizer duplication (~200 lines shared between `llm/verbalizer_agent.py` and `ux/universal_verbalizer.py`)
-  - Consolidate into single source of truth
+- [x] **CQ-2** — Refactor god function in `step1_handler.py` (836 → 525 lines, 37% reduction)
+  - Extracted: `early_pipeline.py`, `change_pipeline.py`; extended `manual_review_gate.py`, `room_shortcut.py`
+- [x] **CQ-3** — Refactor god function in `step4_handler.py` (1190 → 301 lines, 75% reduction)
+  - Extracted: `helpers.py`, `confirmation_continuation.py`, `change_routing_step4.py`, `acceptance.py`; extended `compose.py`
+- [x] **CQ-4** — Eliminate verbalizer duplication (~200 lines shared between `llm/verbalizer_agent.py` and `ux/universal_verbalizer.py`)
+  - Consolidated into single source of truth (commit `ed1826b`)
 - [ ] **TEST-2** — Add API route tests (12+ routes have zero test coverage)
   - Priority: auth middleware, events CRUD, config endpoints
 - [ ] **TEST-3** — Add LLM adapter tests (`llm/adapters/` directory untested)
@@ -90,10 +90,10 @@
 - File: `workflows/runtime/pre_route.py:257`
 - A `print(f"[UNIFIED_DETECTION] ...")` was left in the hot path. The adjacent `logger.debug()` already logs the same fields with proper formatting.
 
-**CQ-2/CQ-3: God functions in step handlers**
-- `step1_handler.py` lines 102-745 (644 LOC) — single function handling all of step 1
-- `step4_handler.py` lines 115-907 (792 LOC) — single function handling all of step 4
-- These are the most complex functions in the codebase. Each handles multiple sub-flows (date confirmation, room selection, requirement capture, etc.) in a single method with deep nesting. High cognitive load and difficult to test in isolation.
+**CQ-2/CQ-3: God functions in step handlers** [FIXED]
+- `step1_handler.py` reduced from 836 → 525 lines (37%). Extracted: `early_pipeline.py` (early detection chain), `change_pipeline.py` (change routing); extended `manual_review_gate.py`, `room_shortcut.py`.
+- `step4_handler.py` reduced from 1190 → 301 lines (75%). Extracted: `helpers.py` (internal utilities), `confirmation_continuation.py` (BUG-053 gate), `change_routing_step4.py` (change detection + Q&A + nonsense), `acceptance.py` (offer acceptance flow); extended `compose.py` (offer finalization pipeline).
+- Both handlers are now thin orchestrators (~250 LOC each) calling focused modules. 268 tests pass, E2E verified through Step 7.
 
 **CQ-4: Verbalizer duplication**
 - `llm/verbalizer_agent.py` and `ux/universal_verbalizer.py` share ~200 lines of near-identical response formatting logic. Changes to one are often forgotten in the other.
@@ -138,7 +138,7 @@ The layered architecture is solid:
 | Milestone | Effort | Items |
 |-----------|--------|-------|
 | **Secure for staging** | 1-2 days | SEC-1, SEC-2, SEC-3 |
-| **MVP quality bar** | ~1 week | + CQ-2/3, TEST-2, RES-1 |
+| **MVP quality bar** | ~1 week | + TEST-2, RES-1 (CQ-2/3 done) |
 | **Full production** | 3-4 weeks | + all Medium/Low items |
 
 ---

@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from workflows.common.types import GroupResult
 
 from services.room_eval import evaluate_rooms
 from workflows.io.database import append_audit_entry, update_event_metadata
@@ -310,3 +313,81 @@ def apply_smart_shortcut(
     logger.info("[Step1][SMART_SHORTCUT] Set room_confirmation_prefix for Step 4")
 
     return confirmation_intro
+
+
+def handle_smart_shortcut_path(
+    *,
+    state: Any,
+    event_entry: Dict[str, Any],
+    requirements: Dict[str, Any],
+    user_info: Dict[str, Any],
+    new_req_hash: Optional[str],
+    needs_vague_date_confirmation: bool,
+    intent: Any,
+    confidence: float,
+) -> Optional["GroupResult"]:
+    """Orchestrate the full smart-shortcut path: past date check → eligibility → evaluation → apply.
+
+    Returns a ``GroupResult`` if the shortcut succeeds (caller should return it),
+    or ``None`` if the shortcut was not applicable (caller continues normally).
+    Also handles past-date routing to Step 2.
+    """
+    from workflows.common.types import GroupResult
+    from detection.intent.classifier import _detect_qna_types
+    from workflows.qna.router import generate_hybrid_qna_response
+
+    event_date_from_msg = user_info.get("event_date") or user_info.get("date")
+    past_date_result = check_past_date(event_date_from_msg, event_entry.get("date_confirmed", False))
+    past_date_detected = past_date_result.is_past
+    if past_date_detected:
+        state.extras["past_date_rejected"] = past_date_result.original_date
+        event_date_from_msg = None  # Don't use for shortcut
+
+    eligibility = check_shortcut_eligibility(
+        event_entry, requirements, user_info, past_date_detected, needs_vague_date_confirmation,
+    )
+
+    # Route to Step 2 if past date was detected
+    if past_date_detected:
+        logger.info("[Step1][PAST_DATE] Routing to Step 2 for date alternatives")
+        update_event_metadata(event_entry, chosen_date=None, date_confirmed=False, current_step=2)
+        state.current_step = 2
+        state.extras["persist"] = True
+
+    # Evaluate smart shortcut if eligible
+    if eligibility.is_eligible:
+        shortcut_result = evaluate_smart_shortcut(event_entry, state.db, eligibility, user_info)
+        if shortcut_result.success:
+            apply_smart_shortcut(
+                event_entry, shortcut_result, eligibility.event_date,
+                new_req_hash, eligibility.participants,
+            )
+            state.current_step = 4
+            state.set_thread_state("Awaiting Client")
+            state.extras["persist"] = True
+
+            # Generate Q&A response if detected
+            if state.extras.get("general_qna_detected"):
+                unified_det = state.extras.get("unified_detection") or {}
+                qna_types = unified_det.get("qna_types") or _detect_qna_types((state.message.body or "").lower())
+                if qna_types:
+                    hybrid_qna_response = generate_hybrid_qna_response(
+                        qna_types=qna_types, message_text=state.message.body or "",
+                        event_entry=event_entry, db=state.db,
+                    )
+                    if hybrid_qna_response:
+                        state.extras["hybrid_qna_response"] = hybrid_qna_response
+
+            payload = {
+                "client_id": state.client_id,
+                "event_id": event_entry.get("event_id"),
+                "intent": intent.value,
+                "confidence": round(confidence, 3),
+                "locked_room_id": shortcut_result.room_name,
+                "thread_state": state.thread_state,
+                "persisted": True,
+                "smart_shortcut": True,
+            }
+            return GroupResult(action="smart_shortcut_to_offer", payload=payload, halt=False)
+
+    return None

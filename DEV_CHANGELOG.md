@@ -1,5 +1,30 @@
 # Development Changelog
 
+## 2026-02-07
+
+### Refactor: CQ-2/CQ-3 — God Function Extraction (step1_handler + step4_handler)
+
+**Goal:** Reduce two "god functions" from 2026 combined lines to ~826 lines by extracting coherent sub-flows into focused modules, while preserving all behavior and backward compatibility.
+
+**Step 1 handler (CQ-2):** 836 → 525 lines (37% reduction)
+- `early_pipeline.py` — **NEW**: Early detection chain (confirmation, acceptance, Q&A signals, time validation, room/menu/product detection). Returns `EarlyPipelineResult` dataclass.
+- `change_pipeline.py` — **NEW**: Change routing orchestration (vague date reset, DAG routing, 4 fallback chains). Returns `ChangeRoutingResult` dataclass.
+- `manual_review_gate.py` — Extended with `apply_gate_result()` for gate result handling (standalone Q&A, manual review, continue).
+- `room_shortcut.py` — Extended with `handle_smart_shortcut_path()` orchestrator.
+
+**Step 4 handler (CQ-3):** 1190 → 301 lines (75% reduction)
+- `helpers.py` — **NEW**: Moved 10 internal helpers (`_thread_id`, `_normalize_quotes`, `_looks_like_offer_acceptance`, etc.).
+- `confirmation_continuation.py` — **NEW**: BUG-053 stale `offer_accepted` clearing + confirmation gate + deposit reload.
+- `change_routing_step4.py` — **NEW**: Change detection pipeline (catering→products conversion, nonsense gate, Q&A classification, enhanced change detection, DAG routing, detour acknowledgment). Returns `Step4ChangeResult` dataclass.
+- `acceptance.py` — **NEW**: Offer acceptance flow (room-choice guard, pattern matching, billing gate, deposit gate, HIL routing).
+- `compose.py` — Extended with `compose_and_finalize_offer()` (pricing → recording → deposit → summary → verbalization → draft message → step advancement).
+
+**Backward compatibility:** Re-exports preserved in `step4_handler.py` for `process.py` shim (`build_offer`, `_record_offer`, `_compose_offer_summary`) and characterization tests (`_normalize_quotes`, `_looks_like_offer_acceptance`).
+
+**Verification:** 268 tests pass. E2E verified through all 5 phases (initial booking → hybrid acceptance + Q&A → detour during billing → confirm second offer → deposit payment → Step 7 site visit).
+
+---
+
 ## 2026-02-06
 
 ### Feature: Client-Initiated Event Cancellation (Hard Delete)

@@ -21,13 +21,19 @@ from typing import Any, Dict, Optional
 from unittest.mock import MagicMock, patch
 
 
-# Import the functions we're characterizing
-from workflows.steps.step4_offer.trigger.step4_handler import (
-    _evaluate_preconditions,
-    _has_capacity,
-    _rebuild_pricing_inputs,
-    _compose_offer_summary,
-    _default_menu_alternatives,
+# Import the functions we're characterizing (from their post-extraction locations)
+from workflows.steps.step4_offer.trigger.preconditions import (
+    evaluate_preconditions as _evaluate_preconditions,
+    has_capacity as _has_capacity,
+)
+from workflows.steps.step4_offer.trigger.pricing import (
+    rebuild_pricing_inputs as _rebuild_pricing_inputs,
+)
+from workflows.steps.step4_offer.trigger.offer_summary import (
+    compose_offer_summary as _compose_offer_summary,
+    default_menu_alternatives as _default_menu_alternatives,
+)
+from workflows.steps.step4_offer.trigger.helpers import (
     _normalize_quotes,
     _looks_like_offer_acceptance,
 )

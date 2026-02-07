@@ -5,12 +5,9 @@ import logging
 logger = logging.getLogger(__name__)
 from typing import Any, Dict
 
-from workflows.common.prompts import append_footer
 from workflows.common.requirements import merge_client_profile
 from workflows.common.types import GroupResult, WorkflowState
-from workflows.change_propagation import route_change_on_updated_variable
 
-from domain import IntentLabel
 from debug.hooks import (
     trace_entity,
     trace_marker,
@@ -19,16 +16,13 @@ from debug.hooks import (
 )
 from workflows.io.database import (
     append_history,
-    append_audit_entry,
     context_snapshot,
     last_event_for_email,
-    tag_message,
     update_event_metadata,
     upsert_client,
 )
 
 from ..db_pers.tasks import enqueue_manual_review_task
-from ..condition.checks import is_event_request
 from services import client_memory
 from ..billing_flow import handle_billing_capture
 from workflows.qna.router import generate_hybrid_qna_response
@@ -43,48 +37,25 @@ from workflows.common.detection_utils import get_unified_detection
 from .event_bootstrap import ensure_event_record as _ensure_event_record
 from .billing_detection import extract_billing_from_body as _extract_billing_from_body
 from .early_detection import (
-    detect_confirmation as _detect_confirmation,
-    detect_offer_acceptance as _detect_offer_acceptance,
-    detect_qna_signals as _detect_qna_signals,
-    detect_early_room_choice as _detect_early_room_choice,
-    detect_early_menu_choice as _detect_early_menu_choice,
     should_boost_confidence as _should_boost_confidence,
 )
+from .early_pipeline import run_early_detection_pipeline as _run_early_detection_pipeline
 from .manual_review_gate import (
     check_manual_review_gate as _check_manual_review_gate,
-    GateDecision as _GateDecision,
+    apply_gate_result as _apply_gate_result,
 )
-from .room_shortcut import (
-    check_past_date as _check_past_date,
-    check_shortcut_eligibility as _check_shortcut_eligibility,
-    evaluate_smart_shortcut as _evaluate_smart_shortcut,
-    apply_smart_shortcut as _apply_smart_shortcut,
-)
+from .room_shortcut import handle_smart_shortcut_path as _handle_smart_shortcut_path
 from .room_confirmation import (
     check_room_confirmation as _check_room_confirmation,
     apply_room_confirmation as _apply_room_confirmation,
     RoomConfirmDecision as _RoomConfirmDecision,
 )
-from .change_routing_step1 import (
-    build_change_context as _build_change_context,
-    detect_change_with_guards as _detect_change_with_guards,
-    should_skip_vague_date_reset as _should_skip_vague_date_reset,
-)
-from .change_fallback import (
-    check_date_fallback as _check_date_fallback,
-    check_missing_date_fallback as _check_missing_date_fallback,
-    check_requirements_hash_fallback as _check_requirements_hash_fallback,
-    check_room_preference_fallback as _check_room_preference_fallback,
-    FallbackAction as _FallbackAction,
-)
-from .change_application import apply_dag_routing as _apply_dag_routing
+from .change_pipeline import run_change_routing_pipeline as _run_change_routing_pipeline
 from .classification_extraction import classify_and_extract as _classify_and_extract
 
 # I1 Phase 1: Intent helpers
 from .intent_helpers import resolve_owner_step as _resolve_owner_step
 
-# I1 Phase 2: Product detection
-from .product_detection import detect_product_update_request as _detect_product_update_request
 
 # I2: Requirements fallback
 from .requirements_fallback import process_requirements as _process_requirements
@@ -159,100 +130,88 @@ def process(state: WorkflowState) -> GroupResult:
     body_text = _normalize_quotes(body_text_raw)
     fallback_year = _fallback_year_from_ts(message_payload.get("ts"))
 
-    # [EARLY DETECTION] Use extracted module for confirmation detection
-    confirmation_result = _detect_confirmation(body_text, linked_event, user_info, fallback_year)
-    confirmation_detected = confirmation_result.detected
-    if confirmation_detected:
-        user_info["date"] = confirmation_result.iso_date
-        user_info["event_date"] = confirmation_result.event_date
-        if confirmation_result.start_time and "start_time" not in user_info:
-            user_info["start_time"] = confirmation_result.start_time
-        if confirmation_result.end_time and "end_time" not in user_info:
-            user_info["end_time"] = confirmation_result.end_time
+    # [EARLY DETECTION PIPELINE] Run all early detections in one call
+    unified_detection = get_unified_detection(state)
+    early = _run_early_detection_pipeline(
+        body_text=body_text,
+        linked_event=linked_event,
+        user_info=user_info,
+        fallback_year=fallback_year,
+        unified_detection=unified_detection,
+        message_payload=message_payload,
+        current_intent=intent,
+        current_confidence=confidence,
+        current_intent_detail=state.intent_detail,
+    )
 
-    # [EARLY DETECTION] Use extracted module for offer acceptance detection
-    acceptance_result = _detect_offer_acceptance(body_text, linked_event)
-    if acceptance_result.detected and linked_event:
-        intent = IntentLabel.EVENT_REQUEST
-        confidence = max(confidence, 0.99)
-        state.intent = intent
-        state.confidence = confidence
-        if state.intent_detail in (None, "intake"):
-            state.intent_detail = "event_intake_negotiation_accept"
-        user_info.setdefault("hil_approve_step", acceptance_result.target_step)
+    # Apply confirmation results to user_info
+    if early.confirmation_detected:
+        user_info["date"] = early.confirmation_date_iso
+        user_info["event_date"] = early.confirmation_event_date
+        if early.confirmation_start_time and "start_time" not in user_info:
+            user_info["start_time"] = early.confirmation_start_time
+        if early.confirmation_end_time and "end_time" not in user_info:
+            user_info["end_time"] = early.confirmation_end_time
+
+    # Apply acceptance results
+    if early.acceptance_detected and linked_event:
+        user_info.setdefault("hil_approve_step", early.acceptance_target_step)
         update_event_metadata(
             linked_event,
-            current_step=acceptance_result.target_step,
+            current_step=early.acceptance_target_step,
             thread_state="Waiting on HIL",
             caller_step=None,
         )
-        state.extras["persist"] = True
 
-    # [EARLY DETECTION] Get unified detection for Q&A and room signals
-    unified_detection = get_unified_detection(state)
-    qna_signals = _detect_qna_signals(unified_detection)
-    if qna_signals.should_set_general_qna:
+    # Apply Q&A signals
+    if early.should_set_general_qna:
         state.extras["general_qna_detected"] = True
         state.extras["_has_qna_types"] = True
 
-    # [EARLY VALIDATION] Time slot validation against operating hours
-    # Use unified detection times (LLM-extracted) - never re-parse from text
-    from workflows.common.time_validation import validate_event_times
-    time_validation = validate_event_times(
-        start_time=unified_detection.start_time if unified_detection else None,
-        end_time=unified_detection.end_time if unified_detection else None,
-        is_site_visit=False,
-    )
-    if not time_validation.is_valid:
-        logger.info(
-            "[Step1][TIME_VALIDATION] Times outside hours: %s (start=%s, end=%s)",
-            time_validation.issue, time_validation.start_time, time_validation.end_time
-        )
-        state.extras["time_warning"] = time_validation.friendly_message
-        state.extras["time_warning_issue"] = time_validation.issue
-        # Persist time warning to event_entry for traceability
+    # Apply time validation warnings
+    if not early.time_valid:
+        state.extras["time_warning"] = early.time_warning
+        state.extras["time_warning_issue"] = early.time_warning_issue
         if linked_event is not None:
             linked_event.setdefault("time_validation", {})
-            linked_event["time_validation"]["issue"] = time_validation.issue
-            linked_event["time_validation"]["warning"] = time_validation.friendly_message
-            linked_event["time_validation"]["start_time"] = time_validation.start_time
-            linked_event["time_validation"]["end_time"] = time_validation.end_time
+            linked_event["time_validation"]["issue"] = early.time_warning_issue
+            linked_event["time_validation"]["warning"] = early.time_warning
+            linked_event["time_validation"]["start_time"] = early.time_start
+            linked_event["time_validation"]["end_time"] = early.time_end
 
-    # [EARLY DETECTION] Room choice detection
-    room_result = _detect_early_room_choice(body_text, linked_event, unified_detection)
-    if room_result.room_name:
-        user_info["room"] = room_result.room_name
+    # Apply room choice
+    if early.room_name:
+        user_info["room"] = early.room_name
         user_info["_room_choice_detected"] = True
-        state.extras["room_choice_selected"] = room_result.room_name
-        logger.info("[Step1] Set _room_choice_detected=True for room=%s", room_result.room_name)
-        if room_result.should_bump_confidence:
-            confidence = 1.0
-            intent = IntentLabel.EVENT_REQUEST
-            state.intent = intent
-            state.confidence = confidence
+        state.extras["room_choice_selected"] = early.room_name
+        logger.info("[Step1] Set _room_choice_detected=True for room=%s", early.room_name)
 
-    # [EARLY DETECTION] Menu choice detection
-    menu_result = _detect_early_menu_choice(body_text, linked_event, user_info)
-    if menu_result.menu_name:
-        user_info["menu_choice"] = menu_result.menu_name
-        if menu_result.product_payload:
+    # Apply menu choice
+    if early.menu_name:
+        user_info["menu_choice"] = early.menu_name
+        if early.menu_product_payload:
             existing = user_info.get("products_add") or []
             if isinstance(existing, list):
-                user_info["products_add"] = existing + [menu_result.product_payload]
+                user_info["products_add"] = existing + [early.menu_product_payload]
             else:
-                user_info["products_add"] = [menu_result.product_payload]
+                user_info["products_add"] = [early.menu_product_payload]
 
-    product_update_detected = _detect_product_update_request(message_payload, user_info, linked_event)
-    if product_update_detected:
+    # Apply product update
+    if early.product_update_detected:
         state.extras["product_update_detected"] = True
-        if not is_event_request(intent):
-            intent = IntentLabel.EVENT_REQUEST
-            confidence = max(confidence, 0.9)
-            state.intent = intent
-            state.confidence = confidence
-            state.intent_detail = "event_intake_product_update"
-        elif state.intent_detail in (None, "intake", "event_intake"):
-            state.intent_detail = "event_intake_product_update"
+
+    # Apply intent/confidence/detail overrides
+    if early.override_intent is not None:
+        intent = early.override_intent
+        confidence = early.override_confidence or confidence
+        state.intent = intent
+        state.confidence = confidence
+    if early.override_intent_detail is not None:
+        state.intent_detail = early.override_intent_detail
+
+    # Apply extras updates (e.g. persist flag from acceptance)
+    state.extras.update(early.extras_updates)
+
     state.user_info = user_info
     append_history(client, message_payload, intent.value, confidence, user_info)
 
@@ -287,96 +246,25 @@ def process(state: WorkflowState) -> GroupResult:
         state_message=state.message,
     )
 
-    # Apply gate result
-    if gate_result.decision != _GateDecision.CONTINUE:
-        if gate_result.decision == _GateDecision.STANDALONE_QNA:
-            state.add_draft_message({
-                "body": gate_result.qna_response,
-                "step": 1,
-                "topic": "standalone_qna",
-            })
-            state.set_thread_state("Awaiting Client")
-            return GroupResult(
-                action="standalone_qna",
-                payload={
-                    "client_id": state.client_id,
-                    "event_id": None,
-                    "intent": gate_result.intent.value,
-                    "confidence": round(gate_result.confidence, 3),
-                    "draft_messages": state.draft_messages,
-                    "thread_state": state.thread_state,
-                    "standalone_qna": True,
-                },
-                halt=True,
-            )
-        elif gate_result.decision == _GateDecision.MANUAL_REVIEW:
-            trace_marker(
-                thread_id,
-                "CONDITIONAL_HIL",
-                detail="manual_review_required",
-                data={"intent": gate_result.intent.value, "confidence": round(gate_result.confidence, 3)},
-                owner_step=owner_step,
-            )
-            linked_event_id = linked_event.get("event_id") if linked_event else None
-            task_id = enqueue_manual_review_task(
-                state.db,
-                state.client_id,
-                linked_event_id,
-                {
-                    "subject": message_payload.get("subject"),
-                    "snippet": (message_payload.get("body") or "")[:200],
-                    "ts": message_payload.get("ts"),
-                    "reason": "manual_review_required",
-                    "thread_id": thread_id,
-                },
-            )
-            state.extras.update({"task_id": task_id, "persist": True})
-            clarification = append_footer(
-                "Thanks for your message. A member of our team will review it shortly "
-                "to make sure it reaches the right place.",
-                step=1,
-                next_step="Team review (HIL)",
-                thread_state="Waiting on HIL",
-            )
-            state.add_draft_message({"body": clarification, "step": 1, "topic": "manual_review"})
-            state.set_thread_state("Waiting on HIL")
-            return GroupResult(
-                action="manual_review_enqueued",
-                payload={
-                    "client_id": state.client_id,
-                    "event_id": linked_event_id,
-                    "intent": gate_result.intent.value,
-                    "confidence": round(gate_result.confidence, 3),
-                    "persisted": True,
-                    "task_id": task_id,
-                    "user_info": user_info,
-                    "context": context,
-                    "draft_messages": state.draft_messages,
-                    "thread_state": state.thread_state,
-                },
-                halt=True,
-            )
+    # Apply gate result (may return early with halt=True for QNA/MANUAL_REVIEW)
+    halt_result = _apply_gate_result(
+        gate_result,
+        state=state,
+        user_info=user_info,
+        linked_event=linked_event,
+        message_payload=message_payload,
+        thread_id=thread_id,
+        owner_step=owner_step,
+        context=context,
+        enqueue_manual_review_task_fn=enqueue_manual_review_task,
+        trace_marker_fn=trace_marker,
+    )
+    if halt_result is not None:
+        return halt_result
 
-    # Apply updates from gate (for CONTINUE decisions with modifications)
-    intent = gate_result.intent
-    confidence = gate_result.confidence
-    state.intent = intent
-    state.confidence = confidence
-    if gate_result.intent_detail:
-        state.intent_detail = gate_result.intent_detail
-    if gate_result.user_info_updates:
-        user_info.update(gate_result.user_info_updates)
-    if gate_result.room_choice:
-        state.extras["room_choice_selected"] = gate_result.room_choice
-        if gate_result.should_lock_room and linked_event:
-            req_hash = linked_event.get("requirements_hash")
-            update_event_metadata(
-                linked_event,
-                locked_room_id=gate_result.room_choice,
-                room_eval_hash=req_hash,
-                room_status="Available",
-                caller_step=None,
-            )
+    # For CONTINUE: gate already updated state.intent / state.confidence / user_info
+    intent = state.intent
+    confidence = state.confidence
 
     event_entry = _ensure_event_record(state, message_payload, user_info)
     if event_entry.get("pending_hil_requests"):
@@ -435,62 +323,19 @@ def process(state: WorkflowState) -> GroupResult:
         requirements_hash=new_req_hash,
     )
 
-    # [SMART SHORTCUT] Use extracted modules for past date check and shortcut eligibility
-    event_date_from_msg = user_info.get("event_date") or user_info.get("date")
-    past_date_result = _check_past_date(event_date_from_msg, event_entry.get("date_confirmed", False))
-    past_date_detected = past_date_result.is_past
-    if past_date_detected:
-        state.extras["past_date_rejected"] = past_date_result.original_date
-        event_date_from_msg = None  # Don't use for shortcut
-
-    # Check shortcut eligibility
-    eligibility = _check_shortcut_eligibility(
-        event_entry, requirements, user_info, past_date_detected, needs_vague_date_confirmation
+    # [SMART SHORTCUT] Check past-date → eligibility → evaluate → apply (all in one call)
+    shortcut_halt = _handle_smart_shortcut_path(
+        state=state,
+        event_entry=event_entry,
+        requirements=requirements,
+        user_info=user_info,
+        new_req_hash=new_req_hash,
+        needs_vague_date_confirmation=needs_vague_date_confirmation,
+        intent=intent,
+        confidence=confidence,
     )
-
-    # Route to Step 2 if past date was detected
-    if past_date_detected:
-        logger.info("[Step1][PAST_DATE] Routing to Step 2 for date alternatives")
-        update_event_metadata(event_entry, chosen_date=None, date_confirmed=False, current_step=2)
-        state.current_step = 2
-        state.extras["persist"] = True
-
-    # Evaluate smart shortcut if eligible
-    if eligibility.is_eligible:
-        shortcut_result = _evaluate_smart_shortcut(event_entry, state.db, eligibility, user_info)
-        if shortcut_result.success:
-            # Apply the shortcut
-            _apply_smart_shortcut(
-                event_entry, shortcut_result, eligibility.event_date,
-                new_req_hash, eligibility.participants
-            )
-            state.current_step = 4
-            state.set_thread_state("Awaiting Client")
-            state.extras["persist"] = True
-
-            # Generate Q&A response if detected
-            if state.extras.get("general_qna_detected"):
-                unified_det = state.extras.get("unified_detection") or {}
-                qna_types = unified_det.get("qna_types") or _detect_qna_types((state.message.body or "").lower())
-                if qna_types:
-                    hybrid_qna_response = generate_hybrid_qna_response(
-                        qna_types=qna_types, message_text=state.message.body or "",
-                        event_entry=event_entry, db=state.db,
-                    )
-                    if hybrid_qna_response:
-                        state.extras["hybrid_qna_response"] = hybrid_qna_response
-
-            payload = {
-                "client_id": state.client_id,
-                "event_id": event_entry.get("event_id"),
-                "intent": intent.value,
-                "confidence": round(confidence, 3),
-                "locked_room_id": shortcut_result.room_name,
-                "thread_state": state.thread_state,
-                "persisted": True,
-                "smart_shortcut": True,
-            }
-            return GroupResult(action="smart_shortcut_to_offer", payload=payload, halt=False)
+    if shortcut_halt is not None:
+        return shortcut_halt
 
     # Apply metadata updates from preferences and vague date hints
     metadata_updates = _build_metadata_updates(user_info)
@@ -537,178 +382,22 @@ def process(state: WorkflowState) -> GroupResult:
             return GroupResult(action="room_choice_captured", payload=payload, halt=False)
         # SKIP decision falls through to normal flow
 
-    new_preferred_room = requirements.get("preferred_room")
-
-    new_date = user_info.get("event_date")
-    previous_step = state.current_step or 1
-    detoured_to_step2 = False
-
-    # Use centralized change detection with Step1-specific guards
-    message_text = state.message.body or ""
-
-    # Build context for change detection (billing flow, deposit date, site visit guards)
-    change_context = _build_change_context(
-        event_entry=event_entry,
-        message_text=message_text,
-        unified_detection=unified_detection,
-        state_extras=state.extras,
-    )
-
-    # Detect changes with guards applied
-    change_result = _detect_change_with_guards(
+    # [CHANGE ROUTING PIPELINE] Vague date reset + DAG routing + 4 fallback chains
+    change_routing = _run_change_routing_pipeline(
+        state=state,
         event_entry=event_entry,
         user_info=user_info,
-        message_text=message_text,
+        requirements=requirements,
         unified_detection=unified_detection,
-        context=change_context,
-    )
-    change_type = change_result.change_type
-    is_qna_no_change = change_result.is_qna_no_change
-
-    # Q&A guard for vague date reset
-    skip_vague_date_reset = _should_skip_vague_date_reset(
-        has_qna_question=change_context.has_qna_question,
-        date_already_confirmed=change_context.date_already_confirmed,
-    )
-
-    # Extract guards from context for fallback routing
-    in_billing_flow = change_context.in_billing_flow
-    skip_guards = {
-        "in_billing_flow": change_context.in_billing_flow,
-        "is_deposit_date_context": change_context.is_deposit_date_context,
-        "site_visit_active": change_context.site_visit_active,
-        "site_visit_change": change_context.site_visit_scheduled and change_context.is_sv_change_request,
-        "is_qna_no_change": is_qna_no_change,
-    }
-
-    if needs_vague_date_confirmation and not in_billing_flow and not skip_vague_date_reset:
-        event_entry["range_query_detected"] = True
-        update_event_metadata(
-            event_entry,
-            chosen_date=None,
-            date_confirmed=False,
-            current_step=2,
-            room_eval_hash=None,
-            locked_room_id=None,
-            thread_state="Awaiting Client Response",
-        )
-        event_entry.setdefault("event_data", {})["Event Date"] = "Not specified"
-        append_audit_entry(event_entry, previous_step, 2, "date_pending_vague_request")
-        detoured_to_step2 = True
-        state.set_thread_state("Awaiting Client Response")
-    elif needs_vague_date_confirmation and skip_vague_date_reset:
-        logger.debug("[Step1] Skipping vague date reset - Q&A detected and date already confirmed")
-
-    # Handle change routing using DAG-based change propagation
-    logger.info("[Step1][CHANGE_ROUTING] change_type=%s, previous_step=%s", change_type, previous_step)
-    if change_type is not None and previous_step > 1:
-        decision = route_change_on_updated_variable(event_entry, change_type, from_step=previous_step)
-        logger.info("[Step1][CHANGE_ROUTING] decision: next_step=%s, caller_step=%s",
-                   decision.next_step, decision.updated_caller_step)
-
-        # Apply routing decision using extracted module
-        routing_result = _apply_dag_routing(
-            event_entry=event_entry,
-            decision=decision,
-            change_type=change_type,
-            previous_step=previous_step,
-            in_billing_flow=in_billing_flow,
-            thread_id=_thread_id(state),
-            trace_marker_fn=trace_marker,
-        )
-        if routing_result.detoured_to_step2:
-            detoured_to_step2 = True
-        if routing_result.change_detour:
-            state.extras["change_detour"] = True
-
-    # Fallback: date routing for cases not handled by DAG change propagation
-    elif change_type is None:
-        date_fb = _check_date_fallback(
-            new_date=new_date,
-            event_entry=event_entry,
-            previous_step=previous_step,
-            skip_guards=skip_guards,
-        )
-        if date_fb.action != _FallbackAction.NONE:
-            if date_fb.set_caller_step is not None:
-                update_event_metadata(event_entry, caller_step=date_fb.set_caller_step)
-            if date_fb.next_step is not None:
-                update_event_metadata(
-                    event_entry,
-                    chosen_date=date_fb.new_date if date_fb.action != _FallbackAction.PAST_DATE_TO_STEP2 else None,
-                    date_confirmed=date_fb.date_confirmed,
-                    current_step=date_fb.next_step,
-                    room_eval_hash=None,
-                    locked_room_id=None,
-                )
-                if date_fb.new_date:
-                    event_entry.setdefault("event_data", {})["Event Date"] = date_fb.new_date
-                if date_fb.action == _FallbackAction.PAST_DATE_TO_STEP2:
-                    state.extras["past_date_rejected"] = new_date
-                append_audit_entry(event_entry, previous_step, date_fb.next_step, date_fb.audit_reason or "date_fallback")
-                if date_fb.next_step == 2:
-                    detoured_to_step2 = True
-
-    # Fallback: missing date routing
-    missing_date_fb = _check_missing_date_fallback(
-        new_date=new_date,
-        event_entry=event_entry,
-        change_type=change_type,
         needs_vague_date_confirmation=needs_vague_date_confirmation,
-        previous_step=previous_step,
-    )
-    if missing_date_fb.action != _FallbackAction.NONE:
-        update_event_metadata(
-            event_entry,
-            chosen_date=None,
-            date_confirmed=False,
-            current_step=2,
-            room_eval_hash=None,
-            locked_room_id=None,
-        )
-        event_entry.setdefault("event_data", {})["Event Date"] = "Not specified"
-        append_audit_entry(event_entry, previous_step, 2, missing_date_fb.audit_reason or "date_missing")
-        detoured_to_step2 = True
-
-    # Fallback: requirements hash mismatch routing
-    req_fb = _check_requirements_hash_fallback(
         prev_req_hash=prev_req_hash,
         new_req_hash=new_req_hash,
-        event_entry=event_entry,
-        previous_step=previous_step,
-        change_type=change_type,
-        detoured_to_step2=detoured_to_step2,
-        is_qna_no_change=is_qna_no_change,
+        message_payload=message_payload,
+        thread_id=_thread_id(state),
+        trace_marker_fn=trace_marker,
     )
-    if req_fb.action != _FallbackAction.NONE:
-        if req_fb.set_caller_step is not None:
-            update_event_metadata(event_entry, caller_step=req_fb.set_caller_step)
-        if req_fb.next_step is not None:
-            update_event_metadata(event_entry, current_step=req_fb.next_step)
-            append_audit_entry(event_entry, previous_step, req_fb.next_step, req_fb.audit_reason or "requirements_updated")
-            event_entry.pop("negotiation_pending_decision", None)
-
-    # Fallback: room preference change routing
-    room_fb = _check_room_preference_fallback(
-        new_preferred_room=new_preferred_room,
-        event_entry=event_entry,
-        previous_step=previous_step,
-        change_type=change_type,
-        detoured_to_step2=detoured_to_step2,
-        is_qna_no_change=is_qna_no_change,
-        in_billing_flow=in_billing_flow,
-    )
-    if room_fb.action != _FallbackAction.NONE:
-        if room_fb.set_caller_step is not None:
-            update_event_metadata(event_entry, caller_step=room_fb.set_caller_step)
-        if room_fb.next_step is not None:
-            update_event_metadata(event_entry, current_step=room_fb.next_step)
-            append_audit_entry(event_entry, room_fb.set_caller_step or previous_step, room_fb.next_step, room_fb.audit_reason or "room_preference_updated")
-
-    tag_message(event_entry, message_payload.get("msg_id"))
-
-    if not event_entry.get("thread_state"):
-        update_event_metadata(event_entry, thread_state="Awaiting Client")
+    if change_routing.change_detour:
+        state.extras["change_detour"] = True
 
     state.current_step = event_entry.get("current_step")
     state.caller_step = event_entry.get("caller_step")
