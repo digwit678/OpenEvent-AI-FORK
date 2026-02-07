@@ -1392,6 +1392,8 @@
       "company": "SwissTech AG",
       "phone": "+41 44 123 4567",
       "language": "de",
+      "country": "Switzerland",
+      "timezone": "Europe/Zurich",
       "created_at": "2026-01-10T21:00:02.980501",
       "event_ids": [
         "0f53083f-14a9-4109-a6e3-d008b53142ba"
@@ -1412,6 +1414,8 @@
       "company": "Innovations SA",
       "phone": "+41 22 987 6543",
       "language": "fr",
+      "country": "France",
+      "timezone": "Europe/Paris",
       "created_at": "2026-01-08T21:00:02.980501",
       "event_ids": [
         "d54c4118-5252-4112-b795-04a4b63a38b7"

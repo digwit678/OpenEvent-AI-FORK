@@ -342,65 +342,71 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
-        # Check if auth is enabled
-        if os.getenv("AUTH_ENABLED", "0") != "1":
-            # Auth disabled - pass through without checks
-            return await call_next(request)
+        # Always scope auth context to the current request so one request
+        # can never leak user/role into the next one.
+        user_token = CURRENT_USER_ID.set(None)
+        role_token = CURRENT_USER_ROLE.set(None)
+        request.state.auth_team_id = None
 
-        path = request.url.path
+        try:
+            # Check if auth is enabled
+            if os.getenv("AUTH_ENABLED", "0") != "1":
+                # Auth disabled - pass through without checks
+                return await call_next(request)
 
-        # Check allowlist prefixes
-        if path.startswith(ALLOWLIST_PREFIXES):
-            return await call_next(request)
+            path = request.url.path
 
-        # Check exact allowlist matches
-        if path in ALLOWLIST_EXACT:
-            return await call_next(request)
+            # Check allowlist prefixes
+            if path.startswith(ALLOWLIST_PREFIXES):
+                return await call_next(request)
 
-        # Get auth mode and token
-        auth_mode = os.getenv("AUTH_MODE", "api_key")
-        auth_header = request.headers.get("Authorization", "")
-        token = _extract_bearer_token(auth_header)
+            # Check exact allowlist matches
+            if path in ALLOWLIST_EXACT:
+                return await call_next(request)
 
-        # Also check X-Api-Key header as fallback for internal tools
-        if not token:
-            token = request.headers.get("X-Api-Key", "").strip()
+            # Get auth mode and token
+            auth_mode = os.getenv("AUTH_MODE", "api_key")
+            auth_header = request.headers.get("Authorization", "")
+            token = _extract_bearer_token(auth_header)
 
-        # Validate based on mode
-        if auth_mode == "api_key":
-            is_valid, error = _validate_api_key(token)
-            if not is_valid:
-                return JSONResponse(
-                    {"error": "unauthorized", "detail": error},
-                    status_code=401,
-                )
-            return await call_next(request)
+            # Also check X-Api-Key header as fallback for internal tools
+            if not token:
+                token = request.headers.get("X-Api-Key", "").strip()
 
-        elif auth_mode == "supabase_jwt":
-            is_valid, error, claims = _validate_supabase_jwt(token)
-            if not is_valid:
-                return JSONResponse(
-                    {"error": "unauthorized", "detail": error},
-                    status_code=401,
-                )
+            # Validate based on mode
+            if auth_mode == "api_key":
+                is_valid, error = _validate_api_key(token)
+                if not is_valid:
+                    return JSONResponse(
+                        {"error": "unauthorized", "detail": error},
+                        status_code=401,
+                    )
+                return await call_next(request)
 
-            # Set auth context for downstream use
-            if claims.get("user_id"):
-                CURRENT_USER_ID.set(claims["user_id"])
-            if claims.get("role"):
-                CURRENT_USER_ROLE.set(claims["role"])
+            if auth_mode == "supabase_jwt":
+                is_valid, error, claims = _validate_supabase_jwt(token)
+                if not is_valid:
+                    return JSONResponse(
+                        {"error": "unauthorized", "detail": error},
+                        status_code=401,
+                    )
 
-            # In Supabase JWT mode, also set tenant context from claims
-            # This integrates with multi-tenancy (overrides X-Team-Id header)
-            if claims.get("team_id"):
-                from api.middleware.tenant_context import CURRENT_TEAM_ID
-                CURRENT_TEAM_ID.set(claims["team_id"])
+                # Set auth context for downstream use.
+                if claims.get("user_id"):
+                    CURRENT_USER_ID.set(claims["user_id"])
+                if claims.get("role"):
+                    CURRENT_USER_ROLE.set(claims["role"])
 
-            return await call_next(request)
+                # Pass team_id forward for tenant middleware without mutating
+                # global tenant context here.
+                request.state.auth_team_id = claims.get("team_id")
+                return await call_next(request)
 
-        else:
             logger.error("Invalid AUTH_MODE: %s", auth_mode)
             return JSONResponse(
                 {"error": "server_error", "detail": "invalid_auth_mode"},
                 status_code=500,
             )
+        finally:
+            CURRENT_USER_ID.reset(user_token)
+            CURRENT_USER_ROLE.reset(role_token)

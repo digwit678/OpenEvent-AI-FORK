@@ -129,6 +129,7 @@ We chose **Option B (Gate at Confirmation)** over Option A (Gate before Offer) f
 | 3 | **Date Change Detection** | `change_propagation.py` | ~~Format mismatches causing loops (BUG-020)~~ | ✅ FIXED (2026-01-13) - Now normalizes dates to ISO before comparison |
 | 4 | **Room Selection Shortcuts** | `step1_handler.py`, `room_detection.py` | ~~Auto-locks room before arrangement requests processed~~ | ✅ FIXED (2026-01-07) - Added missing_products bypass check |
 | 5 | **Q&A Detection** | `classifier.py`, `unified.py`, `general_qna.py`, `pre_filter.py` | ~~Keywords overriding LLM intent (BUG-036, BUG-037, BUG-038, BUG-039)~~ | ✅ IMPROVED (2026-01-20) - Multiple layers of defense against false positives |
+| 6 | **Cancellation Detection** | `cancellation_handler.py`, `unified.py` | "cancel" keyword matching partial changes (site visit, room, catering) | ✅ NEW (2026-02-06) - LLM `is_cancellation` signal with strict negative examples; keyword fallback only when LLM unavailable (threshold ≥ 0.9) |
 
 **Recent Q&A Detection Improvements (2026-01-20):**
 - Keyword-based Q&A types now gated by LLM's `is_question` signal (BUG-036)
@@ -865,6 +866,34 @@ Result: Hybrid messages now correctly detect acceptance from the statement porti
 **Fix**: Lazy-import `load_room_static` inside Q&A response helpers.
 **Files**: `workflows/qna/router.py`
 **Tests**: `tests/detection/test_hybrid_qna.py`
+
+### BUG-051: Cancellation Blocked by is_change_request Co-Signal
+**Status**: Fixed (2026-02-06)
+**Severity**: High
+**Symptom**: Client sends "cancel the entire event booking" but gets a re-presented offer instead of a cancellation farewell. The cancellation handler never fires.
+**Root Cause**: Some LLMs (observed with Gemini Flash) return BOTH `is_change_request=True` AND `is_cancellation=True` for full event cancellation messages. The original guard logic checked `is_change_request` first and returned `False`, blocking the explicit `is_cancellation` signal.
+**Fix**: Reordered guard logic in `is_cancellation_intent()` — `is_cancellation=True` now takes priority over `is_change_request`. Only `is_acceptance` and `is_confirmation` (genuinely contradictory signals) still block cancellation. Also updated the `is_change_request` LLM prompt definition to explicitly say "FALSE if cancelling the ENTIRE EVENT/BOOKING (use is_cancellation instead)".
+**Files**: `workflows/common/cancellation_handler.py`, `detection/unified.py`
+**Tests**: `tests/detection/test_cancellation.py::TestIsCancellationIntent`
+**Key Learning**: When adding mutually-exclusive LLM signals, always consider that models may co-set contradictory flags. Design guard logic so the more-specific signal wins over the more-general one (`is_cancellation` > `is_change_request`). This is a variant of the LLM-First Rule: trust the *most specific* LLM signal, not just the first one checked.
+
+### BUG-052: Middleware Context Leakage + Request Size Limit Bypass
+**Status**: Fixed (2026-02-06)
+**Severity**: High
+**Symptom**: Middleware tests intermittently fail with stale auth/tenant values between requests; oversized requests without trustworthy `Content-Length` can bypass enforcement.
+**Root Cause**: `CURRENT_USER_*`/`CURRENT_*_ID` contextvars were not reset after each request; request-size middleware relied on `Content-Length` and did not enforce body length when the header was missing/invalid.
+**Fix**: Added strict request-scoped reset (`try/finally`) in `AuthMiddleware` and `TenantContextMiddleware`; passed JWT `team_id` via `request.state` with deterministic precedence; enforced body-size fallback check and replayed buffered body in `RequestSizeLimitMiddleware`.
+**Files**: `api/middleware/auth.py`, `api/middleware/tenant_context.py`, `api/middleware/request_limits.py`, `api/__init__.py`
+**Tests**: `tests/test_api/test_middleware_reliability.py`, `tests/test_api/test_auth_middleware.py`, `tests/test_api/test_tenant_context.py`
+
+### BUG-053: Offer Stage Skipped — Stale `offer_accepted` Flag
+**Status**: Fixed (2026-02-06)
+**Severity**: High
+**Symptom**: After room confirmation (Step 3 → Step 4), the system skips the offer presentation and jumps directly to billing/deposit prompts. Client never sees pricing or offer details.
+**Root Cause**: When an event has `offer_accepted=True` from a previous offer cycle, Step 4's confirmation gate check (line 207) fires immediately — skipping offer generation. The existing detour fix (lines 201-205) only clears `offer_accepted` when `caller_step` is set, but normal Step 3 → Step 4 transitions don't set `caller_step`.
+**Fix**: Added a guard that clears `offer_accepted` whenever `previous_step < 4` (i.e., entering Step 4 from an earlier step). This ensures a fresh offer is always generated after room confirmation.
+**Files**: `workflows/steps/step4_offer/trigger/step4_handler.py`
+**Key Learning**: Stale boolean flags that persist across workflow cycles are a recurring bug pattern. When a flag like `offer_accepted` gates a major code path, always verify it gets cleared on re-entry from earlier steps — not just on explicit detours. Consider `previous_step < current_step` as the general guard for "entering a step fresh."
 
 ---
 

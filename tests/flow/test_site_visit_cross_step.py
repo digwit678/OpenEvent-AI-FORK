@@ -211,6 +211,31 @@ class TestSiteVisitHandler:
         result = UnifiedDetectionResult(intent="general_qna", step_anchor="Site Visit")
         assert is_site_visit_intent(result) is True
 
+    def test_site_visit_disabled_returns_unavailable(self):
+        """When site visits are disabled, requests should return unavailable."""
+        from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from workflows.common.site_visit_handler import handle_site_visit_request
+        from workflows.common.types import WorkflowState
+
+        state = WorkflowState(
+            client_id="test@example.com",
+            thread_id="test-thread",
+            message=MagicMock(body="Can I schedule a site visit?"),
+            db_path=Path("/tmp/test.json"),
+            db={},
+        )
+        state.extras = {}
+
+        event_entry = {"current_step": 3}
+
+        with patch("workflows.io.config_store._get_site_visit_config", return_value={"enabled": False}):
+            result = handle_site_visit_request(state, event_entry, detection=None)
+
+        assert result is not None
+        assert result.action == "site_visit_unavailable"
+
 
 class TestSiteVisitConflictDetection:
     """Test site visit conflict detection with events."""

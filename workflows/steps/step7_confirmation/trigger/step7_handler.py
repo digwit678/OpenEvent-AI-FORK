@@ -476,9 +476,14 @@ def _prepare_confirmation(state: WorkflowState, event_entry: Dict[str, Any], ski
             "We'll finalize the details closer to your event date."
         )
     else:
-        client_message_parts.append(
-            "Would you like to arrange a site visit before we finalize everything?"
-        )
+        if site_visit_allowed(event_entry):
+            client_message_parts.append(
+                "Would you like to arrange a site visit before we finalize everything?"
+            )
+        else:
+            client_message_parts.append(
+                "If you have any remaining questions before we finalize, I'm happy to help."
+            )
     client_message = " ".join(client_message_parts)
 
     # Build deposit status string with due date
@@ -597,40 +602,38 @@ def _handle_reserve(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupR
 
 
 def _handle_decline(state: WorkflowState, event_entry: Dict[str, Any]) -> GroupResult:
-    """Handle booking decline/cancellation."""
-    event_entry.setdefault("event_data", {})["Status"] = EventStatus.CANCELLED.value
-
-    # Log cancellation activity for manager visibility
+    """Handle booking decline/cancellation via hard-delete."""
     from activity.persistence import log_workflow_activity
+    from workflows.io.database import delete_event
+
+    event_id = event_entry.get("event_id", "")
+
+    # Log cancellation activity BEFORE delete (event_entry is gone after)
     log_workflow_activity(event_entry, "status_cancelled", reason="Client declined")
 
-    # Clean up event-specific snapshots (room listings, offers) on cancellation
-    event_id = event_entry.get("event_id")
-    if event_id:
-        try:
-            delete_snapshots_for_event(event_id)
-        except Exception:
-            pass  # Don't fail booking flow on cleanup errors
+    # Build draft before deleting (we need event_entry context for payload)
     draft = {
         "body": append_footer(
             "Thank you for letting us know. We've released the date, and we'd be happy to assist with any future events.",
             step=7,
             next_step="Close booking",
-            thread_state="In Progress",
+            thread_state="Closed",
         ),
         "step": 7,
         "topic": "confirmation_decline",
-        # Routine acknowledgment - no HIL needed when toggle OFF
         "requires_approval": False,
     }
     state.add_draft_message(draft)
-    event_entry.setdefault("confirmation_state", {"pending": None, "last_response_type": None})["pending"] = {
-        "kind": "decline"
-    }
-    update_event_metadata(event_entry, thread_state="Closed")
+
+    payload = base_payload(state, event_entry)
+
+    # Hard-delete the event and all related records (frees date/room)
+    if event_id:
+        delete_event(state.db, event_id)
+
+    state.event_entry = None
     state.set_thread_state("Closed")
     state.extras["persist"] = True
-    payload = base_payload(state, event_entry)
     return GroupResult(action="confirmation_decline", payload=payload, halt=True)
 
 

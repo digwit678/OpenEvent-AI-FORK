@@ -11,10 +11,10 @@ Get “what changed + what to watch” in under ~2 minutes without running tests
 
 ## Steps
 
-1. Prefer the automation output:
-   - Read `docs/daily_scrum/session_primer.md` (if present).
+1. Run the helper script to print standard context files:
+   - `bash scripts/dev/session_context.sh`
 
-2. If missing/stale, build a quick local primer:
+2. If the primer/weekly pack is missing or stale, build a quick local primer:
    - Recent changes: `git log --since="72 hours ago" --name-only --oneline`
    - Skim (only if relevant/changed): `DEV_CHANGELOG.md`, `docs/guides/TEAM_GUIDE.md`, `TO_DO_NEXT_SESS.md`
 

@@ -383,6 +383,20 @@ def process(state: WorkflowState) -> GroupResult:
         event_entry["pending_hil_requests"] = []
         state.extras["persist"] = True
 
+    # Persist country/timezone from account profile for downstream scheduling/time rendering.
+    profile = (client or {}).get("profile") if isinstance(client, dict) else {}
+    profile_country = profile.get("country") if isinstance(profile, dict) else None
+    profile_timezone = profile.get("timezone") if isinstance(profile, dict) else None
+    effective_timezone = profile_timezone or state.extras.get("client_timezone")
+    timezone_updates: Dict[str, Any] = {}
+    if profile_country and event_entry.get("client_country") != profile_country:
+        timezone_updates["client_country"] = profile_country
+    if effective_timezone and event_entry.get("client_timezone") != effective_timezone:
+        timezone_updates["client_timezone"] = effective_timezone
+    if timezone_updates:
+        update_event_metadata(event_entry, **timezone_updates)
+        state.extras["persist"] = True
+
     if merge_client_profile(event_entry, user_info):
         state.extras["persist"] = True
 

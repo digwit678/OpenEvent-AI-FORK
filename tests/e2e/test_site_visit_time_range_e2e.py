@@ -478,11 +478,15 @@ class TestBackwardCompatibility:
 
     def test_new_config_fields_have_defaults(self):
         """New config fields should have sensible defaults."""
+        from unittest.mock import patch
+
         from workflows.io.config_store import get_all_site_visit_config
 
-        config = get_all_site_visit_config()
+        with patch("workflows.io.config_store._get_site_visit_config", return_value={}):
+            config = get_all_site_visit_config()
 
         # All new fields should be present with defaults
+        assert "enabled" in config
         assert "range_start_hour" in config
         assert "range_end_hour" in config
         assert "slot_duration_minutes" in config
@@ -490,6 +494,7 @@ class TestBackwardCompatibility:
         assert "use_time_range_mode" in config
 
         # Verify defaults
+        assert config["enabled"] is True
         assert config["range_start_hour"] == 10
         assert config["range_end_hour"] == 22
         assert config["slot_duration_minutes"] == 30

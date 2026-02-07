@@ -8,6 +8,8 @@
    - `docs/guides/TEAM_GUIDE.md` (regressions / high-risk areas)
    - `TO_DO_NEXT_SESS.md`
 3. Default to read-only actions unless asked; write shareable briefs to `docs/daily_scrum/` and scratch notes to `/tmp`.
+4. Save ad-hoc artifacts under `artifacts/` (examples: `artifacts/screenshots/`, `artifacts/requests/`).
+5. Playwright screenshots should stay in `.playwright-mcp/` (auto output).
 
 ## Repo-local skills (optional, when applicable)
 

@@ -12,7 +12,7 @@ This document tracks the Supabase schema requirements for the OpenEvent-AI backe
 
 | Table | Expected Columns | Status |
 |-------|------------------|--------|
-| `clients` | id, name, email, team_id, user_id, status, company, phone | ✅ Complete |
+| `clients` | id, name, email, team_id, user_id, status, company, phone, country, timezone | ✅ Complete (country/timezone optional but recommended) |
 | `tasks` | id, title, description, category, priority, team_id, event_id, client_name, status | ✅ Complete |
 | `emails` | from_email, to_email, subject, body_text, event_id, client_id, is_sent, thread_id | ✅ Complete |
 | `rooms` | id, name, team_id, capacity, amenities | ✅ Complete |

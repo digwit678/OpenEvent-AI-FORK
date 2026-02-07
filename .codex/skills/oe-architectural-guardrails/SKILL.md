@@ -1,6 +1,6 @@
 ---
 name: oe-architectural-guardrails
-description: Essential architectural rules, pipeline order, and bug prevention checklists. MUST be consulted before modifying routing, state, or detection logic.
+description: Essential architecture + pipeline guardrails. Use before touching routing/state/detection (pre_route/router/step handlers, unified detection, regex or gates) and when debugging wrong-step, ignored-input, or detour failures.
 ---
 
 ## When to use

@@ -6,18 +6,22 @@
    - what changed recently
    - current risk areas (routing/detection/workflow/site-visit/billing/HIL/fallback)
    - suggested quick checks + smallest relevant test subset
-2. If the primer file is missing or stale, fall back to:
+2. If it exists, also skim `docs/daily_scrum/weekly_agent_pack.md` for the broader weekly context (startup packs + docs triage).
+3. If the primer file is missing or stale, fall back to:
    - `DEV_CHANGELOG.md`
    - `docs/guides/TEAM_GUIDE.md` (focus on regressions / high-risk areas)
    - `TO_DO_NEXT_SESS.md`
 
 **Primer path:** `docs/daily_scrum/session_primer.md`
+**Weekly pack path:** `docs/daily_scrum/weekly_agent_pack.md`
 
 ## No-conflict rules (safe alongside PyCharm/IDEA)
 
 - Default to **read-only** actions (git/rg/view) unless the user explicitly asks for code changes.
 - Avoid auto-running long/expensive commands (formatters, installs, servers, full test suites).
 - Write shareable briefs to `docs/daily_scrum/` and scratch notes to `/tmp` to avoid git noise/conflicts.
+- Save ad-hoc artifacts under `artifacts/` (examples: `artifacts/screenshots/`, `artifacts/requests/`).
+- Playwright screenshots should stay in `.playwright-mcp/` (auto output).
 
 ## Skills (repo-local)
 

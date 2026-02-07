@@ -111,20 +111,23 @@ def resolve_anchor_date(
     reference_day: date,
     requested_dates: List[str],
     focus_iso: Optional[str] = None,
+    event_entry_date_iso: Optional[str] = None,
 ) -> Tuple[Optional[date], Optional[datetime]]:
     """
     Resolve the anchor date for candidate generation.
 
     Priority:
-    1. focus_iso if provided
+    1. focus_iso if provided (highest — explicit conflict focus)
     2. Parsed from user_text
     3. First requested date
+    4. event_entry_date_iso (BUG-055: fallback from previously stored date)
 
     Args:
         user_text: Combined subject + body text
         reference_day: Reference date for parsing
         requested_dates: List of ISO date strings
         focus_iso: Optional explicit focus date
+        event_entry_date_iso: Optional ISO date string from event_entry (Step 1 extraction)
 
     Returns:
         Tuple of (anchor_date, anchor_datetime)
@@ -143,7 +146,15 @@ def resolve_anchor_date(
         except ValueError:
             anchor = None
 
-    if focus_iso:
+    # BUG-055: Fall back to previously stored event date (from Step 1)
+    # when current message has no date
+    if not anchor and event_entry_date_iso:
+        try:
+            anchor = datetime.fromisoformat(event_entry_date_iso).date()
+        except ValueError:
+            anchor = None
+
+    if focus_iso:  # Highest priority: explicit conflict focus
         try:
             anchor = datetime.fromisoformat(focus_iso).date()
         except ValueError:

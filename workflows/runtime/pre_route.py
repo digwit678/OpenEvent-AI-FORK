@@ -55,6 +55,7 @@ ALWAYS_VALID_INTENTS = {
     "edit_date",  # Date changes can happen at any step
     "edit_room",  # Room changes can happen at any step
     "edit_requirements",  # Requirement changes can happen at any step
+    "cancel_event",  # Cancellation can happen at any step
     "message_manager",  # Manager requests are always valid
     "general_qna",  # Q&A is always valid
     "non_event",  # Non-event messages need other handling
@@ -253,7 +254,6 @@ def run_unified_pre_filter(
             unified_result.intent, unified_result.is_manager_request,
             unified_result.is_confirmation, unified_result.qna_types
         )
-        print(f"[UNIFIED_DETECTION] is_acceptance={unified_result.is_acceptance}, is_question={unified_result.is_question}, is_change={unified_result.is_change_request}")
         logger.debug(
             "[UNIFIED_DETECTION] is_acceptance=%s, is_question=%s, is_change=%s",
             unified_result.is_acceptance, unified_result.is_question,
@@ -906,6 +906,22 @@ def run_pre_route_pipeline(
         # 0.5. SITE VISIT CONFLICT CHECK: Warn if new event date conflicts with scheduled site visit
         if unified_result.date:
             _check_site_visit_event_date_conflict(state, unified_result.date)
+
+    # 0.7. HYBRID Q&A PRE-GENERATION: Generate Q&A response early so it survives
+    # regardless of which step handler path runs (fixes BUG-054).
+    # Step handlers can still pop() on detour or overwrite with filtered types.
+    if unified_result and unified_result.is_question and unified_result.qna_types:
+        if not state.extras.get("hybrid_qna_response"):
+            from workflows.qna.router import generate_hybrid_qna_response
+            hybrid_qna = generate_hybrid_qna_response(
+                qna_types=unified_result.qna_types,
+                message_text=combined_text,
+                event_entry=state.event_entry,
+                db=state.db,
+            )
+            if hybrid_qna:
+                state.extras["hybrid_qna_response"] = hybrid_qna
+                logger.info("[PRE_ROUTE] Hybrid Q&A pre-generated for types: %s", unified_result.qna_types)
 
     # 0.6. Out-of-context check - step-specific intents at wrong steps
     # Example: "I confirm the date" at step 5 (negotiation) → silently ignored

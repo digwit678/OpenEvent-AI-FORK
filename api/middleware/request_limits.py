@@ -22,7 +22,24 @@ logger = logging.getLogger(__name__)
 
 # Default 1MB, configurable via env var
 DEFAULT_LIMIT_KB = 1024
-MAX_REQUEST_BODY_SIZE = int(os.getenv("REQUEST_SIZE_LIMIT_KB", DEFAULT_LIMIT_KB)) * 1024
+MAX_REQUEST_BODY_SIZE = DEFAULT_LIMIT_KB * 1024
+
+
+def _get_request_limit_bytes() -> int:
+    """Resolve request size limit from env with safe fallback."""
+    raw_limit = str(os.getenv("REQUEST_SIZE_LIMIT_KB", DEFAULT_LIMIT_KB)).strip()
+    try:
+        limit_kb = int(raw_limit)
+        if limit_kb <= 0:
+            raise ValueError("must be positive")
+        return limit_kb * 1024
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid REQUEST_SIZE_LIMIT_KB=%r, falling back to default %dKB",
+            raw_limit,
+            DEFAULT_LIMIT_KB,
+        )
+        return DEFAULT_LIMIT_KB * 1024
 
 
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
@@ -34,6 +51,8 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
+        max_request_body_size = _get_request_limit_bytes()
+
         # Skip size check for GET/HEAD/OPTIONS (no body)
         if request.method in {"GET", "HEAD", "OPTIONS"}:
             return await call_next(request)
@@ -43,16 +62,35 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
         if content_length:
             try:
                 length = int(content_length)
-                if length > MAX_REQUEST_BODY_SIZE:
+                if length > max_request_body_size:
                     logger.warning(
                         "Request rejected: Content-Length %d exceeds limit %d (path=%s)",
-                        length, MAX_REQUEST_BODY_SIZE, request.url.path
+                        length, max_request_body_size, request.url.path
                     )
                     return JSONResponse(
-                        {"error": "request_too_large", "detail": f"Request body exceeds {MAX_REQUEST_BODY_SIZE // 1024}KB limit"},
+                        {"error": "request_too_large", "detail": f"Request body exceeds {max_request_body_size // 1024}KB limit"},
                         status_code=413,
                     )
             except ValueError:
-                pass  # Invalid Content-Length, proceed with request
+                # Invalid Content-Length, fall through to real body-size check.
+                pass
+
+        # Fallback path: enforce limit even when Content-Length is missing/invalid.
+        # We replay the buffered body so downstream handlers can still read it.
+        body = await request.body()
+        if len(body) > max_request_body_size:
+            logger.warning(
+                "Request rejected: body size %d exceeds limit %d (path=%s)",
+                len(body), max_request_body_size, request.url.path
+            )
+            return JSONResponse(
+                {"error": "request_too_large", "detail": f"Request body exceeds {max_request_body_size // 1024}KB limit"},
+                status_code=413,
+            )
+
+        async def _receive() -> dict:
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request._receive = _receive  # type: ignore[attr-defined]
 
         return await call_next(request)

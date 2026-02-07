@@ -94,22 +94,21 @@ def calculate_deposit_due_date(
     event_date: Optional[datetime] = None,
 ) -> Optional[str]:
     """
-    Calculate the deposit due date based on event date.
+    Calculate the deposit due date relative to today (offer date).
 
-    The due date is: event_date - deadline_days
+    Default behavior: due date is ASAP with a buffer, i.e. today + deadline_days.
+    This matches the frontend setting "days until payment due".
 
-    This ensures the deposit is always due relative to when the event occurs,
-    not when the offer was made. For example, with deadline_days=10:
-    - Event on June 25 → Deposit due June 15
-    - Event on Jan 21 → Deposit due Jan 11
+    If an event date is provided, the due date is clamped to be at least
+    1 day before the event (so it never falls after the event).
 
     A minimum of today + 1 day is enforced to ensure due date is in the future.
 
     Args:
         deposit_config: The global deposit configuration dict containing:
-            - deposit_deadline_days: int (days before event that deposit is due)
+            - deposit_deadline_days: int (days until payment is due from today)
         from_date: The date to calculate from (defaults to today)
-        event_date: The event date (required for event-relative calculation)
+        event_date: The event date (used only to clamp due date before event)
 
     Returns:
         The due date as ISO string (YYYY-MM-DD), or None if not configured.
@@ -117,24 +116,25 @@ def calculate_deposit_due_date(
     if not deposit_config or not deposit_config.get("deposit_enabled"):
         return None
 
-    deadline_days = deposit_config.get("deposit_deadline_days", 10)
+    deadline_days = deposit_config.get("deposit_deadline_days", 3)
     if not deadline_days or deadline_days <= 0:
-        deadline_days = 10
+        deadline_days = 3
 
     base_date = from_date or datetime.now()
 
-    # Calculate due date relative to event date
-    if event_date:
-        # Deposit due = event_date - deadline_days
-        due_date = event_date - timedelta(days=deadline_days)
+    # Default: due date is today + deadline_days (ASAP buffer)
+    due_date = base_date + timedelta(days=deadline_days)
 
-        # Ensure due date is at least 1 day from now (can't be in the past)
-        min_due = base_date + timedelta(days=1)
-        if due_date < min_due:
-            due_date = min_due
-    else:
-        # Fallback: if no event date, use today + deadline_days
-        due_date = base_date + timedelta(days=deadline_days)
+    # Clamp to at least 1 day before the event (if event date known)
+    if event_date:
+        latest_due = event_date - timedelta(days=1)
+        if due_date > latest_due:
+            due_date = latest_due
+
+    # Ensure due date is at least 1 day from now (can't be in the past)
+    min_due = base_date + timedelta(days=1)
+    if due_date < min_due:
+        due_date = min_due
 
     return due_date.strftime("%Y-%m-%d")
 
@@ -183,7 +183,7 @@ def build_deposit_info(
         "deposit_type": deposit_config.get("deposit_type", "percentage"),
         "deposit_percentage": deposit_config.get("deposit_percentage") if deposit_config.get("deposit_type") == "percentage" else None,
         "deposit_due_date": due_date,
-        "deposit_deadline_days": deposit_config.get("deposit_deadline_days", 10),
+        "deposit_deadline_days": deposit_config.get("deposit_deadline_days", 3),
         "deposit_paid": False,
         "deposit_paid_at": None,
     }
@@ -342,4 +342,3 @@ def derive_room_rate(event_entry: Dict[str, Any]) -> Optional[float]:
 
     room_name = _room_name_from_event(event_entry)
     return room_rate_for_name(room_name)
-

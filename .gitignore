@@ -30,6 +30,9 @@ tests/artifacts/*.json
 # Local dev env & logs
 backend-uvicorn.log
 
+# Local artifacts (screenshots, ad-hoc requests)
+artifacts/
+
 # Test artifacts
 coverage.xml
 junit.xml

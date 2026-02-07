@@ -40,7 +40,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from dateutil import parser as dateutil_parser
 
-from workflows.io.config_store import get_venue_name, get_venue_city
+from ux.verbalizer_common import resolve_verbalizer_tone, call_verbalizer_llm
+from workflows.io.config_store import (
+    build_style_prompt_block,
+    get_venue_name,
+    get_venue_city,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -548,22 +553,8 @@ def verbalize_message(
 
 
 def _resolve_tone() -> str:
-    """Determine verbalization tone from environment.
-
-    Default is 'empathetic' for human-like UX.
-    Set VERBALIZER_TONE=plain to disable LLM verbalization.
-    """
-    tone_env = os.getenv("VERBALIZER_TONE")
-    if tone_env:
-        candidate = tone_env.strip().lower()
-        if candidate in {"empathetic", "plain"}:
-            return candidate
-    # Check for explicit disable flag
-    plain_flag = os.getenv("PLAIN_VERBALIZER", "")
-    if plain_flag.strip().lower() in {"1", "true", "yes", "on"}:
-        return "plain"
-    # Default to empathetic for human-like UX
-    return "empathetic"
+    """Determine verbalization tone from environment."""
+    return resolve_verbalizer_tone()
 
 
 import time
@@ -652,6 +643,7 @@ def _build_prompt(
 
     # Load dynamic prompts
     system_template, step_prompts = _get_effective_prompts()
+    style_block = build_style_prompt_block()
 
     # Build step-specific guidance
     step_guidance = step_prompts.get(context.step, "")
@@ -663,7 +655,7 @@ def _build_prompt(
     # Locale instruction
     locale_instruction = "Write in German (Deutsch)." if locale == "de" else "Write in English."
 
-    system_content = f"""{system_template}
+    system_content = f"""{system_template}{style_block}
 
 {locale_instruction}
 
@@ -749,24 +741,7 @@ def _format_facts_for_prompt(context: MessageContext) -> str:
 
 def _call_llm(payload: Dict[str, Any]) -> str:
     """Call the LLM for verbalization using configured provider."""
-    from adapters.agent_adapter import get_adapter_for_provider
-    from llm.provider_config import get_verbalization_provider
-
-    # Get the verbalization provider from config (hybrid mode support)
-    provider = get_verbalization_provider()
-    adapter = get_adapter_for_provider(provider)
-
-    # Build prompt from payload
-    prompt = payload["user"]
-
-    # Call the adapter's complete method
-    # Note: json_mode=False because verbalization outputs prose, not JSON
-    return adapter.complete(
-        prompt=prompt,
-        system_prompt=payload["system"],
-        temperature=0.3,  # Slightly higher for natural variation
-        json_mode=False,  # Verbalization outputs prose, not JSON
-    )
+    return call_verbalizer_llm(payload, temperature=0.3)
 
 
 # =============================================================================

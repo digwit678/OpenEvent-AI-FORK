@@ -87,8 +87,8 @@ def site_visit_unavailable_response(state: WorkflowState, event_entry: Dict[str,
     """Response when site visit is not available for this room/booking."""
     draft = {
         "body": append_footer(
-            "Thanks for checking — for this room we aren't able to offer on-site visits before confirmation, "
-            "but I'm happy to share additional details or photos.",
+            "Unfortunately, there are no site visits available for our venue right now. "
+            "I'm happy to share additional details or photos if that helps.",
             step=7,
             next_step="Share any questions",
             thread_state="Awaiting Client",

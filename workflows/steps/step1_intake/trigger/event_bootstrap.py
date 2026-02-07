@@ -2,6 +2,7 @@
 
 This module contains the logic for determining whether to create a new event
 record or reuse an existing one based on:
+- Email thread resolution (reply headers, LLM semantic matching)
 - Date differences (new inquiry vs date change)
 - Terminal states (confirmed, completed, cancelled)
 - Offer accepted status (with billing/deposit continuation)
@@ -13,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 from workflows.common.types import WorkflowState
 from workflows.common.timeutils import format_ts_to_ddmmyyyy
@@ -31,6 +32,162 @@ from debug.hooks import trace_db_write
 from .gate_confirmation import looks_like_billing_fragment as _looks_like_billing_fragment
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Email Thread Resolution (Layer 1 + Layer 2)
+# ---------------------------------------------------------------------------
+
+def _has_email_headers(message_payload: Dict[str, Any]) -> bool:
+    """Check if message has email headers for thread resolution."""
+    headers = message_payload.get("headers", {})
+    # Check for common email headers that indicate this came from email
+    return bool(
+        headers.get("Message-ID") or
+        headers.get("message_id") or
+        headers.get("In-Reply-To") or
+        headers.get("in_reply_to") or
+        headers.get("References") or
+        headers.get("references")
+    )
+
+
+def _extract_email_headers(message_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract email headers from message payload for reply detection."""
+    headers = message_payload.get("headers", {})
+    return {
+        "Message-ID": headers.get("Message-ID") or headers.get("message_id"),
+        "In-Reply-To": headers.get("In-Reply-To") or headers.get("in_reply_to"),
+        "References": headers.get("References") or headers.get("references"),
+        "body": message_payload.get("body", ""),
+    }
+
+
+def _resolve_email_thread(
+    state: WorkflowState,
+    message_payload: Dict[str, Any],
+    thread_id: str,
+) -> Tuple[Optional[Dict[str, Any]], bool]:
+    """Resolve email thread using Layer 1 (headers) and Layer 2 (LLM).
+
+    Returns:
+        Tuple of (event_entry or None, was_resolved: bool)
+        - If resolved, returns the event entry to attach to
+        - If not resolved, returns (None, False) to fall through to existing logic
+    """
+    from workflows.io.email_threading import (
+        is_reply,
+        link_reply_to_thread,
+        store_email_message,
+        ThreadResolver,
+    )
+
+    headers = _extract_email_headers(message_payload)
+    message_id = headers.get("Message-ID") or message_payload.get("msg_id", "")
+
+    # Layer 1: Reply Detection (NO LLM)
+    is_reply_msg, parent_id = is_reply(headers)
+
+    if is_reply_msg and parent_id:
+        event_id = link_reply_to_thread(
+            parent_id,
+            state.db.get("email_messages", []),
+            state.db.get("thread_mappings", []),
+        )
+        if event_id:
+            # Found parent - attach to that event
+            idx = find_event_idx_by_id(state.db, event_id)
+            if idx is not None:
+                event_entry = state.db["events"][idx]
+                # Store this message for future reply detection
+                store_email_message(
+                    state.db,
+                    message_id=message_id,
+                    from_address=state.client_id or "",
+                    resolved_event_id=event_id,
+                    in_reply_to=headers.get("In-Reply-To"),
+                    references=headers.get("References") if isinstance(headers.get("References"), list) else None,
+                )
+                trace_db_write(thread_id, "Step1_Intake", "thread_resolved_layer1", {
+                    "event_id": event_id,
+                    "parent_id": parent_id,
+                    "method": "reply_headers",
+                })
+                logger.info("[STEP1][THREAD] Layer 1 resolved reply to event %s via %s", event_id, parent_id)
+                return event_entry, True
+
+    # Layer 2: Thread Resolver (LLM) - only for NEW emails (not replies)
+    if not is_reply_msg:
+        resolver = ThreadResolver()
+        result = resolver.resolve(
+            email_from=state.client_id or "",
+            email_subject=message_payload.get("subject", ""),
+            email_body=message_payload.get("body", ""),
+            db=state.db,
+            message_id=message_id,
+        )
+
+        if result.decision == "attach" and result.event_id:
+            idx = find_event_idx_by_id(state.db, result.event_id)
+            if idx is not None:
+                event_entry = state.db["events"][idx]
+                # Store this message for future reply detection
+                store_email_message(
+                    state.db,
+                    message_id=message_id,
+                    from_address=state.client_id or "",
+                    resolved_event_id=result.event_id,
+                )
+                trace_db_write(thread_id, "Step1_Intake", "thread_resolved_layer2", {
+                    "event_id": result.event_id,
+                    "confidence": result.confidence,
+                    "reason": result.reason,
+                })
+                logger.info("[STEP1][THREAD] Layer 2 attached to event %s (confidence=%.2f)",
+                            result.event_id, result.confidence)
+                return event_entry, True
+
+        # Log possible duplicates for manual review
+        if result.possible_duplicates:
+            trace_db_write(thread_id, "Step1_Intake", "thread_possible_duplicates", {
+                "possible_duplicates": result.possible_duplicates,
+                "reason": result.reason,
+            })
+            logger.info("[STEP1][THREAD] Possible duplicates flagged: %s", result.possible_duplicates)
+
+    # Thread resolution didn't find a match - fall through to existing logic
+    return None, False
+
+
+def _store_initial_email_message(
+    state: WorkflowState,
+    message_payload: Dict[str, Any],
+    event_id: str,
+) -> None:
+    """Store initial email message for future reply detection.
+
+    Called when a new event is created to record the first message
+    in the thread, enabling future replies to be linked.
+    """
+    if not _has_email_headers(message_payload):
+        return
+
+    from workflows.io.email_threading import store_email_message, create_thread_mapping
+
+    headers = _extract_email_headers(message_payload)
+    message_id = headers.get("Message-ID") or message_payload.get("msg_id", "")
+
+    if message_id:
+        store_email_message(
+            state.db,
+            message_id=message_id,
+            from_address=state.client_id or "",
+            resolved_event_id=event_id,
+            in_reply_to=headers.get("In-Reply-To"),
+            references=headers.get("References") if isinstance(headers.get("References"), list) else None,
+        )
+        # Also create a thread mapping for quick lookup
+        create_thread_mapping(state.db, message_id, event_id)
 
 
 def _thread_id(state: WorkflowState) -> str:
@@ -82,12 +239,40 @@ def ensure_event_record(
     received_date = format_ts_to_ddmmyyyy(state.message.ts)
     event_data = default_event_record(user_info, message_payload, received_date)
 
+    # ---------------------------------------------------------------------------
+    # NEW: Email Thread Resolution (runs BEFORE existing lookup logic)
+    # ---------------------------------------------------------------------------
+    # If message has email headers, try to resolve thread via:
+    #   Layer 1: Reply detection using In-Reply-To/References headers (no LLM)
+    #   Layer 2: LLM semantic matching for new emails
+    if _has_email_headers(message_payload):
+        resolved_event, was_resolved = _resolve_email_thread(state, message_payload, thread_id)
+        if was_resolved and resolved_event:
+            # Thread resolution found the event - update it and return
+            idx = find_event_idx_by_id(state.db, resolved_event["event_id"])
+            if idx is not None:
+                state.updated_fields = update_event_entry(state.db, idx, event_data)
+                event_entry = state.db["events"][idx]
+                if not event_entry.get("thread_id"):
+                    event_entry["thread_id"] = thread_id
+                trace_db_write(
+                    thread_id,
+                    "Step1_Intake",
+                    "db.events.update_via_thread_resolution",
+                    {"event_id": event_entry.get("event_id"), "updated": list(state.updated_fields)},
+                )
+                update_event_metadata(event_entry, status=event_entry.get("status", "Lead"))
+                return event_entry
+    # ---------------------------------------------------------------------------
+
     last_event = last_event_for_email(state.db, state.client_id or "")
     if not last_event:
         create_event_entry(state.db, event_data)
         event_entry = state.db["events"][-1]
         event_entry["thread_id"] = thread_id
         trace_db_write(thread_id, "Step1_Intake", "db.events.create", {"event_id": event_entry.get("event_id")})
+        # Store email message for future reply detection (if has headers)
+        _store_initial_email_message(state, message_payload, event_entry["event_id"])
         return event_entry
 
     # Determine if we should create a NEW event instead of reusing
@@ -163,6 +348,8 @@ def ensure_event_record(
             "event_id": event_entry.get("event_id"),
             "reason": "new_inquiry_detected",
         })
+        # Store email message for future reply detection (if has headers)
+        _store_initial_email_message(state, message_payload, event_entry["event_id"])
         return event_entry
 
     # Reuse existing event
@@ -172,6 +359,8 @@ def ensure_event_record(
         event_entry = state.db["events"][-1]
         event_entry["thread_id"] = thread_id
         trace_db_write(thread_id, "Step1_Intake", "db.events.create", {"event_id": event_entry.get("event_id")})
+        # Store email message for future reply detection (if has headers)
+        _store_initial_email_message(state, message_payload, event_entry["event_id"])
         return event_entry
 
     state.updated_fields = update_event_entry(state.db, idx, event_data)

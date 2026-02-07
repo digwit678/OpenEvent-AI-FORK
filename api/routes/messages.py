@@ -62,14 +62,31 @@ EVENTS_FILE = str(WF_DB_PATH)
 # Request/Response Models
 # ---------------------------------------------------------------------------
 
+class EmailHeaders(BaseModel):
+    """RFC 5322 email headers for thread resolution.
+
+    When provided, enables deterministic reply detection without LLM:
+    - In-Reply-To: Direct parent message reference
+    - References: Chain of ancestor messages
+    - Message-ID: Unique identifier for this message
+
+    See: workflows/io/email_threading/README.md for details.
+    """
+    message_id: Optional[str] = None  # Message-ID header
+    in_reply_to: Optional[str] = None  # In-Reply-To header
+    references: Optional[List[str]] = None  # References header (list of message IDs)
+
+
 class StartConversationRequest(BaseModel):
     email_body: str
     client_email: str
+    email_headers: Optional[EmailHeaders] = None  # For email thread resolution
 
 
 class SendMessageRequest(BaseModel):
     session_id: str
     message: str
+    email_headers: Optional[EmailHeaders] = None  # For email thread resolution
 
 
 class ConfirmDateRequest(BaseModel):
@@ -482,7 +499,7 @@ async def start_conversation(request: StartConversationRequest):
     # NOTE: AGENT_MODE is now set at startup in main.py with smart defaults
     subject_line = (request.email_body.splitlines()[0][:80] if request.email_body else "No subject")
     session_id = str(uuid.uuid4())
-    msg = {
+    msg: Dict[str, Any] = {
         "msg_id": str(uuid.uuid4()),
         "from_name": "Not specified",
         "from_email": request.client_email,
@@ -492,6 +509,13 @@ async def start_conversation(request: StartConversationRequest):
         "session_id": session_id,
         "thread_id": session_id,
     }
+    # Add email headers for thread resolution if provided
+    if request.email_headers:
+        msg["headers"] = {
+            "Message-ID": request.email_headers.message_id,
+            "In-Reply-To": request.email_headers.in_reply_to,
+            "References": request.email_headers.references,
+        }
     wf_res = None
     wf_action = None
     try:
@@ -518,6 +542,22 @@ async def start_conversation(request: StartConversationRequest):
     if wf_action == "standalone_qna":
         draft_messages = wf_res.get("draft_messages", [])
         response_text = draft_messages[0].get("body", "") if draft_messages else ""
+        # Register conversation so follow-up messages via /api/send-message work
+        event_info = EventInformation(
+            date_email_received=datetime.now().strftime("%d.%m.%Y"),
+            email=request.client_email,
+        )
+        conversation_state = ConversationState(
+            session_id=session_id,
+            event_info=event_info,
+            conversation_history=[
+                {"role": "user", "content": request.email_body or ""},
+                {"role": "assistant", "content": response_text},
+            ],
+            workflow_type="standalone_qna",
+            event_id=wf_res.get("event_id"),
+        )
+        active_conversations[session_id] = conversation_state
         return {
             "session_id": session_id,
             "workflow_type": "standalone_qna",
@@ -683,7 +723,7 @@ async def send_message(request: SendMessageRequest):
         # in step1_handler.py handles all entity extraction properly.
         conversation_state.conversation_history.append({"role": "user", "content": request.message})
 
-    payload = {
+    payload: Dict[str, Any] = {
         "msg_id": str(uuid.uuid4()),
         "from_name": conversation_state.event_info.name or "Client",
         "from_email": conversation_state.event_info.email,
@@ -694,6 +734,13 @@ async def send_message(request: SendMessageRequest):
         "session_id": request.session_id,
         "is_continuation": is_continuation,  # Flag for workflow to handle specially
     }
+    # Add email headers for thread resolution if provided
+    if request.email_headers:
+        payload["headers"] = {
+            "Message-ID": request.email_headers.message_id,
+            "In-Reply-To": request.email_headers.in_reply_to,
+            "References": request.email_headers.references,
+        }
 
     try:
         wf_res = wf_process_msg(payload)

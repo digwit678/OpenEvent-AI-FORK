@@ -56,7 +56,7 @@ from debug.hooks import trace_db_read, trace_db_write, trace_detour, trace_gate,
 from utils.profiler import profile_step
 from utils.pseudolinks import generate_room_details_link, generate_qna_link
 from utils.page_snapshots import create_snapshot
-from workflow_verbalizer_test_hooks import render_rooms
+from .verbalizer_test_hooks import render_rooms
 from workflows.steps.step3_room_availability.db_pers import load_rooms_config
 from workflows.nlu import detect_general_room_query, detect_sequential_workflow_request
 from rooms import rank as rank_rooms_profiles, get_max_capacity, any_room_fits_capacity
@@ -185,8 +185,14 @@ def process(state: WorkflowState) -> GroupResult:
     # Time slot gate - require start_time or end_time before showing room availability
     # Room availability depends on time window (morning vs afternoon bookings differ)
     # EXCEPTION: If this is a Q&A question about rooms, bypass gate and let Q&A handle it
+    # NOTE: Check both "captured" (raw from detection) AND "verified" (promoted by Step 2
+    # confirmation_flow) — promotion moves fields from captured→verified, deleting from captured.
     captured = event_entry.get("captured") or {}
-    has_time_slot = bool(captured.get("start_time") or captured.get("end_time"))
+    verified = event_entry.get("verified") or {}
+    has_time_slot = bool(
+        captured.get("start_time") or captured.get("end_time")
+        or verified.get("start_time") or verified.get("end_time")
+    )
 
     # Check if this is a pure Q&A question about rooms (should bypass time slot gate)
     unified_detection = get_unified_detection(state)
@@ -196,7 +202,7 @@ def process(state: WorkflowState) -> GroupResult:
         room_related_types = {"check_availability", "free_dates", "room_features", "check_capacity", "rooms_by_feature"}
         is_room_qna = bool(set(qna_types) & room_related_types)
 
-    trace_gate(thread_id, "Step3_Room", "time_slot", has_time_slot, {"start_time": captured.get("start_time"), "end_time": captured.get("end_time"), "is_room_qna": is_room_qna})
+    trace_gate(thread_id, "Step3_Room", "time_slot", has_time_slot, {"start_time": captured.get("start_time") or verified.get("start_time"), "end_time": captured.get("end_time") or verified.get("end_time"), "is_room_qna": is_room_qna})
     if not has_time_slot and not is_room_qna:
         return _detour_for_time_slot(state, event_entry)
 
@@ -491,9 +497,13 @@ def process(state: WorkflowState) -> GroupResult:
             "rooms_by_feature", "room_features", "check_availability", "free_dates", "check_capacity"
         }
         # Filter out room Q&A when we're about to show room availability
-        # (i.e., when time slot is captured so we won't detour)
+        # (i.e., when time slot is captured/verified so we won't detour)
         captured = event_entry.get("captured") or {}
-        has_time_slot = bool(captured.get("start_time") or captured.get("end_time"))
+        verified = event_entry.get("verified") or {}
+        has_time_slot = bool(
+            captured.get("start_time") or captured.get("end_time")
+            or verified.get("start_time") or verified.get("end_time")
+        )
         if has_time_slot:
             # Step 3 will show room availability - filter out redundant room Q&A
             filtered_qna_types = [t for t in qna_types if t not in room_qna_types_to_filter]

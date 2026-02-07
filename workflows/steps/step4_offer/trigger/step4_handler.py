@@ -44,6 +44,7 @@ from workflows.common.confirmation_gate import (
     get_next_prompt,
 )
 from workflows.common.site_visit_state import is_site_visit_scheduled
+from workflows.common.room_rules import site_visit_allowed
 from workflows.io.integration.config import is_hil_all_replies_enabled
 from workflows.common.types import GroupResult, WorkflowState
 # MIGRATED: from workflows.common.confidence -> backend.detection.intent.confidence
@@ -200,6 +201,18 @@ def process(state: WorkflowState) -> GroupResult:
     caller_step = event_entry.get("caller_step")
     if caller_step is not None and event_entry.get("offer_accepted"):
         logger.info("[Step4] Detour in progress (caller=%s) - clearing offer_accepted to regenerate offer", caller_step)
+        event_entry["offer_accepted"] = False
+        state.extras["persist"] = True
+
+    # BUG-053 FIX: When entering Step 4 from an earlier step (e.g. Step 3 after
+    # room confirmation), any previous offer_accepted flag is stale and must be
+    # cleared so a fresh offer is generated.  The detour fix above handles the
+    # caller_step case; this covers normal step progression.
+    if previous_step < 4 and event_entry.get("offer_accepted"):
+        logger.info(
+            "[Step4] Entering from step %s — clearing stale offer_accepted to regenerate offer",
+            previous_step,
+        )
         event_entry["offer_accepted"] = False
         state.extras["persist"] = True
 
@@ -723,7 +736,7 @@ def process(state: WorkflowState) -> GroupResult:
 
     # Attach deposit info based on global deposit configuration
     deposit_config = (state.db.get("config") or {}).get("global_deposit") or {}
-    # Parse event date for deposit due date calculation (relative to event, not just today)
+    # Parse event date for deposit due date clamping (never after event).
     # Try multiple date formats: DD.MM.YYYY (stored format) and YYYY-MM-DD (ISO format)
     event_date_dt = None
     chosen_date_str = event_entry.get("chosen_date")
@@ -1052,7 +1065,10 @@ def _auto_confirm_without_hil(
             "We'll finalize the details closer to your event date."
         )
     else:
-        body_lines.append("Next step: let's line up a site visit. Do you have preferred dates or times?")
+        if site_visit_allowed(event_entry):
+            body_lines.append("Next step: let's line up a site visit. Do you have preferred dates or times?")
+        else:
+            body_lines.append("Next step: let me know any questions before we finalize the booking.")
     body = "\n".join(line for line in body_lines if line)
 
     draft = {
