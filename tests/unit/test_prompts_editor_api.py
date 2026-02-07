@@ -43,9 +43,10 @@ def temp_db_path():
 
 @pytest.fixture
 def enable_prompts_editor():
-    """Enable the prompts editor feature flag for testing."""
+    """Enable the prompts editor feature flag and bypass auth for testing."""
     with patch.dict(os.environ, {"PROMPTS_EDITOR_ENABLED": "true"}):
-        yield
+        with patch("api.routes.config.require_admin_role", return_value=None):
+            yield
 
 
 @pytest.fixture

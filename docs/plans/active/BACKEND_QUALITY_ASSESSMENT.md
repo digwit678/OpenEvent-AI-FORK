@@ -24,7 +24,7 @@
 
 ### Critical (Before any prod traffic) — Deferred to production branch
 
-> Security items are tracked in `docs/integration/supabase/TODO_STEPS.md` § 5.
+> Security items are tracked in `docs/integration/supabase/TODO_STEPS.md` § 5. 
 > They apply at integration time, not on the dev/testing branch.
 
 - [ ] **SEC-1** — Make auth opt-out, not opt-in *(deferred → integration)*

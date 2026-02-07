@@ -20,6 +20,8 @@
 - Default to **read-only** actions (git/rg/view) unless the user explicitly asks for code changes.
 - Avoid auto-running long/expensive commands (formatters, installs, servers, full test suites).
 - Write shareable briefs to `docs/daily_scrum/` and scratch notes to `/tmp` to avoid git noise/conflicts.
+- Save ad-hoc artifacts under `artifacts/` (examples: `artifacts/screenshots/`, `artifacts/requests/`).
+- Playwright screenshots should stay in `.playwright-mcp/` (auto output).
 
 ## Skills (repo-local)
 

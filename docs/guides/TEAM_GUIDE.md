@@ -886,6 +886,15 @@ Result: Hybrid messages now correctly detect acceptance from the statement porti
 **Files**: `api/middleware/auth.py`, `api/middleware/tenant_context.py`, `api/middleware/request_limits.py`, `api/__init__.py`
 **Tests**: `tests/test_api/test_middleware_reliability.py`, `tests/test_api/test_auth_middleware.py`, `tests/test_api/test_tenant_context.py`
 
+### BUG-053: Offer Stage Skipped — Stale `offer_accepted` Flag
+**Status**: Fixed (2026-02-06)
+**Severity**: High
+**Symptom**: After room confirmation (Step 3 → Step 4), the system skips the offer presentation and jumps directly to billing/deposit prompts. Client never sees pricing or offer details.
+**Root Cause**: When an event has `offer_accepted=True` from a previous offer cycle, Step 4's confirmation gate check (line 207) fires immediately — skipping offer generation. The existing detour fix (lines 201-205) only clears `offer_accepted` when `caller_step` is set, but normal Step 3 → Step 4 transitions don't set `caller_step`.
+**Fix**: Added a guard that clears `offer_accepted` whenever `previous_step < 4` (i.e., entering Step 4 from an earlier step). This ensures a fresh offer is always generated after room confirmation.
+**Files**: `workflows/steps/step4_offer/trigger/step4_handler.py`
+**Key Learning**: Stale boolean flags that persist across workflow cycles are a recurring bug pattern. When a flag like `offer_accepted` gates a major code path, always verify it gets cleared on re-entry from earlier steps — not just on explicit detours. Consider `previous_step < current_step` as the general guard for "entering a step fresh."
+
 ---
 
 ## Q&A Rules During Detours

@@ -191,21 +191,7 @@ async function fetchWorkflowReply(url: string, payload: unknown): Promise<Workfl
     body: JSON.stringify(payload),
   });
 
-  const decoder = new TextDecoder();
-  let buffer = '';
-  if (response.body) {
-    const reader = response.body.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      buffer += decoder.decode(value, { stream: true });
-    }
-    buffer += decoder.decode();
-  } else {
-    buffer = await response.text();
-  }
+  const buffer = await response.text();
 
   if (!response.ok) {
     throw new Error(buffer || `Request failed with status ${response.status}`);
@@ -476,7 +462,7 @@ function EmailThreadUIContent() {
 
   const stopStreaming = useCallback(() => {
     if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
+      clearTimeout(rafRef.current);
       rafRef.current = null;
     }
   }, []);
@@ -497,13 +483,13 @@ function EmailThreadUIContent() {
           const nextSlice = fullText.slice(0, cursor);
           updateMessageAt(messageId, (msg) => ({ ...msg, content: nextSlice, streaming: cursor < fullText.length }));
           if (cursor < fullText.length) {
-            rafRef.current = requestAnimationFrame(step);
+            rafRef.current = setTimeout(step, 25) as unknown as number;
           } else {
             rafRef.current = null;
             resolve();
           }
         };
-        rafRef.current = requestAnimationFrame(step);
+        rafRef.current = setTimeout(step, 25) as unknown as number;
       }),
     [stopStreaming, updateMessageAt]
   );

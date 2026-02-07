@@ -869,6 +869,36 @@ def process(state: WorkflowState) -> GroupResult:
     return _prompt_confirmation(state, event_entry, window)
 
 
+def _extract_stored_event_date_iso(event_entry: Dict[str, Any]) -> Optional[str]:
+    """Extract previously stored event date as ISO string for anchor fallback (BUG-055).
+
+    Tries in priority order:
+    1. chosen_date (DD.MM.YYYY) — confirmed date
+    2. event_data["Event Date"] (DD.MM.YYYY) — Step 1 extraction
+    """
+    # Priority 1: Confirmed date (DD.MM.YYYY)
+    chosen = event_entry.get("chosen_date")
+    if chosen:
+        try:
+            parts = chosen.split(".")
+            if len(parts) == 3:
+                return f"{parts[2]}-{parts[1]}-{parts[0]}"
+        except (ValueError, IndexError):
+            pass
+
+    # Priority 2: Step 1 extraction (DD.MM.YYYY)
+    event_date = (event_entry.get("event_data") or {}).get("Event Date")
+    if event_date and event_date != "Not specified":
+        try:
+            parts = event_date.split(".")
+            if len(parts) == 3:
+                return f"{parts[2]}-{parts[1]}-{parts[0]}"
+        except (ValueError, IndexError):
+            pass
+
+    return None
+
+
 def _present_candidate_dates(
     state: WorkflowState,
     event_entry: dict,
@@ -903,7 +933,12 @@ def _present_candidate_dates(
     end_pref = end_hint or "22:00"
 
     # D-CTX: Use extracted functions for anchor and limits
-    anchor, anchor_dt = resolve_anchor_date(user_text, reference_day, requested_dates, focus_iso)
+    # BUG-055: Pass stored event date as fallback when current message has no date
+    stored_event_date_iso = _extract_stored_event_date_iso(event_entry)
+    anchor, anchor_dt = resolve_anchor_date(
+        user_text, reference_day, requested_dates, focus_iso,
+        event_entry_date_iso=stored_event_date_iso,
+    )
     limit, collection_cap = calculate_collection_limits(reason, attempt, preferred_weekdays)
 
     formatted_dates: List[str] = []

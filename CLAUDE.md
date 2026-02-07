@@ -39,6 +39,10 @@ Act as a senior **Test & Workflow Engineer** prioritizing deterministic behavior
     *   **Run Tests:** `pytest backend/tests/regression/` (Zero failures).
     *   **E2E Check:** Verify critical flows (Billing -> Deposit -> HIL).
 
+## Repo Hygiene (keep root clean)
+- Save ad-hoc artifacts under `artifacts/` (examples: `artifacts/screenshots/`, `artifacts/requests/`).
+- Playwright screenshots should stay in `.playwright-mcp/` (auto output).
+
 ## 2. Prevention Patterns (From TEAM_GUIDE)
 
 ### The LLM-First Rule (MANDATORY)

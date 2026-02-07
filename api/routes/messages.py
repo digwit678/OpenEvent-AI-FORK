@@ -542,6 +542,22 @@ async def start_conversation(request: StartConversationRequest):
     if wf_action == "standalone_qna":
         draft_messages = wf_res.get("draft_messages", [])
         response_text = draft_messages[0].get("body", "") if draft_messages else ""
+        # Register conversation so follow-up messages via /api/send-message work
+        event_info = EventInformation(
+            date_email_received=datetime.now().strftime("%d.%m.%Y"),
+            email=request.client_email,
+        )
+        conversation_state = ConversationState(
+            session_id=session_id,
+            event_info=event_info,
+            conversation_history=[
+                {"role": "user", "content": request.email_body or ""},
+                {"role": "assistant", "content": response_text},
+            ],
+            workflow_type="standalone_qna",
+            event_id=wf_res.get("event_id"),
+        )
+        active_conversations[session_id] = conversation_state
         return {
             "session_id": session_id,
             "workflow_type": "standalone_qna",

@@ -1,6 +1,6 @@
 ---
 name: oe-docs-updates
-description: Keeps OpenEvent-AI “living docs” in sync while coding. Use whenever you fix a bug, discover a new bug, add/modify behavior, or capture a future idea. Updates docs/guides/TEAM_GUIDE.md (bug list + regressions), DEV_CHANGELOG.md (what changed), new_features.md (ideas parked for later), and TO_DO_NEXT_SESS.md (next-session tasks).
+description: Use after any bug fix/regression discovery, behavior/UX change, or workflow/routing/detection tweak (site-visit, billing, HIL, Q&A, confirmations). Keeps “living docs” in sync by updating TEAM_GUIDE.md, DEV_CHANGELOG.md, new_features.md, and TO_DO_NEXT_SESS.md with symptom keywords + test pointers.
 ---
 
 # oe-docs-updates
@@ -38,4 +38,3 @@ description: Keeps OpenEvent-AI “living docs” in sync while coding. Use when
 - Prefer **searchable keywords** in headings and bullets (“billing capture”, “site visit”, “detour”, “HIL”, “smart shortcuts”).
 - Always include **one concrete pointer**: failing test name, script path, or function/module.
 - Avoid long narratives. Target: ≤10 lines per doc update.
-

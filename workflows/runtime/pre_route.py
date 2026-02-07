@@ -907,6 +907,22 @@ def run_pre_route_pipeline(
         if unified_result.date:
             _check_site_visit_event_date_conflict(state, unified_result.date)
 
+    # 0.7. HYBRID Q&A PRE-GENERATION: Generate Q&A response early so it survives
+    # regardless of which step handler path runs (fixes BUG-054).
+    # Step handlers can still pop() on detour or overwrite with filtered types.
+    if unified_result and unified_result.is_question and unified_result.qna_types:
+        if not state.extras.get("hybrid_qna_response"):
+            from workflows.qna.router import generate_hybrid_qna_response
+            hybrid_qna = generate_hybrid_qna_response(
+                qna_types=unified_result.qna_types,
+                message_text=combined_text,
+                event_entry=state.event_entry,
+                db=state.db,
+            )
+            if hybrid_qna:
+                state.extras["hybrid_qna_response"] = hybrid_qna
+                logger.info("[PRE_ROUTE] Hybrid Q&A pre-generated for types: %s", unified_result.qna_types)
+
     # 0.6. Out-of-context check - step-specific intents at wrong steps
     # Example: "I confirm the date" at step 5 (negotiation) → silently ignored
     # This is NOT nonsense - it's a valid action at the wrong step

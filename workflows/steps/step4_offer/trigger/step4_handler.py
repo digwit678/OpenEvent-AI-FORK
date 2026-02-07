@@ -204,6 +204,18 @@ def process(state: WorkflowState) -> GroupResult:
         event_entry["offer_accepted"] = False
         state.extras["persist"] = True
 
+    # BUG-053 FIX: When entering Step 4 from an earlier step (e.g. Step 3 after
+    # room confirmation), any previous offer_accepted flag is stale and must be
+    # cleared so a fresh offer is generated.  The detour fix above handles the
+    # caller_step case; this covers normal step progression.
+    if previous_step < 4 and event_entry.get("offer_accepted"):
+        logger.info(
+            "[Step4] Entering from step %s — clearing stale offer_accepted to regenerate offer",
+            previous_step,
+        )
+        event_entry["offer_accepted"] = False
+        state.extras["persist"] = True
+
     if event_id and event_entry.get("offer_accepted"):
         from workflows.common.confirmation_gate import check_confirmation_gate, reload_and_check_gate
 
