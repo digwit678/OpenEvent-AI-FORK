@@ -88,3 +88,9 @@ docs/frontend/*.docx
 docs/frontend/*.html
 .playwright-mcp/
 .mcp-tools/
+
+# IDE settings
+.vscode/
+
+# Manual backups
+atelier-ai-frontend.bak/
