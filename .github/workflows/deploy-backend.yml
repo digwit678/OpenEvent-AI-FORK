@@ -1,0 +1,118 @@
+name: Deploy AI Backend to VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      full_setup:
+        description: 'Run full setup (first deploy or reset)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+  DEPLOY_BRANCH: development-branch
+  APP_DIR: /opt/openevent
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: development-branch
+
+      # ── First-time setup (only when full_setup=true) ─────────────────
+      - name: Full VPS setup
+        if: inputs.full_setup == true
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          command_timeout: 10m
+          envs: REPO_URL,DEPLOY_BRANCH,APP_DIR
+          script: |
+            set -e
+            echo "=== Full Setup: Installing Python + dependencies ==="
+
+            apt update -y
+            apt install -y python3 python3-pip python3-venv git curl
+
+            # Clone or update repo
+            if [ -d "$APP_DIR/.git" ]; then
+              echo "Repo exists, pulling latest..."
+              cd "$APP_DIR"
+              git fetch origin
+              git checkout "$DEPLOY_BRANCH"
+              git pull origin "$DEPLOY_BRANCH"
+            else
+              echo "Cloning repo..."
+              git clone --branch "$DEPLOY_BRANCH" "$REPO_URL" "$APP_DIR"
+              cd "$APP_DIR"
+            fi
+
+            # Python venv
+            python3 -m venv venv
+            ./venv/bin/pip install --upgrade pip
+            ./venv/bin/pip install -r requirements-dev.txt
+
+            # Systemd service
+            cp deploy/openevent.service /etc/systemd/system/
+            systemctl daemon-reload
+            systemctl enable openevent
+
+            # Firewall
+            if command -v ufw &>/dev/null; then
+              ufw allow 8000/tcp
+            fi
+
+            echo "=== Full setup complete ==="
+            echo "IMPORTANT: Configure /opt/openevent/.env before starting!"
+
+      # ── Standard deploy (sync code + restart) ────────────────────────
+      - name: Sync code to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          source: "."
+          target: /opt/openevent
+          overwrite: true
+          rm: false
+
+      - name: Install deps and restart service
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          command_timeout: 5m
+          envs: APP_DIR
+          script: |
+            set -e
+            cd "$APP_DIR"
+
+            # Install/update Python deps
+            ./venv/bin/pip install -q -r requirements-dev.txt
+
+            # Reload and restart
+            systemctl daemon-reload
+            systemctl restart openevent
+
+            # Wait and verify
+            sleep 3
+            if systemctl is-active --quiet openevent; then
+              echo "openevent service is running"
+              curl -sf http://localhost:8000/api/workflow/health || echo "Health check pending (service starting)"
+            else
+              echo "openevent service failed to start"
+              journalctl -u openevent --no-pager -n 20
+              exit 1
+            fi
