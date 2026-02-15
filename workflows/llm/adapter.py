@@ -32,9 +32,13 @@ from workflows.common.datetime_parse import (
     weekday_name_to_number,
 )
 from utils.dates import MONTH_INDEX_TO_NAME, from_hints
+from workflows.llm.circuit_breaker import CircuitBreaker
 
 adapter: AgentAdapter = get_agent_adapter()
 _LAST_CALL_METADATA: Dict[str, Any] = {}
+
+# Circuit breaker: stops calling the LLM provider after repeated failures.
+_CIRCUIT_BREAKER = CircuitBreaker()
 
 # Bounded LRU cache for analysis results.
 # Max entries configurable via env var; default 500 to limit memory.
@@ -281,6 +285,10 @@ def _validated_analysis(result: Any) -> Optional[Dict[str, Any]]:
 
 
 def _invoke_provider_with_retry(payload: Dict[str, str], phase: str) -> Optional[Dict[str, Any]]:
+    if not _CIRCUIT_BREAKER.allow_request():
+        logger.warning("Circuit breaker OPEN — skipping provider call")
+        return None
+
     provider = get_provider()
     text = json.dumps(payload, ensure_ascii=False)
     last_error: Optional[Exception] = None
@@ -289,6 +297,7 @@ def _invoke_provider_with_retry(payload: Dict[str, str], phase: str) -> Optional
             result = provider.classify_extract(text)
             validated = _validated_analysis(result)
             if validated is not None:
+                _CIRCUIT_BREAKER.record_success()
                 try:
                     _record_last_call(_agent(), phase=phase)
                 except Exception:  # pragma: no cover - defensive guard
@@ -301,6 +310,7 @@ def _invoke_provider_with_retry(payload: Dict[str, str], phase: str) -> Optional
         except Exception as exc:  # pragma: no cover - defensive guard
             last_error = exc
             logger.warning("Provider analysis failed (attempt %s): %s", attempt + 1, exc)
+    _CIRCUIT_BREAKER.record_failure()
     if last_error:
         logger.info("Falling back to heuristics after provider failure: %s", last_error)
     return None
@@ -707,6 +717,7 @@ def reset_llm_adapter() -> None:
     adapter = get_agent_adapter()
     _LAST_CALL_METADATA = {}
     _ANALYSIS_CACHE = OrderedDict()
+    _CIRCUIT_BREAKER.reset()
     reset_provider_for_tests()
 
 
