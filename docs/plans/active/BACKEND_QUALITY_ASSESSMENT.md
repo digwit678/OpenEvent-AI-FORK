@@ -43,11 +43,12 @@
   - Extracted: `helpers.py`, `confirmation_continuation.py`, `change_routing_step4.py`, `acceptance.py`; extended `compose.py`
 - [x] **CQ-4** — Eliminate verbalizer duplication (~200 lines shared between `llm/verbalizer_agent.py` and `ux/universal_verbalizer.py`)
   - Consolidated into single source of truth (commit `ed1826b`)
-- [ ] **TEST-2** — Add API route tests (12+ routes have zero test coverage)
-  - Priority: auth middleware, events CRUD, config endpoints
-- [ ] **TEST-3** — Add LLM adapter tests (`llm/adapters/` directory untested)
-- [ ] **RES-1** — Implement circuit breaker for LLM API failures
-  - Currently retries indefinitely; need backoff + fallback after N failures
+- [x] **TEST-2** — Add API route tests (6 files, ~80 tests covering workflow, events, tasks, config, messages, manager_actions)
+  - Shared fixtures in `tests/api/conftest.py`; parametrized config smoke tests
+- [x] **TEST-3** — Add LLM adapter tests (24 tests: Stub/OpenAI/Gemini adapters + factory + gateway)
+- [x] **RES-1** — Implement circuit breaker for LLM API failures
+  - `workflows/llm/circuit_breaker.py`: 3-state (CLOSED/OPEN/HALF_OPEN), thread-safe, env-configurable
+  - Integrated into `adapter.py::_invoke_provider_with_retry`; 17 unit tests
 
 ### Medium (Refactoring — 2-3 weeks)
 

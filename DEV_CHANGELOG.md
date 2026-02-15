@@ -1,5 +1,35 @@
 # Development Changelog
 
+## 2026-02-08
+
+### Quality: TEST-2 + TEST-3 + RES-1 — API Route Tests, Adapter Tests, Circuit Breaker
+
+**Goal:** Close the three highest-priority quality gaps from BACKEND_QUALITY_ASSESSMENT.md.
+
+**TEST-2 — API Route Tests (6 files, ~80 tests):**
+- `tests/api/conftest.py` — shared fixtures: `make_event()`, `make_task()`, `client` (TestClient with auth disabled), `admin_ctx` (bypasses `require_admin_role`)
+- `test_routes_workflow.py` — health endpoint (prod/dev modes), HIL status
+- `test_routes_events.py` — list, get, deposit status, pay deposit (guarded/not found/wrong step/already paid/success), cancel (confirmation/mismatch/not found/already cancelled/success)
+- `test_routes_tasks.py` — pending (empty/with tasks/dedup), approve (success/not found/edited), reject, cleanup
+- `test_routes_config.py` — parametrized GET smoke (17 endpoints), global-deposit GET/SET, admin guard (5 POST endpoints → 401)
+- `test_routes_messages.py` — start-conversation, send-message, confirm-date, accept/reject booking, get conversation
+- `test_routes_manager_actions.py` — date/room/requirements/cancel-room/reschedule/offer-update/HIL approve/reject
+
+**TEST-3 — LLM Adapter Tests (24 tests):**
+- StubAgentAdapter: route_intent, extract_entities (EU/ISO/MDY dates, participants, room, time), analyze_message, complete
+- OpenAI/Gemini adapters: success path + fallback on error (mock API clients)
+- Factory: stub/openai/gemini/hybrid/invalid modes
+- Gateway: classify_intent with cache hit + provider failure fallback
+
+**RES-1 — Circuit Breaker:**
+- `workflows/llm/circuit_breaker.py` — 3-state machine (CLOSED → OPEN → HALF_OPEN), thread-safe, configurable via `LLM_CB_FAILURE_THRESHOLD` (default 5) and `LLM_CB_COOLDOWN_SECONDS` (default 60)
+- Integrated into `adapter.py::_invoke_provider_with_retry` (guard + record_success + record_failure + reset)
+- 17 unit tests covering state transitions, threshold, cooldown, reset, thread safety
+
+**Verification:** 827 tests pass (1 pre-existing failure in `test_middleware_reliability.py`, 2 xfailed). Zero regressions.
+
+---
+
 ## 2026-02-07
 
 ### Refactor: CQ-2/CQ-3 — God Function Extraction (step1_handler + step4_handler)
